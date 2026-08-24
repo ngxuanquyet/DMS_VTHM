@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VTHM Group - Cá nhân</title>
+<!-- Google Fonts: Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed": "#001a40",
+                        "surface-container-low": "#eff6e8",
+                        "surface-variant": "#dee5d8",
+                        "primary-fixed": "#8dfb85",
+                        "surface-container": "#e9f0e3",
+                        "on-error-container": "#93000a",
+                        "on-surface": "#171d15",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#ab2c5e",
+                        "inverse-primary": "#71de6c",
+                        "inverse-on-surface": "#ecf3e6",
+                        "error": "#ba1a1a",
+                        "primary": "#006e15",
+                        "background": "#f5fcee",
+                        "on-surface-variant": "#3f4a3b",
+                        "inverse-surface": "#2c3229",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "surface": "#F7FAF6",
+                        "tertiary-fixed": "#ffd9e1",
+                        "on-tertiary-container": "#6e0034",
+                        "on-background": "#171d15",
+                        "secondary": "#2e5da8",
+                        "on-tertiary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#d7e2ff",
+                        "surface-container-high": "#e4eadd",
+                        "surface-container-lowest": "#ffffff",
+                        "outline-variant": "#becab7",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#003f08",
+                        "secondary-container": "#84aefe",
+                        "tertiary-container": "#fd6c9d",
+                        "primary-container": "#47b347",
+                        "secondary-fixed-dim": "#acc7ff",
+                        "surface-dim": "#d5dccf",
+                        "on-secondary-container": "#003f87",
+                        "outline": "#6F7A74",
+                        "on-secondary-fixed-variant": "#09458e",
+                        "on-tertiary-fixed": "#3f001b",
+                        "on-primary-fixed": "#002202",
+                        "primary-fixed-dim": "#71de6c",
+                        "on-primary-fixed-variant": "#00530e",
+                        "surface-container-highest": "#dee5d8",
+                        "surface-bright": "#f5fcee",
+                        "surface-tint": "#006e15",
+                        "on-tertiary-fixed-variant": "#8b0e46"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "margin-tablet": "24px",
+                        "margin-mobile": "16px",
+                        "gutter": "16px",
+                        "stack-sm": "4px",
+                        "base": "8px",
+                        "stack-md": "12px"
+                    },
+                    "fontFamily": {
+                        "label-lg": ["Inter"],
+                        "title-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-sm-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.1px", "fontWeight": "500" }],
+                        "title-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "display-lg": ["45px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "headline-sm": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.25px", "fontWeight": "400" }],
+                        "title-lg": ["22px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.5px", "fontWeight": "400" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for better appearance */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #becab7;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface antialiased min-h-screen font-body-md selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar Shared Component -->
+<header class="fixed top-0 w-full z-50 bg-surface shadow-sm flex items-center justify-between px-margin-mobile py-base">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant shrink-0">
+<img alt="" class="w-full h-full object-cover" data-alt="A professional, tightly cropped corporate headshot of a young Vietnamese male field operations employee. He is wearing a crisp, modern uniform shirt with a subtle corporate green accent on the collar. The background is a clean, softly lit, light-mode office environment. The lighting is high-key and flattering, emphasizing a trustworthy and energetic demeanor suitable for an enterprise application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCEXHwHPy7GTo5xNLYXifmz0AQo9DCnkCkdnlHhKqXy_9DcrHG1aoWoZHVkxKZFvHdq4iViW6zgqLcAuddVbTvDM8Fz_rjBpH67t_dLXFPZJe8LIblO8rW-amraCOV4H_hLkhZU5XAF3kNFlcSBVNbdDk0de_AbJjqSYaXE-CGX_DOxpDf4JcZG-e0DOh8UrrVwzJTh8nXIg7OPZWUoF0gmIgWuZyy-lWI3Luvt6ph6bcxKLyxi6Inq9Q"/>
+</div>
+<span class="font-headline-sm-mobile text-headline-sm-mobile text-primary font-bold tracking-tight">VTHM Group</span>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors active:opacity-80">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[80px] pb-[100px] px-margin-mobile flex flex-col gap-stack-lg max-w-2xl mx-auto w-full">
+<!-- Profile Header Section -->
+<section class="flex flex-col items-center mt-4">
+<div class="relative mb-4">
+<div class="w-24 h-24 rounded-full overflow-hidden border-4 border-surface-container-lowest shadow-sm">
+<img alt="" class="w-full h-full object-cover" data-alt="A high-resolution, professional portrait of a Vietnamese male field operations agent named Nguyen Van An. He is in his late 20s, looking confidently directly at the camera with a slight, welcoming smile. He wears a dark, modern corporate jacket over a light shirt. The background is a beautifully blurred, bright industrial or corporate space bathed in soft, natural daylight. The overall color palette emphasizes clean whites, professional grays, and a touch of organic green." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-QWtmcitzfeX9IQj-lFar7AZXCE4cwtrz0pjVWJy7BZj9tnvvPX2FE6kyE405-70z1WQjIngcuo5m3ZCdrKJlMzywZTGfSZOWDYH5cNqqePQZfZnr1MomcLvmBHHbCqUD49rJWMyJ9CxIJWxHCXpgDjy4l_0bbLnx5khAcNLRzx51zkrIKn7SLt1TsEwdO61NYzmBr-8hMTRYnT71dOEo1qHqPnq6VAFhgewyJuF8unnduiDH2ROo5w"/>
+</div>
+<button class="absolute bottom-0 right-0 w-8 h-8 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-md border-2 border-surface hover:bg-surface-tint transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface mb-1">Nguyễn Văn An</h1>
+<div class="flex flex-wrap items-center justify-center gap-2 mt-2">
+<div class="flex items-center gap-1 bg-surface-container-high px-3 py-1 rounded-md">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">badge</span>
+<span class="font-label-lg text-label-lg text-on-surface-variant">NV00128</span>
+</div>
+</div>
+<div class="flex flex-wrap items-center justify-center gap-2 mt-3 w-full">
+<div class="flex-1 min-w-[140px] bg-primary-container/20 border border-primary-container/30 px-3 py-2 rounded-lg flex flex-col items-center text-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Chức vụ</span>
+<span class="font-title-md text-title-md text-on-primary-container">Nhân viên thị trường</span>
+</div>
+<div class="flex-1 min-w-[140px] bg-secondary-container/20 border border-secondary-container/30 px-3 py-2 rounded-lg flex flex-col items-center text-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Khu vực</span>
+<span class="font-title-md text-title-md text-on-secondary-container">Khu vực Vĩnh Phúc</span>
+</div>
+</div>
+</section>
+<!-- Menu Section 1: Tài khoản -->
+<section class="flex flex-col gap-stack-sm">
+<h2 class="font-label-lg text-label-lg text-on-surface-variant px-2 uppercase tracking-widest opacity-80">Tài khoản</h2>
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden flex flex-col">
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/10 active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">person</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Thông tin cá nhân</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">lock</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Đổi mật khẩu</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+</div>
+</section>
+<!-- Menu Section 2: Cài đặt ứng dụng -->
+<section class="flex flex-col gap-stack-sm">
+<h2 class="font-label-lg text-label-lg text-on-surface-variant px-2 uppercase tracking-widest opacity-80">Cài đặt ứng dụng</h2>
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden flex flex-col">
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/10 active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">language</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Ngôn ngữ</span>
+<span class="font-body-md text-body-md text-on-surface-variant mr-2">Tiếng Việt</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+<div class="w-full flex items-center p-4 border-b border-outline-variant/10">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">dark_mode</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Chế độ tối</span>
+<!-- Material 3 Switch (Off state for Light mode base) -->
+<button class="w-12 h-8 rounded-full bg-surface-variant border-2 border-outline flex items-center p-1 relative transition-colors duration-300 focus:outline-none">
+<div class="w-4 h-4 rounded-full bg-outline shadow-sm transform transition-transform duration-300 flex items-center justify-center">
+</div>
+</button>
+</div>
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">shield</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Quyền riêng tư</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+</div>
+</section>
+<!-- Menu Section 3: Hỗ trợ -->
+<section class="flex flex-col gap-stack-sm">
+<h2 class="font-label-lg text-label-lg text-on-surface-variant px-2 uppercase tracking-widest opacity-80">Hỗ trợ</h2>
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden flex flex-col">
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/10 active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">help</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Trợ giúp &amp; Hướng dẫn</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+<button class="w-full flex items-center p-4 hover:bg-surface-container-low transition-colors text-left active:bg-surface-variant">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined">article</span>
+</div>
+<span class="font-body-lg text-body-lg text-on-surface flex-1 ml-4">Điều khoản sử dụng</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</button>
+</div>
+</section>
+<!-- Logout Action -->
+<section class="mt-4 pb-4">
+<button class="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-full border border-error text-error bg-error-container/10 hover:bg-error-container/30 active:scale-[0.98] transition-all duration-200">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-lg text-label-lg font-bold">Đăng xuất</span>
+</button>
+<div class="text-center mt-4">
+<span class="font-label-sm text-label-sm text-on-surface-variant opacity-60">Phiên bản 2.4.1 (Build 482)</span>
+</div>
+</section>
+</main>
+<!-- BottomNavBar Shared Component -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 pb-safe bg-surface-container max-w-2xl mx-auto md:hidden">
+<!-- Trang chủ -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant/50 active:scale-95 transition-transform duration-200 rounded-lg">
+<div class="flex items-center justify-center h-8 w-16 rounded-full mb-1 transition-colors">
+<span class="material-symbols-outlined">home</span>
+</div>
+<span class="font-label-sm text-[12px] font-medium">Trang chủ</span>
+</button>
+<!-- Tuyến -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant/50 active:scale-95 transition-transform duration-200 rounded-lg">
+<div class="flex items-center justify-center h-8 w-16 rounded-full mb-1 transition-colors">
+<span class="material-symbols-outlined">route</span>
+</div>
+<span class="font-label-sm text-[12px] font-medium">Tuyến</span>
+</button>
+<!-- Biểu mẫu -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant/50 active:scale-95 transition-transform duration-200 rounded-lg">
+<div class="flex items-center justify-center h-8 w-16 rounded-full mb-1 transition-colors">
+<span class="material-symbols-outlined">assignment</span>
+</div>
+<span class="font-label-sm text-[12px] font-medium">Biểu mẫu</span>
+</button>
+<!-- Cá nhân (Active) -->
+<button class="flex flex-col items-center justify-center px-5 py-1 active:scale-95 transition-transform duration-200 rounded-lg text-primary">
+<div class="flex items-center justify-center h-8 w-16 bg-primary-container text-on-primary-container rounded-full mb-1 transition-colors">
+<span class="material-symbols-outlined icon-fill">person</span>
+</div>
+<span class="font-label-sm text-[12px] font-bold text-on-surface">Cá nhân</span>
+</button>
+</nav>
+<!-- Spacer for desktop mapping of max-w-2xl -->
+<div class="hidden md:block fixed bottom-0 w-full h-8 bg-surface z-40 border-t border-outline-variant/10"></div>
+</body></html>

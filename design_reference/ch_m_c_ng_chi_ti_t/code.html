@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Chấm công - VTHM Group</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed": "#001a40",
+                        "surface-container-low": "#eff6e8",
+                        "surface-variant": "#dee5d8",
+                        "primary-fixed": "#8dfb85",
+                        "surface-container": "#e9f0e3",
+                        "on-error-container": "#93000a",
+                        "on-surface": "#171d15",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#ab2c5e",
+                        "inverse-primary": "#71de6c",
+                        "inverse-on-surface": "#ecf3e6",
+                        "error": "#ba1a1a",
+                        "primary": "#006e15",
+                        "background": "#f5fcee",
+                        "on-surface-variant": "#3f4a3b",
+                        "inverse-surface": "#2c3229",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "surface": "#F7FAF6",
+                        "tertiary-fixed": "#ffd9e1",
+                        "on-tertiary-container": "#6e0034",
+                        "on-background": "#171d15",
+                        "secondary": "#2e5da8",
+                        "on-tertiary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#d7e2ff",
+                        "surface-container-high": "#e4eadd",
+                        "surface-container-lowest": "#ffffff",
+                        "outline-variant": "#becab7",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#003f08",
+                        "secondary-container": "#84aefe",
+                        "tertiary-container": "#fd6c9d",
+                        "primary-container": "#47b347",
+                        "secondary-fixed-dim": "#acc7ff",
+                        "surface-dim": "#d5dccf",
+                        "on-secondary-container": "#003f87",
+                        "outline": "#6F7A74",
+                        "on-secondary-fixed-variant": "#09458e",
+                        "on-tertiary-fixed": "#3f001b",
+                        "on-primary-fixed": "#002202",
+                        "primary-fixed-dim": "#71de6c",
+                        "on-primary-fixed-variant": "#00530e",
+                        "surface-container-highest": "#dee5d8",
+                        "surface-bright": "#f5fcee",
+                        "surface-tint": "#006e15",
+                        "on-tertiary-fixed-variant": "#8b0e46"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "margin-tablet": "24px",
+                        "margin-mobile": "16px",
+                        "gutter": "16px",
+                        "stack-sm": "4px",
+                        "base": "8px",
+                        "stack-md": "12px"
+                    },
+                    "fontFamily": {
+                        "label-lg": ["Inter"],
+                        "title-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-sm-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.1px", "fontWeight": "500" }],
+                        "title-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "display-lg": ["45px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "headline-sm": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.25px", "fontWeight": "400" }],
+                        "title-lg": ["22px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.5px", "fontWeight": "400" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface font-body-md h-screen flex flex-col overflow-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface shadow-sm flex items-center justify-between px-margin-mobile py-base md:hidden">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center overflow-hidden">
+<img alt="Avatar" class="object-cover w-full h-full" data-alt="A professional headshot of a corporate employee on a clean, light green background, symbolizing corporate identity in a modern industrial setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZINWdHYARXvJ3EOoMg_srzkKpug6eylqOnyCcyuAT8iUtN1bKdHuqGpHHsWfjjFdYMQd6y5NyuiUHEdyo_zN0Mae2IazaGvgeFXxwXjavIXqVCv3UOBizbFBrfsGHez912dr-cz1fvgrU2F3kRrxODfzTrP6dqhxEsoQYaQ7c6HnhdvTsKHNa9C5IlniPhVI6k1KwQaJiE_k9bKzuzOWj_lNgU2b2155bNM2bgFE0YMNqPj6RU5J6zw"/>
+</div>
+<span class="font-headline-sm-mobile text-headline-sm-mobile text-primary">VTHM Group</span>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors text-on-surface-variant active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto mt-16 mb-20 md:mt-0 md:mb-0 px-margin-mobile md:px-margin-tablet py-stack-lg flex flex-col gap-stack-lg max-w-4xl mx-auto w-full">
+<!-- Hero / Timer Section -->
+<section class="flex flex-col items-center justify-center py-stack-lg relative">
+<div class="bg-primary/10 text-primary px-4 py-1 rounded-full font-label-lg text-label-lg mb-4 flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                Đang làm việc
+            </div>
+<div class="font-display-lg text-display-lg text-on-surface mb-2 tracking-tight" id="currentTime">14:26:00</div>
+<div class="font-body-lg text-body-lg text-on-surface-variant">Thứ Sáu, 15/08/2026</div>
+</section>
+<!-- Location Card -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 shadow-sm flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary">location_on</span>
+<span class="font-title-md text-title-md">Vị trí hiện tại</span>
+</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded">GPS: ±8m</div>
+</div>
+<div class="font-body-md text-body-md text-on-surface-variant">Vĩnh Yên, Vĩnh Phúc</div>
+<div class="h-32 rounded-lg bg-surface-variant relative overflow-hidden flex items-center justify-center" data-location="Vinh Yen, Vietnam" style="">
+<img alt="Map" class="object-cover w-full h-full opacity-70" data-alt="A modern UI map snippet showing an industrial park area in Vinh Yen, Vietnam. Soft, clean light mode map style with subtle green accents indicating a verified location." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRJpOYPqcxwHKlAE80lh8ch-X1qL7Dk7aAEAVJqTxt3OJ8a_iYjWyH0hiMuCcFRyL_LWLpbHHTfStLFAgyQBfv61vPk5ux-UwlMznY-CBRqG9QUkm-zYCoQmLR9vTvTYS43kVl1aWb1xr19otY2DnS_vhkQmWL4t415cwhjlOohNrQHXPLIVcuhQdmlvURMszHZ9MSwXi0tlWoB8dxuSkeohs76rx6oDVinMSTMbIswyhKnnAmgVYn0A"/>
+<div class="absolute w-4 h-4 bg-primary rounded-full border-2 border-white shadow-md animate-bounce"></div>
+</div>
+</section>
+<!-- Action / Status Area -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 shadow-sm flex flex-col gap-stack-md">
+<div class="flex justify-between items-center pb-3 border-b border-surface-variant">
+<span class="font-body-md text-body-md text-on-surface-variant">Đã chấm công vào:</span>
+<span class="font-title-md text-title-md text-on-surface">07:42</span>
+</div>
+<div class="flex justify-between items-center py-2">
+<span class="font-body-md text-body-md text-on-surface-variant">Thời gian làm việc:</span>
+<span class="font-title-md text-title-md text-primary" id="workTime">06:44:24</span>
+</div>
+<button class="w-full mt-4 bg-[#47B347] hover:bg-primary-container/90 active:scale-95 transition-all duration-200 text-white rounded-lg py-4 font-title-lg text-title-lg shadow-[0_4px_8px_rgba(0,0,0,0.12)] flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">logout</span>
+                CHẤM CÔNG RA
+            </button>
+</section>
+<!-- Bento Grid for Stats & History -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-stack-lg">
+<!-- Statistics -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 shadow-sm flex flex-col gap-4">
+<div class="font-title-md text-title-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">bar_chart</span>
+                    Tổng kết tháng 08/2026
+                </div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface p-3 rounded-lg flex flex-col justify-center border border-surface-variant">
+<span class="font-headline-sm text-headline-sm text-primary">18</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Ngày công</span>
+</div>
+<div class="bg-surface p-3 rounded-lg flex flex-col justify-center border border-surface-variant">
+<span class="font-headline-sm text-headline-sm text-error">2</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Đi muộn</span>
+</div>
+</div>
+</section>
+<!-- History -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 shadow-sm flex flex-col gap-3">
+<div class="font-title-md text-title-md text-on-surface flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">history</span>
+                        Lịch sử gần đây
+                    </div>
+<button class="text-primary font-label-sm text-label-sm hover:underline">Xem tất cả</button>
+</div>
+<div class="flex flex-col gap-2 mt-2">
+<!-- Item 1 -->
+<div class="flex items-center justify-between p-2 hover:bg-surface rounded-lg transition-colors border-l-2 border-primary pl-3 bg-surface/50">
+<div class="flex flex-col">
+<span class="font-title-md text-title-md text-on-surface">14/08/2026</span>
+<span class="font-body-sm text-body-md text-on-surface-variant">07:55 - 17:05</span>
+</div>
+<span class="bg-primary/10 text-primary px-2 py-1 rounded font-label-sm text-label-sm">Đúng giờ</span>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between p-2 hover:bg-surface rounded-lg transition-colors border-l-2 border-error pl-3 bg-surface/50">
+<div class="flex flex-col">
+<span class="font-title-md text-title-md text-on-surface">13/08/2026</span>
+<span class="font-body-sm text-body-md text-on-surface-variant">08:15 - 17:00</span>
+</div>
+<span class="bg-error/10 text-error px-2 py-1 rounded font-label-sm text-label-sm">Đi muộn</span>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 pb-safe bg-surface-container shadow-[0_-2px_8px_rgba(0,0,0,0.05)] md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-5 py-1 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">home</span>
+<span class="font-label-sm text-label-sm mt-1">Trang chủ</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 active:scale-95 transition-transform duration-200 shadow-sm" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">assignment</span>
+<span class="font-label-sm text-label-sm mt-1">Chấm công</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-5 py-1 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">route</span>
+<span class="font-label-sm text-label-sm mt-1">Tuyến</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant px-5 py-1 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">person</span>
+<span class="font-label-sm text-label-sm mt-1">Cá nhân</span>
+</a>
+</nav>
+<script>
+        // Simple script to keep the timer ticking for visual effect
+        setInterval(() => {
+            const timeElement = document.getElementById('currentTime');
+            if(timeElement) {
+                let [hours, minutes, seconds] = timeElement.innerText.split(':').map(Number);
+                seconds++;
+                if(seconds >= 60) { seconds = 0; minutes++; }
+                if(minutes >= 60) { minutes = 0; hours++; }
+                if(hours >= 24) { hours = 0; }
+                timeElement.innerText = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            const workTimeElement = document.getElementById('workTime');
+            if(workTimeElement) {
+                let [h, m, s] = workTimeElement.innerText.split(':').map(Number);
+                s++;
+                if(s >= 60) { s = 0; m++; }
+                if(m >= 60) { m = 0; h++; }
+                workTimeElement.innerText = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+    </script>
+</body></html>

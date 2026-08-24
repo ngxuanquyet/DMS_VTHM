@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Thông báo - VTHM Group</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed-variant": "#00530e",
+                        "primary": "#006e15",
+                        "surface-bright": "#f5fcee",
+                        "tertiary": "#ab2c5e",
+                        "surface-container-high": "#e4eadd",
+                        "on-tertiary-fixed": "#3f001b",
+                        "on-error": "#ffffff",
+                        "surface-dim": "#d5dccf",
+                        "background": "#f5fcee",
+                        "outline": "#6F7A74",
+                        "on-secondary-fixed-variant": "#09458e",
+                        "inverse-surface": "#2c3229",
+                        "secondary-fixed-dim": "#acc7ff",
+                        "inverse-on-surface": "#ecf3e6",
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed": "#001a40",
+                        "surface-container-low": "#eff6e8",
+                        "on-surface": "#171d15",
+                        "inverse-primary": "#71de6c",
+                        "tertiary-fixed": "#ffd9e1",
+                        "primary-container": "#47b347",
+                        "on-secondary": "#ffffff",
+                        "tertiary-container": "#fd6c9d",
+                        "primary-fixed": "#8dfb85",
+                        "primary-fixed-dim": "#71de6c",
+                        "on-primary-fixed": "#002202",
+                        "on-tertiary-container": "#6e0034",
+                        "surface-variant": "#dee5d8",
+                        "surface-tint": "#006e15",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "on-tertiary-fixed-variant": "#8b0e46",
+                        "outline-variant": "#becab7",
+                        "surface-container-highest": "#dee5d8",
+                        "secondary": "#2e5da8",
+                        "secondary-container": "#84aefe",
+                        "surface": "#F7FAF6",
+                        "secondary-fixed": "#d7e2ff",
+                        "on-background": "#171d15",
+                        "on-primary-container": "#003f08",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container": "#e9f0e3",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#3f4a3b",
+                        "error": "#ba1a1a",
+                        "on-secondary-container": "#003f87",
+                        "on-tertiary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-tablet": "24px",
+                        "gutter": "16px",
+                        "stack-lg": "24px",
+                        "base": "8px",
+                        "stack-md": "12px",
+                        "margin-mobile": "16px",
+                        "stack-sm": "4px",
+                        "safe": "env(safe-area-inset-bottom)"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "label-lg": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "title-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm-mobile": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.25px", "fontWeight": "400" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "display-lg": ["45px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }],
+                        "title-lg": ["22px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.1px", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "title-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.5px", "fontWeight": "400" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased min-h-screen pb-[100px]">
+<!-- App Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface shadow-sm flex items-center justify-between px-margin-mobile py-base h-16">
+<button class="text-on-surface-variant hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-title-lg text-title-lg font-semibold text-on-surface flex-1 ml-2">Thông báo</h1>
+<button class="text-primary hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined">done_all</span>
+</button>
+</header>
+<!-- Content -->
+<main class="pt-[72px] px-margin-mobile flex flex-col gap-stack-lg">
+<!-- Filters -->
+<div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 pt-2 -mx-margin-mobile px-margin-mobile">
+<button class="flex items-center justify-center px-4 py-2 rounded-full font-label-lg text-label-lg bg-primary-container text-on-primary-container whitespace-nowrap active:scale-95 transition-transform">
+                Tất cả
+            </button>
+<button class="flex items-center justify-center px-4 py-2 rounded-full font-label-lg text-label-lg bg-surface text-on-surface-variant border border-outline-variant whitespace-nowrap active:scale-95 transition-transform hover:bg-surface-variant">
+                Chưa đọc
+            </button>
+<button class="flex items-center justify-center px-4 py-2 rounded-full font-label-lg text-label-lg bg-surface text-on-surface-variant border border-outline-variant whitespace-nowrap active:scale-95 transition-transform hover:bg-surface-variant">
+                Công việc
+            </button>
+<button class="flex items-center justify-center px-4 py-2 rounded-full font-label-lg text-label-lg bg-surface text-on-surface-variant border border-outline-variant whitespace-nowrap active:scale-95 transition-transform hover:bg-surface-variant">
+                Hệ thống
+            </button>
+</div>
+<!-- Section: Hôm nay -->
+<section class="flex flex-col gap-stack-sm">
+<h2 class="font-title-md text-title-md text-on-surface-variant mb-2">Hôm nay</h2>
+<div class="flex flex-col gap-stack-md">
+<!-- Unread Notification 1 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex gap-4 relative border border-outline-variant/30 active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-primary-container/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">fingerprint</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Chấm công thành công</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Bạn đã chấm công vào lúc 07:42 hôm nay.</p>
+<span class="font-label-sm text-label-sm text-primary mt-2">5 phút trước</span>
+</div>
+<div class="absolute top-6 right-4 w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<!-- Unread Notification 2 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex gap-4 relative border border-outline-variant/30 active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-tertiary-container/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' 1;">route</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Tuyến làm việc sắp bắt đầu</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Tuyến Vĩnh Yên – Bình Xuyên còn 4 điểm cần hoàn thành.</p>
+<span class="font-label-sm text-label-sm text-primary mt-2">20 phút trước</span>
+</div>
+<div class="absolute top-6 right-4 w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<!-- Unread Notification 3 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex gap-4 relative border border-outline-variant/30 active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-secondary-container/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">assignment</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Biểu mẫu cần hoàn thành</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Bạn có 3 biểu mẫu đang chờ xử lý.</p>
+<span class="font-label-sm text-label-sm text-primary mt-2">1 giờ trước</span>
+</div>
+<div class="absolute top-6 right-4 w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<!-- Read Notification 4 -->
+<div class="bg-surface-container-lowest rounded-xl p-4 flex gap-4 border border-outline-variant active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">location_on</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md text-on-surface">Hoàn thành điểm Check-in</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Bạn đã hoàn thành check-in tại Cửa hàng Tạp hóa Lan.</p>
+<span class="font-label-sm text-label-sm text-outline mt-2">2 giờ trước</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section: Trước đó -->
+<section class="flex flex-col gap-stack-sm mb-4">
+<h2 class="font-title-md text-title-md text-on-surface-variant mb-2">Trước đó</h2>
+<div class="flex flex-col gap-stack-md">
+<!-- Read Notification 5 -->
+<div class="bg-surface-container-lowest rounded-xl p-4 flex gap-4 border border-outline-variant active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">check_circle</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md text-on-surface">Tuyến đã hoàn thành</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Bạn đã hoàn thành tuyến Vĩnh Yên – Bình Xuyên với 12/12 điểm.</p>
+<span class="font-label-sm text-label-sm text-outline mt-2">Hôm qua, 16:45</span>
+</div>
+</div>
+<!-- Read Notification 6 -->
+<div class="bg-surface-container-lowest rounded-xl p-4 flex gap-4 border border-outline-variant active:scale-[0.98] transition-transform">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">system_update</span>
+</div>
+<div class="flex-1 flex flex-col justify-center">
+<h3 class="font-title-md text-title-md text-on-surface">Thông báo hệ thống</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 line-clamp-2">Ứng dụng VTHM Group đã được cập nhật lên phiên bản mới.</p>
+<span class="font-label-sm text-label-sm text-outline mt-2">18/08/2026</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 pb-safe bg-surface-container">
+<!-- Inactive Tab -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant active:scale-95 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-sm text-label-sm mt-1">Trang chủ</span>
+</a>
+<!-- Inactive Tab -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant active:scale-95 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">route</span>
+<span class="font-label-sm text-label-sm mt-1">Tuyến</span>
+</a>
+<!-- Inactive Tab -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant active:scale-95 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">assignment</span>
+<span class="font-label-sm text-label-sm mt-1">Biểu mẫu</span>
+</a>
+<!-- Inactive Tab -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-variant active:scale-95 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-sm text-label-sm mt-1">Cá nhân</span>
+</a>
+</nav>
+</body></html>

@@ -1,30 +1,53 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vthm_dms/core/constants/app_constants.dart';
+import 'package:vthm_dms/features/auth/domain/entities/user_entity.dart';
+import 'package:vthm_dms/features/forms/domain/entities/form_entity.dart';
 import 'package:vthm_dms/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('VthmApp renders and pumps splash screen', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: VthmApp(),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.byType(VthmApp), findsOneWidget);
+    // Allow splash timer to complete
+    await tester.pump(const Duration(seconds: 3));
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('UserEntity initializes correctly', () {
+    const user = UserEntity(
+      id: '1',
+      name: 'Nguyen Van An',
+      employeeId: 'NV00128',
+      role: 'Sales Rep',
+      region: 'Vinh Phuc',
+      avatarUrl: AppConstants.userAvatarUrl,
+      email: 'an.nv@vthm.vn',
+      phone: '0912345678',
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(user.name, 'Nguyen Van An');
+    expect(user.employeeId, 'NV00128');
+  });
+
+  test('FormItemEntity initializes correctly', () {
+    const form = FormItemEntity(
+      id: 'FORM-01',
+      title: 'Khảo sát điểm bán',
+      dealerName: 'Đại lý Thành Công',
+      deadline: '17:00',
+      status: FormStatusType.todo,
+      statusLabel: 'Chưa thực hiện',
+      questionsCount: 8,
+      answeredCount: 0,
+      progressPercent: 0.0,
+    );
+
+    expect(form.questionsCount, 8);
+    expect(form.status, FormStatusType.todo);
   });
 }
