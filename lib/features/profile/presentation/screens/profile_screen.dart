@@ -447,6 +447,13 @@ class ProfileScreen extends ConsumerWidget {
                     },
                     isDark: isDark,
                   ),
+                  const Divider(height: 1),
+                  _buildMenuItem(
+                    icon: Icons.mic_none_rounded,
+                    title: strings.voiceToTextMenu,
+                    onTap: () => context.push('/voice-to-text'),
+                    isDark: isDark,
+                  ),
                 ],
               ),
             ),

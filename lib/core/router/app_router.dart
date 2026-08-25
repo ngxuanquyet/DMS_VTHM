@@ -9,6 +9,7 @@ import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/profile/presentation/screens/voice_to_text_screen.dart';
 import '../../features/route/presentation/screens/check_in_screen.dart';
 import '../../features/route/presentation/screens/route_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
@@ -126,6 +127,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/profile/personal-info',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const PersonalInfoScreen(),
+      ),
+      GoRoute(
+        path: '/voice-to-text',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const VoiceToTextScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

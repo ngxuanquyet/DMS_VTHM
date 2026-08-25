@@ -230,4 +230,37 @@ class AppStrings {
   String get locationEnabledToast => isVietnamese
       ? 'Đã bật định vị vị trí thành công'
       : 'Location services enabled successfully';
+
+  // Voice to Text (STT)
+  String get voiceToTextTitle =>
+      isVietnamese ? 'Thử nghiệm Voice to Text' : 'Voice to Text Testing';
+  String get voiceToTextMenu =>
+      isVietnamese ? 'Thử nghiệm Voice to Text (STT)' : 'Test Voice to Text (STT)';
+  String get tapToSpeak =>
+      isVietnamese ? 'Nhấn để bắt đầu nói' : 'Tap to start speaking';
+  String get listening =>
+      isVietnamese ? 'Đang lắng nghe bạn nói...' : 'Listening to your voice...';
+  String get speechRecognized =>
+      isVietnamese ? 'Văn bản nhận diện được' : 'Recognized Speech';
+  String get noSpeechYet => isVietnamese
+      ? 'Hãy nhấn vào nút micro bên dưới và nói điều gì đó...'
+      : 'Tap the microphone button below and say something...';
+  String get copyText => isVietnamese ? 'Sao chép' : 'Copy';
+  String get textCopied =>
+      isVietnamese ? 'Đã sao chép vào bộ nhớ tạm!' : 'Copied to clipboard!';
+  String get clearText => isVietnamese ? 'Xóa nội dung' : 'Clear';
+  String get micPermissionDenied =>
+      isVietnamese ? 'Chưa cấp quyền micro' : 'Microphone permission denied';
+  String get micPermissionRequired => isVietnamese
+      ? 'Vui lòng cấp quyền micro để sử dụng tính năng giọng nói.'
+      : 'Please grant microphone permission to use voice recognition.';
+  String get speechNotAvailable => isVietnamese
+      ? 'Thiết bị không hỗ trợ hoặc nhận diện giọng nói chưa sẵn sàng'
+      : 'Speech recognition engine is not available on this device';
+  String get vietnameseLocale => 'Tiếng Việt (vi-VN)';
+  String get englishLocale => 'English (en-US)';
+  String get confidenceScore =>
+      isVietnamese ? 'Độ chính xác' : 'Confidence';
+  String get recognitionLocaleLabel =>
+      isVietnamese ? 'Ngôn ngữ nhận diện' : 'Recognition Language';
 }

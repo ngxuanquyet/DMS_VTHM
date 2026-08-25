@@ -381,4 +381,23 @@ void main() {
       container.dispose();
     });
   });
+
+  group('Voice to Text (STT) Tests', () {
+    test('Voice to text strings translations work accurately', () {
+      final viStrings = AppStrings(AppLanguage.vi);
+      final enStrings = AppStrings(AppLanguage.en);
+
+      expect(viStrings.voiceToTextTitle, 'Thử nghiệm Voice to Text');
+      expect(enStrings.voiceToTextTitle, 'Voice to Text Testing');
+
+      expect(viStrings.voiceToTextMenu, 'Thử nghiệm Voice to Text (STT)');
+      expect(enStrings.voiceToTextMenu, 'Test Voice to Text (STT)');
+
+      expect(viStrings.tapToSpeak, 'Nhấn để bắt đầu nói');
+      expect(enStrings.tapToSpeak, 'Tap to start speaking');
+
+      expect(viStrings.speechRecognized, 'Văn bản nhận diện được');
+      expect(enStrings.speechRecognized, 'Recognized Speech');
+    });
+  });
 }
