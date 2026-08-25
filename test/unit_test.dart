@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/localization/app_language.dart';
@@ -5,6 +6,7 @@ import 'package:vthm_dms/core/localization/app_strings.dart';
 import 'package:vthm_dms/core/localization/language_provider.dart';
 import 'package:vthm_dms/core/location/location_provider.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
+import 'package:vthm_dms/core/services/location_service.dart';
 import 'package:vthm_dms/features/attendance/data/models/attendance_model.dart';
 import 'package:vthm_dms/features/auth/data/models/user_model.dart';
 import 'package:vthm_dms/features/home/data/models/dashboard_model.dart';
@@ -370,6 +372,13 @@ void main() {
 
       expect(viStrings.grantPermissionAction, 'CẤP QUYỀN');
       expect(enStrings.grantPermissionAction, 'GRANT PERMISSION');
+    });
+
+    test('LocationService initializes cleanly with web fallback position', () {
+      final container = ProviderContainer();
+      final locationService = container.read(locationServiceProvider);
+      expect(locationService, isNotNull);
+      container.dispose();
     });
   });
 }

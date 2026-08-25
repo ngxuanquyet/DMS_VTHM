@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/language_provider.dart';
-import '../../../../core/location/location_provider.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -155,10 +155,10 @@ class AttendanceDetailScreen extends ConsumerWidget {
                               height: 52,
                               icon: Icons.logout_rounded,
                               onPressed: () async {
-                                final hasLocation = await ref
-                                    .read(locationProvider.notifier)
-                                    .requestLocationAccess();
-                                if (!hasLocation) return;
+                                final position = await ref
+                                    .read(locationServiceProvider)
+                                    .checkAndGetLocation(context);
+                                if (position == null) return;
 
                                 vm.toggleAttendance();
                                 if (context.mounted) {

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
-import '../../../../core/location/location_provider.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -526,10 +526,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> with SingleTicker
                           icon: Icons.logout_rounded,
                           isLoading: state.status == CheckInStatus.checkingOut,
                           onPressed: () async {
-                            final hasLocation = await ref
-                                .read(locationProvider.notifier)
-                                .requestLocationAccess();
-                            if (!hasLocation) return;
+                            final position = await ref
+                                .read(locationServiceProvider)
+                                .checkAndGetLocation(context);
+                            if (position == null) return;
 
                             final success = await vm.checkout();
                             if (success && context.mounted) {
