@@ -3,8 +3,9 @@ class AppConstants {
 
   static const String appName = 'VTHM Group';
   static const String appSubtitle = 'Hệ thống Quản lý Nhân viên Thị trường';
-  static const String appVersion = 'Phiên bản 2.4.1 (Field Ops)';
-  static const String appVersionBuild = 'Phiên bản 2.4.1 (Build 482)';
+  static const String appVersion = 'Phiên bản 1.0.0 (Field Ops)';
+  static const String appVersionBuild = 'Phiên bản 1.0.0 (Build 1)';
+  static const String appVersionSimple = 'Phiên bản 1.0.0';
 
   // API Endpoints
   static const String baseUrl = 'https://api-app.vthmgroup.vn';
