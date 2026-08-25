@@ -18,23 +18,28 @@ class ProfileRepositoryImpl implements ProfileRepository {
     final prefs = await SharedPreferences.getInstance();
     final isDarkSaved = prefs.getBool(AppConstants.keyIsDarkMode) ?? false;
 
-    // Try fetching freshest live profile details if online
+    // 1. Try fetching freshest live profile details from API /user/me/profile
     try {
       final detail = await _apiService.getUserProfileDetail();
+      final name = detail.fullName.trim().isNotEmpty
+          ? detail.fullName
+          : (detail.username.trim().isNotEmpty ? detail.username : 'Không xác định');
+      final employeeId = detail.employeeCode.trim().isNotEmpty
+          ? detail.employeeCode
+          : 'Không xác định';
+      final role = detail.jobName.trim().isNotEmpty
+          ? detail.jobName
+          : 'Không xác định';
+      final department = detail.deptName.trim().isNotEmpty
+          ? detail.deptName
+          : 'Không xác định';
+
       return UserProfileEntity(
         id: detail.id.toString(),
-        name: detail.fullName.trim().isNotEmpty
-            ? detail.fullName
-            : (detail.username.trim().isNotEmpty ? detail.username : 'Không xác định'),
-        employeeId: detail.employeeCode.trim().isNotEmpty
-            ? detail.employeeCode
-            : 'Không xác định',
-        role: detail.jobName.trim().isNotEmpty
-            ? detail.jobName
-            : 'Không xác định',
-        department: detail.deptName.trim().isNotEmpty
-            ? detail.deptName
-            : 'Không xác định',
+        name: name,
+        employeeId: employeeId,
+        role: role,
+        department: department,
         avatarUrl: detail.avatarUrl.trim().isNotEmpty
             ? detail.avatarUrl
             : AppConstants.userAvatarUrl,
@@ -45,22 +50,27 @@ class ProfileRepositoryImpl implements ProfileRepository {
       );
     } catch (_) {}
 
+    // 2. Fallback to cached user data from login
     final userJson = prefs.getString(AppConstants.keyUserData);
     if (userJson != null) {
       try {
         final map = jsonDecode(userJson) as Map<String, dynamic>;
         final userModel = UserModel.fromJson(map);
+        final name = userModel.displayName.trim().isNotEmpty
+            ? userModel.displayName
+            : (userModel.username.trim().isNotEmpty ? userModel.username : 'Không xác định');
+        final employeeId = userModel.employeeCode.trim().isNotEmpty
+            ? userModel.employeeCode
+            : 'Không xác định';
+        final role = userModel.jobTitle.trim().isNotEmpty
+            ? userModel.jobTitle
+            : 'Không xác định';
+
         return UserProfileEntity(
           id: userModel.id,
-          name: userModel.displayName.trim().isNotEmpty
-              ? userModel.displayName
-              : (userModel.username.trim().isNotEmpty ? userModel.username : 'Không xác định'),
-          employeeId: userModel.employeeCode.trim().isNotEmpty
-              ? userModel.employeeCode
-              : 'Không xác định',
-          role: userModel.jobTitle.trim().isNotEmpty
-              ? userModel.jobTitle
-              : 'Không xác định',
+          name: name,
+          employeeId: employeeId,
+          role: role,
           department: 'Không xác định',
           avatarUrl: userModel.avatarUrl.trim().isNotEmpty
               ? userModel.avatarUrl
@@ -73,35 +83,25 @@ class ProfileRepositoryImpl implements ProfileRepository {
       } catch (_) {}
     }
 
-    try {
-      final model = await _apiService.getProfile();
-      final entity = model.toEntity();
-      return UserProfileEntity(
-        id: entity.id,
-        name: entity.name.trim().isNotEmpty ? entity.name : 'Không xác định',
-        employeeId: entity.employeeId.trim().isNotEmpty ? entity.employeeId : 'Không xác định',
-        role: entity.role.trim().isNotEmpty ? entity.role : 'Không xác định',
-        department: entity.department.trim().isNotEmpty ? entity.department : 'Không xác định',
-        avatarUrl: entity.avatarUrl.trim().isNotEmpty ? entity.avatarUrl : AppConstants.userAvatarUrl,
-        email: entity.email,
-        phone: entity.phone,
-        isDarkMode: isDarkSaved,
-        language: entity.language,
-      );
-    } catch (_) {
-      return UserProfileEntity(
-        id: '',
-        name: 'Không xác định',
-        employeeId: 'Không xác định',
-        role: 'Không xác định',
-        department: 'Không xác định',
-        avatarUrl: AppConstants.userAvatarUrl,
-        email: '',
-        phone: '',
-        isDarkMode: isDarkSaved,
-        language: 'Tiếng Việt',
-      );
-    }
+    // 3. Fallback to 'Không xác định'
+    return UserProfileEntity(
+      id: '',
+      name: 'Không xác định',
+      employeeId: 'Không xác định',
+      role: 'Không xác định',
+      department: 'Không xác định',
+      avatarUrl: AppConstants.userAvatarUrl,
+      email: '',
+      phone: '',
+      isDarkMode: isDarkSaved,
+      language: 'Tiếng Việt',
+    );
+  }
+
+  @override
+  Future<void> updateDarkMode(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppConstants.keyIsDarkMode, isDark);
   }
 
   @override
@@ -114,11 +114,5 @@ class ProfileRepositoryImpl implements ProfileRepository {
   Future<List<UserRelationEntity>> getUserRelations() async {
     final models = await _apiService.getUserRelations();
     return models.map((m) => m.toEntity()).toList();
-  }
-
-  @override
-  Future<void> updateDarkMode(bool isDark) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(AppConstants.keyIsDarkMode, isDark);
   }
 }

@@ -148,13 +148,17 @@ class ProfileScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: const VthmTopAppBar(),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.marginMobile,
-          vertical: AppSpacing.stackMd,
-        ),
-        child: Column(
-          children: [
+      body: RefreshIndicator(
+        color: AppColors.primaryContainer,
+        onRefresh: () => profileVM.loadProfile(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.marginMobile,
+            vertical: AppSpacing.stackMd,
+          ),
+          child: Column(
+            children: [
             // Profile Header
             Center(
               child: Column(
@@ -508,6 +512,7 @@ class ProfileScreen extends ConsumerWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

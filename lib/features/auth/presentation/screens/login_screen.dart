@@ -9,6 +9,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../profile/presentation/viewmodels/profile_view_model.dart';
 import '../states/auth_state.dart';
 import '../viewmodels/auth_view_model.dart';
 
@@ -20,8 +21,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  late TextEditingController _usernameController;
-  late TextEditingController _passwordController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
 
     if (success && mounted) {
+      ref.read(profileViewModelProvider.notifier).loadProfile();
       context.go('/home');
     }
   }

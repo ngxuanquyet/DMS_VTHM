@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../profile/presentation/viewmodels/profile_view_model.dart';
 import '../viewmodels/auth_view_model.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -50,6 +51,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
   Future<void> _checkAuth() async {
     try {
       _isAuthenticated = await ref.read(authViewModelProvider.notifier).checkAuth();
+      if (_isAuthenticated) {
+        ref.read(profileViewModelProvider.notifier).loadProfile();
+      }
     } catch (_) {
       _isAuthenticated = false;
     } finally {
