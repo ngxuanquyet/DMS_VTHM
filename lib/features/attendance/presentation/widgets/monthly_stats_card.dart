@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/attendance_entity.dart';
 
-class MonthlyStatsCard extends StatelessWidget {
+class MonthlyStatsCard extends ConsumerWidget {
   final MonthlyAttendanceStatsEntity stats;
 
   const MonthlyStatsCard({super.key, required this.stats});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -28,7 +31,7 @@ class MonthlyStatsCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Tổng kết ${stats.monthLabel}',
+                '${strings.monthlySummaryPrefix} ${stats.monthLabel}',
                 style: AppTypography.titleMedium(
                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                 ).copyWith(fontWeight: FontWeight.w600),
@@ -60,7 +63,7 @@ class MonthlyStatsCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'NGÀY CÔNG',
+                        strings.workingDaysCaps,
                         style: AppTypography.labelSmall(
                           color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                         ).copyWith(letterSpacing: 0.8),
@@ -92,7 +95,7 @@ class MonthlyStatsCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'ĐI MUỘN',
+                        strings.lateDaysCaps,
                         style: AppTypography.labelSmall(
                           color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                         ).copyWith(letterSpacing: 0.8),

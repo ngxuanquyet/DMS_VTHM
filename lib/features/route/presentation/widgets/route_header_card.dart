@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/route_entity.dart';
 
-class RouteHeaderCard extends StatelessWidget {
+class RouteHeaderCard extends ConsumerWidget {
   final RouteDetailEntity route;
 
   const RouteHeaderCard({super.key, required this.route});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
+
+    final completedText = strings.isVietnamese ? 'hoàn thành' : 'completed';
+    final remainingText = strings.isVietnamese ? 'còn lại' : 'remaining';
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -34,7 +40,7 @@ class RouteHeaderCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'TIẾN ĐỘ',
+                    strings.routeProgress.toUpperCase(),
                     style: AppTypography.labelSmall(
                       color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                     ).copyWith(letterSpacing: 0.8),
@@ -42,19 +48,19 @@ class RouteHeaderCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   RichText(
                     text: TextSpan(
-                      text: '${route.totalDealers} điểm • ',
+                      text: '${route.totalDealers} ${strings.stopsUnit} • ',
                       style: AppTypography.bodyMedium(
                         color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                       ),
                       children: [
                         TextSpan(
-                          text: '${route.completedDealers} hoàn thành',
+                          text: '${route.completedDealers} $completedText',
                           style: AppTypography.bodyMedium(
                             color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                           ).copyWith(fontWeight: FontWeight.w600),
                         ),
                         TextSpan(
-                          text: ' • ${route.pendingDealers} còn lại',
+                          text: ' • ${route.pendingDealers} $remainingText',
                           style: AppTypography.bodyMedium(
                             color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                           ),

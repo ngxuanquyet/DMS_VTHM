@@ -18,4 +18,16 @@ class AuthApiService {
     );
     return response as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> refreshToken({
+    required String refreshToken,
+  }) async {
+    final response = await _apiClient.post(
+      '/auth/refresh',
+      data: {
+        'refresh_token': refreshToken,
+      },
+    );
+    return response as Map<String, dynamic>;
+  }
 }

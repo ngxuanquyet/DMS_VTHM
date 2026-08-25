@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/localization/app_language.dart';
+import '../../../../core/localization/language_provider.dart';
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
@@ -15,10 +17,132 @@ import '../viewmodels/profile_view_model.dart';
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
+  void _showLanguageSelector(BuildContext context, WidgetRef ref) {
+    final currentLang = ref.read(languageProvider);
+    final strings = ref.read(stringsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      strings.selectLanguage,
+                      style: AppTypography.titleMedium(
+                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                      ).copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildLanguageOption(
+                  context: ctx,
+                  ref: ref,
+                  language: AppLanguage.vi,
+                  isSelected: currentLang == AppLanguage.vi,
+                  isDark: isDark,
+                ),
+                const SizedBox(height: 8),
+                _buildLanguageOption(
+                  context: ctx,
+                  ref: ref,
+                  language: AppLanguage.en,
+                  isSelected: currentLang == AppLanguage.en,
+                  isDark: isDark,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLanguageOption({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppLanguage language,
+    required bool isSelected,
+    required bool isDark,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          ref.read(languageProvider.notifier).setLanguage(language);
+          Navigator.pop(context);
+        },
+        borderRadius: AppRadius.roundedMd,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark
+                    ? AppColors.primaryContainer.withValues(alpha: 0.2)
+                    : AppColors.primaryContainer.withValues(alpha: 0.12))
+                : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLow),
+            borderRadius: AppRadius.roundedMd,
+            border: Border.all(
+              color: isSelected ? AppColors.primary : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                language.flag,
+                style: const TextStyle(fontSize: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  language.title,
+                  style: AppTypography.bodyLarge(
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                  ).copyWith(
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (isSelected)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileState = ref.watch(profileViewModelProvider);
     final profileVM = ref.read(profileViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
+    final currentLang = ref.watch(languageProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -84,7 +208,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    profileState.profile?.name ?? 'Nguyễn Văn An',
+                    profileState.profile?.name ?? strings.unknown,
                     style: AppTypography.headlineSmall(
                       color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                     ).copyWith(fontWeight: FontWeight.w700),
@@ -98,28 +222,17 @@ class ProfileScreen extends ConsumerWidget {
                           : AppColors.surfaceContainerHigh,
                       borderRadius: AppRadius.roundedSm,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.badge_outlined,
-                          size: 14,
-                          color: AppColors.outline,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          profileState.profile?.employeeId ?? 'NV00128',
-                          style: AppTypography.labelSmall(
-                            color: isDark
-                                ? AppColors.darkOnSurfaceVariant
-                                : AppColors.onSurfaceVariant,
-                          ).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                    child: Text(
+                      '${strings.employeeCodePrefix}${profileState.profile?.employeeId ?? strings.unknown}',
+                      style: AppTypography.labelSmall(
+                        color: isDark
+                            ? AppColors.darkOnSurfaceVariant
+                            : AppColors.onSurfaceVariant,
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // Role & Region Cards
+                  // Role & Department Cards
                   Row(
                     children: [
                       Expanded(
@@ -135,17 +248,19 @@ class ProfileScreen extends ConsumerWidget {
                           child: Column(
                             children: [
                               Text(
-                                'CHỨC VỤ',
+                                strings.roleLabel,
                                 style: AppTypography.labelSmall(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant
                                       : AppColors.onSurfaceVariant,
-                                ).copyWith(letterSpacing: 0.8),
+                                ).copyWith(letterSpacing: 0.8, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                profileState.profile?.role ?? 'Nhân viên thị trường',
+                                profileState.profile?.role ?? strings.unknown,
                                 textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: AppTypography.labelLarge(
                                   color: isDark
                                       ? AppColors.primaryFixedDim
@@ -170,17 +285,19 @@ class ProfileScreen extends ConsumerWidget {
                           child: Column(
                             children: [
                               Text(
-                                'KHU VỰC',
+                                strings.departmentLabel,
                                 style: AppTypography.labelSmall(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant
                                       : AppColors.onSurfaceVariant,
-                                ).copyWith(letterSpacing: 0.8),
+                                ).copyWith(letterSpacing: 0.8, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                profileState.profile?.region ?? 'Khu vực Vĩnh Phúc',
+                                profileState.profile?.department ?? strings.unknown,
                                 textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: AppTypography.labelLarge(
                                   color: isDark ? AppColors.secondaryFixed : AppColors.secondary,
                                 ).copyWith(fontWeight: FontWeight.w700),
@@ -197,7 +314,7 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: AppSpacing.stackLg),
 
             // Section 1: Tài khoản
-            _buildSectionTitle('TÀI KHOẢN', isDark),
+            _buildSectionTitle(strings.accountSection, isDark),
             const SizedBox(height: 6),
             AppCard(
               padding: EdgeInsets.zero,
@@ -205,21 +322,19 @@ class ProfileScreen extends ConsumerWidget {
                 children: [
                   _buildMenuItem(
                     icon: Icons.person_outline,
-                    title: 'Thông tin cá nhân',
+                    title: strings.personalInfo,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Mở thông tin chi tiết cá nhân')),
-                      );
+                      context.push('/profile/personal-info');
                     },
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.lock_outline,
-                    title: 'Đổi mật khẩu',
+                    title: strings.changePassword,
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Mở form đổi mật khẩu')),
+                        SnackBar(content: Text(strings.changePasswordNotice)),
                       );
                     },
                     isDark: isDark,
@@ -230,7 +345,7 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: AppSpacing.stackLg),
 
             // Section 2: Cài đặt ứng dụng
-            _buildSectionTitle('CÀI ĐẶT ỨNG DỤNG', isDark),
+            _buildSectionTitle(strings.appSettingsSection, isDark),
             const SizedBox(height: 6),
             AppCard(
               padding: EdgeInsets.zero,
@@ -238,16 +353,16 @@ class ProfileScreen extends ConsumerWidget {
                 children: [
                   _buildMenuItem(
                     icon: Icons.language,
-                    title: 'Ngôn ngữ',
+                    title: strings.languageTitle,
                     trailing: Text(
-                      'Tiếng Việt',
+                      currentLang.title,
                       style: AppTypography.bodyMedium(
                         color: isDark
-                            ? AppColors.darkOnSurfaceVariant
-                            : AppColors.onSurfaceVariant,
-                      ),
+                            ? AppColors.primaryFixedDim
+                            : AppColors.primary,
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
-                    onTap: () {},
+                    onTap: () => _showLanguageSelector(context, ref),
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
@@ -275,7 +390,7 @@ class ProfileScreen extends ConsumerWidget {
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
-                            'Chế độ tối',
+                            strings.darkMode,
                             style: AppTypography.bodyLarge(
                               color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                             ),
@@ -294,21 +409,21 @@ class ProfileScreen extends ConsumerWidget {
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.shield_outlined,
-                    title: 'Quyền riêng tư',
+                    title: strings.privacyPolicy,
                     onTap: () {},
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.rocket_launch_outlined,
-                    title: 'Xem Màn hình Khởi động (Splash)',
+                    title: strings.previewSplash,
                     onTap: () => context.push('/splash'),
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.wifi_off_rounded,
-                    title: 'Mô phỏng Mất mạng & Khôi phục (3s)',
+                    title: strings.simulateOffline,
                     onTap: () {
                       final notifier = ref.read(connectivityProvider.notifier);
                       notifier.simulateOffline();
@@ -324,7 +439,7 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: AppSpacing.stackLg),
 
             // Section 3: Hỗ trợ
-            _buildSectionTitle('HỖ TRỢ', isDark),
+            _buildSectionTitle(strings.supportFeedback.toUpperCase(), isDark),
             const SizedBox(height: 6),
             AppCard(
               padding: EdgeInsets.zero,
@@ -332,14 +447,14 @@ class ProfileScreen extends ConsumerWidget {
                 children: [
                   _buildMenuItem(
                     icon: Icons.help_outline,
-                    title: 'Trợ giúp & Hướng dẫn',
+                    title: strings.helpGuide,
                     onTap: () {},
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.article_outlined,
-                    title: 'Điều khoản sử dụng',
+                    title: strings.termsOfService,
                     onTap: () {},
                     isDark: isDark,
                   ),
@@ -350,7 +465,7 @@ class ProfileScreen extends ConsumerWidget {
 
             // Logout Button
             AppButton(
-              text: 'ĐĂNG XUẤT',
+              text: strings.logout.toUpperCase(),
               variant: AppButtonVariant.error,
               icon: Icons.logout_rounded,
               width: double.infinity,
@@ -359,16 +474,16 @@ class ProfileScreen extends ConsumerWidget {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Xác nhận đăng xuất'),
-                    content: const Text('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?'),
+                    title: Text(strings.logoutConfirmTitle),
+                    content: Text(strings.logoutConfirmMessage),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Hủy'),
+                        child: Text(strings.cancel),
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Đăng xuất', style: TextStyle(color: AppColors.error)),
+                        child: Text(strings.logout, style: const TextStyle(color: AppColors.error)),
                       ),
                     ],
                   ),

@@ -20,18 +20,19 @@ void main() {
 
   test('UserEntity initializes correctly', () {
     const user = UserEntity(
-      id: '1',
-      name: 'Nguyen Van An',
-      employeeId: 'NV00128',
-      role: 'Sales Rep',
-      region: 'Vinh Phuc',
+      id: '2461',
+      username: 'VTG926',
+      employeeCode: 'VTG926',
+      displayName: 'Nguyễn Xuân Quyết',
+      jobTitle: 'Nhân viên Quản lý Hệ thống thông tin (MIS)',
       avatarUrl: AppConstants.userAvatarUrl,
-      email: 'an.nv@vthm.vn',
-      phone: '0912345678',
+      email: 'quyetnx@vthmgroup.vn',
     );
 
-    expect(user.name, 'Nguyen Van An');
-    expect(user.employeeId, 'NV00128');
+    expect(user.name, 'Nguyễn Xuân Quyết');
+    expect(user.employeeId, 'VTG926');
+    expect(user.username, 'VTG926');
+    expect(user.displayName, 'Nguyễn Xuân Quyết');
   });
 
   test('FormItemEntity initializes correctly', () {

@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/dashboard_entity.dart';
 
-class RecentActivityTimeline extends StatelessWidget {
+class RecentActivityTimeline extends ConsumerWidget {
   final List<ActivityTimelineEntity> activities;
 
   const RecentActivityTimeline({super.key, required this.activities});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -20,7 +23,7 @@ class RecentActivityTimeline extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Hoạt động gần đây',
+            strings.recentActivities,
             style: AppTypography.titleLarge(
               color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
             ).copyWith(fontWeight: FontWeight.w700),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_constants.dart';
+import 'core/localization/language_provider.dart';
 import 'core/network/connectivity_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -32,6 +33,8 @@ class VthmApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final profileState = ref.watch(profileViewModelProvider);
+    // Watch current language to rebuild the app on language change
+    ref.watch(languageProvider);
     // Initialize & watch real-time connectivity monitor
     ref.watch(connectivityProvider);
 

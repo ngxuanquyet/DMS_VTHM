@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -26,8 +27,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     final savedUser = ref.read(authViewModelProvider).savedUsername;
-    _usernameController = TextEditingController(text: savedUser.isNotEmpty ? savedUser : 'NV00128');
-    _passwordController = TextEditingController(text: '123456');
+    _usernameController = TextEditingController(text: savedUser);
+    _passwordController = TextEditingController();
   }
 
   @override
@@ -52,6 +53,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authViewModelProvider);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -88,7 +90,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                         Text(
-                          AppConstants.appSubtitle,
+                          strings.appSubtitle,
                           textAlign: TextAlign.center,
                           style: AppTypography.headlineSmallMobile(
                             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
@@ -131,8 +133,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                         // Username input
                         AppTextField(
-                          label: 'Tài khoản / Mã nhân viên',
-                          hintText: 'Nhập tài khoản',
+                          label: strings.usernameLabel,
+                          hintText: strings.usernameHint,
                           controller: _usernameController,
                           prefixIcon: const Icon(
                             Icons.person_outline,
@@ -145,8 +147,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                         // Password input
                         AppTextField(
-                          label: 'Mật khẩu',
-                          hintText: 'Nhập mật khẩu',
+                          label: strings.passwordLabel,
+                          hintText: strings.passwordHint,
                           controller: _passwordController,
                           obscureText: !authState.isPasswordVisible,
                           prefixIcon: const Icon(
@@ -157,8 +159,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           suffixIcon: IconButton(
                             icon: Icon(
                               authState.isPasswordVisible
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
                               color: AppColors.outline,
                               size: 20,
                             ),
@@ -197,7 +199,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Ghi nhớ đăng nhập',
+                                      strings.rememberLogin,
                                       style: AppTypography.bodyMedium(
                                         color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                                       ),
@@ -209,8 +211,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             TextButton(
                               onPressed: () {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Vui lòng liên hệ quản trị viên để cấp lại mật khẩu'),
+                                  SnackBar(
+                                    content: Text(strings.forgotPasswordMsg),
                                   ),
                                 );
                               },
@@ -220,7 +222,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: Text(
-                                'Quên mật khẩu?',
+                                strings.forgotPassword,
                                 style: AppTypography.labelLarge(
                                   color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                                 ),
@@ -232,7 +234,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                         // Submit Button
                         AppButton(
-                          text: 'ĐĂNG NHẬP',
+                          text: strings.loginButton,
                           height: 52,
                           isLoading: authState.status == AuthStatus.authenticating,
                           trailingIcon: const Icon(

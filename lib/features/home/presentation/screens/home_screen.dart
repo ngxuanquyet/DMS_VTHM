@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/top_app_bar.dart';
@@ -20,6 +21,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final homeState = ref.watch(homeViewModelProvider);
     final homeVM = ref.read(homeViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -36,11 +38,11 @@ class HomeScreen extends ConsumerWidget {
                     children: [
                       const Icon(Icons.error_outline, size: 48, color: AppColors.error),
                       const SizedBox(height: 12),
-                      Text(homeState.errorMessage ?? 'Đã xảy ra lỗi'),
+                      Text(homeState.errorMessage ?? strings.error),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () => homeVM.loadDashboard(),
-                        child: const Text('Thử lại'),
+                        child: Text(strings.retry),
                       ),
                     ],
                   ),
@@ -96,14 +98,14 @@ class HomeScreen extends ConsumerWidget {
         elevation: 4,
         shape: const CircleBorder(),
         onPressed: () {
-          _showActionBottomSheet(context);
+          _showActionBottomSheet(context, strings);
         },
         child: const Icon(Icons.add, size: 28),
       ),
     );
   }
 
-  void _showActionBottomSheet(BuildContext context) {
+  void _showActionBottomSheet(BuildContext context, dynamic strings) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -118,7 +120,7 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(Icons.location_on, color: AppColors.secondary),
-                  title: const Text('Check-in tại điểm bán mới'),
+                  title: Text(strings.isVietnamese ? 'Check-in tại điểm bán mới' : 'Check-in at new store'),
                   onTap: () {
                     Navigator.pop(ctx);
                     context.push('/check-in');
@@ -126,7 +128,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.assignment, color: AppColors.primary),
-                  title: const Text('Tạo biểu mẫu mới'),
+                  title: Text(strings.isVietnamese ? 'Tạo biểu mẫu mới' : 'Create new form'),
                   onTap: () {
                     Navigator.pop(ctx);
                     context.go('/forms');

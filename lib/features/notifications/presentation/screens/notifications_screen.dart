@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -15,25 +16,26 @@ class NotificationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(notificationsViewModelProvider);
     final vm = ref.read(notificationsViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final filters = ['Tất cả', 'Chưa đọc', 'Công việc', 'Hệ thống'];
+    final filters = [strings.all, strings.unread, strings.work, strings.system];
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: VthmTopAppBar(
-        title: 'Thông báo',
+        title: strings.notificationsTitle,
         showBackButton: true,
         showAvatar: false,
         trailing: IconButton(
           icon: const Icon(Icons.done_all_rounded),
           color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-          tooltip: 'Đánh dấu tất cả đã đọc',
+          tooltip: strings.markAllAsRead,
           onPressed: () {
             vm.markAllAsRead();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Đã đánh dấu tất cả thông báo là đã đọc'),
+              SnackBar(
+                content: Text(strings.markAllSuccess),
                 backgroundColor: AppColors.primary,
               ),
             );
@@ -99,7 +101,7 @@ class NotificationsScreen extends ConsumerWidget {
                     // Section: Hôm nay
                     if (state.filteredToday.isNotEmpty) ...[
                       Text(
-                        'Hôm nay',
+                        strings.todaySection,
                         style: AppTypography.titleMedium(
                           color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                         ).copyWith(fontWeight: FontWeight.w600),
@@ -122,7 +124,7 @@ class NotificationsScreen extends ConsumerWidget {
                     // Section: Trước đó
                     if (state.filteredEarlier.isNotEmpty) ...[
                       Text(
-                        'Trước đó',
+                        strings.earlierSection,
                         style: AppTypography.titleMedium(
                           color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                         ).copyWith(fontWeight: FontWeight.w600),
@@ -154,7 +156,7 @@ class NotificationsScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Không có thông báo nào phù hợp',
+                                strings.noNotifications,
                                 style: AppTypography.bodyLarge(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant

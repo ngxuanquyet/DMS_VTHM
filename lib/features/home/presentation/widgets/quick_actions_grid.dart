@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 
-class QuickActionsGrid extends StatelessWidget {
+class QuickActionsGrid extends ConsumerWidget {
   const QuickActionsGrid({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(stringsProvider);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return Row(
@@ -16,7 +20,7 @@ class QuickActionsGrid extends StatelessWidget {
             Expanded(
               child: _QuickActionButton(
                 icon: Icons.how_to_reg_outlined,
-                label: 'Chấm công',
+                label: strings.attendanceSection,
                 iconColor: AppColors.primary,
                 bgColor: AppColors.primaryContainer.withValues(alpha: 0.12),
                 onTap: () => context.push('/attendance'),
@@ -26,7 +30,7 @@ class QuickActionsGrid extends StatelessWidget {
             Expanded(
               child: _QuickActionButton(
                 icon: Icons.location_on_outlined,
-                label: 'Check-in',
+                label: strings.checkInAction,
                 iconColor: AppColors.secondary,
                 bgColor: AppColors.secondaryContainer.withValues(alpha: 0.2),
                 onTap: () => context.push('/check-in'),
@@ -36,7 +40,7 @@ class QuickActionsGrid extends StatelessWidget {
             Expanded(
               child: _QuickActionButton(
                 icon: Icons.alt_route_outlined,
-                label: 'Tuyến',
+                label: strings.navRoutes,
                 iconColor: AppColors.tertiary,
                 bgColor: AppColors.tertiaryContainer.withValues(alpha: 0.15),
                 onTap: () => context.go('/routes'),
@@ -46,7 +50,7 @@ class QuickActionsGrid extends StatelessWidget {
             Expanded(
               child: _QuickActionButton(
                 icon: Icons.assignment_outlined,
-                label: 'Biểu mẫu',
+                label: strings.navForms,
                 iconColor: AppColors.primary,
                 bgColor: AppColors.primaryContainer.withValues(alpha: 0.12),
                 onTap: () => context.go('/forms'),

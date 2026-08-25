@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 
-class VthmBottomNavBar extends StatelessWidget {
+class VthmBottomNavBar extends ConsumerWidget {
   final int currentIndex;
   final ValueChanged<int>? onTap;
 
@@ -38,14 +40,31 @@ class VthmBottomNavBar extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     final items = [
-      _NavItemData(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Trang chủ'),
-      _NavItemData(icon: Icons.alt_route_outlined, activeIcon: Icons.alt_route_rounded, label: 'Tuyến'),
-      _NavItemData(icon: Icons.assignment_outlined, activeIcon: Icons.assignment_rounded, label: 'Biểu mẫu'),
-      _NavItemData(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Cá nhân'),
+      _NavItemData(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: strings.navHome,
+      ),
+      _NavItemData(
+        icon: Icons.alt_route_outlined,
+        activeIcon: Icons.alt_route_rounded,
+        label: strings.navRoutes,
+      ),
+      _NavItemData(
+        icon: Icons.assignment_outlined,
+        activeIcon: Icons.assignment_rounded,
+        label: strings.navForms,
+      ),
+      _NavItemData(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: strings.navProfile,
+      ),
     ];
 
     return Container(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -19,11 +20,13 @@ class AttendanceDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(attendanceViewModelProvider);
     final vm = ref.read(attendanceViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: const VthmTopAppBar(
+      appBar: VthmTopAppBar(
+        title: strings.attendanceDetailTitle,
         showBackButton: true,
       ),
       body: state.status == AttendanceStatus.loading && state.detail == null
@@ -32,7 +35,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
             )
           : state.detail == null
               ? Center(
-                  child: Text(state.errorMessage ?? 'Không tải được dữ liệu chấm công'),
+                  child: Text(state.errorMessage ?? strings.error),
                 )
               : SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(
@@ -67,7 +70,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  state.detail!.isWorking ? 'Đang làm việc' : 'Đã kết thúc ca',
+                                  state.detail!.isWorking ? strings.workingStatus : strings.shiftEnded,
                                   style: AppTypography.labelLarge(
                                     color: state.detail!.isWorking
                                         ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
@@ -108,7 +111,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Đã chấm công vào:',
+                                  strings.checkedInAt,
                                   style: AppTypography.bodyMedium(
                                     color: isDark
                                         ? AppColors.darkOnSurfaceVariant
@@ -130,7 +133,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Thời gian làm việc:',
+                                  strings.workingDurationFull,
                                   style: AppTypography.bodyMedium(
                                     color: isDark
                                         ? AppColors.darkOnSurfaceVariant
@@ -147,7 +150,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 18),
                             AppButton(
-                              text: state.detail!.isWorking ? 'CHẤM CÔNG RA' : 'CHẤM CÔNG VÀO',
+                              text: state.detail!.isWorking ? strings.checkOutButton : strings.checkInButton,
                               height: 52,
                               icon: Icons.logout_rounded,
                               onPressed: () {
@@ -156,8 +159,8 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                   SnackBar(
                                     content: Text(
                                       state.detail!.isWorking
-                                          ? 'Chấm công ra thành công!'
-                                          : 'Chấm công vào thành công!',
+                                          ? strings.checkOutSuccess
+                                          : strings.checkInSuccess,
                                     ),
                                     backgroundColor: AppColors.primary,
                                   ),

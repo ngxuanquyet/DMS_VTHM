@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -15,9 +16,10 @@ class FormsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(formsViewModelProvider);
     final vm = ref.read(formsViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final tabs = ['Cần làm', 'Đang thực hiện', 'Hoàn thành'];
+    final tabs = [strings.todoStatus, strings.inProgressForm, strings.completedStatus];
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
@@ -39,7 +41,7 @@ class FormsScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Danh sách Biểu mẫu',
+                      strings.formsTitle,
                       style: AppTypography.headlineSmall(
                         color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                       ).copyWith(fontWeight: FontWeight.w700),
@@ -110,7 +112,9 @@ class FormsScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Không có biểu mẫu nào trong mục này',
+                                strings.isVietnamese
+                                    ? 'Không có biểu mẫu nào trong mục này'
+                                    : 'No forms available in this section',
                                 style: AppTypography.bodyLarge(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant
@@ -134,7 +138,11 @@ class FormsScreen extends ConsumerWidget {
                             onAction: () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Mở biểu mẫu: "${item.title}"'),
+                                  content: Text(
+                                    strings.isVietnamese
+                                        ? 'Mở biểu mẫu: "${item.title}"'
+                                        : 'Open form: "${item.title}"',
+                                  ),
                                   backgroundColor: AppColors.primary,
                                 ),
                               );

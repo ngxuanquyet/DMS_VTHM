@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -18,6 +19,7 @@ class RouteScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(routeViewModelProvider);
     final vm = ref.read(routeViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -29,7 +31,7 @@ class RouteScreen extends ConsumerWidget {
             )
           : state.routeDetail == null
               ? Center(
-                  child: Text(state.errorMessage ?? 'Không tải được tuyến đường'),
+                  child: Text(state.errorMessage ?? strings.error),
                 )
               : RefreshIndicator(
                   color: AppColors.primaryContainer,
@@ -77,7 +79,7 @@ class RouteScreen extends ConsumerWidget {
                                     ),
                                     child: Center(
                                       child: Text(
-                                        'Danh sách',
+                                        strings.routeListTab,
                                         style: AppTypography.labelLarge(
                                           color: state.selectedTab == 0
                                               ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
@@ -111,7 +113,7 @@ class RouteScreen extends ConsumerWidget {
                                     ),
                                     child: Center(
                                       child: Text(
-                                        'Bản đồ',
+                                        strings.routeMapTab,
                                         style: AppTypography.labelLarge(
                                           color: state.selectedTab == 1
                                               ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
@@ -176,7 +178,9 @@ class RouteScreen extends ConsumerWidget {
                                               const SizedBox(width: 8),
                                               Expanded(
                                                 child: Text(
-                                                  'Hiển thị 12 điểm dừng trên tuyến',
+                                                  strings.isVietnamese
+                                                      ? 'Hiển thị ${state.routeDetail!.totalDealers} điểm dừng trên tuyến'
+                                                      : 'Displaying ${state.routeDetail!.totalDealers} stops on the route',
                                                   style: AppTypography.bodyMedium(
                                                     color: isDark
                                                         ? AppColors.darkOnSurface
@@ -205,7 +209,13 @@ class RouteScreen extends ConsumerWidget {
         shape: const CircleBorder(),
         onPressed: () {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Đang định vị vị trí hiện tại của bạn...')),
+            SnackBar(
+              content: Text(
+                strings.isVietnamese
+                    ? 'Đang định vị vị trí hiện tại của bạn...'
+                    : 'Locating your current position...',
+              ),
+            ),
           );
         },
         child: const Icon(Icons.my_location_rounded),

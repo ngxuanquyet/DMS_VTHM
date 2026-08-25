@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -7,14 +9,15 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/dashboard_entity.dart';
 
-class RouteProgressCard extends StatelessWidget {
+class RouteProgressCard extends ConsumerWidget {
   final DashboardRouteEntity route;
 
   const RouteProgressCard({super.key, required this.route});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -46,7 +49,7 @@ class RouteProgressCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Tiến độ',
+                strings.routeProgress,
                 style: AppTypography.bodyMedium(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                 ),
@@ -59,7 +62,7 @@ class RouteProgressCard extends StatelessWidget {
                   ).copyWith(fontWeight: FontWeight.w700),
                   children: [
                     TextSpan(
-                      text: '/ ${route.totalCount} điểm',
+                      text: '/ ${route.totalCount} ${strings.stopsUnit}',
                       style: AppTypography.bodyMedium(
                         color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                       ),
@@ -87,7 +90,7 @@ class RouteProgressCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Điểm tiếp theo: ${route.nextStop}',
+                  '${strings.nextStopLabel} ${route.nextStop}',
                   style: AppTypography.labelSmall(
                     color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                   ),
@@ -97,7 +100,7 @@ class RouteProgressCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               AppButton(
-                text: 'Tiếp tục',
+                text: strings.continueAction,
                 height: 36,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 onPressed: () => context.go('/routes'),

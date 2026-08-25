@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -7,14 +9,19 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../domain/entities/dashboard_entity.dart';
 
-class AttendanceSummaryCard extends StatelessWidget {
+class AttendanceSummaryCard extends ConsumerWidget {
   final DashboardAttendanceEntity attendance;
 
   const AttendanceSummaryCard({super.key, required this.attendance});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
+
+    final statusText = attendance.isCheckedIn
+        ? (strings.isVietnamese ? attendance.statusLabel : strings.workingStatus)
+        : (strings.isVietnamese ? attendance.statusLabel : strings.shiftEnded);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -33,7 +40,7 @@ class AttendanceSummaryCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Trạng thái',
+                    strings.status,
                     style: AppTypography.titleMedium(
                       color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                     ).copyWith(fontWeight: FontWeight.w600),
@@ -41,7 +48,7 @@ class AttendanceSummaryCard extends StatelessWidget {
                 ],
               ),
               StatusBadge(
-                label: attendance.statusLabel,
+                label: statusText,
                 type: StatusBadgeType.success,
               ),
             ],
@@ -54,7 +61,7 @@ class AttendanceSummaryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Giờ vào',
+                    strings.checkInTime,
                     style: AppTypography.bodyMedium(
                       color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                     ),
@@ -72,7 +79,7 @@ class AttendanceSummaryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    'Thời gian làm',
+                    strings.workingTimeShort,
                     style: AppTypography.bodyMedium(
                       color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                     ),
@@ -101,7 +108,7 @@ class AttendanceSummaryCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Xem chi tiết',
+                      strings.viewDetails,
                       style: AppTypography.labelLarge(
                         color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                       ).copyWith(fontWeight: FontWeight.w600),

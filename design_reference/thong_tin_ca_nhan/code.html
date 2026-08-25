@@ -1,0 +1,265 @@
+<!DOCTYPE html><html lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Thông tin cá nhân - VTHM Group</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffd9e1",
+                        "inverse-on-surface": "#ecf3e6",
+                        "tertiary": "#ab2c5e",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#dee5d8",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#00530e",
+                        "outline": "#6F7A74",
+                        "secondary-fixed-dim": "#acc7ff",
+                        "on-primary": "#ffffff",
+                        "on-surface-variant": "#3f4a3b",
+                        "surface": "#F7FAF6",
+                        "tertiary-container": "#fd6c9d",
+                        "surface-variant": "#E0E3E0",
+                        "on-secondary-fixed-variant": "#09458e",
+                        "secondary-container": "#84aefe",
+                        "on-tertiary-container": "#6e0034",
+                        "primary-fixed": "#8dfb85",
+                        "surface-container-high": "#e4eadd",
+                        "primary-fixed-dim": "#71de6c",
+                        "surface-dim": "#d5dccf",
+                        "on-secondary-container": "#003f87",
+                        "outline-variant": "#becab7",
+                        "primary-container": "#47b347",
+                        "on-error-container": "#93000a",
+                        "primary": "#006e15",
+                        "surface-tint": "#006e15",
+                        "inverse-surface": "#2c3229",
+                        "background": "#f5fcee",
+                        "inverse-primary": "#71de6c",
+                        "on-tertiary-fixed-variant": "#8b0e46",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#f5fcee",
+                        "on-primary-container": "#003f08",
+                        "on-surface": "#171d15",
+                        "surface-container": "#e9f0e3",
+                        "on-primary-fixed": "#002202",
+                        "on-error": "#ffffff",
+                        "on-secondary-fixed": "#001a40",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#3f001b",
+                        "on-background": "#171d15",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed": "#d7e2ff",
+                        "surface-container-low": "#eff6e8",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "secondary": "#2e5da8"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "base": "8px",
+                        "gutter": "16px",
+                        "stack-sm": "4px",
+                        "margin-tablet": "24px",
+                        "stack-lg": "24px",
+                        "stack-md": "12px"
+                    },
+                    "fontFamily": {
+                        "title-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "label-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-sm-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "title-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500" }],
+                        "headline-sm": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "title-lg": ["22px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.1px", "fontWeight": "500" }],
+                        "display-lg": ["45px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.25px", "fontWeight": "400" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.5px", "fontWeight": "400" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: theme('colors.surface');
+            color: theme('colors.on-surface');
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid theme('colors.surface-variant');
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface flex flex-col min-h-screen">
+<!-- Header (Task-focused: Suppress bottom nav shell) -->
+<header class="fixed top-0 w-full z-50 bg-surface shadow-sm flex items-center justify-between px-margin-mobile py-base h-[64px]">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high active:opacity-80 transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface font-bold text-center flex-1 mx-4 truncate">Thông tin cá nhân</h1>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high active:opacity-80 transition-colors text-primary">
+<span class="material-symbols-outlined filled">edit</span>
+</button>
+</header>
+<!-- Main Content -->
+<main class="flex-1 mt-[64px] pb-24 px-margin-mobile md:px-margin-tablet max-w-2xl mx-auto w-full space-y-stack-lg pt-stack-lg">
+<!-- Profile Header -->
+<section class="flex flex-col items-center justify-center text-center space-y-stack-md">
+<div class="relative group cursor-pointer">
+<img alt="Nguyễn Văn An" class="w-24 h-24 rounded-full object-cover border-4 border-surface shadow-sm relative z-10" data-alt="A high-quality, professional headshot of a Vietnamese male employee in his 30s. He is wearing a crisp, modern uniform or professional attire suitable for a manufacturing enterprise. The lighting is bright, soft, and natural, evoking a clear light-mode aesthetic. The background is a subtle, clean industrial or corporate setting, slightly blurred out to keep the focus on his friendly but professional expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm3xg6vKLnb4pP5rnL12pba7bSarjxmkXphERs1rFFuZ3_-V5Y0vSUlgxJNE4MHzMGvXc-GlmYy39OmiAcB9gJUGep_Yah2rO8Vu0YOdrdRra41etn6mRM0DPdr50BUouJ5QFLDnY810ypI45RldOKPJk_nZBFTB4zvW-fO-QBxyWxVZ3PhnYuwm5iFRN5sfEowFwQ03Dc1SFYu9gcTzRMCHzqe9hrxQ1z-tTSGfYq2-8Zw6_he-ACwA">
+<div class="absolute inset-0 rounded-full bg-primary-container/20 scale-110 -z-0 blur-sm"></div>
+<button class="absolute bottom-0 right-0 w-8 h-8 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-md border-2 border-surface z-20 hover:scale-105 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[16px]">photo_camera</span>
+</button>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg text-on-surface font-bold">Nguyễn Văn An</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Mã NV: NV00128</p>
+</div>
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-primary-container/10 text-primary font-label-sm text-label-sm font-semibold">
+<span class="w-2 h-2 rounded-full bg-primary mr-1.5"></span>
+                Đang hoạt động
+            </span>
+</section>
+<!-- Information Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Nhóm 1: Thông tin công việc -->
+<section class="glass-card rounded-xl p-4 shadow-sm md:col-span-2">
+<div class="flex items-center mb-4">
+<span class="material-symbols-outlined text-primary mr-2">work</span>
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Thông tin công việc</h3>
+</div>
+<div class="space-y-4">
+<div class="flex flex-col border-b border-surface-variant pb-3 last:border-0 last:pb-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Chức vụ</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Nhân viên thị trường</span>
+</div>
+<div class="flex flex-col border-b border-surface-variant pb-3 last:border-0 last:pb-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Khu vực</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Khu vực Vĩnh Phúc</span>
+</div>
+<div class="flex flex-col border-b border-surface-variant pb-3 last:border-0 last:pb-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Phòng ban</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Ban Phát triển thị trường</span>
+</div>
+</div>
+</section>
+<!-- Nhóm 2: Thông tin liên hệ -->
+<section class="glass-card rounded-xl p-4 shadow-sm">
+<div class="flex items-center mb-4">
+<span class="material-symbols-outlined text-secondary mr-2">contacts</span>
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Thông tin liên hệ</h3>
+</div>
+<div class="space-y-4">
+<div class="flex items-center bg-surface-container-low rounded-lg p-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container/30 flex items-center justify-center mr-3">
+<span class="material-symbols-outlined text-on-secondary-container">call</span>
+</div>
+<div class="flex-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Số điện thoại</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">0901 234 567</span>
+</div>
+</div>
+<div class="flex items-center bg-surface-container-low rounded-lg p-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container/30 flex items-center justify-center mr-3">
+<span class="material-symbols-outlined text-on-secondary-container">mail</span>
+</div>
+<div class="flex-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Email</span>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate max-w-[200px] block">an.nguyen@vthm.com.vn</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Nhóm 3: Thông tin cá nhân -->
+<section class="glass-card rounded-xl p-4 shadow-sm">
+<div class="flex items-center mb-4">
+<span class="material-symbols-outlined text-primary mr-2">badge</span>
+<h3 class="font-title-md text-title-md font-semibold text-on-surface">Quản lý trực tiếp</h3>
+</div>
+<div class="space-y-4">
+<div class="flex items-center gap-4 pb-4 border-b border-surface-variant">
+<div class="relative">
+<img alt="Trần Hoàng Nam" class="w-16 h-16 rounded-full object-cover border-2 border-surface shadow-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm3xg6vKLnb4pP5rnL12pba7bSarjxmkXphERs1rFFuZ3_-V5Y0vSUlgxJNE4MHzMGvXc-GlmYy39OmiAcB9gJUGep_Yah2rO8Vu0YOdrdRra41etn6mRM0DPdr50BUouJ5QFLDnY810ypI45RldOKPJk_nZBFTB4zvW-fO-QBxyWxVZ3PhnYuwm5iFRN5sfEowFwQ03Dc1SFYu9gcTzRMCHzqe9hrxQ1z-tTSGfYq2-8Zw6_he-ACwA">
+</div>
+<div class="flex-1">
+<h4 class="font-title-md text-title-md text-on-surface font-bold">Trần Hoàng Nam</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Mã NV: NV00045</p>
+</div>
+</div>
+<div class="space-y-3">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Công ty</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">VTHM Group</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Phòng ban</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Ban Phát triển thị trường</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Chức vụ</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Trưởng phòng</span>
+</div>
+<div class="flex items-center bg-surface-container-low rounded-lg p-3 mt-2">
+<div class="w-8 h-8 rounded-full bg-secondary-container/30 flex items-center justify-center mr-3">
+<span class="material-symbols-outlined text-on-secondary-container text-[18px]">call</span>
+</div>
+<div class="flex-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Số điện thoại</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">0908 765 432</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Bottom Action Button Fixed -->
+
+
+
+</body></html>

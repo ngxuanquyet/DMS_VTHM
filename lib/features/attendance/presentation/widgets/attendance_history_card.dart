@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -6,14 +8,15 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../domain/entities/attendance_entity.dart';
 
-class AttendanceHistoryCard extends StatelessWidget {
+class AttendanceHistoryCard extends ConsumerWidget {
   final List<AttendanceHistoryItemEntity> history;
 
   const AttendanceHistoryCard({super.key, required this.history});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -32,7 +35,7 @@ class AttendanceHistoryCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Lịch sử gần đây',
+                    strings.recentHistory,
                     style: AppTypography.titleMedium(
                       color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                     ).copyWith(fontWeight: FontWeight.w600),
@@ -40,7 +43,7 @@ class AttendanceHistoryCard extends StatelessWidget {
                 ],
               ),
               Text(
-                'Xem tất cả',
+                strings.viewAll,
                 style: AppTypography.labelSmall(
                   color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                 ),
@@ -55,6 +58,9 @@ class AttendanceHistoryCard extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final item = history[index];
+              final statusText = item.isLate
+                  ? (strings.isVietnamese ? item.status : strings.late)
+                  : (strings.isVietnamese ? item.status : strings.onTime);
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -101,7 +107,7 @@ class AttendanceHistoryCard extends StatelessWidget {
                       ],
                     ),
                     StatusBadge(
-                      label: item.status,
+                      label: statusText,
                       type: item.isLate ? StatusBadgeType.error : StatusBadgeType.success,
                     ),
                   ],

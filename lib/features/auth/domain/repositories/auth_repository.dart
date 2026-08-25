@@ -9,6 +9,8 @@ abstract class AuthRepository {
 
   Future<UserEntity?> checkAuthStatus();
 
+  Future<String?> refreshToken();
+
   Future<void> logout();
 
   Future<String?> getSavedUsername();

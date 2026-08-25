@@ -23,15 +23,28 @@ class AuthRepositoryImpl implements AuthRepository {
       password: password,
     );
 
-    if (response['success'] == true && response['user'] != null) {
-      final userModel = UserModel.fromJson(response['user'] as Map<String, dynamic>);
-      final token = response['token'] as String?;
+    if (response['success'] == true && response['data'] != null) {
+      final data = response['data'] as Map<String, dynamic>;
+      final userMap = data['user'] as Map<String, dynamic>? ?? {};
+      final permissions = (data['permissions'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [];
+
+      final userModel = UserModel.fromJson(userMap, permissions: permissions);
+      final accessToken = data['access_token'] as String?;
+      final refreshToken = data['refresh_token'] as String?;
 
       final prefs = await SharedPreferences.getInstance();
-      if (token != null) {
-        await prefs.setString(AppConstants.keyAuthToken, token);
+      if (accessToken != null) {
+        await prefs.setString(AppConstants.keyAccessToken, accessToken);
+        await prefs.setString(AppConstants.keyAuthToken, accessToken);
       }
-      await prefs.setString(AppConstants.keyUserData, jsonEncode(userModel.toJson()));
+      if (refreshToken != null) {
+        await prefs.setString(AppConstants.keyRefreshToken, refreshToken);
+      }
+      await prefs.setString(
+          AppConstants.keyUserData, jsonEncode(userModel.toJson()));
       await prefs.setBool(AppConstants.keyRememberLogin, rememberMe);
 
       if (rememberMe) {
@@ -42,14 +55,16 @@ class AuthRepositoryImpl implements AuthRepository {
 
       return userModel.toEntity();
     } else {
-      throw ServerException(response['message']?.toString() ?? 'Đăng nhập không thành công');
+      throw ServerException(
+          response['message']?.toString() ?? 'Đăng nhập không thành công');
     }
   }
 
   @override
   Future<UserEntity?> checkAuthStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(AppConstants.keyAuthToken);
+    final token = prefs.getString(AppConstants.keyAccessToken) ??
+        prefs.getString(AppConstants.keyAuthToken);
     final userJson = prefs.getString(AppConstants.keyUserData);
 
     if (token != null && userJson != null) {
@@ -64,9 +79,44 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<String?> refreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentRefreshToken = prefs.getString(AppConstants.keyRefreshToken);
+    if (currentRefreshToken == null || currentRefreshToken.isEmpty) {
+      return null;
+    }
+
+    try {
+      final response = await _apiService.refreshToken(
+        refreshToken: currentRefreshToken,
+      );
+
+      if (response['success'] == true && response['data'] != null) {
+        final data = response['data'] as Map<String, dynamic>;
+        final newAccessToken = data['access_token'] as String?;
+        final newRefreshToken = data['refresh_token'] as String?;
+
+        if (newAccessToken != null) {
+          await prefs.setString(AppConstants.keyAccessToken, newAccessToken);
+          await prefs.setString(AppConstants.keyAuthToken, newAccessToken);
+        }
+        if (newRefreshToken != null) {
+          await prefs.setString(AppConstants.keyRefreshToken, newRefreshToken);
+        }
+        return newAccessToken;
+      }
+    } catch (_) {
+      // Refresh token failed or expired
+    }
+    return null;
+  }
+
+  @override
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(AppConstants.keyAccessToken);
     await prefs.remove(AppConstants.keyAuthToken);
+    await prefs.remove(AppConstants.keyRefreshToken);
     await prefs.remove(AppConstants.keyUserData);
   }
 

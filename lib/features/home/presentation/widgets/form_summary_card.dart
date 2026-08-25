@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/dashboard_entity.dart';
 
-class FormSummaryCard extends StatelessWidget {
+class FormSummaryCard extends ConsumerWidget {
   final DashboardFormSummaryEntity formSummary;
 
   const FormSummaryCard({super.key, required this.formSummary});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = ref.watch(stringsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -28,7 +31,7 @@ class FormSummaryCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Tổng quan biểu mẫu',
+                strings.formsOverview,
                 style: AppTypography.titleMedium(
                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                 ).copyWith(fontWeight: FontWeight.w600),
@@ -41,7 +44,7 @@ class FormSummaryCard extends StatelessWidget {
               Expanded(
                 child: _FormStatItem(
                   count: formSummary.pendingCount.toString(),
-                  label: 'Cần làm',
+                  label: strings.todoStatus,
                   textColor: AppColors.secondary,
                   borderColor: isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant,
                 ),
@@ -50,7 +53,7 @@ class FormSummaryCard extends StatelessWidget {
               Expanded(
                 child: _FormStatItem(
                   count: formSummary.completedCount.toString(),
-                  label: 'Hoàn thành',
+                  label: strings.completedStatus,
                   textColor: AppColors.primaryContainer,
                   borderColor: isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant,
                 ),
@@ -59,7 +62,7 @@ class FormSummaryCard extends StatelessWidget {
               Expanded(
                 child: _FormStatItem(
                   count: formSummary.overdueCount.toString(),
-                  label: 'Quá hạn',
+                  label: strings.overdueStatus,
                   textColor: AppColors.error,
                   borderColor: AppColors.errorContainer,
                   bgColor: AppColors.errorContainer.withValues(alpha: 0.2),

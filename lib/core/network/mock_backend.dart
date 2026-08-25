@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 
 class MockBackendInterceptor extends Interceptor {
@@ -10,47 +9,11 @@ class MockBackendInterceptor extends Interceptor {
     final path = options.path;
     final method = options.method.toUpperCase();
 
-    // 1. Auth endpoints
-    if (path.contains('/auth/login') && method == 'POST') {
-      final data = options.data is Map ? options.data : jsonDecode(options.data.toString());
-      final username = data['username'] ?? '';
-      final password = data['password'] ?? '';
-
-      if (username.toString().trim().isNotEmpty && password.toString().trim().isNotEmpty) {
-        return handler.resolve(
-          Response(
-            requestOptions: options,
-            statusCode: 200,
-            data: {
-              'success': true,
-              'message': 'Đăng nhập thành công',
-              'token': 'mock_jwt_token_vthm_2026_field_ops_00128',
-              'user': {
-                'id': 'user_00128',
-                'name': 'Nguyễn Văn An',
-                'employeeId': 'NV00128',
-                'role': 'Nhân viên thị trường',
-                'region': 'Khu vực Vĩnh Phúc',
-                'avatarUrl':
-                    'https://lh3.googleusercontent.com/aida-public/AB6AXuCrBzPvd-uLd3UPU7rt-8SsuTNgR6oFdKenP9ScNUa05heHQvw4rgjyyAxBzi-WPtezQigtJju-LMCU60dfdKXYyAHeoPk4zQuey_F_JS10oN1z9f-p4gXoY8odvKdB15_eqNWuybMX-o5x0Vo0RfeWGjwMlkHxVG2imvTio2i7YvxDQu2bAVh19gAPpK1T0ReM4hzHlfDYJ8sz_SWnzRVFhUqrTMHoPGQNLciQMs6ZzuDfbDlbk5KgNQ',
-                'email': 'an.nguyen@vthm.vn',
-                'phone': '0987 654 321',
-              }
-            },
-          ),
-        );
-      } else {
-        return handler.reject(
-          DioException(
-            requestOptions: options,
-            response: Response(
-              requestOptions: options,
-              statusCode: 400,
-              data: {'success': false, 'message': 'Vui lòng nhập tài khoản và mật khẩu'},
-            ),
-          ),
-        );
-      }
+    // Live endpoints pass through
+    if (path.contains('/auth/') ||
+        path.contains('/user/me/profile') ||
+        path.contains('/hr/me/relations')) {
+      return handler.next(options);
     }
 
     // 2. Home Dashboard endpoint

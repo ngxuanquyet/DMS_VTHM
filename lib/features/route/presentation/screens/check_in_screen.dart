@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -46,12 +47,13 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> with SingleTicker
   Widget build(BuildContext context) {
     final state = ref.watch(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
+    final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: VthmTopAppBar(
-        title: 'Đang ghé điểm bán',
+        title: strings.visitingStoreTitle,
         showBackButton: true,
         showAvatar: false,
         trailing: Padding(

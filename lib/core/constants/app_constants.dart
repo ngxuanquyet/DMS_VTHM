@@ -7,14 +7,17 @@ class AppConstants {
   static const String appVersionBuild = 'Phiên bản 2.4.1 (Build 482)';
 
   // API Endpoints
-  static const String baseUrl = 'https://api.vthm.vn/api/v1';
+  static const String baseUrl = 'https://api-app.vthmgroup.vn';
   static const int connectTimeout = 15000;
   static const int receiveTimeout = 15000;
 
   // Storage Keys
   static const String keyAuthToken = 'vthm_auth_token';
+  static const String keyAccessToken = 'vthm_access_token';
+  static const String keyRefreshToken = 'vthm_refresh_token';
   static const String keyUserData = 'vthm_user_data';
   static const String keyIsDarkMode = 'vthm_is_dark_mode';
+  static const String keyLanguage = 'vthm_app_language';
   static const String keyRememberLogin = 'vthm_remember_login';
   static const String keySavedUsername = 'vthm_saved_username';
 

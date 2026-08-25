@@ -7,6 +7,7 @@ import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
+import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/route/presentation/screens/check_in_screen.dart';
 import '../../features/route/presentation/screens/route_screen.dart';
@@ -120,6 +121,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/notifications',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/profile/personal-info',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const PersonalInfoScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
