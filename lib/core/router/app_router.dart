@@ -48,23 +48,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/splash',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const SplashScreen(),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: SplashScreen(),
+        ),
       ),
       GoRoute(
         path: '/login',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: LoginScreen(),
+        ),
       ),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return MainShellScaffold(navigationShell: navigationShell);
-        },
+        pageBuilder: (context, state, navigationShell) => NoTransitionPage(
+          child: MainShellScaffold(navigationShell: navigationShell),
+        ),
         branches: [
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/home',
-                builder: (context, state) => const HomeScreen(),
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: HomeScreen(),
+                ),
               ),
             ],
           ),
@@ -72,7 +78,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/routes',
-                builder: (context, state) => const RouteScreen(),
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: RouteScreen(),
+                ),
               ),
             ],
           ),
@@ -80,7 +88,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/forms',
-                builder: (context, state) => const FormsScreen(),
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: FormsScreen(),
+                ),
               ),
             ],
           ),
@@ -88,7 +98,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/profile',
-                builder: (context, state) => const ProfileScreen(),
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: ProfileScreen(),
+                ),
               ),
             ],
           ),

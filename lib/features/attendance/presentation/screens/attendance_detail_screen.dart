@@ -5,7 +5,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/bottom_nav_bar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/attendance_state.dart';
 import '../viewmodels/attendance_view_model.dart';
@@ -180,7 +179,6 @@ class AttendanceDetailScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-      bottomNavigationBar: const VthmBottomNavBar(currentIndex: 0),
     );
   }
 }
