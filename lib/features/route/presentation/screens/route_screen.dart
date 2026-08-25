@@ -5,7 +5,6 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/bottom_nav_bar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
@@ -211,7 +210,6 @@ class RouteScreen extends ConsumerWidget {
         },
         child: const Icon(Icons.my_location_rounded),
       ),
-      bottomNavigationBar: const VthmBottomNavBar(currentIndex: 1),
     );
   }
 }

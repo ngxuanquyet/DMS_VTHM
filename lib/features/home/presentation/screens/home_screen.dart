@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/widgets/bottom_nav_bar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
@@ -101,7 +100,6 @@ class HomeScreen extends ConsumerWidget {
         },
         child: const Icon(Icons.add, size: 28),
       ),
-      bottomNavigationBar: const VthmBottomNavBar(currentIndex: 0),
     );
   }
 

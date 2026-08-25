@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/bottom_nav_bar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/forms_state.dart';
 import '../viewmodels/forms_view_model.dart';
@@ -148,7 +147,6 @@ class FormsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-      bottomNavigationBar: const VthmBottomNavBar(currentIndex: 2),
     );
   }
 }

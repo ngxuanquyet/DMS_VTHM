@@ -6,13 +6,20 @@ import '../theme/app_typography.dart';
 
 class VthmBottomNavBar extends StatelessWidget {
   final int currentIndex;
+  final ValueChanged<int>? onTap;
 
   const VthmBottomNavBar({
     super.key,
     required this.currentIndex,
+    this.onTap,
   });
 
-  void _onItemTapped(BuildContext context, int index) {
+  void _handleTap(BuildContext context, int index) {
+    if (onTap != null) {
+      onTap!(index);
+      return;
+    }
+
     if (index == currentIndex) return;
     switch (index) {
       case 0:
@@ -35,14 +42,13 @@ class VthmBottomNavBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final items = [
-      _NavItemData(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Trang chủ'),
-      _NavItemData(icon: Icons.alt_route_outlined, activeIcon: Icons.alt_route, label: 'Tuyến'),
-      _NavItemData(icon: Icons.assignment_outlined, activeIcon: Icons.assignment, label: 'Biểu mẫu'),
-      _NavItemData(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Cá nhân'),
+      _NavItemData(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Trang chủ'),
+      _NavItemData(icon: Icons.alt_route_outlined, activeIcon: Icons.alt_route_rounded, label: 'Tuyến'),
+      _NavItemData(icon: Icons.assignment_outlined, activeIcon: Icons.assignment_rounded, label: 'Biểu mẫu'),
+      _NavItemData(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Cá nhân'),
     ];
 
     return Container(
-      height: 76,
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurface : AppColors.surface,
         border: Border(
@@ -53,62 +59,87 @@ class VthmBottomNavBar extends StatelessWidget {
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0D000000),
-            offset: Offset(0, -2),
-            blurRadius: 8,
+            color: Color(0x0A000000),
+            offset: Offset(0, -3),
+            blurRadius: 10,
           )
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: List.generate(items.length, (index) {
-          final isSelected = index == currentIndex;
-          final item = items[index];
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: List.generate(items.length, (index) {
+              final isSelected = index == currentIndex;
+              final item = items[index];
 
-          return InkWell(
-            onTap: () => _onItemTapped(context, index),
-            borderRadius: AppRadius.roundedLg,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: isSelected
-                        ? const EdgeInsets.symmetric(horizontal: 16, vertical: 4)
-                        : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? (isDark ? AppColors.primary : AppColors.primaryContainer)
-                          : Colors.transparent,
-                      borderRadius: AppRadius.roundedFull,
-                    ),
-                    child: Icon(
-                      isSelected ? item.activeIcon : item.icon,
-                      size: 22,
-                      color: isSelected
-                          ? AppColors.onPrimary
-                          : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+              return Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _handleTap(context, index),
+                    splashColor: AppColors.primary.withValues(alpha: 0.12),
+                    highlightColor: Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Active pill indicator & icon
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            padding: isSelected
+                                ? const EdgeInsets.symmetric(horizontal: 18, vertical: 3)
+                                : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? (isDark ? AppColors.primary : AppColors.primaryContainer)
+                                  : Colors.transparent,
+                              borderRadius: AppRadius.roundedFull,
+                            ),
+                            child: Icon(
+                              isSelected ? item.activeIcon : item.icon,
+                              size: 22,
+                              color: isSelected
+                                  ? AppColors.onPrimary
+                                  : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+
+                          // Single-line adaptive title (Never wraps)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                item.label,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelSmall(
+                                  color: isSelected
+                                      ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                                ).copyWith(
+                                  fontSize: 11,
+                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    item.label,
-                    style: AppTypography.labelSmall(
-                      color: isSelected
-                          ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                          : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                    ).copyWith(
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }
