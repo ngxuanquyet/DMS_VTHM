@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_constants.dart';
 import 'core/localization/language_provider.dart';
+import 'core/location/location_provider.dart';
 import 'core/network/connectivity_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -37,6 +38,8 @@ class VthmApp extends ConsumerWidget {
     ref.watch(languageProvider);
     // Initialize & watch real-time connectivity monitor
     ref.watch(connectivityProvider);
+    // Initialize & watch real-time GPS / Location status
+    ref.watch(locationProvider);
 
     return MaterialApp.router(
       title: AppConstants.appName,

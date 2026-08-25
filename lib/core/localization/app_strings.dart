@@ -28,6 +28,7 @@ class AppStrings {
   String get unread => isVietnamese ? 'Chưa đọc' : 'Unread';
   String get work => isVietnamese ? 'Công việc' : 'Work';
   String get system => isVietnamese ? 'Hệ thống' : 'System';
+  String get understood => isVietnamese ? 'ĐÃ HIỂU' : 'UNDERSTOOD';
 
   // Navigation
   String get navHome => isVietnamese ? 'Trang chủ' : 'Home';
@@ -80,6 +81,9 @@ class AppStrings {
   String get simulateOffline => isVietnamese
       ? 'Mô phỏng Mất mạng & Khôi phục (3s)'
       : 'Simulate Network Disconnection (3s)';
+  String get simulateLocationOff => isVietnamese
+      ? 'Mô phỏng Tắt GPS & Khôi phục (3s)'
+      : 'Simulate Location Off (3s)';
   String get supportFeedback =>
       isVietnamese ? 'Hỗ trợ & Góp ý' : 'Support & Feedback';
   String get helpGuide =>
@@ -202,4 +206,28 @@ class AppStrings {
   String get earlierSection => isVietnamese ? 'Trước đó' : 'Earlier';
   String get noNotifications =>
       isVietnamese ? 'Không có thông báo mới' : 'No new notifications';
+
+  // Location / GPS Dialog
+  String get locationServiceDisabledTitle =>
+      isVietnamese ? 'Chưa bật vị trí' : 'Location Service Disabled';
+  String get locationPermissionDeniedTitle =>
+      isVietnamese ? 'Yêu cầu quyền vị trí' : 'Location Permission Required';
+  String get locationServiceDisabledDesc => isVietnamese
+      ? 'Vui lòng bật dịch vụ định vị (GPS) trên thiết bị để thực hiện chấm công và ghé thăm điểm bán.'
+      : 'Please enable location services (GPS) on your device to check in and visit stores.';
+  String get locationPermissionDeniedDesc => isVietnamese
+      ? 'Vui lòng cấp quyền truy cập vị trí cho ứng dụng để xác thực vị trí làm việc của bạn.'
+      : 'Please grant location permission to the app to verify your work location.';
+  String get locationPermissionDeniedForeverDesc => isVietnamese
+      ? 'Quyền vị trí đã bị từ chối. Vui lòng mở Cài đặt ứng dụng và cho phép quyền Vị trí để tiếp tục.'
+      : 'Location permission was denied. Please open App Settings and enable Location permission to proceed.';
+  String get enableGpsAction =>
+      isVietnamese ? 'BẬT VỊ TRÍ' : 'ENABLE LOCATION';
+  String get grantPermissionAction =>
+      isVietnamese ? 'CẤP QUYỀN' : 'GRANT PERMISSION';
+  String get openSettingsAction =>
+      isVietnamese ? 'MỞ CÀI ĐẶT' : 'OPEN SETTINGS';
+  String get locationEnabledToast => isVietnamese
+      ? 'Đã bật định vị vị trí thành công'
+      : 'Location services enabled successfully';
 }

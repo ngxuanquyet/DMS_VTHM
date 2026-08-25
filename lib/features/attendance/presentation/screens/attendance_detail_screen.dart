@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/location/location_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -153,18 +154,25 @@ class AttendanceDetailScreen extends ConsumerWidget {
                               text: state.detail!.isWorking ? strings.checkOutButton : strings.checkInButton,
                               height: 52,
                               icon: Icons.logout_rounded,
-                              onPressed: () {
+                              onPressed: () async {
+                                final hasLocation = await ref
+                                    .read(locationProvider.notifier)
+                                    .requestLocationAccess();
+                                if (!hasLocation) return;
+
                                 vm.toggleAttendance();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      state.detail!.isWorking
-                                          ? strings.checkOutSuccess
-                                          : strings.checkInSuccess,
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        state.detail!.isWorking
+                                            ? strings.checkOutSuccess
+                                            : strings.checkInSuccess,
+                                      ),
+                                      backgroundColor: AppColors.primary,
                                     ),
-                                    backgroundColor: AppColors.primary,
-                                  ),
-                                );
+                                  );
+                                }
                               },
                             ),
                           ],

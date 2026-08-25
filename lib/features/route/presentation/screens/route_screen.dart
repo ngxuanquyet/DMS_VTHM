@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/location/location_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -207,16 +208,23 @@ class RouteScreen extends ConsumerWidget {
         backgroundColor: AppColors.primaryContainer,
         foregroundColor: AppColors.onPrimary,
         shape: const CircleBorder(),
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                strings.isVietnamese
-                    ? 'Đang định vị vị trí hiện tại của bạn...'
-                    : 'Locating your current position...',
+        onPressed: () async {
+          final hasLocation = await ref
+              .read(locationProvider.notifier)
+              .requestLocationAccess();
+          if (!hasLocation) return;
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  strings.isVietnamese
+                      ? 'Đang định vị vị trí hiện tại của bạn...'
+                      : 'Locating your current position...',
+                ),
               ),
-            ),
-          );
+            );
+          }
         },
         child: const Icon(Icons.my_location_rounded),
       ),

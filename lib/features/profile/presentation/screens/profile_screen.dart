@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/app_language.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/location/location_provider.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -434,6 +435,15 @@ class ProfileScreen extends ConsumerWidget {
                       Future.delayed(const Duration(seconds: 3), () {
                         notifier.simulateOnline();
                       });
+                    },
+                    isDark: isDark,
+                  ),
+                  const Divider(height: 1),
+                  _buildMenuItem(
+                    icon: Icons.location_off_rounded,
+                    title: strings.simulateLocationOff,
+                    onTap: () {
+                      ref.read(locationProvider.notifier).simulateLocationOff();
                     },
                     isDark: isDark,
                   ),

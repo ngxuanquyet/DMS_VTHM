@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/localization/app_language.dart';
 import 'package:vthm_dms/core/localization/app_strings.dart';
 import 'package:vthm_dms/core/localization/language_provider.dart';
+import 'package:vthm_dms/core/location/location_provider.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/features/attendance/data/models/attendance_model.dart';
 import 'package:vthm_dms/features/auth/data/models/user_model.dart';
@@ -339,6 +340,36 @@ void main() {
 
       await notifier.setLanguage(AppLanguage.vi);
       expect(notifier.state, AppLanguage.vi);
+    });
+  });
+
+  group('Location & GPS Service Tests', () {
+    test('LocationState initialization and copyWith work properly', () {
+      const state = LocationState();
+      expect(state.isServiceEnabled, true);
+      expect(state.hasPermission, true);
+      expect(state.isReady, true);
+
+      final disabledState = state.copyWith(isServiceEnabled: false);
+      expect(disabledState.isServiceEnabled, false);
+      expect(disabledState.isReady, false);
+    });
+
+    test('Location dialog strings translation works accurately', () {
+      final viStrings = AppStrings(AppLanguage.vi);
+      final enStrings = AppStrings(AppLanguage.en);
+
+      expect(viStrings.locationServiceDisabledTitle, 'Chưa bật vị trí');
+      expect(enStrings.locationServiceDisabledTitle, 'Location Service Disabled');
+
+      expect(viStrings.locationPermissionDeniedTitle, 'Yêu cầu quyền vị trí');
+      expect(enStrings.locationPermissionDeniedTitle, 'Location Permission Required');
+
+      expect(viStrings.enableGpsAction, 'BẬT VỊ TRÍ');
+      expect(enStrings.enableGpsAction, 'ENABLE LOCATION');
+
+      expect(viStrings.grantPermissionAction, 'CẤP QUYỀN');
+      expect(enStrings.grantPermissionAction, 'GRANT PERMISSION');
     });
   });
 }
