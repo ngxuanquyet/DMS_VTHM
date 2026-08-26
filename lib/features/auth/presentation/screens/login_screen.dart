@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -77,17 +79,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         // Header / Logo Area
                         Center(
                           child: Container(
-                            width: 128,
-                            height: 80,
                             margin: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-                            child: Image.network(
-                              AppConstants.logoUrl,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.corporate_fare,
-                                size: 54,
-                                color: AppColors.primary,
-                              ),
+                            child: SvgPicture.asset(
+                              AppAssets.logo,
+                              width: 90,
+                              height: 90,
                             ),
                           ),
                         ),

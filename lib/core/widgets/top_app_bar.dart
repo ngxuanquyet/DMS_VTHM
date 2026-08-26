@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import '../../../features/auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../features/profile/presentation/viewmodels/profile_view_model.dart';
+import '../constants/app_assets.dart';
 import '../constants/app_constants.dart';
 import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
@@ -12,6 +14,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
   final bool showAvatar;
   final bool showBackButton;
+  final bool showLogo;
   final Widget? trailing;
   final VoidCallback? onNotificationPressed;
 
@@ -20,6 +23,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
     this.title = 'VTHM Group',
     this.showAvatar = true,
     this.showBackButton = false,
+    this.showLogo = true,
     this.trailing,
     this.onNotificationPressed,
   });
@@ -116,11 +120,22 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
             ),
             const SizedBox(width: 10),
           ],
-          Text(
-            title,
-            style: AppTypography.headlineSmallMobile(
-              color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-            ).copyWith(fontWeight: FontWeight.w700),
+          if (showLogo) ...[
+            SvgPicture.asset(
+              AppAssets.logo,
+              height: 28,
+              width: 28,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.headlineSmallMobile(
+                color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+              ).copyWith(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
