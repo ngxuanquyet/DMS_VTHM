@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/map/goong_providers.dart';
+import '../../../../core/map/goong_static_map.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -150,12 +151,41 @@ class RouteScreen extends ConsumerWidget {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      Image.network(
-                                        AppConstants.mapPreviewUrl,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => const Center(
-                                          child: Icon(Icons.map, size: 48, color: AppColors.outline),
-                                        ),
+                                      // Bản đồ THẬT quanh vị trí đang đứng (Goong static map).
+                                      Builder(
+                                        builder: (context) {
+                                          final livePoint = ref.watch(currentPointProvider).value;
+                                          if (livePoint != null) {
+                                            return GoongStaticMap(
+                                              center: livePoint,
+                                              placeholder: const Center(
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              ),
+                                            );
+                                          }
+                                          return Center(
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(Icons.location_off, color: AppColors.error, size: 36),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  'Chưa bật định vị GPS',
+                                                  style: AppTypography.titleMedium(
+                                                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                                  ).copyWith(fontWeight: FontWeight.w600),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Bật GPS để xem bản đồ lộ trình thực tế',
+                                                  style: AppTypography.bodySmall(
+                                                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
                                       ),
                                       Positioned(
                                         bottom: 16,

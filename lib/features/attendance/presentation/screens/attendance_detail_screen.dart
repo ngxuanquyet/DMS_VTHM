@@ -19,7 +19,9 @@ class AttendanceDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(attendanceViewModelProvider);
+    final status = ref.watch(attendanceViewModelProvider.select((s) => s.status));
+    final detail = ref.watch(attendanceViewModelProvider.select((s) => s.detail));
+    final errorMessage = ref.watch(attendanceViewModelProvider.select((s) => s.errorMessage));
     final vm = ref.read(attendanceViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -30,13 +32,13 @@ class AttendanceDetailScreen extends ConsumerWidget {
         title: strings.attendanceDetailTitle,
         showBackButton: true,
       ),
-      body: state.status == AttendanceStatus.loading && state.detail == null
+      body: status == AttendanceStatus.loading && detail == null
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primaryContainer),
             )
-          : state.detail == null
+          : detail == null
               ? Center(
-                  child: Text(state.errorMessage ?? strings.error),
+                  child: Text(errorMessage ?? strings.error),
                 )
               : SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(
@@ -51,7 +53,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                             decoration: BoxDecoration(
-                              color: state.detail!.isWorking
+                              color: detail.isWorking
                                   ? AppColors.primary.withValues(alpha: 0.12)
                                   : AppColors.surfaceVariant,
                               borderRadius: AppRadius.roundedFull,
@@ -63,7 +65,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                   width: 8,
                                   height: 8,
                                   decoration: BoxDecoration(
-                                    color: state.detail!.isWorking
+                                    color: detail.isWorking
                                         ? AppColors.primary
                                         : AppColors.outline,
                                     shape: BoxShape.circle,
@@ -71,9 +73,9 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  state.detail!.isWorking ? strings.workingStatus : strings.shiftEnded,
+                                  detail.isWorking ? strings.workingStatus : strings.shiftEnded,
                                   style: AppTypography.labelLarge(
-                                    color: state.detail!.isWorking
+                                    color: detail.isWorking
                                         ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
                                         : AppColors.outline,
                                   ).copyWith(fontWeight: FontWeight.w600),
@@ -82,15 +84,22 @@ class AttendanceDetailScreen extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            state.liveCurrentTime,
-                            style: AppTypography.displayLarge(
-                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                            ).copyWith(fontWeight: FontWeight.w700, letterSpacing: -1),
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final liveTime = ref.watch(
+                                attendanceViewModelProvider.select((s) => s.liveCurrentTime),
+                              );
+                              return Text(
+                                liveTime,
+                                style: AppTypography.displayLarge(
+                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                ).copyWith(fontWeight: FontWeight.w700, letterSpacing: -1),
+                              );
+                            },
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            state.detail!.currentDateFormatted,
+                            detail.currentDateFormatted,
                             style: AppTypography.bodyLarge(
                               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                             ),
@@ -99,8 +108,8 @@ class AttendanceDetailScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.stackLg),
 
-                      // Location Card
-                      GpsLocationCard(location: state.detail!.location),
+                      // Location Card (Stable, Vector Map, never reloads on timer)
+                      GpsLocationCard(location: detail.location),
                       const SizedBox(height: AppSpacing.stackMd),
 
                       // Action / Status Card
@@ -120,7 +129,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                   ),
                                 ),
                                 Text(
-                                  state.detail!.checkInTime,
+                                  detail.checkInTime,
                                   style: AppTypography.titleMedium(
                                     color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                                   ).copyWith(fontWeight: FontWeight.w600),
@@ -141,17 +150,26 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                         : AppColors.onSurfaceVariant,
                                   ),
                                 ),
-                                Text(
-                                  state.formattedWorkDuration,
-                                  style: AppTypography.titleLarge(
-                                    color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                                  ).copyWith(fontWeight: FontWeight.w700),
+                                Consumer(
+                                  builder: (context, ref, _) {
+                                    final durationStr = ref.watch(
+                                      attendanceViewModelProvider.select(
+                                        (s) => s.formattedWorkDuration,
+                                      ),
+                                    );
+                                    return Text(
+                                      durationStr,
+                                      style: AppTypography.titleMedium(
+                                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                      ).copyWith(fontWeight: FontWeight.w600),
+                                    );
+                                  },
                                 ),
                               ],
                             ),
                             const SizedBox(height: 18),
                             AppButton(
-                              text: state.detail!.isWorking ? strings.checkOutButton : strings.checkInButton,
+                              text: detail.isWorking ? strings.checkOutButton : strings.checkInButton,
                               height: 52,
                               icon: Icons.logout_rounded,
                               onPressed: () async {
@@ -160,12 +178,12 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                     .checkAndGetLocation(context);
                                 if (position == null) return;
 
-                                vm.toggleAttendance();
+                                await vm.toggleAttendance();
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        state.detail!.isWorking
+                                        detail.isWorking
                                             ? strings.checkOutSuccess
                                             : strings.checkInSuccess,
                                       ),
@@ -181,11 +199,11 @@ class AttendanceDetailScreen extends ConsumerWidget {
                       const SizedBox(height: AppSpacing.stackMd),
 
                       // Monthly Statistics
-                      MonthlyStatsCard(stats: state.detail!.monthlyStats),
+                      MonthlyStatsCard(stats: detail.monthlyStats),
                       const SizedBox(height: AppSpacing.stackMd),
 
                       // History Card
-                      AttendanceHistoryCard(history: state.detail!.history),
+                      AttendanceHistoryCard(history: detail.history),
                       const SizedBox(height: 40),
                     ],
                   ),

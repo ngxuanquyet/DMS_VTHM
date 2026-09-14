@@ -44,6 +44,9 @@ dependencies:
   geolocator: ^14.0.3
   speech_to_text: ^7.4.0
   flutter_svg: ^2.3.0
+  # Bản đồ nền Goong. Goong phát hành style theo chuẩn Mapbox GL v8 nên maplibre vẽ thẳng được —
+  # SDK Flutter của Goong là bản rẽ nhánh mapbox_gl 0.16, yêu cầu Dart <3.0, không dùng được ở đây.
+  maplibre_gl: ^0.27.1
 
 dev_dependencies:
   flutter_test:

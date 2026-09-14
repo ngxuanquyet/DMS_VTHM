@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/map/goong_providers.dart';
+import '../../../../core/map/goong_static_map.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -86,12 +87,22 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> with SingleTicker
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.network(
-                                  AppConstants.mapPreviewUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: AppColors.surfaceContainerHigh,
-                                  ),
+                                // Bản đồ THẬT quanh vị trí đang đứng (Goong static map).
+                                Builder(
+                                  builder: (context) {
+                                    final livePoint = ref.watch(currentPointProvider).value;
+                                    if (livePoint != null) {
+                                      return GoongStaticMap(
+                                        center: livePoint,
+                                        placeholder: Container(
+                                          color: AppColors.surfaceContainerHigh,
+                                        ),
+                                      );
+                                    }
+                                    return Container(
+                                      color: AppColors.surfaceContainerHigh,
+                                    );
+                                  },
                                 ),
                                 Center(
                                   child: AnimatedBuilder(

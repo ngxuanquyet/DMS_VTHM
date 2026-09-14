@@ -144,28 +144,30 @@ class LocationNotifier extends StateNotifier<LocationState>
       final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
       final wasEnabled = state.isServiceEnabled;
 
-      state = state.copyWith(isServiceEnabled: isServiceEnabled);
+      if (isServiceEnabled != wasEnabled) {
+        state = state.copyWith(isServiceEnabled: isServiceEnabled);
 
-      if (isServiceEnabled) {
-        // If GPS is now turned ON and the "Chưa bật vị trí" popup is still showing -> AUTO DISMISS IT!
-        if (LocationPermissionDialog.currentDialogType ==
-            LocationDialogType.serviceDisabled) {
-          LocationPermissionDialog.dismiss();
-          state = state.copyWith(isDialogVisible: false);
+        if (isServiceEnabled) {
+          // If GPS is now turned ON and the "Chưa bật vị trí" popup is still showing -> AUTO DISMISS IT!
+          if (LocationPermissionDialog.currentDialogType ==
+              LocationDialogType.serviceDisabled) {
+            LocationPermissionDialog.dismiss();
+            state = state.copyWith(isDialogVisible: false);
 
-          final permission = await Geolocator.checkPermission();
-          final hasPerm = permission == LocationPermission.whileInUse ||
-              permission == LocationPermission.always;
+            final permission = await Geolocator.checkPermission();
+            final hasPerm = permission == LocationPermission.whileInUse ||
+                permission == LocationPermission.always;
 
-          state = state.copyWith(permission: permission);
+            state = state.copyWith(permission: permission);
 
-          if (hasPerm && !wasEnabled) {
-            showLocationRestoredToast();
-          } else if (!hasPerm) {
-            if (permission == LocationPermission.deniedForever) {
-              showPermissionDeniedForeverDialog();
+            if (hasPerm) {
+              showLocationRestoredToast();
             } else {
-              showPermissionDeniedDialog();
+              if (permission == LocationPermission.deniedForever) {
+                showPermissionDeniedForeverDialog();
+              } else {
+                showPermissionDeniedDialog();
+              }
             }
           }
         }
@@ -176,10 +178,12 @@ class LocationNotifier extends StateNotifier<LocationState>
   /// Full check GPS & permission status
   Future<bool> checkLocationStatus({bool showDialogIfDisabled = true}) async {
     if (kIsWeb) {
-      state = state.copyWith(
-        isServiceEnabled: true,
-        permission: LocationPermission.always,
-      );
+      if (!state.isServiceEnabled || state.permission != LocationPermission.always) {
+        state = state.copyWith(
+          isServiceEnabled: true,
+          permission: LocationPermission.always,
+        );
+      }
       return true;
     }
 
@@ -187,13 +191,17 @@ class LocationNotifier extends StateNotifier<LocationState>
       final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
       final permission = await Geolocator.checkPermission();
       final wasEnabled = state.isServiceEnabled;
+      final wasPerm = state.permission;
+
+      if (isServiceEnabled != wasEnabled || permission != wasPerm) {
+        state = state.copyWith(
+          isServiceEnabled: isServiceEnabled,
+          permission: permission,
+        );
+      }
+
       final hasPerm = permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always;
-
-      state = state.copyWith(
-        isServiceEnabled: isServiceEnabled,
-        permission: permission,
-      );
 
       if (isServiceEnabled) {
         if (LocationPermissionDialog.currentDialogType ==
