@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/attendance/presentation/screens/attendance_detail_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/customer/presentation/screens/customer_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
@@ -72,6 +73,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 path: '/home',
                 pageBuilder: (context, state) => const NoTransitionPage(
                   child: HomeScreen(),
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/customers',
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: CustomerScreen(),
                 ),
               ),
             ],

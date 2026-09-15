@@ -54,9 +54,9 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Ứng dụng cần quyền truy cập vị trí để xác thực chấm công và check-in tuyến bán hàng.</string>
+	<string>DMS VTHM cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Ứng dụng cần quyền truy cập vị trí để định vị tuyến ghé thăm đại lý và ghi nhận điểm chấm công.</string>
+	<string>DMS VTHM cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Ứng dụng cần quyền nhận diện giọng nói để chuyển giọng nói thành văn bản.</string>
 	<key>NSMicrophoneUsageDescription</key>

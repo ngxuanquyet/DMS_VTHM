@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/map/goong_models.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -11,8 +13,10 @@ import '../../../../core/widgets/top_app_bar.dart';
 import '../states/attendance_state.dart';
 import '../viewmodels/attendance_view_model.dart';
 import '../widgets/attendance_history_card.dart';
+import '../widgets/attendance_out_of_range_dialog.dart';
 import '../widgets/gps_location_card.dart';
 import '../widgets/monthly_stats_card.dart';
+import '../widgets/workplace_selection_card.dart';
 
 class AttendanceDetailScreen extends ConsumerWidget {
   const AttendanceDetailScreen({super.key});
@@ -24,6 +28,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
     final errorMessage = ref.watch(attendanceViewModelProvider.select((s) => s.errorMessage));
     final vm = ref.read(attendanceViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
+    final selectedWorkplace = ref.watch(selectedWorkplaceProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -51,7 +56,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
                       Column(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                             decoration: BoxDecoration(
                               color: detail.isWorking
                                   ? AppColors.primary.withValues(alpha: 0.12)
@@ -108,7 +113,11 @@ class AttendanceDetailScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.stackLg),
 
-                      // Location Card (Stable, Vector Map, never reloads on timer)
+                      // Workplace & Unit Selection Card
+                      const WorkplaceSelectionCard(),
+                      const SizedBox(height: AppSpacing.stackMd),
+
+                      // Location Card (Goong Vector Map)
                       GpsLocationCard(location: detail.location),
                       const SizedBox(height: AppSpacing.stackMd),
 
@@ -136,9 +145,12 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
-                            const Divider(height: 1),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 12),
+                            Divider(
+                              height: 1,
+                              color: isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant,
+                            ),
+                            const SizedBox(height: 12),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -160,7 +172,9 @@ class AttendanceDetailScreen extends ConsumerWidget {
                                     return Text(
                                       durationStr,
                                       style: AppTypography.titleMedium(
-                                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                        color: isDark
+                                            ? AppColors.primaryFixedDim
+                                            : AppColors.primary,
                                       ).copyWith(fontWeight: FontWeight.w600),
                                     );
                                   },
@@ -171,12 +185,36 @@ class AttendanceDetailScreen extends ConsumerWidget {
                             AppButton(
                               text: detail.isWorking ? strings.checkOutButton : strings.checkInButton,
                               height: 52,
-                              icon: Icons.logout_rounded,
+                              icon: detail.isWorking ? Icons.logout_rounded : Icons.login_rounded,
                               onPressed: () async {
                                 final position = await ref
                                     .read(locationServiceProvider)
                                     .checkAndGetLocation(context);
                                 if (position == null) return;
+
+                                // Tính khoảng cách thực tế giữa nhân viên và địa điểm làm việc đã chọn
+                                final distanceMeters = Geolocator.distanceBetween(
+                                  position.latitude,
+                                  position.longitude,
+                                  selectedWorkplace.lat,
+                                  selectedWorkplace.lng,
+                                );
+
+                                // Bán kính cho phép tối đa là 100m
+                                const maxAllowedDistance = 100.0;
+
+                                if (distanceMeters > maxAllowedDistance) {
+                                  if (context.mounted) {
+                                    AttendanceOutOfRangeDialog.show(
+                                      context,
+                                      workplace: selectedWorkplace,
+                                      userPoint: GoongLatLng(position.latitude, position.longitude),
+                                      distanceMeters: distanceMeters,
+                                      maxAllowedMeters: maxAllowedDistance,
+                                    );
+                                  }
+                                  return;
+                                }
 
                                 await vm.toggleAttendance();
                                 if (context.mounted) {

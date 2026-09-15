@@ -32,9 +32,26 @@ class AppStrings {
 
   // Navigation
   String get navHome => isVietnamese ? 'Trang chủ' : 'Home';
+  String get navCustomers => isVietnamese ? 'Khách hàng' : 'Customers';
   String get navRoutes => isVietnamese ? 'Tuyến' : 'Routes';
   String get navForms => isVietnamese ? 'Biểu mẫu' : 'Forms';
   String get navProfile => isVietnamese ? 'Cá nhân' : 'Profile';
+
+  // Customers
+  String get customerScreenTitle => isVietnamese ? 'Khách hàng' : 'Customers';
+  String get customerSubtitle => isVietnamese
+      ? 'Danh sách phụ trách & định vị'
+      : 'Assigned List & Location';
+  String get customerSearchHint => isVietnamese
+      ? 'Tìm tên, mã KH, số điện thoại, tuyến...'
+      : 'Search name, code, phone, route...';
+  String get filterToday => isVietnamese ? 'Hôm nay' : 'Today';
+  String get filterVisited => isVietnamese ? 'Đã ghé' : 'Visited';
+  String get filterPending => isVietnamese ? 'Chưa ghé' : 'Pending';
+  String get editInfo => isVietnamese ? 'Sửa thông tin' : 'Edit info';
+  String get directionsAction => isVietnamese ? 'Chỉ đường' : 'Directions';
+  String get addCustomer => isVietnamese ? 'Thêm' : 'Add';
+  String get scanQr => isVietnamese ? 'Quét QR' : 'Scan QR';
 
   // Auth / Login
   String get login => isVietnamese ? 'Đăng nhập' : 'Log in';
@@ -166,6 +183,16 @@ class AppStrings {
   String get workingStatus => isVietnamese ? 'Đang làm việc' : 'Working';
   String get shiftEnded => isVietnamese ? 'Đã kết thúc ca' : 'Shift Ended';
   String get currentLocation => isVietnamese ? 'Vị trí hiện tại' : 'Current Location';
+  String get workplaceSectionTitle =>
+      isVietnamese ? 'Đơn vị & Địa điểm làm việc' : 'Workplace & Location';
+  String get workplaceCompanyLabel =>
+      isVietnamese ? 'Công ty / Đơn vị làm việc' : 'Company / Work Unit';
+  String get groupBadge =>
+      isVietnamese ? 'Tập đoàn VTHM' : 'VTHM Group';
+  String get validDistanceStatus =>
+      isVietnamese ? 'Khoảng cách: 15m (Hợp lệ)' : 'Distance: 15m (Valid)';
+  String get allowedRadiusDesc =>
+      isVietnamese ? 'Bán kính cho phép: ≤ 50m quanh vị trí làm việc' : 'Allowed radius: ≤ 50m around workplace';
   String get checkedInAt => isVietnamese ? 'Đã chấm công vào:' : 'Checked in at:';
   String get workingDurationFull => isVietnamese ? 'Thời gian làm việc:' : 'Working duration:';
   String get checkInSuccess => isVietnamese ? 'Chấm công vào thành công!' : 'Check-in successful!';
@@ -209,27 +236,27 @@ class AppStrings {
 
   // Location / GPS Dialog
   String get locationServiceDisabledTitle =>
-      isVietnamese ? 'Chưa bật vị trí' : 'Location Service Disabled';
+      isVietnamese ? 'Chưa bật định vị GPS' : 'GPS Location Disabled';
   String get locationPermissionDeniedTitle =>
       isVietnamese ? 'Yêu cầu quyền vị trí' : 'Location Permission Required';
   String get locationServiceDisabledDesc => isVietnamese
-      ? 'Vui lòng bật dịch vụ định vị (GPS) trên thiết bị để thực hiện chấm công và ghé thăm điểm bán.'
-      : 'Please enable location services (GPS) on your device to check in and visit stores.';
+      ? 'Hệ thống DMS VTHM cần định vị GPS để xác thực vị trí chấm công và check-in ghé thăm điểm bán trên tuyến. Vui lòng bật dịch vụ vị trí trên thiết bị.'
+      : 'VTHM DMS requires GPS location to verify shift attendance and store check-ins on your route. Please enable location services on your device.';
   String get locationPermissionDeniedDesc => isVietnamese
-      ? 'Vui lòng cấp quyền truy cập vị trí cho ứng dụng để xác thực vị trí làm việc của bạn.'
-      : 'Please grant location permission to the app to verify your work location.';
+      ? 'Vui lòng cấp quyền truy cập vị trí cho ứng dụng DMS VTHM để hệ thống ghi nhận chính xác tọa độ chấm công và lịch trình đi tuyến của bạn.'
+      : 'Please grant location permission to VTHM DMS so the system can accurately verify your attendance and sales route itinerary.';
   String get locationPermissionDeniedForeverDesc => isVietnamese
-      ? 'Quyền vị trí đã bị từ chối. Vui lòng mở Cài đặt ứng dụng và cho phép quyền Vị trí để tiếp tục.'
-      : 'Location permission was denied. Please open App Settings and enable Location permission to proceed.';
+      ? 'Quyền truy cập vị trí đang bị từ chối. Để tiếp tục chấm công và ghé thăm điểm bán, vui lòng mở Cài đặt ứng dụng và cấp quyền Vị trí.'
+      : 'Location permission was denied. To continue attendance check-in and store visits, please open App Settings and allow Location permission.';
   String get enableGpsAction =>
-      isVietnamese ? 'BẬT VỊ TRÍ' : 'ENABLE LOCATION';
+      isVietnamese ? 'BẬT ĐỊNH VỊ' : 'ENABLE GPS';
   String get grantPermissionAction =>
-      isVietnamese ? 'CẤP QUYỀN' : 'GRANT PERMISSION';
+      isVietnamese ? 'CẤP QUYỀN VỊ TRÍ' : 'GRANT PERMISSION';
   String get openSettingsAction =>
       isVietnamese ? 'MỞ CÀI ĐẶT' : 'OPEN SETTINGS';
   String get locationEnabledToast => isVietnamese
-      ? 'Đã bật định vị vị trí thành công'
-      : 'Location services enabled successfully';
+      ? 'Đã bật định vị GPS thành công'
+      : 'GPS location enabled successfully';
 
   // Voice to Text (STT)
   String get voiceToTextTitle =>

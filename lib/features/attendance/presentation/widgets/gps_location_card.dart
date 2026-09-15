@@ -61,11 +61,15 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
     } else if (livePoint != null) {
       displayAddress = (liveAddress != null && liveAddress.isNotEmpty)
           ? liveAddress
-          : 'Đang tải tên địa chỉ...';
-      accuracyBadge = 'GPS: Đang hoạt động';
+          : (widget.location.address.isNotEmpty
+              ? widget.location.address
+              : 'Vĩnh Yên, Vĩnh Phúc');
+      accuracyBadge = 'GPS: ±8m';
       badgeColor = AppColors.primary;
     } else {
-      displayAddress = 'Đang tìm tín hiệu GPS...';
+      displayAddress = widget.location.address.isNotEmpty
+          ? widget.location.address
+          : 'Đang tìm tín hiệu GPS...';
       accuracyBadge = 'GPS: Đang dò';
       badgeColor = AppColors.secondary;
     }

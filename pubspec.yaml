@@ -47,6 +47,7 @@ dependencies:
   # Bản đồ nền Goong. Goong phát hành style theo chuẩn Mapbox GL v8 nên maplibre vẽ thẳng được —
   # SDK Flutter của Goong là bản rẽ nhánh mapbox_gl 0.16, yêu cầu Dart <3.0, không dùng được ở đây.
   maplibre_gl: ^0.27.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

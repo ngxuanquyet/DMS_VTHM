@@ -28,12 +28,15 @@ class VthmBottomNavBar extends ConsumerWidget {
         context.go('/home');
         break;
       case 1:
-        context.go('/routes');
+        context.go('/customers');
         break;
       case 2:
-        context.go('/forms');
+        context.go('/routes');
         break;
       case 3:
+        context.go('/forms');
+        break;
+      case 4:
         context.go('/profile');
         break;
     }
@@ -49,6 +52,11 @@ class VthmBottomNavBar extends ConsumerWidget {
         icon: Icons.home_outlined,
         activeIcon: Icons.home_rounded,
         label: strings.navHome,
+      ),
+      _NavItemData(
+        icon: Icons.storefront_outlined,
+        activeIcon: Icons.storefront_rounded,
+        label: strings.navCustomers,
       ),
       _NavItemData(
         icon: Icons.alt_route_outlined,
