@@ -48,46 +48,53 @@ class FormsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
 
-                    // Tab Navigation with bottom active indicator
+                    // Segmented Tab Navigation
                     Container(
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                            width: 1,
-                          ),
+                        color: isDark
+                            ? AppColors.darkSurfaceContainer
+                            : AppColors.surfaceContainerHigh,
+                        borderRadius: AppRadius.roundedMd,
+                        border: Border.all(
+                          color: isDark
+                              ? AppColors.darkOutlineVariant
+                              : AppColors.outlineVariant,
+                          width: 1,
                         ),
                       ),
                       child: Row(
                         children: List.generate(tabs.length, (index) {
                           final isSelected = state.selectedTabIndex == index;
 
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 24.0),
+                          return Expanded(
                             child: InkWell(
                               onTap: () => vm.selectTab(index),
+                              borderRadius: AppRadius.roundedSm,
                               child: Container(
-                                padding: const EdgeInsets.only(bottom: 12, top: 4),
+                                padding: const EdgeInsets.symmetric(vertical: 9),
                                 decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: isSelected
-                                          ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                                          : Colors.transparent,
-                                      width: 2.5,
-                                    ),
-                                  ),
+                                  color: isSelected
+                                      ? (isDark
+                                          ? AppColors.darkSurfaceContainerLowest
+                                          : AppColors.surfaceContainerLowest)
+                                      : Colors.transparent,
+                                  borderRadius: AppRadius.roundedSm,
+                                  boxShadow: isSelected ? AppShadows.level1 : [],
                                 ),
-                                child: Text(
-                                  tabs[index],
-                                  style: AppTypography.titleMedium(
-                                    color: isSelected
-                                        ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                                        : (isDark
-                                            ? AppColors.darkOnSurfaceVariant
-                                            : AppColors.onSurfaceVariant),
-                                  ).copyWith(
-                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                child: Center(
+                                  child: Text(
+                                    tabs[index],
+                                    style: AppTypography.labelLarge(
+                                      color: isSelected
+                                          ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                          : (isDark
+                                              ? AppColors.darkOnSurfaceVariant
+                                              : AppColors.onSurfaceVariant),
+                                    ).copyWith(
+                                      fontSize: 13,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ),

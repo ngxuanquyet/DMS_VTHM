@@ -61,36 +61,48 @@ class NotificationsScreen extends ConsumerWidget {
                     // Filter Chips Row
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
                       child: Row(
                         children: List.generate(filters.length, (index) {
                           final isSelected = state.selectedFilterIndex == index;
 
                           return Padding(
                             padding: const EdgeInsets.only(right: 8.0),
-                            child: FilterChip(
-                              label: Text(filters[index]),
-                              selected: isSelected,
-                              showCheckmark: false,
-                              labelStyle: AppTypography.labelLarge(
-                                color: isSelected
-                                    ? AppColors.onPrimary
-                                    : (isDark
-                                        ? AppColors.darkOnSurfaceVariant
-                                        : AppColors.onSurfaceVariant),
-                              ).copyWith(fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500),
-                              selectedColor: AppColors.primaryContainer,
-                              backgroundColor: isDark
-                                  ? AppColors.darkSurfaceContainer
-                                  : AppColors.surfaceContainerLowest,
-                              side: BorderSide(
-                                color: isSelected
-                                    ? Colors.transparent
-                                    : (isDark
-                                        ? AppColors.darkOutlineVariant
-                                        : AppColors.outlineVariant),
+                            child: InkWell(
+                              onTap: () => vm.selectFilter(index),
+                              borderRadius: AppRadius.roundedFull,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? (isDark ? AppColors.primary : AppColors.primaryContainer)
+                                      : (isDark
+                                          ? AppColors.darkSurfaceContainer
+                                          : AppColors.surfaceContainerLowest),
+                                  borderRadius: AppRadius.roundedFull,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.transparent
+                                        : (isDark
+                                            ? AppColors.darkOutlineVariant
+                                            : AppColors.outlineVariant),
+                                  ),
+                                  boxShadow: isSelected ? AppShadows.level1 : [],
+                                ),
+                                child: Text(
+                                  filters[index],
+                                  style: AppTypography.labelSmall(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : (isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.onSurfaceVariant),
+                                  ).copyWith(
+                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                  ),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedFull),
-                              onSelected: (_) => vm.selectFilter(index),
                             ),
                           );
                         }),

@@ -16,6 +16,7 @@ import 'package:vthm_dms/features/profile/data/models/user_profile_model.dart';
 import 'package:vthm_dms/features/profile/data/models/user_relation_model.dart';
 import 'package:vthm_dms/features/route/data/models/route_model.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
+import 'package:vthm_dms/features/customer/data/models/customer_dto.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -361,16 +362,16 @@ void main() {
       final viStrings = AppStrings(AppLanguage.vi);
       final enStrings = AppStrings(AppLanguage.en);
 
-      expect(viStrings.locationServiceDisabledTitle, 'Chưa bật vị trí');
-      expect(enStrings.locationServiceDisabledTitle, 'Location Service Disabled');
+      expect(viStrings.locationServiceDisabledTitle, 'Chưa bật định vị GPS');
+      expect(enStrings.locationServiceDisabledTitle, 'GPS Location Disabled');
 
       expect(viStrings.locationPermissionDeniedTitle, 'Yêu cầu quyền vị trí');
       expect(enStrings.locationPermissionDeniedTitle, 'Location Permission Required');
 
-      expect(viStrings.enableGpsAction, 'BẬT VỊ TRÍ');
-      expect(enStrings.enableGpsAction, 'ENABLE LOCATION');
+      expect(viStrings.enableGpsAction, 'BẬT ĐỊNH VỊ');
+      expect(enStrings.enableGpsAction, 'ENABLE GPS');
 
-      expect(viStrings.grantPermissionAction, 'CẤP QUYỀN');
+      expect(viStrings.grantPermissionAction, 'CẤP QUYỀN VỊ TRÍ');
       expect(enStrings.grantPermissionAction, 'GRANT PERMISSION');
     });
 
@@ -398,6 +399,72 @@ void main() {
 
       expect(viStrings.speechRecognized, 'Văn bản nhận diện được');
       expect(enStrings.speechRecognized, 'Recognized Speech');
+    });
+  });
+
+  group('CRM Customer & Point of Sale Tests (specs/api/crm-diem-ban-2026-09-15.md)', () {
+    test('CustomerDto parses full JSON response and converts to entity properly', () {
+      final json = {
+        'id': 101,
+        'code': 'DB-00101',
+        'name': 'Đại Lý Tạp Hóa Minh Phát',
+        'customer_type_id': 2,
+        'channel_name': 'GT - Tạp hóa',
+        'region_name': 'Miền Bắc',
+        'contact_name': 'Nguyễn Văn Minh',
+        'contact_title': 'Chủ cửa hàng',
+        'phone': '0987654321',
+        'email': 'minhphat@gmail.com',
+        'address': '123 Đường Láng',
+        'province_name': 'Hà Nội',
+        'ward_name': 'Láng Thượng',
+        'lat': '21.028511',
+        'lng': '105.804817',
+        'status': 'active',
+        'approval_status': 'approved',
+        'assignees': [
+          {'id': 1, 'name': 'Nguyễn Văn Sales'},
+        ],
+        'dynamic': {
+          'dien_tich_m2': 45,
+          'loai_bien_hieu': 'Biển bạt Hiflex',
+        },
+      };
+
+      final dto = CustomerDto.fromJson(json);
+      expect(dto.id, 101);
+      expect(dto.name, 'Đại Lý Tạp Hóa Minh Phát');
+      expect(dto.lat, 21.028511);
+      expect(dto.lng, 105.804817);
+      expect(dto.assignees.length, 1);
+      expect(dto.dynamicFields['dien_tich_m2'], 45);
+
+      final entity = dto.toEntity();
+      expect(entity.id, 101);
+      expect(entity.contactTitle, 'Chủ cửa hàng');
+      expect(entity.provinceName, 'Hà Nội');
+      expect(entity.assignees.length, 1);
+    });
+
+    test('CustomerDto gracefully handles null GPS coordinates and empty dynamic fields', () {
+      final json = {
+        'id': 102,
+        'code': 'DB-00102',
+        'name': 'Cửa hàng Chưa Có Tọa Độ',
+        'lat': null,
+        'lng': null,
+        'dynamic': null,
+      };
+
+      final dto = CustomerDto.fromJson(json);
+      expect(dto.id, 102);
+      expect(dto.lat, isNull);
+      expect(dto.lng, isNull);
+      expect(dto.dynamicFields, isEmpty);
+
+      final entity = dto.toEntity();
+      expect(entity.lat, isNull);
+      expect(entity.lng, isNull);
     });
   });
 }

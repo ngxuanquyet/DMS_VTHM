@@ -217,6 +217,8 @@ class _VoiceToTextScreenState extends ConsumerState<VoiceToTextScreen>
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: VthmTopAppBar(
         title: strings.voiceToTextTitle,
+        showBackButton: true,
+        showAvatar: false,
       ),
       body: SafeArea(
         child: Column(

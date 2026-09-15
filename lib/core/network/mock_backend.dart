@@ -12,7 +12,8 @@ class MockBackendInterceptor extends Interceptor {
     // Live endpoints pass through
     if (path.contains('/auth/') ||
         path.contains('/user/me/profile') ||
-        path.contains('/hr/me/relations')) {
+        path.contains('/hr/me/relations') ||
+        path.contains('/crm/customers')) {
       return handler.next(options);
     }
 

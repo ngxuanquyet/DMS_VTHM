@@ -6,6 +6,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
+import '../widgets/edit_customer_dialog.dart';
 
 class CustomerScreen extends ConsumerStatefulWidget {
   const CustomerScreen({super.key});
@@ -110,7 +111,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      '${state.totalCount} khách',
+                                      '${state.totalCount} điểm',
                                       style: AppTypography.labelSmall(
                                         color: isDark
                                             ? AppColors.primaryFixedDim
@@ -176,7 +177,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                             onTap: () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Mở biểu mẫu thêm mới khách hàng'),
+                                  content: Text('Chức năng mở mới điểm bán từ app đang phát triển'),
                                   backgroundColor: AppColors.primary,
                                 ),
                               );
@@ -272,7 +273,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                     child: Row(
                       children: [
                         _buildFilterChip(
-                          label: 'Tất cả (${state.totalCount})',
+                          label: '${strings.all} (${state.totalCount})',
                           isSelected: state.selectedTab == CustomerFilterTab.all,
                           onTap: () => vm.selectTab(CustomerFilterTab.all),
                           isDark: isDark,
@@ -308,54 +309,104 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
               ),
             ),
 
-            // Customer List View
+            // Customer List View / Status Area
             Expanded(
-              child: customerList.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.person_search_rounded,
-                            size: 56,
-                            color: isDark
-                                ? AppColors.darkOnSurfaceVariant
-                                : AppColors.outline,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Không tìm thấy khách hàng nào',
-                            style: AppTypography.titleMedium(
-                              color: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.onSurfaceVariant,
+              child: state.isLoading && state.allCustomers.isEmpty
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.primaryContainer),
+                    )
+                  : state.errorMessage != null && state.allCustomers.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.error_outline_rounded, size: 48, color: AppColors.error),
+                                const SizedBox(height: 12),
+                                Text(
+                                  state.errorMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: AppTypography.bodyMedium(
+                                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: () => vm.loadCustomers(isRefresh: true),
+                                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                                  label: Text(strings.retry),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.marginMobile,
-                        vertical: AppSpacing.stackMd,
-                      ),
-                      itemCount: customerList.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final item = customerList[index];
-                        return CustomerCard(
-                          item: item,
-                          onEdit: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Sửa thông tin: ${item.customer.name}'),
-                                backgroundColor: AppColors.primary,
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                        )
+                      : RefreshIndicator(
+                          color: AppColors.primaryContainer,
+                          onRefresh: () => vm.loadCustomers(isRefresh: true),
+                          child: customerList.isEmpty
+                              ? ListView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 80.0),
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.person_search_rounded,
+                                              size: 56,
+                                              color: isDark
+                                                  ? AppColors.darkOnSurfaceVariant
+                                                  : AppColors.outline,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              'Không tìm thấy điểm bán nào',
+                                              style: AppTypography.titleMedium(
+                                                color: isDark
+                                                    ? AppColors.darkOnSurfaceVariant
+                                                    : AppColors.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : ListView.separated(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.marginMobile,
+                                    vertical: AppSpacing.stackMd,
+                                  ),
+                                  itemCount: customerList.length,
+                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                  itemBuilder: (context, index) {
+                                    final item = customerList[index];
+                                    return CustomerCard(
+                                      item: item,
+                                      onEdit: () {
+                                        EditCustomerDialog.show(
+                                          context,
+                                          customer: item.customer,
+                                          dynamicColumns: state.dynamicColumns,
+                                          onSave: (changes) => vm.updateCustomer(
+                                            item.customer.id,
+                                            changes,
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                        ),
             ),
           ],
         ),

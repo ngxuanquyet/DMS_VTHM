@@ -15,10 +15,73 @@ import '../../../../core/widgets/top_app_bar.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
-  void _showLanguageSelector(BuildContext context, WidgetRef ref) {
+  @override
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  int _devTapCount = 0;
+  bool _isDevMode = false;
+
+  void _onVersionTap() {
+    if (_isDevMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chế độ nhà phát triển đang được kích hoạt'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _devTapCount++;
+    });
+
+    if (_devTapCount >= 5) {
+      setState(() {
+        _isDevMode = true;
+        _devTapCount = 0;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚀 Đã mở khóa Tùy chọn Nhà phát triển (Developer Options)'),
+          backgroundColor: AppColors.primary,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else if (_devTapCount >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Bấm thêm ${5 - _devTapCount} lần nữa để mở Tùy chọn Nhà phát triển'),
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
+    }
+  }
+
+  void _showInfoDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: Text(content, style: const TextStyle(height: 1.5)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLanguageSelector(BuildContext context) {
     final currentLang = ref.read(languageProvider);
     final strings = ref.read(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -56,7 +119,6 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 _buildLanguageOption(
                   context: ctx,
-                  ref: ref,
                   language: AppLanguage.vi,
                   isSelected: currentLang == AppLanguage.vi,
                   isDark: isDark,
@@ -64,7 +126,6 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 _buildLanguageOption(
                   context: ctx,
-                  ref: ref,
                   language: AppLanguage.en,
                   isSelected: currentLang == AppLanguage.en,
                   isDark: isDark,
@@ -79,7 +140,6 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _buildLanguageOption({
     required BuildContext context,
-    required WidgetRef ref,
     required AppLanguage language,
     required bool isSelected,
     required bool isDark,
@@ -139,7 +199,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final profileState = ref.watch(profileViewModelProvider);
     final profileVM = ref.read(profileViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
@@ -338,8 +398,9 @@ class ProfileScreen extends ConsumerWidget {
                     icon: Icons.lock_outline,
                     title: strings.changePassword,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(strings.changePasswordNotice)),
+                      _showInfoDialog(
+                        strings.changePassword,
+                        'Để đổi mật khẩu tài khoản hệ thống VTHM, vui lòng liên hệ bộ phận Quản trị hệ thống hoặc gửi yêu cầu tới IT Helpdesk.',
                       );
                     },
                     isDark: isDark,
@@ -367,7 +428,7 @@ class ProfileScreen extends ConsumerWidget {
                             : AppColors.primary,
                       ).copyWith(fontWeight: FontWeight.w600),
                     ),
-                    onTap: () => _showLanguageSelector(context, ref),
+                    onTap: () => _showLanguageSelector(context),
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
@@ -413,45 +474,21 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
-                    icon: Icons.shield_outlined,
-                    title: strings.privacyPolicy,
-                    onTap: () {},
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.rocket_launch_outlined,
-                    title: strings.previewSplash,
-                    onTap: () => context.push('/splash'),
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.wifi_off_rounded,
-                    title: strings.simulateOffline,
-                    onTap: () {
-                      final notifier = ref.read(connectivityProvider.notifier);
-                      notifier.simulateOffline();
-                      Future.delayed(const Duration(seconds: 3), () {
-                        notifier.simulateOnline();
-                      });
-                    },
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.location_off_rounded,
-                    title: strings.simulateLocationOff,
-                    onTap: () {
-                      ref.read(locationServiceProvider).simulateLocationOff(context);
-                    },
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
                     icon: Icons.mic_none_rounded,
                     title: strings.voiceToTextMenu,
                     onTap: () => context.push('/voice-to-text'),
+                    isDark: isDark,
+                  ),
+                  const Divider(height: 1),
+                  _buildMenuItem(
+                    icon: Icons.shield_outlined,
+                    title: strings.privacyPolicy,
+                    onTap: () {
+                      _showInfoDialog(
+                        strings.privacyPolicy,
+                        'Ứng dụng VTHM DMS tuân thủ nghiêm ngặt các quy định bảo mật dữ liệu doanh nghiệp và định vị GPS trong thời gian làm việc. Mọi dữ liệu tuyến đường và hình ảnh điểm bán được lưu trữ an toàn trên hệ thống máy chủ nội bộ VTHM Group.',
+                      );
+                    },
                     isDark: isDark,
                   ),
                 ],
@@ -469,19 +506,90 @@ class ProfileScreen extends ConsumerWidget {
                   _buildMenuItem(
                     icon: Icons.help_outline,
                     title: strings.helpGuide,
-                    onTap: () {},
+                    onTap: () {
+                      _showInfoDialog(
+                        strings.helpGuide,
+                        'Hướng dẫn sử dụng nhanh VTHM DMS:\n\n1. Chấm công: Bấm vào thẻ Chấm công để Check-in/Check-out khi đến văn phòng/chi nhánh.\n2. Tuyến bán hàng: Xem danh sách đại lý cần ghé thăm trong ngày và lộ trình bản đồ.\n3. Điểm bán: Check-in tại đại lý để chụp ảnh trưng bày và điền biểu mẫu.\n4. Liên hệ IT hỗ trợ qua hotline nội bộ hoặc tổng đài VTHM.',
+                      );
+                    },
                     isDark: isDark,
                   ),
                   const Divider(height: 1),
                   _buildMenuItem(
                     icon: Icons.article_outlined,
                     title: strings.termsOfService,
-                    onTap: () {},
+                    onTap: () {
+                      _showInfoDialog(
+                        strings.termsOfService,
+                        'Điều khoản sử dụng phần mềm VTHM DMS:\n\n- Ứng dụng dành riêng cho CBNV VTHM Group phục vụ công tác quản lý thị trường.\n- Nghiêm cấm chia sẻ thông tin khách hàng và lộ trình ra bên ngoài doanh nghiệp.\n- Vui lòng duy trì GPS và kết nối Internet trong suốt ca làm việc để dữ liệu đồng bộ chính xác.',
+                      );
+                    },
                     isDark: isDark,
                   ),
                 ],
               ),
             ),
+
+            // Section 4: Developer Options (Chỉ hiển thị khi mở khóa)
+            if (_isDevMode) ...[
+              const SizedBox(height: AppSpacing.stackLg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildSectionTitle('TÙY CHỌN NHÀ PHÁT TRIỂN (DEV TOOLS)', isDark),
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _isDevMode = false;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Đã tắt Chế độ nhà phát triển')),
+                      );
+                    },
+                    child: Text(
+                      'Tắt Dev Mode',
+                      style: AppTypography.labelSmall(color: AppColors.error).copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _buildMenuItem(
+                      icon: Icons.rocket_launch_outlined,
+                      title: strings.previewSplash,
+                      onTap: () => context.push('/splash'),
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.wifi_off_rounded,
+                      title: strings.simulateOffline,
+                      onTap: () {
+                        final notifier = ref.read(connectivityProvider.notifier);
+                        notifier.simulateOffline();
+                        Future.delayed(const Duration(seconds: 3), () {
+                          notifier.simulateOnline();
+                        });
+                      },
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.location_off_rounded,
+                      title: strings.simulateLocationOff,
+                      onTap: () {
+                        ref.read(locationServiceProvider).simulateLocationOff(context);
+                      },
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.stackLg),
 
             // Logout Button
@@ -518,11 +626,24 @@ class ProfileScreen extends ConsumerWidget {
                 }
               },
             ),
-            const SizedBox(height: 12),
-            Text(
-              AppConstants.appVersionBuild,
-              style: AppTypography.labelSmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+            const SizedBox(height: 14),
+            InkWell(
+              onTap: _onVersionTap,
+              borderRadius: AppRadius.roundedSm,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Text(
+                  _isDevMode
+                      ? '${AppConstants.appVersionBuild} (Dev Mode Active)'
+                      : AppConstants.appVersionBuild,
+                  style: AppTypography.labelSmall(
+                    color: _isDevMode
+                        ? AppColors.primary
+                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+                  ).copyWith(
+                    fontWeight: _isDevMode ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 80),

@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 
 class CustomerCard extends StatelessWidget {
@@ -17,18 +18,76 @@ class CustomerCard extends StatelessWidget {
     this.onTap,
   });
 
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    final cleanNumber = phoneNumber.replaceAll(RegExp(r'\s+'), '');
+  Future<void> _makePhoneCall(BuildContext context, String phoneNumber) async {
+    final cleanNumber = phoneNumber.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleanNumber.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Điểm bán chưa có số điện thoại')),
+      );
+      return;
+    }
     final uri = Uri.parse('tel:$cleanNumber');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
   }
 
-  Future<void> _openMapDirections(double lat, double lng, String label) async {
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openMapDirections(
+    BuildContext context, {
+    required CustomerEntity customer,
+  }) async {
+    final hasGps = customer.lat != null && customer.lng != null;
+    final hasAddress = customer.address.trim().isNotEmpty;
+
+    if (!hasGps && !hasAddress) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Điểm bán chưa cập nhật tọa độ GPS hoặc địa chỉ để chỉ đường'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final destination = hasGps
+        ? '${customer.lat},${customer.lng}'
+        : Uri.encodeComponent(customer.address.trim());
+
+    // Official Google Maps Directions API URL
+    final googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    );
+
+    try {
+      final launched = await launchUrl(
+        googleMapsUrl,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        final fallbackLaunched = await launchUrl(
+          googleMapsUrl,
+          mode: LaunchMode.platformDefault,
+        );
+
+        if (!fallbackLaunched && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không thể mở ứng dụng Google Maps trên thiết bị'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi mở chỉ đường: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -64,182 +123,166 @@ class CustomerCard extends StatelessWidget {
           ),
           // Main Card Content
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Row: Code + Type & Distance + Directions Button
+                // Top Row: Code + Type & Distance/GPS status + Edit Action
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.1),
-                                  borderRadius: AppRadius.roundedSm,
-                                  border: Border.all(
-                                    color: AppColors.primary.withValues(alpha: 0.2),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  customer.code,
-                                  style: AppTypography.labelSmall(
-                                    color: isDark
-                                        ? AppColors.primaryFixedDim
-                                        : AppColors.primary,
-                                  ).copyWith(fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isDark
-                                        ? AppColors.darkSurfaceContainer
-                                        : AppColors.surfaceContainerHigh,
-                                    borderRadius: AppRadius.roundedSm,
-                                  ),
-                                  child: Text(
-                                    customer.type,
-                                    style: AppTypography.labelSmall(
-                                      color: isDark
-                                          ? AppColors.darkOnSurfaceVariant
-                                          : AppColors.onSurfaceVariant,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            customer.name,
-                            style: AppTypography.titleMedium(
-                              color: isDark
-                                  ? AppColors.darkOnSurface
-                                  : AppColors.onSurface,
-                            ).copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Distance Badge & Directions Button
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                    Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: AppRadius.roundedSm,
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              width: 1,
+                            ),
                           ),
+                          child: Text(
+                            customer.code,
+                            style: AppTypography.labelSmall(
+                              color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                            ).copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: isDark
                                 ? AppColors.darkSurfaceContainer
                                 : AppColors.surfaceContainerHigh,
                             borderRadius: AppRadius.roundedSm,
-                            border: Border.all(
-                              color: isDark
-                                  ? AppColors.darkOutlineVariant
-                                  : AppColors.outlineVariant,
-                              width: 1,
-                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.near_me_rounded,
-                                size: 12,
-                                color: isDark
-                                    ? AppColors.primaryFixedDim
-                                    : AppColors.primary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                item.formattedDistance,
-                                style: AppTypography.labelSmall(
-                                  color: isDark
-                                      ? AppColors.primaryFixedDim
-                                      : AppColors.primary,
-                                ).copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
+                          child: Text(
+                            customer.type,
+                            style: AppTypography.labelSmall(
+                              color: isDark
+                                  ? AppColors.darkOnSurfaceVariant
+                                  : AppColors.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        InkWell(
-                          onTap: () => _openMapDirections(
-                            customer.lat,
-                            customer.lng,
-                            customer.name,
-                          ),
-                          borderRadius: AppRadius.roundedSm,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        if (customer.hasCoordinates)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.secondary.withValues(alpha: 0.12),
+                              color: isDark
+                                  ? AppColors.darkSurfaceContainer
+                                  : AppColors.surfaceContainerHigh,
                               borderRadius: AppRadius.roundedSm,
                               border: Border.all(
-                                color: AppColors.secondary.withValues(alpha: 0.25),
+                                color: isDark
+                                    ? AppColors.darkOutlineVariant
+                                    : AppColors.outlineVariant,
                                 width: 1,
                               ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
-                                  Icons.directions_rounded,
-                                  size: 13,
-                                  color: AppColors.secondary,
+                                Icon(
+                                  Icons.near_me_rounded,
+                                  size: 11,
+                                  color: isDark
+                                      ? AppColors.primaryFixedDim
+                                      : AppColors.primary,
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 3),
                                 Text(
-                                  'Chỉ đường',
+                                  item.formattedDistance,
                                   style: AppTypography.labelSmall(
-                                    color: AppColors.secondary,
-                                  ).copyWith(fontWeight: FontWeight.w600),
+                                    color: isDark
+                                        ? AppColors.primaryFixedDim
+                                        : AppColors.primary,
+                                  ).copyWith(fontWeight: FontWeight.w700, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.darkSurfaceContainer
+                                  : AppColors.surfaceContainerLow,
+                              borderRadius: AppRadius.roundedSm,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.location_off_outlined,
+                                  size: 11,
+                                  color: isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Chưa có GPS',
+                                  style: AppTypography.labelSmall(
+                                    color: isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.outline,
+                                  ).copyWith(fontSize: 10),
                                 ),
                               ],
                             ),
                           ),
-                        ),
+                        const SizedBox(width: 4),
+                        if (onEdit != null)
+                          InkWell(
+                            onTap: onEdit,
+                            borderRadius: AppRadius.roundedSm,
+                            child: Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.edit_note_rounded,
+                                size: 19,
+                                color: isDark
+                                    ? AppColors.primaryFixedDim
+                                    : AppColors.primary,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
 
-                // Address Row
+                // Customer Name
+                Text(
+                  customer.name,
+                  style: AppTypography.titleMedium(
+                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                  ).copyWith(fontWeight: FontWeight.w700, height: 1.2),
+                ),
+                const SizedBox(height: 4),
+
+                // Address
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
                       Icons.place_outlined,
-                      size: 15,
+                      size: 14,
                       color: isDark
                           ? AppColors.darkOnSurfaceVariant
                           : AppColors.outline,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         customer.address,
@@ -247,142 +290,130 @@ class CustomerCard extends StatelessWidget {
                           color: isDark
                               ? AppColors.darkOnSurfaceVariant
                               : AppColors.onSurfaceVariant,
-                        ).copyWith(height: 1.35),
+                        ).copyWith(height: 1.25),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Divider(
-                  height: 1,
-                  color: isDark
-                      ? AppColors.darkOutlineVariant
-                      : AppColors.surfaceVariant,
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
-                // Contact Person & Phone Row
+                // Contact & Action Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline_rounded,
-                          size: 15,
-                          color: isDark
-                              ? AppColors.darkOnSurfaceVariant
-                              : AppColors.outline,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          customer.contactPerson,
-                          style: AppTypography.bodySmall(
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 14,
                             color: isDark
-                                ? AppColors.darkOnSurface
-                                : AppColors.onSurface,
-                          ).copyWith(fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                    InkWell(
-                      onTap: () => _makePhoneCall(customer.phone),
-                      borderRadius: AppRadius.roundedSm,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          borderRadius: AppRadius.roundedSm,
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.2),
-                            width: 1,
+                                ? AppColors.darkOnSurfaceVariant
+                                : AppColors.outline,
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.phone_in_talk_rounded,
-                              size: 12,
-                              color: isDark
-                                  ? AppColors.primaryFixedDim
-                                  : AppColors.primary,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              customer.phone,
-                              style: AppTypography.labelSmall(
-                                color: isDark
-                                    ? AppColors.primaryFixedDim
-                                    : AppColors.primary,
-                              ).copyWith(fontWeight: FontWeight.w700),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Divider(
-                  height: 1,
-                  color: isDark
-                      ? AppColors.darkOutlineVariant
-                      : AppColors.surfaceVariant,
-                ),
-                const SizedBox(height: 8),
-
-                // Card Footer: Edit Button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    InkWell(
-                      onTap: onEdit,
-                      borderRadius: AppRadius.roundedSm,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? AppColors.darkSurfaceContainer
-                              : AppColors.surfaceContainerHigh,
-                          borderRadius: AppRadius.roundedSm,
-                          border: Border.all(
-                            color: isDark
-                                ? AppColors.darkOutlineVariant
-                                : AppColors.outlineVariant,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.edit_note_rounded,
-                              size: 15,
-                              color: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.outline,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Sửa thông tin',
-                              style: AppTypography.labelSmall(
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              customer.contactTitle != null && customer.contactTitle!.isNotEmpty
+                                  ? '${customer.contactPerson} (${customer.contactTitle})'
+                                  : customer.contactPerson,
+                              style: AppTypography.bodySmall(
                                 color: isDark
                                     ? AppColors.darkOnSurface
                                     : AppColors.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w600),
+                              ).copyWith(fontWeight: FontWeight.w500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Directions Button
+                        InkWell(
+                          onTap: () => _openMapDirections(
+                            context,
+                            customer: customer,
+                          ),
+                          borderRadius: AppRadius.roundedSm,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
+                                  ? AppColors.secondary.withValues(alpha: 0.12)
+                                  : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh),
+                              borderRadius: AppRadius.roundedSm,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.directions_rounded,
+                                  size: 13,
+                                  color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
+                                      ? AppColors.secondary
+                                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Chỉ đường',
+                                  style: AppTypography.labelSmall(
+                                    color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
+                                        ? AppColors.secondary
+                                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+                                  ).copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // Phone Call Button
+                        InkWell(
+                          onTap: () => _makePhoneCall(context, customer.phone),
+                          borderRadius: AppRadius.roundedSm,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: AppRadius.roundedSm,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.phone_in_talk_rounded,
+                                  size: 12,
+                                  color: isDark
+                                      ? AppColors.primaryFixedDim
+                                      : AppColors.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  customer.phone,
+                                  style: AppTypography.labelSmall(
+                                    color: isDark
+                                        ? AppColors.primaryFixedDim
+                                        : AppColors.primary,
+                                  ).copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

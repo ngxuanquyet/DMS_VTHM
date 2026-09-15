@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/map/goong_providers.dart';
-import '../../data/models/customer_model.dart';
+import '../../data/repositories/customer_repository_impl.dart';
+import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../domain/repositories/customer_repository.dart';
 
 enum CustomerFilterTab {
   all,
@@ -13,28 +15,36 @@ enum CustomerFilterTab {
 
 class CustomerState {
   final List<CustomerEntity> allCustomers;
+  final List<CustomerDynamicColumn> dynamicColumns;
   final String searchQuery;
   final CustomerFilterTab selectedTab;
   final bool isLoading;
+  final String? errorMessage;
 
   const CustomerState({
-    this.allCustomers = kMockCustomers,
+    this.allCustomers = const [],
+    this.dynamicColumns = const [],
     this.searchQuery = '',
     this.selectedTab = CustomerFilterTab.all,
     this.isLoading = false,
+    this.errorMessage,
   });
 
   CustomerState copyWith({
     List<CustomerEntity>? allCustomers,
+    List<CustomerDynamicColumn>? dynamicColumns,
     String? searchQuery,
     CustomerFilterTab? selectedTab,
     bool? isLoading,
+    String? errorMessage,
   }) {
     return CustomerState(
       allCustomers: allCustomers ?? this.allCustomers,
+      dynamicColumns: dynamicColumns ?? this.dynamicColumns,
       searchQuery: searchQuery ?? this.searchQuery,
       selectedTab: selectedTab ?? this.selectedTab,
       isLoading: isLoading ?? this.isLoading,
+      errorMessage: errorMessage,
     );
   }
 
@@ -46,11 +56,38 @@ class CustomerState {
 
 final customerViewModelProvider =
     StateNotifierProvider.autoDispose<CustomerViewModel, CustomerState>((ref) {
-  return CustomerViewModel();
+  final repository = ref.read(customerRepositoryProvider);
+  return CustomerViewModel(repository);
 });
 
 class CustomerViewModel extends StateNotifier<CustomerState> {
-  CustomerViewModel() : super(const CustomerState());
+  final CustomerRepository _repository;
+
+  CustomerViewModel(this._repository) : super(const CustomerState()) {
+    loadCustomers();
+  }
+
+  Future<void> loadCustomers({bool isRefresh = false}) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final customers = await _repository.getCustomers(
+        forceRefresh: isRefresh,
+        query: state.searchQuery.isNotEmpty ? state.searchQuery : null,
+      );
+      final columns = await _repository.getDynamicColumns();
+
+      state = state.copyWith(
+        allCustomers: customers,
+        dynamicColumns: columns,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Không thể tải danh sách điểm bán: ${e.toString()}',
+      );
+    }
+  }
 
   void setSearchQuery(String query) {
     state = state.copyWith(searchQuery: query);
@@ -58,6 +95,20 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
 
   void selectTab(CustomerFilterTab tab) {
     state = state.copyWith(selectedTab: tab);
+  }
+
+  Future<void> updateCustomer(int id, Map<String, dynamic> changes) async {
+    try {
+      final updated = await _repository.updateCustomer(id: id, changes: changes);
+      final list = List<CustomerEntity>.from(state.allCustomers);
+      final index = list.indexWhere((c) => c.id == id);
+      if (index != -1) {
+        list[index] = updated;
+        state = state.copyWith(allCustomers: list);
+      }
+    } catch (e) {
+      rethrow;
+    }
   }
 }
 
@@ -88,19 +139,20 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
           c.code.toLowerCase().contains(query) ||
           c.phone.replaceAll(' ', '').contains(query) ||
           c.address.toLowerCase().contains(query) ||
-          c.route.toLowerCase().contains(query);
+          c.route.toLowerCase().contains(query) ||
+          (c.contactTitle != null && c.contactTitle!.toLowerCase().contains(query));
     }).toList();
   }
 
   // 3. Tính khoảng cách và sắp xếp từ gần đến xa
   final result = list.map((customer) {
     double? distance;
-    if (livePoint != null) {
+    if (livePoint != null && customer.hasCoordinates) {
       distance = Geolocator.distanceBetween(
         livePoint.lat,
         livePoint.lng,
-        customer.lat,
-        customer.lng,
+        customer.lat!,
+        customer.lng!,
       );
     }
     return CustomerWithDistance(customer: customer, distanceMeters: distance);
