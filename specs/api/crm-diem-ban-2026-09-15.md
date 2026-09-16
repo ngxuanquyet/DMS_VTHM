@@ -51,7 +51,7 @@ nhầm khoá thì biến token thành chuỗi rỗng và mọi lệnh sau nhận
 
 ---
 
-## 3. Bốn endpoint
+## 3. Sáu endpoint
 
 | Method | Đường dẫn | Quyền | Dùng để |
 |---|---|---|---|
@@ -352,6 +352,63 @@ curl -X POST http://127.0.0.1:8899/auth/test-login \
 
 ---
 
+## 6bis. Danh mục cho dropdown — `GET /crm/customers/meta`
+
+Một lượt gọi cho **cả bộ** danh mục của form sửa. Quyền: `/crm/customer/index` **hoặc** `/crm/customer/mine`
+— nhân viên thị trường cũng lấy được.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  'https://api-app.vthmgroup.vn/crm/customers/meta?context=mobile'
+```
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "customerTypes": [ {"id":1, "code":"Đại lý C2", "name":"Đại lý C2", "color":null}, … ],   // 10
+    "channels":      [ {"id":1, "code":"MB1",       "name":"MB1",       "color":null}, … ],   // 15
+    "regions":       [ {"id":1, "code":"0865", "name":"Thành phố Cần Thơ", "color":null}, … ],// 63
+    "provinces":     [ {"province_name":"Thành phố Hà Nội", "cnt":494}, … ],                  // 35
+    "dynamicColumns":[ … ],
+    "stats":         {"total":8730, "active":8724, "with_coords":7196}
+  }
+}
+```
+
+### Ba danh mục dùng cho dropdown
+
+| Khoá | Số dòng | Gửi lên khi PATCH | Ghi chú |
+|---|---|---|---|
+| `customerTypes` | 10 | `customer_type_id` | `code` chính là tên (`Đại lý C2`, `Nhà máy`…) |
+| `channels` | 15 | `channel_id` | mã ngắn: `MB1` · `KA` · `MT1`… |
+| `regions` | **63** | `region_id` | ⚠️ đọc cảnh báo dưới |
+
+Mỗi phần tử: `id` (gửi lên) · `name` (hiện) · `code` (đối chiếu) · `color` (mã màu Bootstrap, có thể `null`).
+
+🔴 **`regions` KHÔNG phải tỉnh/thành.** Đây là **63 khu vực CŨ** suy từ 4 số đầu mã khách hàng, tên nhìn
+giống tỉnh (`Thành phố Cần Thơ`) nên rất dễ nhầm. Tỉnh/thành mới là `province_name` — **35 giá trị** và
+**37% số dòng hai thứ này khác nhau**. Đừng đổ `regions` vào ô Tỉnh/Thành.
+
+### Tỉnh/Thành và Xã/Phường: **chưa có danh mục**
+
+`provinces` trong `meta` là `DISTINCT` trên chính `crm_customer` — nghĩa là chỉ những tỉnh **đang có khách
+hàng**, và kèm cả giá trị rác (`"01"`, 9 dòng). `ward_name` thì không có danh mục nào.
+
+Nên hai ô này trên form sửa vẫn là **ô gõ tay**, và hệ quả đã đo được: **1.596** điểm bán thiếu tỉnh,
+**1.677** thiếu xã.
+
+Dựng bảng danh mục hành chính 2025 (34 tỉnh + ~3.321 xã, dropdown xã lọc theo tỉnh) là việc đã thiết kế
+xong nhưng **tạm gác** — chờ danh mục chính thức. Trong lúc đó dùng `regions`.
+
+### Gợi ý cho client
+
+- `meta` đổi rất ít — tải một lần khi mở form, cache lại; không gọi mỗi lần gõ phím.
+- `?context=` chỉ ảnh hưởng `dynamicColumns`; ba danh mục trên không đổi theo bề mặt.
+- `stats` là `null` với người chỉ có quyền `/crm/customer/mine` — xem §5.1b.
+
+---
+
 ## 6c. Sửa điểm bán — `PATCH /crm/customers/{id}`
 
 ```bash
@@ -474,11 +531,13 @@ Xoá một bản ghi đã xoá → `200` kèm `"deleted": false`, **không** đ�
 
 ```
 ① đăng nhập      POST /auth/login                    → data.access_token  (snake_case!)
-② kéo danh sách  GET  /crm/customers/mine?context=mobile&per-page=200
+② danh mục       GET  /crm/customers/meta?context=mobile      ← cache lại, cho dropdown
+                 → customerTypes · channels · regions · dynamicColumns
+③ kéo danh sách  GET  /crm/customers/mine?context=mobile&per-page=200
                  → data[]        : các dòng, mỗi dòng có `dynamic` (map mã ⇒ giá trị)
                  → meta.dynamicColumns : NHÃN + KIỂU của đúng những ô đó
-③ sửa            PATCH /crm/customers/{id}   {"phone":"09…"}
-④ xoá            DELETE /crm/customers/{id}
+④ sửa            PATCH /crm/customers/{id}   {"phone":"09…","channel_id":3}
+⑤ xoá            DELETE /crm/customers/{id}
 ```
 
 Không cần gọi `/meta` riêng: schema đã nằm trong `meta.dynamicColumns` của chính trang dữ liệu.

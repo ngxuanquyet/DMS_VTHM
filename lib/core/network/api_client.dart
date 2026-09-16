@@ -176,6 +176,69 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> patch(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw AppException(e.toString());
+    }
+  }
+
+  Future<dynamic> put(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      final response = await _dio.put(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw AppException(e.toString());
+    }
+  }
+
+  Future<dynamic> delete(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      final response = await _dio.delete(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw AppException(e.toString());
+    }
+  }
+
   AppException _handleDioError(DioException error) {
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
@@ -201,6 +264,25 @@ class ApiClient {
           statusCode,
         );
       }
+
+      if (data is Map && data.containsKey('errors') && data['errors'] is Map) {
+        final errMap = data['errors'] as Map;
+        final errorList = <String>[];
+        errMap.forEach((k, v) {
+          if (v is List) {
+            errorList.add('$k: ${v.join(", ")}');
+          } else {
+            errorList.add('$k: $v');
+          }
+        });
+        if (errorList.isNotEmpty) {
+          final fullMsg = message != null
+              ? '$message\n${errorList.join("\n")}'
+              : errorList.join('\n');
+          return ServerException(fullMsg, statusCode);
+        }
+      }
+
       if (message != null) {
         return ServerException(message, statusCode);
       }

@@ -1,5 +1,6 @@
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../domain/entities/customer_meta_entity.dart';
 
 abstract class CustomerRepository {
   Future<List<CustomerEntity>> getCustomers({
@@ -9,7 +10,9 @@ abstract class CustomerRepository {
     bool forceRefresh = false,
   });
 
-  Future<List<CustomerDynamicColumn>> getDynamicColumns();
+  Future<List<CustomerDynamicColumn>> getDynamicColumns({bool forceRefresh = false});
+
+  Future<CustomerMetaData> getCustomerMeta({bool forceRefresh = false});
 
   Future<CustomerEntity> updateCustomer({
     required int id,

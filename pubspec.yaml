@@ -48,6 +48,8 @@ dependencies:
   # SDK Flutter của Goong là bản rẽ nhánh mapbox_gl 0.16, yêu cầu Dart <3.0, không dùng được ở đây.
   maplibre_gl: ^0.27.1
   url_launcher: ^6.3.2
+  image_picker: ^1.1.2
+  permission_handler: 11.3.1
 
 dev_dependencies:
   flutter_test:

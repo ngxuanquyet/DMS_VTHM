@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../domain/entities/customer_meta_entity.dart';
 import '../../domain/repositories/customer_repository.dart';
 import '../models/customer_model.dart';
 import '../services/customer_api_service.dart';
@@ -18,6 +19,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
   final CustomerApiService _apiService;
   List<CustomerEntity> _cachedCustomers = [];
   List<CustomerDynamicColumn> _cachedColumns = [];
+  CustomerMetaData? _cachedMeta;
 
   CustomerRepositoryImpl(this._apiService);
 
@@ -70,20 +72,29 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   @override
-  Future<List<CustomerDynamicColumn>> getDynamicColumns() async {
-    if (_cachedColumns.isNotEmpty) {
+  Future<List<CustomerDynamicColumn>> getDynamicColumns({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedColumns.isNotEmpty) {
       return _cachedColumns;
+    }
+    final meta = await getCustomerMeta(forceRefresh: forceRefresh);
+    return meta.dynamicColumns;
+  }
+
+  @override
+  Future<CustomerMetaData> getCustomerMeta({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedMeta != null) {
+      return _cachedMeta!;
     }
     try {
       final meta = await _apiService.getCustomerMeta(context: 'mobile');
-      if (meta['dynamicColumns'] is List) {
-        _cachedColumns = (meta['dynamicColumns'] as List)
-            .whereType<Map<String, dynamic>>()
-            .map((e) => CustomerDynamicColumn.fromJson(e))
-            .toList();
+      _cachedMeta = CustomerMetaData.fromJson(meta);
+      if (_cachedMeta!.dynamicColumns.isNotEmpty) {
+        _cachedColumns = _cachedMeta!.dynamicColumns;
       }
-    } catch (_) {}
-    return _cachedColumns;
+      return _cachedMeta!;
+    } catch (_) {
+      return _cachedMeta ?? const CustomerMetaData();
+    }
   }
 
   @override
@@ -91,23 +102,48 @@ class CustomerRepositoryImpl implements CustomerRepository {
     required int id,
     required Map<String, dynamic> changes,
   }) async {
-    try {
-      await _apiService.updateCustomer(id, changes);
-    } catch (_) {
-      // Allow local update if network is unavailable
-    }
+    await _apiService.updateCustomer(id, changes);
 
     // Update in cached list
     final index = _cachedCustomers.indexWhere((c) => c.id == id);
     if (index != -1) {
       final current = _cachedCustomers[index];
       final updated = current.copyWith(
+        code: changes['code']?.toString() ?? current.code,
+        name: changes['name']?.toString() ?? current.name,
+        customerTypeId: changes.containsKey('customer_type_id')
+            ? (changes['customer_type_id'] as int?)
+            : current.customerTypeId,
+        channelId: changes.containsKey('channel_id')
+            ? (changes['channel_id'] as int?)
+            : current.channelId,
+        regionId: changes.containsKey('region_id')
+            ? (changes['region_id'] as int?)
+            : current.regionId,
+        provinceName: changes.containsKey('province_name')
+            ? changes['province_name']?.toString()
+            : current.provinceName,
+        wardName: changes.containsKey('ward_name')
+            ? changes['ward_name']?.toString()
+            : current.wardName,
         contactPerson: changes['contact_name']?.toString() ?? current.contactPerson,
-        contactTitle: changes['contact_title']?.toString() ?? current.contactTitle,
+        contactTitle: changes.containsKey('contact_title')
+            ? changes['contact_title']?.toString()
+            : current.contactTitle,
         phone: changes['phone']?.toString() ?? current.phone,
+        email: changes.containsKey('email')
+            ? changes['email']?.toString()
+            : current.email,
         address: changes['address']?.toString() ?? current.address,
-        lat: changes['lat'] is num ? (changes['lat'] as num).toDouble() : current.lat,
-        lng: changes['lng'] is num ? (changes['lng'] as num).toDouble() : current.lng,
+        lat: changes.containsKey('lat')
+            ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
+            : current.lat,
+        lng: changes.containsKey('lng')
+            ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
+            : current.lng,
+        geofenceRadiusM: changes.containsKey('geofence_radius_m')
+            ? (changes['geofence_radius_m'] as int?)
+            : current.geofenceRadiusM,
       );
       _cachedCustomers[index] = updated;
       return updated;

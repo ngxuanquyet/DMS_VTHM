@@ -134,83 +134,43 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                           ),
                         ],
                       ),
-                      // Quick Action Buttons
-                      Row(
-                        children: [
-                          // QR Scan Button
-                          InkWell(
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Tính năng quét mã QR khách hàng đang mở camera...'),
-                                  backgroundColor: AppColors.secondary,
-                                ),
-                              );
-                            },
-                            borderRadius: AppRadius.roundedMd,
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? AppColors.darkSurfaceContainer
-                                    : AppColors.surface,
-                                borderRadius: AppRadius.roundedMd,
-                                border: Border.all(
-                                  color: isDark
-                                      ? AppColors.darkOutlineVariant
-                                      : AppColors.outlineVariant,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.qr_code_scanner_rounded,
-                                size: 18,
-                                color: isDark
-                                    ? AppColors.darkOnSurface
-                                    : AppColors.onSurface,
-                              ),
+                      // Add Customer Button
+                      InkWell(
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Chức năng mở mới điểm bán từ app đang phát triển'),
+                              backgroundColor: AppColors.primary,
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Add Customer Button
-                          InkWell(
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Chức năng mở mới điểm bán từ app đang phát triển'),
-                                  backgroundColor: AppColors.primary,
-                                ),
-                              );
-                            },
+                          );
+                        },
+                        borderRadius: AppRadius.roundedMd,
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.primary : AppColors.primaryContainer,
                             borderRadius: AppRadius.roundedMd,
-                            child: Container(
-                              height: 36,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              decoration: BoxDecoration(
-                                color: isDark ? AppColors.primary : AppColors.primaryContainer,
-                                borderRadius: AppRadius.roundedMd,
-                                boxShadow: AppShadows.level1,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.person_add_alt_1_rounded,
-                                    size: 15,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    strings.addCustomer,
-                                    style: AppTypography.labelSmall(
-                                      color: Colors.white,
-                                    ).copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            boxShadow: AppShadows.level1,
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.person_add_alt_1_rounded,
+                                size: 15,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                strings.addCustomer,
+                                style: AppTypography.labelSmall(
+                                  color: Colors.white,
+                                ).copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -262,47 +222,6 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Filter Chips Bar
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: [
-                        _buildFilterChip(
-                          label: '${strings.all} (${state.totalCount})',
-                          isSelected: state.selectedTab == CustomerFilterTab.all,
-                          onTap: () => vm.selectTab(CustomerFilterTab.all),
-                          isDark: isDark,
-                        ),
-                        const SizedBox(width: 8),
-                        _buildFilterChip(
-                          label: '${strings.filterToday} (${state.todayCount})',
-                          dotColor: const Color(0xFF3B82F6),
-                          isSelected: state.selectedTab == CustomerFilterTab.today,
-                          onTap: () => vm.selectTab(CustomerFilterTab.today),
-                          isDark: isDark,
-                        ),
-                        const SizedBox(width: 8),
-                        _buildFilterChip(
-                          label: '${strings.filterVisited} (${state.visitedCount})',
-                          dotColor: const Color(0xFF10B981),
-                          isSelected: state.selectedTab == CustomerFilterTab.visited,
-                          onTap: () => vm.selectTab(CustomerFilterTab.visited),
-                          isDark: isDark,
-                        ),
-                        const SizedBox(width: 8),
-                        _buildFilterChip(
-                          label: '${strings.filterPending} (${state.pendingCount})',
-                          dotColor: const Color(0xFFF59E0B),
-                          isSelected: state.selectedTab == CustomerFilterTab.pending,
-                          onTap: () => vm.selectTab(CustomerFilterTab.pending),
-                          isDark: isDark,
-                        ),
-                      ],
                     ),
                   ),
                 ],
@@ -381,7 +300,6 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                                   ],
                                 )
                               : ListView.separated(
-                                  physics: const AlwaysScrollableScrollPhysics(),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: AppSpacing.marginMobile,
                                     vertical: AppSpacing.stackMd,
@@ -396,6 +314,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                                         EditCustomerDialog.show(
                                           context,
                                           customer: item.customer,
+                                          meta: state.meta,
                                           dynamicColumns: state.dynamicColumns,
                                           onSave: (changes) => vm.updateCustomer(
                                             item.customer.id,
@@ -407,65 +326,6 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                                   },
                                 ),
                         ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    Color? dotColor,
-    required bool isSelected,
-    required VoidCallback onTap,
-    required bool isDark,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: AppRadius.roundedFull,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? (isDark ? AppColors.primary : AppColors.primaryContainer)
-              : (isDark
-                  ? AppColors.darkSurfaceContainer
-                  : AppColors.surfaceContainerLowest),
-          borderRadius: AppRadius.roundedFull,
-          border: Border.all(
-            color: isSelected
-                ? Colors.transparent
-                : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-          ),
-          boxShadow: isSelected ? AppShadows.level1 : [],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (dotColor != null) ...[
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : dotColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              label,
-              style: AppTypography.labelSmall(
-                color: isSelected
-                    ? Colors.white
-                    : (isDark
-                        ? AppColors.darkOnSurfaceVariant
-                        : AppColors.onSurfaceVariant),
-              ).copyWith(
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              ),
             ),
           ],
         ),

@@ -118,7 +118,7 @@ class CustomerCard extends StatelessWidget {
             bottom: 0,
             width: 4,
             child: Container(
-              color: customer.accentColor,
+              color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
             ),
           ),
           // Main Card Content

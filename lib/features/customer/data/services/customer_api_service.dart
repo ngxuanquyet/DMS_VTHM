@@ -82,10 +82,9 @@ class CustomerApiService {
     int id,
     Map<String, dynamic> changes,
   ) async {
-    final response = await _apiClient.post(
+    final response = await _apiClient.patch(
       '/crm/customers/$id',
       data: changes,
-      options: null,
     );
 
     if (response is Map<String, dynamic>) {
@@ -94,12 +93,11 @@ class CustomerApiService {
     throw Exception('Lỗi khi cập nhật điểm bán ID: $id');
   }
 
-  /// Xóa mềm điểm bán
+  /// Xóa mềm điểm bán (vào thùng rác)
   /// DELETE /crm/customers/{id}
   Future<bool> deleteCustomer(int id) async {
-    // Gọi delete endpoint nếu có hoặc qua client
     try {
-      final response = await _apiClient.post('/crm/customers/$id', data: {'_method': 'DELETE'});
+      final response = await _apiClient.delete('/crm/customers/$id');
       return response is Map && response['success'] == true;
     } catch (_) {
       return false;

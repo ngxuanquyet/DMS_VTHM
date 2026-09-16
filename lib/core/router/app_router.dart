@@ -8,6 +8,7 @@ import '../../features/customer/presentation/screens/customer_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
+import '../../features/profile/presentation/screens/dynamic_form_demo_screen.dart';
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/voice_to_text_screen.dart';
@@ -143,6 +144,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/voice-to-text',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const VoiceToTextScreen(),
+      ),
+      GoRoute(
+        path: '/dev/dynamic-form-demo',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const DynamicFormDemoScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

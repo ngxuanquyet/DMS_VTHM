@@ -4,6 +4,7 @@ import '../../../../core/map/goong_providers.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../domain/entities/customer_meta_entity.dart';
 import '../../domain/repositories/customer_repository.dart';
 
 enum CustomerFilterTab {
@@ -16,6 +17,7 @@ enum CustomerFilterTab {
 class CustomerState {
   final List<CustomerEntity> allCustomers;
   final List<CustomerDynamicColumn> dynamicColumns;
+  final CustomerMetaData meta;
   final String searchQuery;
   final CustomerFilterTab selectedTab;
   final bool isLoading;
@@ -24,6 +26,7 @@ class CustomerState {
   const CustomerState({
     this.allCustomers = const [],
     this.dynamicColumns = const [],
+    this.meta = const CustomerMetaData(),
     this.searchQuery = '',
     this.selectedTab = CustomerFilterTab.all,
     this.isLoading = false,
@@ -33,6 +36,7 @@ class CustomerState {
   CustomerState copyWith({
     List<CustomerEntity>? allCustomers,
     List<CustomerDynamicColumn>? dynamicColumns,
+    CustomerMetaData? meta,
     String? searchQuery,
     CustomerFilterTab? selectedTab,
     bool? isLoading,
@@ -41,6 +45,7 @@ class CustomerState {
     return CustomerState(
       allCustomers: allCustomers ?? this.allCustomers,
       dynamicColumns: dynamicColumns ?? this.dynamicColumns,
+      meta: meta ?? this.meta,
       searchQuery: searchQuery ?? this.searchQuery,
       selectedTab: selectedTab ?? this.selectedTab,
       isLoading: isLoading ?? this.isLoading,
@@ -74,11 +79,12 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
         forceRefresh: isRefresh,
         query: state.searchQuery.isNotEmpty ? state.searchQuery : null,
       );
-      final columns = await _repository.getDynamicColumns();
+      final meta = await _repository.getCustomerMeta(forceRefresh: isRefresh);
 
       state = state.copyWith(
         allCustomers: customers,
-        dynamicColumns: columns,
+        dynamicColumns: meta.dynamicColumns.isNotEmpty ? meta.dynamicColumns : state.dynamicColumns,
+        meta: meta,
         isLoading: false,
       );
     } catch (e) {

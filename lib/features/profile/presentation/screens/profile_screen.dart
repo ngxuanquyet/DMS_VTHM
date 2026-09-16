@@ -559,6 +559,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Column(
                   children: [
                     _buildMenuItem(
+                      icon: Icons.dynamic_form_rounded,
+                      title: '🧪 Demo UI Field Động (Dynamic Form)',
+                      onTap: () => context.push('/dev/dynamic-form-demo'),
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
                       icon: Icons.rocket_launch_outlined,
                       title: strings.previewSplash,
                       onTap: () => context.push('/splash'),
