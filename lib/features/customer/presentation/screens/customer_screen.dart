@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/map/goong_providers.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -18,6 +20,21 @@ class CustomerScreen extends ConsumerStatefulWidget {
 
 class _CustomerScreenState extends ConsumerState<CustomerScreen> {
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestLocationPermission();
+    });
+  }
+
+  Future<void> _requestLocationPermission() async {
+    final position = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+    if (position != null && mounted) {
+      ref.invalidate(currentPointProvider);
+    }
+  }
 
   @override
   void dispose() {
@@ -270,7 +287,12 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                         )
                       : RefreshIndicator(
                           color: AppColors.primaryContainer,
-                          onRefresh: () => vm.loadCustomers(isRefresh: true),
+                          onRefresh: () async {
+                            await Future.wait([
+                              vm.loadCustomers(isRefresh: true),
+                              _requestLocationPermission(),
+                            ]);
+                          },
                           child: customerList.isEmpty
                               ? ListView(
                                   physics: const AlwaysScrollableScrollPhysics(),

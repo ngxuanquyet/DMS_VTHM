@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import '../location/location_provider.dart';
 import '../localization/language_provider.dart';
 import '../router/app_router.dart';
 import '../theme/app_colors.dart';
@@ -147,11 +148,16 @@ class LocationService {
         ),
       );
 
+      _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
       return position;
     } catch (_) {
       // Fallback nếu timeout hoặc lỗi GPS phần cứng
       try {
-        return await Geolocator.getLastKnownPosition();
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null) {
+          _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
+        }
+        return lastKnown;
       } catch (_) {
         return null;
       }

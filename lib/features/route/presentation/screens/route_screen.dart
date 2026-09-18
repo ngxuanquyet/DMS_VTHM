@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/map/goong_providers.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -20,6 +21,21 @@ class RouteScreen extends ConsumerStatefulWidget {
 
 class _RouteScreenState extends ConsumerState<RouteScreen> {
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestLocationPermission();
+    });
+  }
+
+  Future<void> _requestLocationPermission() async {
+    final position = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+    if (position != null && mounted) {
+      ref.invalidate(currentPointProvider);
+    }
+  }
 
   @override
   void dispose() {
@@ -47,7 +63,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 )
               : RefreshIndicator(
                   color: AppColors.primaryContainer,
-                  onRefresh: () => vm.loadRouteDetail(isRefresh: true),
+                  onRefresh: () async {
+                    await Future.wait([
+                      vm.loadRouteDetail(isRefresh: true),
+                      _requestLocationPermission(),
+                    ]);
+                  },
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
@@ -261,6 +282,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               .read(locationServiceProvider)
               .checkAndGetLocation(context);
           if (position == null) return;
+          ref.invalidate(currentPointProvider);
 
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
