@@ -7,6 +7,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
 import '../widgets/edit_customer_dialog.dart';
+import 'add_customer_screen.dart';
 
 class CustomerScreen extends ConsumerStatefulWidget {
   const CustomerScreen({super.key});
@@ -136,13 +137,16 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen> {
                       ),
                       // Add Customer Button
                       InkWell(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Chức năng mở mới điểm bán từ app đang phát triển'),
-                              backgroundColor: AppColors.primary,
+                        onTap: () async {
+                          final result = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AddCustomerScreen(),
                             ),
                           );
+                          if (result == true && mounted) {
+                            vm.loadCustomers(isRefresh: true);
+                          }
                         },
                         borderRadius: AppRadius.roundedMd,
                         child: Container(

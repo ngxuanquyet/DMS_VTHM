@@ -60,3 +60,26 @@ class GoongConfig {
 
   static bool get hasMapTilesKey => mapTilesKey.isNotEmpty;
 }
+
+/// Các kiểu giao diện bản đồ Goong hỗ trợ
+enum GoongMapStyle {
+  /// Bản đồ đường phố tiêu chuẩn (Standard Vector)
+  standard('goong_map_web', 'Đường phố'),
+
+  /// Bản đồ ảnh vệ tinh kết hợp đường phố & địa danh (Satellite Hybrid - Cực kỳ chi tiết)
+  satellite('goong_satellite', 'Vệ tinh'),
+
+  /// Bản đồ điều hướng giao thông chi tiết (Navigation Day)
+  navigation('navigation_day', 'Giao thông'),
+
+  /// Bản đồ chế độ tối (Dark Mode)
+  dark('goong_map_dark', 'Ban đêm');
+
+  final String styleName;
+  final String label;
+
+  const GoongMapStyle(this.styleName, this.label);
+
+  String get url =>
+      '${GoongConfig.tilesUrl}/assets/$styleName.json?api_key=${GoongConfig.mapTilesKey}';
+}

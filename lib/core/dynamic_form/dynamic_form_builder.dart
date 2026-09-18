@@ -6,6 +6,7 @@ import '../widgets/app_button.dart';
 import 'models/dynamic_form_field.dart';
 import 'widgets/boolean_field_widget.dart';
 import 'widgets/datetime_field_widget.dart';
+import 'widgets/gps_coordinates_field_widget.dart';
 import 'widgets/gps_field_widget.dart';
 import 'widgets/long_text_field_widget.dart';
 import 'widgets/multiple_choice_field_widget.dart';
@@ -176,6 +177,26 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
+  IconData _getSectionIcon(String title) {
+    final lower = title.toLowerCase();
+    if (lower.contains('chung') || lower.contains('cơ bản') || lower.contains('tổng quan')) {
+      return Icons.storefront_rounded;
+    }
+    if (lower.contains('liên hệ') || lower.contains('người liên hệ') || lower.contains('contact')) {
+      return Icons.contact_phone_rounded;
+    }
+    if (lower.contains('địa chỉ') || lower.contains('vị trí') || lower.contains('tọa độ') || lower.contains('gps')) {
+      return Icons.location_on_rounded;
+    }
+    if (lower.contains('ảnh') || lower.contains('hình') || lower.contains('photo') || lower.contains('image')) {
+      return Icons.photo_camera_rounded;
+    }
+    if (lower.contains('mở rộng') || lower.contains('động') || lower.contains('dynamic') || lower.contains('khác')) {
+      return Icons.extension_rounded;
+    }
+    return Icons.folder_open_rounded;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -183,7 +204,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     // Phân nhóm các trường theo Section (nếu có)
     final sections = <String, List<DynamicFormField>>{};
     for (final field in widget.fields) {
-      final sec = field.section ?? '';
+      final sec = field.section ?? 'Thông tin chung';
       sections.putIfAbsent(sec, () => []).add(field);
     }
 
@@ -193,41 +214,97 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         ...sections.entries.map((secEntry) {
           final sectionTitle = secEntry.key;
           final sectionFields = secEntry.value;
+          final hasRequired = sectionFields.any((f) => f.isRequired);
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (sectionTitle.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0, bottom: 12.0),
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
+              borderRadius: AppRadius.roundedLg,
+              border: Border.all(
+                color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                width: 1,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x06000000),
+                  offset: Offset(0, 2),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Section Header Bar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.darkSurfaceContainerLowest
+                        : AppColors.surfaceContainerHigh.withValues(alpha: 0.35),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                        width: 1,
+                      ),
+                    ),
+                  ),
                   child: Row(
                     children: [
                       Container(
-                        width: 4,
-                        height: 16,
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: AppRadius.roundedSm,
+                        ),
+                        child: Icon(
+                          _getSectionIcon(sectionTitle),
+                          size: 16,
                           color: AppColors.primary,
-                          borderRadius: AppRadius.roundedFull,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        sectionTitle,
-                        style: AppTypography.titleMedium(
-                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                        ).copyWith(fontWeight: FontWeight.w700),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          sectionTitle,
+                          style: AppTypography.titleMedium(
+                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          ).copyWith(fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
                       ),
+                      if (hasRequired)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withValues(alpha: 0.1),
+                            borderRadius: AppRadius.roundedSm,
+                          ),
+                          child: Text(
+                            'Có trường bắt buộc',
+                            style: AppTypography.labelSmall(color: AppColors.error).copyWith(fontSize: 10),
+                          ),
+                        ),
                     ],
                   ),
                 ),
+
+                // Fields List inside Section
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _buildSectionFieldWidgets(sectionFields),
+                  ),
+                ),
               ],
-              ...sectionFields.map((field) => _buildFieldWidget(field)),
-            ],
+            ),
           );
         }),
 
         if (widget.submitButtonText != null) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           AppButton(
             text: widget.submitButtonText!,
             isLoading: widget.isSubmitting,
@@ -236,9 +313,80 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             height: 48,
             onPressed: _handleSubmit,
           ),
+          const SizedBox(height: 16),
         ],
       ],
     );
+  }
+
+  List<Widget> _buildSectionFieldWidgets(List<DynamicFormField> sectionFields) {
+    final widgets = <Widget>[];
+    final hasLat = sectionFields.any((f) => f.code == 'lat');
+    final hasLng = sectionFields.any((f) => f.code == 'lng');
+
+    for (int i = 0; i < sectionFields.length; i++) {
+      final field = sectionFields[i];
+
+      // Nếu gặp trường lat (và có lng đi cùng hoặc lat đơn lẻ) -> Dựng DynamicGpsCoordinatesWidget
+      if (field.code == 'lat') {
+        final lngField = hasLng ? sectionFields.firstWhere((f) => f.code == 'lng') : null;
+        final latVal = _formData['lat'] is num
+            ? _formData['lat'] as num
+            : num.tryParse(_formData['lat']?.toString() ?? '');
+        final lngVal = _formData['lng'] is num
+            ? _formData['lng'] as num
+            : num.tryParse(_formData['lng']?.toString() ?? '');
+        final errText = _errors['lat'] ?? _errors['lng'];
+
+        widgets.add(
+          DynamicGpsCoordinatesWidget(
+            latField: field,
+            lngField: lngField,
+            lat: latVal,
+            lng: lngVal,
+            errorText: errText,
+            onCoordinatesChanged: (newLat, newLng) {
+              updateFieldValue('lat', newLat);
+              if (hasLng) {
+                updateFieldValue('lng', newLng);
+              }
+            },
+          ),
+        );
+        continue;
+      }
+
+      // Nếu gặp trường lng mà đã có trường lat đi cùng -> Đã được vẽ chung trong GpsCoordinatesWidget
+      if (field.code == 'lng' && hasLat) {
+        continue;
+      }
+
+      // Nếu chỉ có lng đơn lẻ mà không có lat
+      if (field.code == 'lng' && !hasLat) {
+        final lngVal = _formData['lng'] is num
+            ? _formData['lng'] as num
+            : num.tryParse(_formData['lng']?.toString() ?? '');
+        final errText = _errors['lng'];
+
+        widgets.add(
+          DynamicGpsCoordinatesWidget(
+            lngField: field,
+            lat: null,
+            lng: lngVal,
+            errorText: errText,
+            onCoordinatesChanged: (newLat, newLng) {
+              updateFieldValue('lng', newLng);
+            },
+          ),
+        );
+        continue;
+      }
+
+      // Các trường thông thường khác
+      widgets.add(_buildFieldWidget(field));
+    }
+
+    return widgets;
   }
 
   Widget _buildFieldWidget(DynamicFormField field) {

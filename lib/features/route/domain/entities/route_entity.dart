@@ -4,21 +4,35 @@ class DealerEntity {
   final String id;
   final String order;
   final String name;
+  final String? code;
+  final String? phone;
+  final String? contactPerson;
+  final String? type;
   final String address;
   final DealerVisitStatus status;
   final String statusLabel;
   final String? visitedTime;
   final bool isVip;
+  final double? lat;
+  final double? lng;
+  final dynamic customer;
 
   const DealerEntity({
     required this.id,
     required this.order,
     required this.name,
+    this.code,
+    this.phone,
+    this.contactPerson,
+    this.type,
     required this.address,
     required this.status,
     required this.statusLabel,
     this.visitedTime,
     required this.isVip,
+    this.lat,
+    this.lng,
+    this.customer,
   });
 }
 

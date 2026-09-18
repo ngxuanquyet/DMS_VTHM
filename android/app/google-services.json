@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "306393092068",
+    "project_id": "dms-vthm",
+    "storage_bucket": "dms-vthm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:306393092068:android:4c8c042b2da3d428a141f1",
+        "android_client_info": {
+          "package_name": "com.vthmgroup.dms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsMbiQJFhql1B5KgQ-N2KweE8TrvCINw4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

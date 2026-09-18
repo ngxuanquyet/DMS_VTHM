@@ -1,24 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/language_provider.dart';
-import '../../../../core/map/goong_providers.dart';
-import '../../../../core/map/goong_static_map.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/route_dealer_timeline.dart';
 import '../widgets/route_header_card.dart';
+import '../widgets/route_map_view.dart';
 
-class RouteScreen extends ConsumerWidget {
+class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RouteScreen> createState() => _RouteScreenState();
+}
+
+class _RouteScreenState extends ConsumerState<RouteScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(routeViewModelProvider);
     final vm = ref.read(routeViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
@@ -37,7 +47,7 @@ class RouteScreen extends ConsumerWidget {
                 )
               : RefreshIndicator(
                   color: AppColors.primaryContainer,
-                  onRefresh: () => vm.loadRouteDetail(),
+                  onRefresh: () => vm.loadRouteDetail(isRefresh: true),
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(
@@ -47,18 +57,69 @@ class RouteScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header Card with progress
+                        // Header Card with route selection & progress
                         RouteHeaderCard(route: state.routeDetail!),
+                        const SizedBox(height: AppSpacing.stackMd),
+
+                        // Search box for customers on the route
+                        Container(
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE0E3E0),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: (val) => vm.setSearchQuery(val),
+                            decoration: InputDecoration(
+                              hintText: 'Tìm điểm bán, mã KH, SĐT trên tuyến...',
+                              hintStyle: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 13,
+                                color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF6F7A74),
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search,
+                                size: 20,
+                                color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF6F7A74),
+                              ),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 18),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        vm.setSearchQuery('');
+                                      },
+                                    )
+                                  : null,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: AppSpacing.stackMd),
 
                         // Segmented Control (Danh sách / Bản đồ)
                         Container(
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
-                            borderRadius: AppRadius.roundedMd,
+                            color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFE4EADD),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                              color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFBECAB7),
                               width: 1,
                             ),
                           ),
@@ -67,32 +128,54 @@ class RouteScreen extends ConsumerWidget {
                               Expanded(
                                 child: InkWell(
                                   onTap: () => vm.selectTab(0),
-                                  borderRadius: AppRadius.roundedSm,
+                                  borderRadius: BorderRadius.circular(8),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(vertical: 9),
                                     decoration: BoxDecoration(
                                       color: state.selectedTab == 0
                                           ? (isDark
                                               ? AppColors.darkSurfaceContainerLowest
                                               : AppColors.surfaceContainerLowest)
                                           : Colors.transparent,
-                                      borderRadius: AppRadius.roundedSm,
-                                      boxShadow: state.selectedTab == 0 ? AppShadows.level1 : [],
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: state.selectedTab == 0
+                                          ? [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
+                                                blurRadius: 4,
+                                                offset: const Offset(0, 1),
+                                              )
+                                            ]
+                                          : [],
                                     ),
                                     child: Center(
-                                      child: Text(
-                                        strings.routeListTab,
-                                        style: AppTypography.labelLarge(
-                                          color: state.selectedTab == 0
-                                              ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                                              : (isDark
-                                                  ? AppColors.darkOnSurfaceVariant
-                                                  : AppColors.onSurfaceVariant),
-                                        ).copyWith(
-                                          fontWeight: state.selectedTab == 0
-                                              ? FontWeight.w700
-                                              : FontWeight.w500,
-                                        ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.format_list_bulleted_rounded,
+                                            size: 16,
+                                            color: state.selectedTab == 0
+                                                ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                                : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            strings.routeListTab,
+                                            style: TextStyle(
+                                              fontFamily: 'Inter',
+                                              fontSize: 13,
+                                              color: state.selectedTab == 0
+                                                  ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                                  : (isDark
+                                                      ? AppColors.darkOnSurfaceVariant
+                                                      : AppColors.onSurfaceVariant),
+                                              fontWeight: state.selectedTab == 0
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -101,32 +184,54 @@ class RouteScreen extends ConsumerWidget {
                               Expanded(
                                 child: InkWell(
                                   onTap: () => vm.selectTab(1),
-                                  borderRadius: AppRadius.roundedSm,
+                                  borderRadius: BorderRadius.circular(8),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(vertical: 9),
                                     decoration: BoxDecoration(
                                       color: state.selectedTab == 1
                                           ? (isDark
                                               ? AppColors.darkSurfaceContainerLowest
                                               : AppColors.surfaceContainerLowest)
                                           : Colors.transparent,
-                                      borderRadius: AppRadius.roundedSm,
-                                      boxShadow: state.selectedTab == 1 ? AppShadows.level1 : [],
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: state.selectedTab == 1
+                                          ? [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
+                                                blurRadius: 4,
+                                                offset: const Offset(0, 1),
+                                              )
+                                            ]
+                                          : [],
                                     ),
                                     child: Center(
-                                      child: Text(
-                                        strings.routeMapTab,
-                                        style: AppTypography.labelLarge(
-                                          color: state.selectedTab == 1
-                                              ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                                              : (isDark
-                                                  ? AppColors.darkOnSurfaceVariant
-                                                  : AppColors.onSurfaceVariant),
-                                        ).copyWith(
-                                          fontWeight: state.selectedTab == 1
-                                              ? FontWeight.w700
-                                              : FontWeight.w500,
-                                        ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.map_rounded,
+                                            size: 16,
+                                            color: state.selectedTab == 1
+                                                ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                                : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            strings.routeMapTab,
+                                            style: TextStyle(
+                                              fontFamily: 'Inter',
+                                              fontSize: 13,
+                                              color: state.selectedTab == 1
+                                                  ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                                                  : (isDark
+                                                      ? AppColors.darkOnSurfaceVariant
+                                                      : AppColors.onSurfaceVariant),
+                                              fontWeight: state.selectedTab == 1
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -141,94 +246,7 @@ class RouteScreen extends ConsumerWidget {
                         if (state.selectedTab == 0)
                           RouteDealerTimeline(dealers: state.routeDetail!.dealers)
                         else
-                          AppCard(
-                            padding: EdgeInsets.zero,
-                            child: Column(
-                              children: [
-                                SizedBox(
-                                  height: 380,
-                                  width: double.infinity,
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      // Bản đồ THẬT quanh vị trí đang đứng (Goong static map).
-                                      Builder(
-                                        builder: (context) {
-                                          final livePoint = ref.watch(currentPointProvider).value;
-                                          if (livePoint != null) {
-                                            return GoongStaticMap(
-                                              center: livePoint,
-                                              placeholder: const Center(
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              ),
-                                            );
-                                          }
-                                          return Center(
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                const Icon(Icons.location_off, color: AppColors.error, size: 36),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Chưa bật định vị GPS',
-                                                  style: AppTypography.titleMedium(
-                                                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                                  ).copyWith(fontWeight: FontWeight.w600),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  'Bật GPS để xem bản đồ lộ trình thực tế',
-                                                  style: AppTypography.bodySmall(
-                                                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      Positioned(
-                                        bottom: 16,
-                                        left: 16,
-                                        right: 16,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: isDark
-                                                ? AppColors.darkSurfaceContainer
-                                                : AppColors.surfaceContainerLowest,
-                                            borderRadius: AppRadius.roundedMd,
-                                            boxShadow: AppShadows.level2,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.location_on,
-                                                color: AppColors.primaryContainer,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  strings.isVietnamese
-                                                      ? 'Hiển thị ${state.routeDetail!.totalDealers} điểm dừng trên tuyến'
-                                                      : 'Displaying ${state.routeDetail!.totalDealers} stops on the route',
-                                                  style: AppTypography.bodyMedium(
-                                                    color: isDark
-                                                        ? AppColors.darkOnSurface
-                                                        : AppColors.onSurface,
-                                                  ).copyWith(fontWeight: FontWeight.w600),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          RouteMapView(dealers: state.routeDetail!.dealers),
                         const SizedBox(height: 80),
                       ],
                     ),

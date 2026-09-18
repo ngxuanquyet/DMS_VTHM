@@ -3,6 +3,7 @@ export 'models/dynamic_form_field.dart';
 export 'widgets/boolean_field_widget.dart';
 export 'widgets/datetime_field_widget.dart';
 export 'widgets/dynamic_form_field_wrapper.dart';
+export 'widgets/gps_coordinates_field_widget.dart';
 export 'widgets/gps_field_widget.dart';
 export 'widgets/long_text_field_widget.dart';
 export 'widgets/multiple_choice_field_widget.dart';

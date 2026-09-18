@@ -19,5 +19,9 @@ abstract class CustomerRepository {
     required Map<String, dynamic> changes,
   });
 
+  Future<CustomerEntity> createCustomer(Map<String, dynamic> data);
+
+  Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false});
+
   Future<bool> deleteCustomer(int id);
 }

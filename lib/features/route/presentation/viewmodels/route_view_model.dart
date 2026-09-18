@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../customer/data/repositories/customer_repository_impl.dart';
+import '../../../customer/domain/entities/customer_entity.dart';
+import '../../../customer/domain/repositories/customer_repository.dart';
 import '../../data/repositories/route_repository_impl.dart';
 import '../../data/services/route_api_service.dart';
+import '../../domain/entities/route_entity.dart';
 import '../../domain/repositories/route_repository.dart';
 import '../../domain/usecases/route_usecases.dart';
 import '../states/route_state.dart';
@@ -27,16 +31,23 @@ final checkoutDealerUseCaseProvider = Provider<CheckoutDealerUseCase>((ref) {
   return CheckoutDealerUseCase(ref.read(routeRepositoryProvider));
 });
 
-final routeViewModelProvider = StateNotifierProvider.autoDispose<RouteViewModel, RouteState>((ref) {
+final routeViewModelProvider =
+    StateNotifierProvider.autoDispose<RouteViewModel, RouteState>((ref) {
+  final customerRepository = ref.read(customerRepositoryProvider);
+  final getRouteDetailUseCase = ref.read(getRouteDetailUseCaseProvider);
   return RouteViewModel(
-    getRouteDetailUseCase: ref.read(getRouteDetailUseCaseProvider),
+    customerRepository: customerRepository,
+    getRouteDetailUseCase: getRouteDetailUseCase,
   );
 });
 
 class RouteViewModel extends StateNotifier<RouteState> {
+  final CustomerRepository customerRepository;
   final GetRouteDetailUseCase getRouteDetailUseCase;
+  List<CustomerEntity> _rawCustomers = [];
 
   RouteViewModel({
+    required this.customerRepository,
     required this.getRouteDetailUseCase,
   }) : super(const RouteState()) {
     loadRouteDetail();
@@ -46,21 +57,149 @@ class RouteViewModel extends StateNotifier<RouteState> {
     state = state.copyWith(selectedTab: index);
   }
 
-  Future<void> loadRouteDetail() async {
+  void selectDealer(String? dealerId) {
+    state = state.copyWith(selectedDealerId: dealerId);
+  }
+
+  void setSearchQuery(String query) {
+    state = state.copyWith(searchQuery: query);
+    _recomputeRouteDetail();
+  }
+
+  void selectRoute(String routeName) {
+    state = state.copyWith(selectedRoute: routeName);
+    _recomputeRouteDetail();
+  }
+
+  Future<void> loadRouteDetail({bool isRefresh = false}) async {
     state = state.copyWith(status: RouteStatus.loading);
     try {
-      final routeDetail = await getRouteDetailUseCase();
+      // 1. Fetch user's customers from customer repository
+      final customers = await customerRepository.getCustomers(forceRefresh: isRefresh);
+      _rawCustomers = customers;
+
+      // 2. Extract unique route names from customer list
+      final Set<String> routeSet = {'Tất cả tuyến'};
+      for (final c in customers) {
+        if (c.route.trim().isNotEmpty) {
+          routeSet.add(c.route.trim());
+        }
+      }
+      final availableRoutes = routeSet.toList();
+
+      // Ensure selectedRoute is valid
+      String selectedRoute = state.selectedRoute;
+      if (!availableRoutes.contains(selectedRoute)) {
+        selectedRoute = availableRoutes.isNotEmpty ? availableRoutes.first : 'Tất cả tuyến';
+      }
+
       state = state.copyWith(
-        status: RouteStatus.loaded,
-        routeDetail: routeDetail,
-        errorMessage: null,
+        availableRoutes: availableRoutes,
+        selectedRoute: selectedRoute,
       );
+
+      _recomputeRouteDetail();
     } catch (e) {
       state = state.copyWith(
         status: RouteStatus.error,
         errorMessage: e.toString().replaceAll('AppException: ', ''),
       );
     }
+  }
+
+  void _recomputeRouteDetail() {
+    // Filter customers by selected route
+    var filtered = _rawCustomers;
+    if (state.selectedRoute != 'Tất cả tuyến') {
+      filtered = filtered.where((c) => c.route == state.selectedRoute).toList();
+    }
+
+    // Filter by search query
+    final query = state.searchQuery.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      filtered = filtered.where((c) {
+        return c.name.toLowerCase().contains(query) ||
+            c.code.toLowerCase().contains(query) ||
+            c.phone.replaceAll(' ', '').contains(query) ||
+            c.address.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Build DealerEntities
+    bool hasFoundFirstPending = false;
+    final dealers = <DealerEntity>[];
+
+    for (int i = 0; i < filtered.length; i++) {
+      final c = filtered[i];
+      DealerVisitStatus visitStatus;
+      String statusLabel;
+      String? visitedTime;
+
+      if (c.visitStatus == CustomerVisitStatus.visited) {
+        visitStatus = DealerVisitStatus.completed;
+        statusLabel = 'Đã ghé';
+        visitedTime = '08:45 AM';
+      } else {
+        if (!hasFoundFirstPending) {
+          visitStatus = DealerVisitStatus.inProgress;
+          statusLabel = 'Đang ghé';
+          hasFoundFirstPending = true;
+        } else {
+          visitStatus = DealerVisitStatus.pending;
+          statusLabel = 'Chưa ghé';
+        }
+      }
+
+      final isVip = c.type.toLowerCase().contains('npp') ||
+          c.type.toLowerCase().contains('cấp 1') ||
+          c.type.toLowerCase().contains('siêu thị');
+
+      dealers.add(
+        DealerEntity(
+          id: c.id.toString(),
+          order: (i + 1).toString().padLeft(2, '0'),
+          name: c.name,
+          code: c.code,
+          phone: c.phone,
+          contactPerson: c.contactPerson,
+          type: c.type,
+          address: c.address,
+          status: visitStatus,
+          statusLabel: statusLabel,
+          visitedTime: visitedTime,
+          isVip: isVip,
+          lat: c.lat,
+          lng: c.lng,
+          customer: c,
+        ),
+      );
+    }
+
+    final total = dealers.length;
+    final completed = dealers.where((d) => d.status == DealerVisitStatus.completed).length;
+    final pending = total - completed;
+    final progress = total > 0 ? (completed / total) : 0.0;
+
+    final title = state.selectedRoute == 'Tất cả tuyến'
+        ? 'Tất cả điểm bán trên tuyến'
+        : state.selectedRoute;
+
+    final routeDetail = RouteDetailEntity(
+      id: state.selectedRoute,
+      title: title,
+      totalDealers: total,
+      completedDealers: completed,
+      pendingDealers: pending,
+      progressPercent: progress,
+      dealers: dealers,
+    );
+
+    state = state.copyWith(
+      status: RouteStatus.loaded,
+      routeDetail: routeDetail,
+      selectedDealerId: state.selectedDealerId ?? (dealers.isNotEmpty ? dealers.first.id : null),
+      errorMessage: null,
+    );
   }
 }
 

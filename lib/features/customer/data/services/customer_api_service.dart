@@ -116,4 +116,30 @@ class CustomerApiService {
     }
     return {};
   }
+
+  /// Lấy cấu hình schema form nhập liệu khách hàng động
+  /// GET /crm/customer-form/schema
+  Future<Map<String, dynamic>> getCustomerFormSchema() async {
+    final response = await _apiClient.get('/crm/customer-form/schema');
+    if (response is Map<String, dynamic>) {
+      return response;
+    }
+    throw Exception('Phản hồi schema form khách hàng không đúng định dạng');
+  }
+
+  /// Thêm mới điểm bán
+  /// POST /crm/customers
+  Future<CustomerDto> createCustomer(Map<String, dynamic> data) async {
+    final response = await _apiClient.post(
+      '/crm/customers',
+      data: data,
+    );
+    if (response is Map<String, dynamic>) {
+      if (response['data'] is Map<String, dynamic>) {
+        return CustomerDto.fromJson(response['data'] as Map<String, dynamic>);
+      }
+      return CustomerDto.fromJson(response);
+    }
+    throw Exception('Không thể tạo mới điểm bán');
+  }
 }

@@ -127,7 +127,7 @@ class CustomerCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Row: Code + Type & Distance/GPS status + Edit Action
+                // Top Row: Code + Type & Distance/GPS status + Directions Action
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -240,22 +240,57 @@ class CustomerCard extends StatelessWidget {
                               ],
                             ),
                           ),
-                        const SizedBox(width: 4),
-                        if (onEdit != null)
-                          InkWell(
-                            onTap: onEdit,
-                            borderRadius: AppRadius.roundedSm,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4.0),
-                              child: Icon(
-                                Icons.edit_note_rounded,
-                                size: 19,
+                        const SizedBox(width: 6),
+                        // Directions Button on Top-Right
+                        InkWell(
+                          onTap: () => _openMapDirections(
+                            context,
+                            customer: customer,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.darkSurfaceContainer
+                                  : const Color(0xFFEFF6E8),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
                                 color: isDark
-                                    ? AppColors.primaryFixedDim
-                                    : AppColors.primary,
+                                    ? AppColors.darkOutlineVariant
+                                    : const Color(0xFFBECAB7),
+                                width: 1,
                               ),
                             ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.directions,
+                                  size: 13,
+                                  color: isDark
+                                      ? AppColors.primaryFixedDim
+                                      : const Color(0xFF006E15),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Chỉ đường',
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? AppColors.primaryFixedDim
+                                        : const Color(0xFF006E15),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        ),
                       ],
                     ),
                   ],
@@ -335,84 +370,93 @@ class CustomerCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Directions Button
-                        InkWell(
-                          onTap: () => _openMapDirections(
-                            context,
-                            customer: customer,
-                          ),
-                          borderRadius: AppRadius.roundedSm,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
-                                  ? AppColors.secondary.withValues(alpha: 0.12)
-                                  : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh),
-                              borderRadius: AppRadius.roundedSm,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.directions_rounded,
-                                  size: 13,
-                                  color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
-                                      ? AppColors.secondary
-                                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Chỉ đường',
-                                  style: AppTypography.labelSmall(
-                                    color: (customer.hasCoordinates || customer.address.trim().isNotEmpty)
-                                        ? AppColors.secondary
-                                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                                  ).copyWith(fontWeight: FontWeight.w700),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
                         // Phone Call Button
-                        InkWell(
-                          onTap: () => _makePhoneCall(context, customer.phone),
-                          borderRadius: AppRadius.roundedSm,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: AppRadius.roundedSm,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.phone_in_talk_rounded,
-                                  size: 12,
-                                  color: isDark
-                                      ? AppColors.primaryFixedDim
-                                      : AppColors.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  customer.phone,
-                                  style: AppTypography.labelSmall(
+                        if (customer.phone.isNotEmpty) ...[
+                          InkWell(
+                            onTap: () => _makePhoneCall(context, customer.phone),
+                            borderRadius: AppRadius.roundedSm,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: AppRadius.roundedSm,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.phone_in_talk_rounded,
+                                    size: 12,
                                     color: isDark
                                         ? AppColors.primaryFixedDim
                                         : AppColors.primary,
-                                  ).copyWith(fontWeight: FontWeight.w700),
-                                ),
-                              ],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    customer.phone,
+                                    style: AppTypography.labelSmall(
+                                      color: isDark
+                                          ? AppColors.primaryFixedDim
+                                          : AppColors.primary,
+                                    ).copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                        ],
+                        // Edit Customer Button on Bottom-Right
+                        if (onEdit != null)
+                          InkWell(
+                            onTap: onEdit,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.darkSurfaceContainer
+                                    : const Color(0xFFEFF6E8),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isDark
+                                      ? AppColors.darkOutlineVariant
+                                      : const Color(0xFFBECAB7),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.edit_note_rounded,
+                                    size: 15,
+                                    color: isDark
+                                        ? AppColors.primaryFixedDim
+                                        : const Color(0xFF006E15),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Sửa',
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? AppColors.primaryFixedDim
+                                          : const Color(0xFF006E15),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ],

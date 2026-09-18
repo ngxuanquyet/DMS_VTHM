@@ -38,6 +38,9 @@ class GoongMapView extends StatefulWidget {
   /// Cho phép thao tác kéo, vuốt, phóng to.
   final bool interactive;
 
+  /// Kiểu bản đồ Goong (Đường phố, Vệ tinh, Giao thông, Ban đêm)
+  final GoongMapStyle mapStyle;
+
   /// Callback khi bấm nút vị trí của tôi.
   final VoidCallback? onMyLocationTap;
 
@@ -54,6 +57,7 @@ class GoongMapView extends StatefulWidget {
     this.showMyLocationButton = true,
     this.showZoomControls = false,
     this.interactive = true,
+    this.mapStyle = GoongMapStyle.standard,
     this.onMyLocationTap,
     this.onTap,
   });
@@ -89,7 +93,8 @@ class _GoongMapViewState extends State<GoongMapView> {
     return Stack(
       children: [
         MapLibreMap(
-          styleString: GoongConfig.mapStyleUrl,
+          key: ValueKey('maplibre_${widget.mapStyle.styleName}'),
+          styleString: widget.mapStyle.url,
           initialCameraPosition: CameraPosition(
             target: widget.center,
             zoom: widget.zoom,
@@ -119,6 +124,8 @@ class _GoongMapViewState extends State<GoongMapView> {
           dragEnabled: widget.interactive,
           trackCameraPosition: true,
           attributionButtonPosition: AttributionButtonPosition.bottomLeft,
+          attributionButtonMargins: const math.Point(-1000, -1000),
+          logoViewMargins: const math.Point(-1000, -1000),
         ),
 
         // Nút lấy GPS / Bay về vị trí hiện tại

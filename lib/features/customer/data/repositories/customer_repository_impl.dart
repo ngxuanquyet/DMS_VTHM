@@ -153,6 +153,31 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   @override
+  Future<CustomerEntity> createCustomer(Map<String, dynamic> data) async {
+    final dto = await _apiService.createCustomer(data);
+    final entity = dto.toEntity();
+    _cachedCustomers.insert(0, entity);
+    return entity;
+  }
+
+  Map<String, dynamic>? _cachedSchema;
+
+  @override
+  Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedSchema != null) {
+      return _cachedSchema!;
+    }
+    try {
+      final res = await _apiService.getCustomerFormSchema();
+      _cachedSchema = res;
+      return res;
+    } catch (e) {
+      if (_cachedSchema != null) return _cachedSchema!;
+      rethrow;
+    }
+  }
+
+  @override
   Future<bool> deleteCustomer(int id) async {
     try {
       await _apiService.deleteCustomer(id);
