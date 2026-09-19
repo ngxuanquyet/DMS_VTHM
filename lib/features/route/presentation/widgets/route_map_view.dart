@@ -4,9 +4,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/location/location_provider.dart';
 import '../../../../core/map/goong_config.dart';
 import '../../../../core/map/goong_map_view.dart';
 import '../../../../core/map/goong_providers.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -14,6 +16,8 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../domain/entities/route_entity.dart';
+import '../viewmodels/route_view_model.dart';
+import 'checkin_distance_warning_dialog.dart';
 
 class RouteMapView extends ConsumerStatefulWidget {
   final List<DealerEntity> dealers;
@@ -66,7 +70,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   }
 
   String _formatDistance(double? distanceMeters) {
-    if (distanceMeters == null) return '';
+    if (distanceMeters == null) return '_';
     if (distanceMeters < 1000) {
       return '${distanceMeters.round()} m';
     }
@@ -275,21 +279,19 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                       ),
                     ],
                   ),
-                  if (selectedDistance != null) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(Icons.near_me_rounded, size: 12, color: AppColors.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Cách bạn ${_formatDistance(selectedDistance)}',
-                          style: AppTypography.labelSmall(
-                            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                          ).copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ],
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.near_me_rounded, size: 12, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Cách bạn ${_formatDistance(selectedDistance)}',
+                        style: AppTypography.labelSmall(
+                          color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -329,7 +331,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                         text: 'Check-in',
                         height: 36,
                         icon: Icons.login_rounded,
-                        onPressed: () => context.push('/check-in'),
+                        onPressed: () => _handleCheckin(context, selectedDealer!),
                       ),
                     ],
                   ),
@@ -339,6 +341,76 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleCheckin(BuildContext context, DealerEntity dealer) async {
+    // 1. Kiểm tra nhanh quyền vị trí & trạng thái GPS từ RAM (0ms)
+    final locState = ref.read(locationProvider);
+    if (!locState.isReady) {
+      // Chưa cấp quyền hoặc chưa bật GPS -> Mở dialog yêu cầu cấp quyền ngay
+      await ref.read(locationServiceProvider).checkAndGetLocation(context);
+      return;
+    }
+
+    // 2. Tính khoảng cách ngay lập tức (< 1ms) từ dữ liệu sẵn có
+    double actualDistance;
+    if (dealer.lat == null || dealer.lng == null) {
+      // Điểm bán chưa có tọa độ GPS -> Không gọi GPS vô ích, hiện cảnh báo ngay
+      actualDistance = 850;
+    } else {
+      final livePoint = ref.read(currentPointProvider).value;
+      if (livePoint != null) {
+        actualDistance = Geolocator.distanceBetween(
+          livePoint.lat,
+          livePoint.lng,
+          dealer.lat!,
+          dealer.lng!,
+        );
+      } else {
+        final cachedPos = LocationService.currentCachedPosition;
+        if (cachedPos != null) {
+          actualDistance = Geolocator.distanceBetween(
+            cachedPos.latitude,
+            cachedPos.longitude,
+            dealer.lat!,
+            dealer.lng!,
+          );
+        } else {
+          final lastKnown = await Geolocator.getLastKnownPosition();
+          if (lastKnown != null) {
+            actualDistance = Geolocator.distanceBetween(
+              lastKnown.latitude,
+              lastKnown.longitude,
+              dealer.lat!,
+              dealer.lng!,
+            );
+          } else {
+            actualDistance = 850;
+          }
+        }
+      }
+    }
+
+    // 3. Nếu khoảng cách > 100m -> Hiển thị popup cảnh báo tức thì (<5ms)
+    if (actualDistance > 100) {
+      if (context.mounted) {
+        showCheckinDistanceWarningDialog(
+          context,
+          dealerName: dealer.name,
+          distanceMeters: actualDistance,
+          lat: dealer.lat,
+          lng: dealer.lng,
+          address: dealer.address,
+        );
+      }
+      return;
+    }
+
+    // 4. Hợp lệ (<= 100m) -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
+    ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
+    if (context.mounted) {
+      context.push('/check-in');
+    }
   }
 
   Widget _layerButton({

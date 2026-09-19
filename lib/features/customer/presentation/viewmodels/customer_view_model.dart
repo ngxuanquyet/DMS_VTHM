@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/map/goong_providers.dart';
+import '../../../../core/utils/string_utils.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -137,16 +138,17 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
     }
   }).toList();
 
-  // 2. Lọc theo từ khóa tìm kiếm
-  final query = state.searchQuery.trim().toLowerCase();
-  if (query.isNotEmpty) {
+  // 2. Lọc theo từ khóa tìm kiếm (hỗ trợ không dấu §7.4)
+  final rawQuery = state.searchQuery.trim();
+  if (rawQuery.isNotEmpty) {
+    final query = StringUtils.toUnaccentedLower(rawQuery);
     list = list.where((c) {
-      return c.name.toLowerCase().contains(query) ||
+      return StringUtils.toUnaccentedLower(c.name).contains(query) ||
           c.code.toLowerCase().contains(query) ||
           c.phone.replaceAll(' ', '').contains(query) ||
-          c.address.toLowerCase().contains(query) ||
-          c.route.toLowerCase().contains(query) ||
-          (c.contactTitle != null && c.contactTitle!.toLowerCase().contains(query));
+          StringUtils.toUnaccentedLower(c.address).contains(query) ||
+          StringUtils.toUnaccentedLower(c.route).contains(query) ||
+          (c.contactTitle != null && StringUtils.toUnaccentedLower(c.contactTitle).contains(query));
     }).toList();
   }
 
@@ -179,17 +181,29 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
 class CustomerWithDistance {
   final CustomerEntity customer;
   final double? distanceMeters;
+  final String formattedDistance;
 
-  const CustomerWithDistance({
+  CustomerWithDistance({
     required this.customer,
     this.distanceMeters,
-  });
+  }) : formattedDistance = _formatDistance(distanceMeters);
 
-  String get formattedDistance {
-    if (distanceMeters == null) return '—';
-    if (distanceMeters! < 1000) {
-      return '${distanceMeters!.round()} m';
+  static String _formatDistance(double? d) {
+    if (d == null) return '—';
+    if (d < 1000) {
+      return '${d.round()} m';
     }
-    return '${(distanceMeters! / 1000).toStringAsFixed(1)} km';
+    return '${(d / 1000).toStringAsFixed(1)} km';
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CustomerWithDistance &&
+          runtimeType == other.runtimeType &&
+          customer == other.customer &&
+          distanceMeters == other.distanceMeters;
+
+  @override
+  int get hashCode => customer.hashCode ^ (distanceMeters?.hashCode ?? 0);
 }

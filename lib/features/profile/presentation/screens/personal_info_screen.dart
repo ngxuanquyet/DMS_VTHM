@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../domain/entities/user_profile_detail_entity.dart';
 import '../../domain/entities/user_relation_entity.dart';
 import '../states/personal_info_state.dart';
@@ -66,7 +67,7 @@ class PersonalInfoScreen extends ConsumerWidget {
   ) {
     if (state.status == PersonalInfoStatus.loading && state.profileDetail == null) {
       return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
+        child: AppLoading(size: 220),
       );
     }
 

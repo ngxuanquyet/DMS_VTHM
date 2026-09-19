@@ -125,11 +125,11 @@ class LocationNotifier extends StateNotifier<LocationState>
         });
       } catch (_) {}
 
-      // Fast active polling (1s interval) to guarantee instantaneous response on all Android devices
+      // Fallback polling (4s interval) to guarantee response on Android devices if OS stream misses
       final bindingName = WidgetsBinding.instance.runtimeType.toString();
       if (!bindingName.contains('TestWidgetsFlutterBinding') &&
           !bindingName.contains('AutomatedTestWidgetsFlutterBinding')) {
-        _pollingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
           if (mounted) {
             _checkLocationFast();
           }

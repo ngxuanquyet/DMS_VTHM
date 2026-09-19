@@ -132,14 +132,18 @@ class CheckinDealerModel {
   final bool isVip;
   final int distanceMeters;
   final String visitDuration;
+  final double? lat;
+  final double? lng;
 
   const CheckinDealerModel({
     required this.id,
     required this.name,
     required this.address,
-    this.isVip = false,
+    required this.isVip,
     required this.distanceMeters,
     required this.visitDuration,
+    this.lat,
+    this.lng,
   });
 
   factory CheckinDealerModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +154,8 @@ class CheckinDealerModel {
       isVip: json['isVip'] as bool? ?? false,
       distanceMeters: (json['distanceMeters'] as num?)?.toInt() ?? 0,
       visitDuration: json['visitDuration'] as String? ?? '00:00:00',
+      lat: (json['lat'] as num?)?.toDouble() ?? 21.3508,
+      lng: (json['lng'] as num?)?.toDouble() ?? 105.6592,
     );
   }
 
@@ -160,6 +166,8 @@ class CheckinDealerModel {
         'isVip': isVip,
         'distanceMeters': distanceMeters,
         'visitDuration': visitDuration,
+        'lat': lat,
+        'lng': lng,
       };
 
   CheckinDealerEntity toEntity() => CheckinDealerEntity(
@@ -169,6 +177,8 @@ class CheckinDealerModel {
         isVip: isVip,
         distanceMeters: distanceMeters,
         visitDuration: visitDuration,
+        lat: lat,
+        lng: lng,
       );
 }
 

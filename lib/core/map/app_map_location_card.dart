@@ -4,6 +4,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app_loading.dart';
 import 'goong_api_service.dart';
 import 'goong_config.dart';
 import 'goong_map_view.dart';
@@ -469,14 +470,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                       child: ElevatedButton.icon(
                         onPressed: _isLocating ? null : _getCurrentLocation,
                         icon: _isLocating
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
+                            ? const AppLoading(size: 16)
                             : Icon(
                                 hasCoords ? Icons.refresh_rounded : Icons.my_location_rounded,
                                 size: 18,

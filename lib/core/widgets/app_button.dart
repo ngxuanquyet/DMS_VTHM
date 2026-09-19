@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_loading.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -76,13 +77,10 @@ class AppButton extends StatelessWidget {
             padding: padding ?? const EdgeInsets.symmetric(horizontal: 16),
             child: Center(
               child: isLoading
-                  ? SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: fgColor,
-                      ),
+                  ? const SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: AppLoading(size: 26),
                     )
                   : Row(
                       mainAxisSize: MainAxisSize.min,

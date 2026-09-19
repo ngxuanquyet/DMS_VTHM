@@ -24,6 +24,7 @@ class CustomerDto {
   final int? geofenceRadiusM;
   final String status;
   final String approvalStatus;
+  final String? clientUuid;
   final String? createdByName;
   final String? updatedByName;
   final String? createdAt;
@@ -53,6 +54,7 @@ class CustomerDto {
     this.geofenceRadiusM,
     this.status = 'active',
     this.approvalStatus = 'approved',
+    this.clientUuid,
     this.createdByName,
     this.updatedByName,
     this.createdAt,
@@ -61,10 +63,28 @@ class CustomerDto {
     this.assignees = const [],
   });
 
-  factory CustomerDto.fromJson(Map<String, dynamic> json) {
+  factory CustomerDto.fromJson(Map<String, dynamic> json, {Map<int, String>? customerTypeMap}) {
     // Safely parse int ID
     final rawId = json['id'];
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '') ?? 0;
+
+    final rawCustomerTypeId = json['customer_type_id'] is int
+        ? json['customer_type_id'] as int
+        : int.tryParse(json['customer_type_id']?.toString() ?? '');
+
+    // Đọc đa dạng các khóa tên loại điểm bán từ server
+    String? parsedTypeName = json['customer_type_name']?.toString() ??
+        json['customer_type_code']?.toString() ??
+        json['customer_type']?.toString() ??
+        json['type']?.toString() ??
+        json['loai_kh']?.toString();
+
+    // Nếu server không trả tên loại trực tiếp, tra cứu qua customer_type_id trong meta
+    if ((parsedTypeName == null || parsedTypeName.trim().isEmpty) &&
+        rawCustomerTypeId != null &&
+        customerTypeMap != null) {
+      parsedTypeName = customerTypeMap[rawCustomerTypeId];
+    }
 
     // Safely parse latitude & longitude (can be string "21.322", num 21.322, or null)
     double? parseCoord(dynamic value) {
@@ -100,10 +120,8 @@ class CustomerDto {
       id: id,
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
-      customerTypeId: json['customer_type_id'] is int
-          ? json['customer_type_id'] as int
-          : int.tryParse(json['customer_type_id']?.toString() ?? ''),
-      customerTypeName: json['customer_type_name']?.toString(),
+      customerTypeId: rawCustomerTypeId,
+      customerTypeName: parsedTypeName,
       channelId: json['channel_id'] is int
           ? json['channel_id'] as int
           : int.tryParse(json['channel_id']?.toString() ?? ''),
@@ -126,6 +144,7 @@ class CustomerDto {
           : int.tryParse(json['geofence_radius_m']?.toString() ?? ''),
       status: json['status']?.toString() ?? 'active',
       approvalStatus: json['approval_status']?.toString() ?? 'approved',
+      clientUuid: json['client_uuid']?.toString(),
       createdByName: json['created_by_name']?.toString(),
       updatedByName: json['updated_by_name']?.toString(),
       createdAt: json['created_at']?.toString(),
@@ -143,6 +162,8 @@ class CustomerDto {
         accentColor = const Color(0xFF3B82F6); // Blue
         break;
       case 'đại lý cấp 1':
+      case 'đại lý c1':
+      case 'đại lý c2':
       case 'đại lý':
         accentColor = const Color(0xFF10B981); // Emerald
         break;
@@ -157,12 +178,18 @@ class CustomerDto {
         accentColor = const Color(0xFF10B981); // Emerald default
     }
 
+    final resolvedType = (customerTypeName != null && customerTypeName!.trim().isNotEmpty)
+        ? customerTypeName!.trim()
+        : (channelName != null && channelName!.trim().isNotEmpty
+            ? channelName!.trim()
+            : 'Đại lý');
+
     return CustomerEntity(
       id: id,
       code: code,
       name: name,
       customerTypeId: customerTypeId,
-      type: customerTypeName ?? (channelName ?? 'Điểm bán'),
+      type: resolvedType,
       channelId: channelId,
       channelName: channelName,
       regionId: regionId,
@@ -179,8 +206,8 @@ class CustomerDto {
       geofenceRadiusM: geofenceRadiusM,
       status: status,
       approvalStatus: approvalStatus,
-      createdByName: createdByName,
-      updatedByName: updatedByName,
+      syncStatus: 'synced',
+      clientUuid: clientUuid,
       createdAt: createdAt,
       updatedAt: updatedAt,
       isToday: true,
@@ -216,16 +243,30 @@ class CustomerApiResponse {
   factory CustomerApiResponse.fromJson(Map<String, dynamic> json) {
     final success = json['success'] == true;
     final message = json['message']?.toString() ?? '';
+    final meta = json['meta'] as Map<String, dynamic>? ?? {};
+
+    // Xây dựng map tra cứu danh mục loại khách hàng: id -> name/code
+    final Map<int, String> typeMap = {};
+    if (meta['customerTypes'] is List) {
+      for (final item in meta['customerTypes'] as List) {
+        if (item is Map<String, dynamic>) {
+          final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
+          final name = (item['name'] ?? item['code'])?.toString().trim();
+          if (id != null && name != null && name.isNotEmpty) {
+            typeMap[id] = name;
+          }
+        }
+      }
+    }
 
     List<CustomerEntity> customers = [];
     if (json['data'] is List) {
       customers = (json['data'] as List)
           .whereType<Map<String, dynamic>>()
-          .map((item) => CustomerDto.fromJson(item).toEntity())
+          .map((item) => CustomerDto.fromJson(item, customerTypeMap: typeMap).toEntity())
           .toList();
     }
 
-    final meta = json['meta'] as Map<String, dynamic>? ?? {};
     final total = meta['total'] is int ? meta['total'] as int : int.tryParse(meta['total']?.toString() ?? '') ?? customers.length;
     final currentPage = meta['currentPage'] is int ? meta['currentPage'] as int : 1;
     final pageSize = meta['pageSize'] is int ? meta['pageSize'] as int : 100;

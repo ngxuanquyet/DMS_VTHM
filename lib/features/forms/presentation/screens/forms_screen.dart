@@ -4,6 +4,7 @@ import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/forms_state.dart';
 import '../viewmodels/forms_view_model.dart';
@@ -26,7 +27,7 @@ class FormsScreen extends ConsumerWidget {
       appBar: const VthmTopAppBar(),
       body: state.status == FormsStatus.loading && state.allForms.isEmpty
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primaryContainer),
+              child: AppLoading(size: 220),
             )
           : RefreshIndicator(
               color: AppColors.primaryContainer,

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
@@ -29,7 +30,7 @@ class HomeScreen extends ConsumerWidget {
       appBar: const VthmTopAppBar(),
       body: homeState.status == HomeStatus.loading && homeState.dashboard == null
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primaryContainer),
+              child: AppLoading(size: 220),
             )
           : homeState.status == HomeStatus.error && homeState.dashboard == null
               ? Center(
@@ -87,20 +88,23 @@ class HomeScreen extends ConsumerWidget {
                           RecentActivityTimeline(
                             activities: homeState.dashboard!.recentActivities,
                           ),
-                        const SizedBox(height: 80), // Padding for FAB & nav
+                        const SizedBox(height: 160), // Padding for FAB & nav
                       ],
                     ),
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primaryContainer,
-        foregroundColor: AppColors.onPrimary,
-        elevation: 4,
-        shape: const CircleBorder(),
-        onPressed: () {
-          _showActionBottomSheet(context, strings);
-        },
-        child: const Icon(Icons.add, size: 28),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 72),
+        child: FloatingActionButton(
+          backgroundColor: AppColors.primaryContainer,
+          foregroundColor: AppColors.onPrimary,
+          elevation: 4,
+          shape: const CircleBorder(),
+          onPressed: () {
+            _showActionBottomSheet(context, strings);
+          },
+          child: const Icon(Icons.add, size: 28),
+        ),
       ),
     );
   }

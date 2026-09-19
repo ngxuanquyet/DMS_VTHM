@@ -11,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../domain/entities/attendance_entity.dart';
 
 class GpsLocationCard extends ConsumerStatefulWidget {
@@ -236,7 +237,7 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
+          AppLoading(size: 140),
           SizedBox(height: 10),
           Text(
             'Đang lấy toạ độ GPS chính xác...',

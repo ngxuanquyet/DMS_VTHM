@@ -51,6 +51,8 @@ class CustomerEntity {
   final int? geofenceRadiusM;
   final String status;
   final String approvalStatus;
+  final String syncStatus; // 'synced' | 'pending' | 'error'
+  final String? clientUuid;
   final String? createdByName;
   final String? updatedByName;
   final String? createdAt;
@@ -83,6 +85,8 @@ class CustomerEntity {
     this.geofenceRadiusM,
     this.status = 'active',
     this.approvalStatus = 'approved',
+    this.syncStatus = 'synced',
+    this.clientUuid,
     this.createdByName,
     this.updatedByName,
     this.createdAt,
@@ -121,6 +125,8 @@ class CustomerEntity {
     int? geofenceRadiusM,
     String? status,
     String? approvalStatus,
+    String? syncStatus,
+    String? clientUuid,
     String? createdByName,
     String? updatedByName,
     String? createdAt,
@@ -153,6 +159,8 @@ class CustomerEntity {
       geofenceRadiusM: geofenceRadiusM ?? this.geofenceRadiusM,
       status: status ?? this.status,
       approvalStatus: approvalStatus ?? this.approvalStatus,
+      syncStatus: syncStatus ?? this.syncStatus,
+      clientUuid: clientUuid ?? this.clientUuid,
       createdByName: createdByName ?? this.createdByName,
       updatedByName: updatedByName ?? this.updatedByName,
       createdAt: createdAt ?? this.createdAt,

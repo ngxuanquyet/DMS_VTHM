@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import 'voice_input_mic_button.dart';
 
 class AppTextField extends StatelessWidget {
   final String? label;
@@ -17,6 +18,9 @@ class AppTextField extends StatelessWidget {
   final bool autofocus;
   final FocusNode? focusNode;
   final int? maxLines;
+  final bool readOnly;
+  final bool? enabled;
+  final bool enableVoiceInput;
 
   const AppTextField({
     super.key,
@@ -33,10 +37,39 @@ class AppTextField extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.maxLines = 1,
+    this.readOnly = false,
+    this.enabled,
+    this.enableVoiceInput = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    Widget? effectiveSuffix = suffixIcon;
+    if (enableVoiceInput && !readOnly) {
+      final voiceBtn = VoiceInputMicButton(
+        currentText: controller?.text,
+        fieldName: label,
+        onTextRecognized: (newText) {
+          if (controller != null) {
+            controller!.text = newText;
+          }
+          onChanged?.call(newText);
+        },
+      );
+
+      if (effectiveSuffix != null) {
+        effectiveSuffix = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            effectiveSuffix,
+            voiceBtn,
+          ],
+        );
+      } else {
+        effectiveSuffix = voiceBtn;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -51,6 +84,8 @@ class AppTextField extends StatelessWidget {
         TextField(
           controller: controller,
           obscureText: obscureText,
+          readOnly: readOnly,
+          enabled: enabled,
           maxLines: obscureText ? 1 : maxLines,
           onChanged: onChanged,
           keyboardType: keyboardType,
@@ -62,7 +97,7 @@ class AppTextField extends StatelessWidget {
             hintText: hintText,
             errorText: errorText,
             prefixIcon: prefixIcon,
-            suffixIcon: suffixIcon,
+            suffixIcon: effectiveSuffix,
           ),
         ),
       ],

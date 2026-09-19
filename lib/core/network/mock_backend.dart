@@ -202,7 +202,9 @@ class MockBackendInterceptor extends Interceptor {
               'address': 'Tổ hợp Thương mại Bá Thiện, Bình Xuyên',
               'isVip': true,
               'distanceMeters': 48,
-              'visitDuration': '00:24:18',
+              'visitDuration': '00:00:00',
+              'lat': 21.3508,
+              'lng': 105.6592,
             },
             'tasks': [
               {

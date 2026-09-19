@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../location/location_provider.dart';
+import '../services/location_service.dart';
 import 'goong_api_service.dart';
 import 'goong_models.dart';
 
@@ -20,22 +21,50 @@ final currentPointProvider = FutureProvider<GoongLatLng?>((ref) async {
     return null;
   }
 
+  // 1. Kiểm tra cache trong RAM trước (<0.1ms) để hiển thị tức thì
+  final cached = LocationService.currentCachedPosition;
+  if (cached != null) {
+    _refreshPositionInBackground();
+    return GoongLatLng(cached.latitude, cached.longitude);
+  }
+
+  // 2. Thử lấy vị trí đã biết gần nhất từ hệ thống (<5ms)
+  try {
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      LocationService.updateCachedPosition(lastKnown);
+      _refreshPositionInBackground();
+      return GoongLatLng(lastKnown.latitude, lastKnown.longitude);
+    }
+  } catch (_) {}
+
+  // 3. Fallback lấy vị trí mới nhanh với timeout 2 giây
   try {
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 8),
+        accuracy: LocationAccuracy.medium,
+        timeLimit: Duration(seconds: 2),
       ),
     );
+    LocationService.updateCachedPosition(position);
     return GoongLatLng(position.latitude, position.longitude);
   } catch (_) {
-    final lastKnown = await Geolocator.getLastKnownPosition();
-    if (lastKnown != null) {
-      return GoongLatLng(lastKnown.latitude, lastKnown.longitude);
-    }
     return null;
   }
 });
+
+void _refreshPositionInBackground() {
+  unawaited(
+    Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        timeLimit: Duration(seconds: 3),
+      ),
+    ).then((pos) {
+      LocationService.updateCachedPosition(pos);
+    }).catchError((_) {}),
+  );
+}
 
 /// Địa chỉ của một toạ độ, có nhớ kết quả.
 ///

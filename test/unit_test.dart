@@ -17,6 +17,10 @@ import 'package:vthm_dms/features/profile/data/models/user_relation_model.dart';
 import 'package:vthm_dms/features/route/data/models/route_model.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
 import 'package:vthm_dms/features/customer/data/models/customer_dto.dart';
+import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
+import 'package:vthm_dms/features/customer/domain/entities/customer_meta_entity.dart';
+import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
+import 'package:vthm_dms/features/route/presentation/states/route_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -465,6 +469,71 @@ void main() {
       final entity = dto.toEntity();
       expect(entity.lat, isNull);
       expect(entity.lng, isNull);
+    });
+  });
+
+  group('Customer Form Schema & Meta Offline Fallback Tests', () {
+    test('CustomerMetaData serialization and deserialization works symmetrically', () {
+      final json = kDefaultCustomerMeta.toJson();
+      final restored = CustomerMetaData.fromJson(json);
+
+      expect(restored.customerTypes.length, kDefaultCustomerMeta.customerTypes.length);
+      expect(restored.customerTypes.any((t) => t.name == 'Đại lý C2'), isTrue);
+      expect(restored.channels.length, kDefaultCustomerMeta.channels.length);
+      expect(restored.regions.length, kDefaultCustomerMeta.regions.length);
+      expect(restored.provinces.length, kDefaultCustomerMeta.provinces.length);
+    });
+
+    test('kDefaultCustomerFormSchema contains all essential fields for offline creation', () {
+      final fields = kDefaultCustomerFormSchema['data']['fields'] as List;
+      final codes = fields.map((f) => (f as Map)['code']).toSet();
+
+      expect(codes.contains('name'), isTrue);
+      expect(codes.contains('customer_type_id'), isTrue);
+      expect(codes.contains('channel_id'), isTrue);
+      expect(codes.contains('region_id'), isTrue);
+      expect(codes.contains('phone'), isTrue);
+      expect(codes.contains('address'), isTrue);
+      expect(codes.contains('lat_lng'), isTrue);
+    });
+
+    test('DynamicFormField copyWith correctly modifies options and properties', () {
+      const field = DynamicFormField(
+        code: 'customer_type_id',
+        label: 'Loại điểm bán',
+        type: DynamicFormFieldType.singleChoice,
+        initialValue: 1,
+      );
+
+      final modified = field.copyWith(
+        isRequired: true,
+        clearInitialValue: true,
+        options: const [
+          DynamicFormOption(label: 'Đại lý C2', value: 3),
+        ],
+      );
+
+      expect(modified.code, 'customer_type_id');
+      expect(modified.isRequired, isTrue);
+      expect(modified.initialValue, isNull);
+      expect(modified.options.length, 1);
+      expect(modified.options.first.label, 'Đại lý C2');
+      expect(modified.options.first.value, 3);
+    });
+  });
+
+  group('Route Circular Menu & Distance Sorting Tests', () {
+    test('RouteState copyWith toggles isSortedByDistance and coordinates accurately', () {
+      const state = RouteState();
+      expect(state.isSortedByDistance, isFalse);
+
+      final sorted = state.copyWith(isSortedByDistance: true, userLat: 21.3093, userLng: 105.6049);
+      expect(sorted.isSortedByDistance, isTrue);
+      expect(sorted.userLat, 21.3093);
+      expect(sorted.userLng, 105.6049);
+
+      final toggledBack = sorted.copyWith(isSortedByDistance: false);
+      expect(toggledBack.isSortedByDistance, isFalse);
     });
   });
 }

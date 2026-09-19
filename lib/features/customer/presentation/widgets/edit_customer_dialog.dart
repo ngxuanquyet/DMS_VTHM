@@ -3,7 +3,9 @@ import 'package:geolocator/geolocator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
@@ -211,12 +213,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
     final changes = <String, dynamic>{};
     final c = widget.customer;
 
-    // 1. Code & Name
-    final newCode = _codeController.text.trim();
-    if (newCode.isNotEmpty && newCode != c.code) {
-      changes['code'] = newCode;
-    }
-
+    // 1. Name (Code do hệ thống tự sinh, không thể sửa)
     final newName = _nameController.text.trim();
     if (newName.isNotEmpty && newName != c.name) {
       changes['name'] = newName;
@@ -420,14 +417,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                   if (_isSaving)
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      ),
+                      child: AppLoading(size: 20),
                     )
                   else
                     ElevatedButton.icon(
@@ -474,9 +464,10 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                     children: [
                       Expanded(
                         child: AppTextField(
-                          label: 'Mã điểm bán (code)',
-                          hintText: 'Nhập mã KH/điểm bán',
+                          label: 'Mã điểm bán (hệ thống tự sinh)',
+                          hintText: 'Mã hệ thống tự sinh',
                           controller: _codeController,
+                          readOnly: true,
                           prefixIcon: const Icon(Icons.qr_code_2_rounded, size: 18),
                         ),
                       ),
@@ -486,6 +477,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                           label: 'Tên điểm bán (name)',
                           hintText: 'Nhập tên điểm bán',
                           controller: _nameController,
+                          enableVoiceInput: true,
                           prefixIcon: const Icon(Icons.storefront_outlined, size: 18),
                         ),
                       ),
@@ -508,6 +500,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                           label: 'Phường / Xã (ward_name)',
                           hintText: 'Nhập phường/xã...',
                           controller: _wardNameController,
+                          enableVoiceInput: true,
                           prefixIcon: const Icon(Icons.signpost_outlined, size: 18),
                         ),
                       ),
@@ -530,6 +523,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                           label: 'Người liên hệ',
                           hintText: 'Họ tên',
                           controller: _contactNameController,
+                          enableVoiceInput: true,
                           prefixIcon: const Icon(Icons.person_outline, size: 18),
                         ),
                       ),
@@ -539,6 +533,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                           label: 'Chức vụ / Vai trò',
                           hintText: 'Chủ cửa hàng...',
                           controller: _contactTitleController,
+                          enableVoiceInput: true,
                           prefixIcon: const Icon(Icons.badge_outlined, size: 18),
                         ),
                       ),
@@ -573,6 +568,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                     label: 'Địa chỉ giao dịch',
                     hintText: 'Số nhà, tên đường, khu phố...',
                     controller: _addressController,
+                    enableVoiceInput: true,
                     maxLines: 2,
                     prefixIcon: const Icon(Icons.place_outlined, size: 18),
                   ),
@@ -1038,14 +1034,7 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                 child: ElevatedButton.icon(
                   onPressed: _isLocating ? null : _getCurrentLocation,
                   icon: _isLocating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
+                      ? const AppLoading(size: 16)
                       : const Icon(Icons.my_location_rounded, size: 18),
                   label: Text(
                     _isLocating
@@ -1231,6 +1220,11 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                     decoration: InputDecoration(
                       hintText: 'Nhập $label...',
                       isDense: true,
+                      suffixIcon: VoiceInputMicButton(
+                        currentText: controller.text,
+                        fieldName: label,
+                        onTextRecognized: (t) => controller.text = t,
+                      ),
                     ),
                   ),
               ],

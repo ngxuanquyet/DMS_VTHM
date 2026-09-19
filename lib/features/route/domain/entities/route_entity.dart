@@ -63,6 +63,8 @@ class CheckinDealerEntity {
   final bool isVip;
   final int distanceMeters;
   final String visitDuration;
+  final double? lat;
+  final double? lng;
 
   const CheckinDealerEntity({
     required this.id,
@@ -71,6 +73,8 @@ class CheckinDealerEntity {
     required this.isVip,
     required this.distanceMeters,
     required this.visitDuration,
+    this.lat,
+    this.lng,
   });
 }
 

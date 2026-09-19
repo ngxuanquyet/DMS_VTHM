@@ -23,6 +23,14 @@ class CustomerCategoryItem {
       color: json['color']?.toString(),
     );
   }
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'code': code,
+      'name': name,
+      if (color != null) 'color': color,
+    };
+  }
 }
 
 class CustomerProvinceItem {
@@ -39,6 +47,13 @@ class CustomerProvinceItem {
       provinceName: json['province_name']?.toString() ?? '',
       count: json['cnt'] is int ? json['cnt'] as int : null,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'province_name': provinceName,
+      if (count != null) 'cnt': count,
+    };
   }
 }
 
@@ -100,5 +115,17 @@ class CustomerMetaData {
       provinces: parseProvinces(data['provinces']),
       dynamicColumns: parseDynamicColumns(data['dynamicColumns']),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'data': {
+        'customerTypes': customerTypes.map((e) => e.toJson()).toList(),
+        'channels': channels.map((e) => e.toJson()).toList(),
+        'regions': regions.map((e) => e.toJson()).toList(),
+        'provinces': provinces.map((e) => e.toJson()).toList(),
+        'dynamicColumns': dynamicColumns.map((e) => e.toJson()).toList(),
+      }
+    };
   }
 }

@@ -18,6 +18,13 @@ final locationServiceProvider = Provider<LocationService>((ref) {
 class LocationService {
   final Ref _ref;
   StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+  static Position? _cachedPosition;
+
+  static Position? get currentCachedPosition => _cachedPosition;
+
+  static void updateCachedPosition(Position pos) {
+    _cachedPosition = pos;
+  }
 
   LocationService(this._ref);
 
@@ -141,27 +148,60 @@ class LocationService {
       // =======================================================================
       // BƯỚC 3: CẢ 2 ĐIỀU KIỆN ĐỀU THỎA MÃN -> TIẾN HÀNH LẤY TỌA ĐỘ
       // =======================================================================
+      // 1. Kiểm tra cache trong bộ nhớ trước (<0.1ms) để phản hồi tức thì
+      if (_cachedPosition != null) {
+        _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
+        _refreshPositionInBackground();
+        return _cachedPosition;
+      }
+
+      // 2. Thử lấy vị trí đã biết gần nhất từ hệ thống (<5ms)
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        _cachedPosition = lastKnown;
+        _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
+        _refreshPositionInBackground();
+        return lastKnown;
+      }
+
+      // 3. Fallback lấy vị trí mới với timeout nhanh 2 giây
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 2),
         ),
       );
 
+      _cachedPosition = position;
       _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
       return position;
     } catch (_) {
-      // Fallback nếu timeout hoặc lỗi GPS phần cứng
       try {
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null) {
+          _cachedPosition = lastKnown;
           _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
+          return lastKnown;
         }
-        return lastKnown;
+        return _cachedPosition;
       } catch (_) {
-        return null;
+        return _cachedPosition;
       }
     }
+  }
+
+  void _refreshPositionInBackground() {
+    unawaited(
+      Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 3),
+        ),
+      ).then((freshPos) {
+        _cachedPosition = freshPos;
+        _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
+      }).catchError((_) {}),
+    );
   }
 
   /// Hiển thị toast thông báo màu xanh khi GPS đã được bật lại thành công

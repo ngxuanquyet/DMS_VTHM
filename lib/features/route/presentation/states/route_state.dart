@@ -11,6 +11,9 @@ class RouteState {
   final int selectedTab; // 0: Danh sách, 1: Bản đồ
   final String? selectedDealerId;
   final String? errorMessage;
+  final bool isSortedByDistance;
+  final double? userLat;
+  final double? userLng;
 
   const RouteState({
     this.status = RouteStatus.initial,
@@ -21,6 +24,9 @@ class RouteState {
     this.selectedTab = 0,
     this.selectedDealerId,
     this.errorMessage,
+    this.isSortedByDistance = false,
+    this.userLat,
+    this.userLng,
   });
 
   RouteState copyWith({
@@ -32,6 +38,9 @@ class RouteState {
     int? selectedTab,
     String? selectedDealerId,
     String? errorMessage,
+    bool? isSortedByDistance,
+    double? userLat,
+    double? userLng,
   }) {
     return RouteState(
       status: status ?? this.status,
@@ -42,6 +51,9 @@ class RouteState {
       selectedTab: selectedTab ?? this.selectedTab,
       selectedDealerId: selectedDealerId ?? this.selectedDealerId,
       errorMessage: errorMessage,
+      isSortedByDistance: isSortedByDistance ?? this.isSortedByDistance,
+      userLat: userLat ?? this.userLat,
+      userLng: userLng ?? this.userLng,
     );
   }
 }
@@ -53,12 +65,14 @@ class CheckInState {
   final DealerCheckinDataEntity? checkinData;
   final String? errorMessage;
   final String liveVisitDuration;
+  final String checkinTime;
 
   const CheckInState({
     this.status = CheckInStatus.initial,
     this.checkinData,
     this.errorMessage,
-    this.liveVisitDuration = '00:24:18',
+    this.liveVisitDuration = '00:00:00',
+    this.checkinTime = '--:--:--',
   });
 
   CheckInState copyWith({
@@ -66,12 +80,14 @@ class CheckInState {
     DealerCheckinDataEntity? checkinData,
     String? errorMessage,
     String? liveVisitDuration,
+    String? checkinTime,
   }) {
     return CheckInState(
       status: status ?? this.status,
       checkinData: checkinData ?? this.checkinData,
       errorMessage: errorMessage,
       liveVisitDuration: liveVisitDuration ?? this.liveVisitDuration,
+      checkinTime: checkinTime ?? this.checkinTime,
     );
   }
 }

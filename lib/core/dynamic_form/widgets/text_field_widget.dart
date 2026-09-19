@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/voice_input_mic_button.dart';
 import '../models/dynamic_form_field.dart';
 import 'dynamic_form_field_wrapper.dart';
 
@@ -82,13 +83,33 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
             prefixText: widget.field.prefixText != null ? '${widget.field.prefixText} ' : null,
             suffixText: widget.field.suffixText,
             prefixIcon: const Icon(Icons.edit_note_rounded, size: 18),
-            suffixIcon: _controller.text.isNotEmpty && !widget.field.isReadOnly
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 16),
-                    onPressed: () {
-                      _controller.clear();
-                      widget.onChanged(null);
-                    },
+            suffixIcon: !widget.field.isReadOnly
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_controller.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 16),
+                          tooltip: 'Xóa nội dung',
+                          onPressed: () {
+                            setState(() {
+                              _controller.clear();
+                            });
+                            widget.onChanged(null);
+                          },
+                        ),
+                      VoiceInputMicButton(
+                        currentText: _controller.text,
+                        fieldName: widget.field.label,
+                        onTextRecognized: (newText) {
+                          setState(() {
+                            _controller.text = newText;
+                          });
+                          widget.onChanged(newText.trim().isNotEmpty ? newText.trim() : null);
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                   )
                 : null,
             border: InputBorder.none,

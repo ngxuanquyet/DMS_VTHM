@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+
+<html lang="vi" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Route Monitoring</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#8dfb85",
+                        "secondary": "#2e5da8",
+                        "surface-dim": "#d5dccf",
+                        "on-primary-container": "#003f08",
+                        "surface-container": "#e9f0e3",
+                        "tertiary": "#ab2c5e",
+                        "on-secondary-container": "#003f87",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#becab7",
+                        "surface-container-highest": "#dee5d8",
+                        "primary": "#006e15",
+                        "surface-variant": "#E0E3E0",
+                        "tertiary-container": "#fd6c9d",
+                        "on-secondary-fixed": "#001a40",
+                        "on-tertiary-fixed": "#3f001b",
+                        "outline": "#6F7A74",
+                        "surface-tint": "#006e15",
+                        "on-secondary-fixed-variant": "#09458e",
+                        "on-background": "#171d15",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "background": "#f5fcee",
+                        "error": "#ba1a1a",
+                        "inverse-surface": "#2c3229",
+                        "primary-fixed-dim": "#71de6c",
+                        "on-surface-variant": "#3f4a3b",
+                        "on-surface": "#181C1B",
+                        "on-tertiary-container": "#6e0034",
+                        "secondary-fixed-dim": "#acc7ff",
+                        "surface": "#F7FAF6",
+                        "surface-container-low": "#eff6e8",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#71de6c",
+                        "tertiary-fixed-dim": "#ffb1c5",
+                        "on-tertiary": "#ffffff",
+                        "primary-container": "#47b347",
+                        "on-tertiary-fixed-variant": "#8b0e46",
+                        "secondary-container": "#84aefe",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#ecf3e6",
+                        "on-primary-fixed-variant": "#00530e",
+                        "surface-bright": "#f5fcee",
+                        "surface-container-high": "#e4eadd",
+                        "secondary-fixed": "#d7e2ff",
+                        "tertiary-fixed": "#ffd9e1",
+                        "on-primary-fixed": "#002202",
+                        "on-secondary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "margin-mobile": "16px",
+                        "margin-tablet": "24px",
+                        "base": "8px",
+                        "gutter": "16px",
+                        "stack-sm": "4px",
+                        "stack-md": "12px"
+                    },
+                    "fontFamily": {
+                        "title-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-sm-mobile": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "headline-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "title-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.25px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.5px", "fontWeight": "400" }],
+                        "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.1px", "fontWeight": "500" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "display-lg": ["45px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "title-lg": ["22px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "headline-sm": ["24px", { "lineHeight": "32px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #F7FAF6; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1; }
+        
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #becab7; border-radius: 10px; }
+        
+        /* Timeline styling */
+        .timeline-container { position: relative; }
+        .timeline-line { position: absolute; left: 24px; top: 16px; bottom: 0; width: 2px; background-color: #E0E3E0; z-index: 0; }
+        .timeline-item { position: relative; z-index: 1; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface h-screen flex flex-col overflow-hidden">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-surface-dim border-b border-outline-variant dark:border-outline flex justify-between items-center px-margin-mobile py-base z-20 shadow-sm">
+<div class="flex items-center gap-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant flex-shrink-0">
+<img alt="Employee Profile Photo" class="w-full h-full object-cover" data-alt="A professional headshot of a Vietnamese industrial field worker in a safety uniform, brightly lit outdoors, highly detailed, realistic style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDugIfPN4MiNNGtX4VfZ-4f9OnN9dTpnIAB9He_p4gCLFCO0nLKk2uBVwM0mQUk44yDJPNhkNB6E10RqPQ2omy0mmnyYiBAeXNnJ-wd9ejFDe77xsM_aPRIZS9N_3rteSiSIpEnv0q2BGHcATAUTWZhtsDz0_hXljy0bun-edP1agxyDt7Iz2T-_2hQJmGC4wMMS8Zdf70iDilN9-ZPxRxHVwRU8w8lojs_TFMM02uRDuJI39KLiJ8uHw"/>
+</div>
+<span class="font-headline-sm-mobile text-headline-sm-mobile font-semibold text-primary dark:text-primary-fixed">VTHM Group</span>
+</div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-primary dark:text-primary-fixed-dim hover:bg-surface-container-high dark:hover:bg-surface-container-highest active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto pb-[96px] relative">
+<!-- Header Info Card -->
+<div class="bg-surface-container-lowest m-margin-mobile p-4 rounded-xl border border-surface-variant shadow-sm mb-stack-md">
+<h1 class="font-title-lg text-title-lg text-on-surface font-semibold mb-2">Tuyến Vĩnh Yên – Bình Xuyên</h1>
+<div class="flex justify-between items-end mb-3">
+<div class="flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Tiến độ</span>
+<span class="font-body-md text-body-md text-on-surface">12 điểm • <span class="text-primary font-medium">8 hoàn thành</span> • <span class="text-on-surface-variant">4 còn lại</span></span>
+</div>
+<span class="font-title-md text-title-md text-primary font-bold">67%</span>
+</div>
+<!-- Progress Bar -->
+<div class="w-full h-2 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-[#47B347] rounded-full" style="width: 67%;"></div>
+</div>
+</div>
+<!-- Segmented Control -->
+<!-- Timeline List -->
+<div class="px-margin-mobile pb-stack-lg flex flex-col gap-3"><!-- Điểm bán 1: Đã ghé (Cường Thịnh) -->
+<article class="bg-surface-container-lowest rounded-2xl border border-surface-variant p-4 shadow-sm relative overflow-hidden transition-all">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-[#47B347]"></div>
+<!-- Header: Mã KH, Tag & Khoảng cách, Chỉ đường -->
+<div class="flex items-start justify-between gap-2 mb-2">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-[#eff6e8] text-primary border border-outline-variant">KH0092</span>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium bg-[#eff6e8] text-primary px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[13px] filled">check_circle</span> Đã ghé
+      </span>
+</div>
+<div class="flex items-center gap-1.5 flex-shrink-0">
+<span class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded-lg">
+<span class="material-symbols-outlined text-[13px]">near_me</span> 850 m
+      </span>
+<a class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#eff6e8] text-primary hover:bg-surface-container-high active:scale-95 border border-outline-variant transition-all" href="https://maps.google.com" target="_blank">
+<span class="material-symbols-outlined text-[14px]">directions</span>
+<span class="">Chỉ đường</span>
+</a>
+</div>
+</div>
+<!-- Tên cửa hàng -->
+<h2 class="text-[16px] font-bold text-on-surface leading-snug mb-2">Đại lý Cường Thịnh</h2>
+<!-- Địa chỉ -->
+<div class="flex items-start gap-1.5 text-xs text-on-surface-variant mb-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary flex-shrink-0 mt-0.5">location_on</span>
+<span class="leading-relaxed">Số 45 đường Hai Bà Trưng, TP. Phúc Yên, Vĩnh Phúc</span>
+</div>
+<!-- Liên hệ -->
+<div class="flex items-center justify-between text-xs text-on-surface-variant pt-2 border-t border-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-on-surface-variant">person</span>
+<span class="font-medium text-on-surface">Anh Nguyễn Văn Cường</span>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-medium text-primary bg-[#eff6e8] px-2 py-0.5 rounded-md">
+<span class="material-symbols-outlined text-[13px]">schedule</span>
+<span class="">08:30 AM</span>
+</div>
+</div>
+</article>
+<!-- Điểm bán 2: Đã ghé (Hoàng Gia) -->
+<article class="bg-surface-container-lowest rounded-2xl border border-surface-variant p-4 shadow-sm relative overflow-hidden transition-all">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-[#47B347]"></div>
+<!-- Header -->
+<div class="flex items-start justify-between gap-2 mb-2">
+<div class="flex items-center gap-1.5 flex-wrap"><span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-[#eff6e8] text-primary border border-outline-variant">KH0041</span><span class="inline-flex items-center gap-1 text-[11px] font-medium bg-[#eff6e8] text-primary px-2 py-0.5 rounded-full"><span class="material-symbols-outlined text-[13px] filled">check_circle</span> Đã ghé</span></div>
+<div class="flex items-center gap-1.5 flex-shrink-0">
+<span class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded-lg">
+<span class="material-symbols-outlined text-[13px]">near_me</span> 1.5 km
+      </span>
+<a class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#eff6e8] text-primary hover:bg-surface-container-high active:scale-95 border border-outline-variant transition-all" href="https://maps.google.com" target="_blank">
+<span class="material-symbols-outlined text-[14px]">directions</span>
+<span class="">Chỉ đường</span>
+</a>
+</div>
+</div>
+<!-- Tên cửa hàng -->
+<h2 class="text-[16px] font-bold text-on-surface leading-snug mb-2">CH VLXD Hoàng Gia</h2>
+<!-- Địa chỉ -->
+<div class="flex items-start gap-1.5 text-xs text-on-surface-variant mb-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary flex-shrink-0 mt-0.5">location_on</span>
+<span class="leading-relaxed">Số 142 đường Trần Phú, Phường Liên Bảo, TP. Vĩnh Yên, Vĩnh Phúc</span>
+</div>
+<!-- Liên hệ -->
+<div class="flex items-center justify-between text-xs text-on-surface-variant pt-2 border-t border-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-on-surface-variant">person</span>
+<span class="font-medium text-on-surface">Chị Hoàng Thị Lan</span>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-medium text-primary bg-[#eff6e8] px-2 py-0.5 rounded-md">
+<span class="material-symbols-outlined text-[13px]">schedule</span>
+<span class="">10:15 AM</span>
+</div>
+</div>
+</article>
+<!-- Điểm bán 3: Điểm hiện tại (NPP Tôn thép Minh Phát) -->
+<article class="bg-surface-container-lowest rounded-2xl border-2 border-[#47B347] p-4 shadow-[0_2px_8px_rgba(0,110,21,0.12)] relative overflow-hidden transition-all">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-[#47B347]"></div>
+<!-- Header: Mã KH, Tag Hiện tại & Khoảng cách hợp lệ, Chỉ đường -->
+<div class="flex items-start justify-between gap-2 mb-2">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-[#eff6e8] text-primary border border-outline-variant">KH0038</span>
+</div>
+<div class="flex items-center gap-1.5 flex-shrink-0">
+<span class="inline-flex items-center gap-0.5 text-[11px] font-bold text-primary bg-[#eff6e8] border border-outline-variant px-2 py-0.5 rounded-lg">
+<span class="material-symbols-outlined text-[13px] text-primary">near_me</span> 120 m (Hợp lệ)
+      </span>
+<a class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#eff6e8] text-primary hover:bg-surface-container-high active:scale-95 border border-outline-variant transition-all" href="https://maps.google.com" target="_blank">
+<span class="material-symbols-outlined text-[14px]">directions</span>
+<span class="">Chỉ đường</span>
+</a>
+</div>
+</div>
+<!-- Tên NPP -->
+<h2 class="text-[17px] font-bold text-on-surface leading-snug mb-2">NPP Tôn thép Minh Phát</h2>
+<!-- Địa chỉ -->
+<div class="flex items-start gap-1.5 text-xs text-on-surface-variant mb-2">
+<span class="material-symbols-outlined text-[16px] text-primary flex-shrink-0 mt-0.5">location_on</span>
+<span class="leading-relaxed">KCN Bá Thiện 2, Bình Xuyên, Vĩnh Phúc</span>
+</div>
+<!-- Người liên hệ & SĐT -->
+<div class="flex items-center justify-between text-xs text-on-surface-variant pt-2.5 border-t border-surface-variant"><div class="flex flex-col gap-1"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-on-surface-variant">person</span><span class="font-medium text-on-surface">Anh Bùi Minh Phát</span></div><a class="font-semibold text-primary inline-flex items-center gap-1 hover:underline text-[12px]" href="tel:0984888123"><span class="material-symbols-outlined text-[13px]">call</span> 0984 888 123</a></div><button class="bg-[#47B347] hover:bg-[#3ca03c] active:scale-95 text-white font-medium text-[13px] px-3.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm transition-all"><span class="material-symbols-outlined text-[16px]">how_to_reg</span> Check-in</button></div>
+<!-- Hàng nút hành động: Check-in chính -->
+</article>
+<!-- Điểm bán 4: Chưa ghé (Công ty ABCD) -->
+<article class="bg-surface-container-lowest rounded-2xl border border-surface-variant p-4 shadow-sm relative overflow-hidden transition-all">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-outline-variant"></div>
+<!-- Header -->
+<div class="flex items-start justify-between gap-2 mb-2">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-wide bg-surface-container-high text-on-surface-variant border border-outline-variant">KH0052</span>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-full">
+        Chưa ghé
+      </span>
+</div>
+<div class="flex items-center gap-1.5 flex-shrink-0">
+<span class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded-lg">
+<span class="material-symbols-outlined text-[13px]">near_me</span> 1.8 km
+      </span>
+<a class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#eff6e8] text-primary hover:bg-surface-container-high active:scale-95 border border-outline-variant transition-all" href="https://maps.google.com" target="_blank">
+<span class="material-symbols-outlined text-[14px]">directions</span>
+<span class="">Chỉ đường</span>
+</a>
+</div>
+</div>
+<!-- Tên công ty -->
+<h2 class="text-[16px] font-bold text-on-surface leading-snug mb-2">Công ty TNHH Cơ khí &amp; Xây dựng ABCD</h2>
+<!-- Địa chỉ -->
+<div class="flex items-start gap-1.5 text-xs text-on-surface-variant mb-2">
+<span class="material-symbols-outlined text-[16px] text-primary flex-shrink-0 mt-0.5">location_on</span>
+<span class="leading-relaxed">Lô CN-08, KCN Thăng Long Vĩnh Phúc, Bình Xuyên</span>
+</div>
+<!-- Người liên hệ & SĐT -->
+<div class="flex items-center justify-between text-xs text-on-surface-variant pt-2.5 border-t border-surface-variant"><div class="flex flex-col gap-1"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-on-surface-variant">person</span><span class="font-medium text-on-surface">Anh Trần Tiến Đạt</span></div><a class="font-semibold text-primary inline-flex items-center gap-1 hover:underline text-[12px]" href="tel:0912345678"><span class="material-symbols-outlined text-[13px]">call</span> 0912 345 678</a></div><button class="bg-[#47B347] hover:bg-[#3ca03c] active:scale-95 text-white font-medium text-[13px] px-3.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm transition-all"><span class="material-symbols-outlined text-[16px]">how_to_reg</span> Check-in</button></div>
+<!-- Nút Check-in -->
+</article></div>
+<!-- FAB for Location/Map -->
+<button class="absolute bottom-6 right-6 w-14 h-14 bg-[#47B347] text-white rounded-full flex items-center justify-center shadow-[0_4px_8px_rgba(0,0,0,0.12)] hover:bg-[#3ca03c] active:scale-95 transition-transform z-10">
+<span class="material-symbols-outlined text-[24px]">my_location</span>
+</button>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 flex justify-around items-center h-[80px] bg-surface dark:bg-surface-dim px-2 border-t border-outline-variant dark:border-outline shadow-[0_-2px_8px_rgba(0,0,0,0.05)] md:hidden">
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant p-2 hover:bg-surface-container-low dark:hover:bg-surface-container-highest active:scale-90 transition-all duration-200 w-16">
+<span class="material-symbols-outlined mb-1" data-icon="home">home</span>
+<span class="font-label-sm text-label-sm">Trang chủ</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-5 py-1 active:scale-90 transition-all duration-200">
+<span class="material-symbols-outlined filled mb-1" data-icon="route">route</span>
+<span class="font-label-sm text-label-sm">Tuyến</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant p-2 hover:bg-surface-container-low dark:hover:bg-surface-container-highest active:scale-90 transition-all duration-200 w-16">
+<span class="material-symbols-outlined mb-1" data-icon="assignment">assignment</span>
+<span class="font-label-sm text-label-sm">Biểu mẫu</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant p-2 hover:bg-surface-container-low dark:hover:bg-surface-container-highest active:scale-90 transition-all duration-200 w-16">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm">Cá nhân</span>
+</button>
+</nav>
+<div aria-modal="true" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inverse-surface/50 backdrop-blur-sm animate-fade-in" id="checkin-warning-modal" role="dialog"><div class="relative w-full max-w-sm bg-surface-container-lowest rounded-3xl shadow-xl border border-outline-variant/60 overflow-hidden flex flex-col p-5 sm:p-6 my-auto"><div class="flex flex-col items-center text-center"><div class="w-14 h-14 rounded-full bg-error-container/40 flex items-center justify-center mb-3 text-error"><span class="material-symbols-outlined text-[32px]">wrong_location</span></div><h2 class="font-headline-sm-mobile text-headline-sm-mobile font-bold text-on-surface mb-1.5">Không thể Check-in</h2><p class="font-body-md text-[13px] text-on-surface-variant leading-relaxed mb-3.5 max-w-[280px]">Khoảng cách hiện tại vượt quá phạm vi cho phép (tối đa 100m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-in.</p></div><div class="bg-surface-container-low rounded-xl p-3 border border-outline-variant/60 flex items-center justify-between mb-3.5"><div class="flex flex-col text-left"><span class="text-[11px] text-on-surface-variant font-medium">Khoảng cách hiện tại</span><span class="text-[16px] font-bold text-error flex items-center gap-1"><span class="material-symbols-outlined text-[18px]">near_me</span> 850 m</span></div><span class="inline-flex items-center gap-1 text-[11px] font-semibold bg-error-container/50 text-error px-2.5 py-1 rounded-full border border-error/20"><span class="material-symbols-outlined text-[13px] filled">error</span> Không hợp lệ (&gt; 100m)</span></div><div class="relative w-full h-36 rounded-xl overflow-hidden border border-outline-variant/70 mb-4 bg-[#e5ece3]"><svg class="w-full h-full absolute inset-0" fill="none" preserveaspectratio="none" viewbox="0 0 320 144"><rect fill="#e9f0e5" height="144" width="320"></rect><path d="M-20 40 Q 60 70 120 50 T 260 90 T 350 70" fill="none" stroke="#dee5d8" stroke-linecap="round" stroke-width="16"></path><path d="M40 -10 L 80 160" fill="none" stroke="#dee5d8" stroke-width="12"></path><path d="M220 -10 L 200 160" fill="none" stroke="#dee5d8" stroke-width="14"></path><path d="M 65 95 Q 120 40 255 45" fill="none" stroke="#2e5da8" stroke-dasharray="6 6" stroke-width="3"></path></svg><div class="absolute left-12 top-20 flex flex-col items-center -translate-x-1/2 -translate-y-1/2"><div class="relative flex items-center justify-center"><span class="absolute w-6 h-6 rounded-full bg-secondary/30 animate-ping"></span><span class="relative w-3.5 h-3.5 rounded-full bg-secondary border-2 border-white shadow-sm"></span></div><span class="mt-1 bg-surface-container-lowest/90 backdrop-blur-xs text-[10px] font-bold text-secondary px-1.5 py-0.5 rounded shadow-xs border border-outline-variant/40 whitespace-nowrap">Vị trí của bạn</span></div><div class="absolute right-12 top-8 flex flex-col items-center translate-x-1/2 -translate-y-1/2"><div class="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center shadow-md border-2 border-white"><span class="material-symbols-outlined text-[16px]">storefront</span></div><span class="mt-1 bg-surface-container-lowest/90 backdrop-blur-xs text-[10px] font-bold text-on-surface px-1.5 py-0.5 rounded shadow-xs border border-outline-variant/40 whitespace-nowrap">Đại lý Cường Thịnh</span></div><div class="absolute top-2 left-2 bg-surface-container-lowest/90 backdrop-blur-xs px-2 py-0.5 rounded-full text-[11px] font-bold text-error border border-outline-variant/50 shadow-xs flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">straighten</span> 850 m</div></div><div class="flex flex-col gap-2 w-full"><a class="w-full bg-[#47B347] hover:bg-[#3ca03c] text-white font-label-lg font-bold py-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all text-[14px]" href="https://maps.google.com" target="_blank"><span class="material-symbols-outlined text-[18px]">directions</span> CHỈ ĐƯỜNG NGAY</a><button class="w-full bg-transparent hover:bg-surface-container-low text-on-surface-variant border border-outline-variant font-label-lg font-semibold py-2.5 rounded-xl flex items-center justify-center active:scale-95 transition-all text-[14px]" onclick="document.getElementById('checkin-warning-modal').remove()">ĐÓNG</button></div></div></div></body></html>

@@ -1,10 +1,8 @@
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../localization/language_provider.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 
 class VthmBottomNavBar extends ConsumerWidget {
   final int currentIndex;
@@ -47,139 +45,67 @@ class VthmBottomNavBar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final strings = ref.watch(stringsProvider);
 
-    final items = [
-      _NavItemData(
-        icon: Icons.home_outlined,
-        activeIcon: Icons.home_rounded,
-        label: strings.navHome,
-      ),
-      _NavItemData(
-        icon: Icons.storefront_outlined,
-        activeIcon: Icons.storefront_rounded,
-        label: strings.navCustomers,
-      ),
-      _NavItemData(
-        icon: Icons.alt_route_outlined,
-        activeIcon: Icons.alt_route_rounded,
-        label: strings.navRoutes,
-      ),
-      _NavItemData(
-        icon: Icons.assignment_outlined,
-        activeIcon: Icons.assignment_rounded,
-        label: strings.navForms,
-      ),
-      _NavItemData(
-        icon: Icons.person_outline_rounded,
-        activeIcon: Icons.person_rounded,
-        label: strings.navProfile,
-      ),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.surface,
-        border: Border(
-          top: BorderSide(
-            color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-            width: 1,
+    return CurvedNavigationBar(
+      index: currentIndex,
+      height: 64.0,
+      backgroundColor: Colors.transparent,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      buttonBackgroundColor: const Color(0xFF10B981), // Emerald brand color
+      animationCurve: Curves.easeInOutCubic,
+      animationDuration: const Duration(milliseconds: 350),
+      onTap: (index) => _handleTap(context, index),
+      items: [
+        Tooltip(
+          message: strings.navHome,
+          child: Icon(
+            Icons.home_rounded,
+            size: 26,
+            color: currentIndex == 0
+                ? Colors.white
+                : (isDark ? Colors.white70 : const Color(0xFF64748B)),
           ),
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            offset: Offset(0, -3),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: List.generate(items.length, (index) {
-              final isSelected = index == currentIndex;
-              final item = items[index];
-
-              return Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _handleTap(context, index),
-                    splashColor: AppColors.primary.withValues(alpha: 0.12),
-                    highlightColor: Colors.transparent,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Active pill indicator & icon
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            padding: isSelected
-                                ? const EdgeInsets.symmetric(horizontal: 18, vertical: 3)
-                                : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? (isDark ? AppColors.primary : AppColors.primaryContainer)
-                                  : Colors.transparent,
-                              borderRadius: AppRadius.roundedFull,
-                            ),
-                            child: Icon(
-                              isSelected ? item.activeIcon : item.icon,
-                              size: 22,
-                              color: isSelected
-                                  ? AppColors.onPrimary
-                                  : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-
-                          // Single-line adaptive title (Never wraps)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                item.label,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelSmall(
-                                  color: isSelected
-                                      ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                                ).copyWith(
-                                  fontSize: 11,
-                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  letterSpacing: 0.1,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
+        Tooltip(
+          message: strings.navCustomers,
+          child: Icon(
+            Icons.storefront_rounded,
+            size: 26,
+            color: currentIndex == 1
+                ? Colors.white
+                : (isDark ? Colors.white70 : const Color(0xFF64748B)),
           ),
         ),
-      ),
+        Tooltip(
+          message: strings.navRoutes,
+          child: Icon(
+            Icons.alt_route_rounded,
+            size: 26,
+            color: currentIndex == 2
+                ? Colors.white
+                : (isDark ? Colors.white70 : const Color(0xFF64748B)),
+          ),
+        ),
+        Tooltip(
+          message: strings.navForms,
+          child: Icon(
+            Icons.assignment_rounded,
+            size: 26,
+            color: currentIndex == 3
+                ? Colors.white
+                : (isDark ? Colors.white70 : const Color(0xFF64748B)),
+          ),
+        ),
+        Tooltip(
+          message: strings.navProfile,
+          child: Icon(
+            Icons.person_rounded,
+            size: 26,
+            color: currentIndex == 4
+                ? Colors.white
+                : (isDark ? Colors.white70 : const Color(0xFF64748B)),
+          ),
+        ),
+      ],
     );
   }
-}
-
-class _NavItemData {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-
-  _NavItemData({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-  });
 }

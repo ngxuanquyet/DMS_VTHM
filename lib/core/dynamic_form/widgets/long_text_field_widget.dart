@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/voice_input_mic_button.dart';
 import '../models/dynamic_form_field.dart';
 import 'dynamic_form_field_wrapper.dart';
 
@@ -91,12 +92,28 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
             ),
             if (!widget.field.isReadOnly)
               Padding(
-                padding: const EdgeInsets.only(right: 8, bottom: 6),
-                child: Text(
-                  '${_controller.text.length} ký tự',
-                  style: AppTypography.labelSmall(
-                    color: isDark ? AppColors.darkOutline : AppColors.outline,
-                  ).copyWith(fontSize: 10),
+                padding: const EdgeInsets.only(right: 8, bottom: 4, left: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_controller.text.length} ký tự',
+                      style: AppTypography.labelSmall(
+                        color: isDark ? AppColors.darkOutline : AppColors.outline,
+                      ).copyWith(fontSize: 10),
+                    ),
+                    VoiceInputMicButton(
+                      currentText: _controller.text,
+                      fieldName: widget.field.label,
+                      size: 18,
+                      onTextRecognized: (newText) {
+                        setState(() {
+                          _controller.text = newText;
+                        });
+                        widget.onChanged(newText.trim().isNotEmpty ? newText.trim() : null);
+                      },
+                    ),
+                  ],
                 ),
               ),
           ],

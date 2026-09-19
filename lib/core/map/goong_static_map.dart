@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../widgets/app_loading.dart';
 import 'goong_api_service.dart';
 import 'goong_models.dart';
 
@@ -44,7 +45,7 @@ class GoongStaticMap extends StatelessWidget {
       url,
       fit: fit,
       loadingBuilder: (context, child, progress) =>
-          progress == null ? child : _fallback(const CircularProgressIndicator(strokeWidth: 2)),
+          progress == null ? child : _fallback(const AppLoading(size: 32)),
       errorBuilder: (_, __, ___) => placeholder ?? _fallback(null),
     );
   }

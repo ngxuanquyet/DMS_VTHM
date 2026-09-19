@@ -339,4 +339,51 @@ class DynamicFormField {
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
     );
   }
+
+  DynamicFormField copyWith({
+    String? code,
+    String? label,
+    DynamicFormFieldType? type,
+    String? placeholder,
+    String? helperText,
+    bool? isRequired,
+    bool? isReadOnly,
+    dynamic initialValue,
+    bool clearInitialValue = false,
+    List<DynamicFormOption>? options,
+    String? suffixText,
+    String? prefixText,
+    num? min,
+    num? max,
+    num? step,
+    int? maxPhotos,
+    String? kind,
+    String? source,
+    String? catalog,
+    String? section,
+    int? order,
+  }) {
+    return DynamicFormField(
+      code: code ?? this.code,
+      label: label ?? this.label,
+      type: type ?? this.type,
+      placeholder: placeholder ?? this.placeholder,
+      helperText: helperText ?? this.helperText,
+      isRequired: isRequired ?? this.isRequired,
+      isReadOnly: isReadOnly ?? this.isReadOnly,
+      initialValue: clearInitialValue ? null : (initialValue ?? this.initialValue),
+      options: options ?? this.options,
+      suffixText: suffixText ?? this.suffixText,
+      prefixText: prefixText ?? this.prefixText,
+      min: min ?? this.min,
+      max: max ?? this.max,
+      step: step ?? this.step,
+      maxPhotos: maxPhotos ?? this.maxPhotos,
+      kind: kind ?? this.kind,
+      source: source ?? this.source,
+      catalog: catalog ?? this.catalog,
+      section: section ?? this.section,
+      order: order ?? this.order,
+    );
+  }
 }

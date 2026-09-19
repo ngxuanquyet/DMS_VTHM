@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/attendance_state.dart';
 import '../viewmodels/attendance_view_model.dart';
@@ -39,7 +40,7 @@ class AttendanceDetailScreen extends ConsumerWidget {
       ),
       body: status == AttendanceStatus.loading && detail == null
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primaryContainer),
+              child: AppLoading(size: 220),
             )
           : detail == null
               ? Center(

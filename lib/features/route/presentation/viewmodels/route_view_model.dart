@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
@@ -71,6 +73,26 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
+  void toggleSortByDistance({double? userLat, double? userLng}) {
+    if (state.isSortedByDistance) {
+      state = state.copyWith(isSortedByDistance: false);
+    } else {
+      state = state.copyWith(
+        isSortedByDistance: true,
+        userLat: userLat ?? state.userLat,
+        userLng: userLng ?? state.userLng,
+      );
+    }
+    _recomputeRouteDetail();
+  }
+
+  void updateUserLocation({required double lat, required double lng}) {
+    state = state.copyWith(userLat: lat, userLng: lng);
+    if (state.isSortedByDistance) {
+      _recomputeRouteDetail();
+    }
+  }
+
   Future<void> loadRouteDetail({bool isRefresh = false}) async {
     state = state.copyWith(status: RouteStatus.loading);
     try {
@@ -123,6 +145,19 @@ class RouteViewModel extends StateNotifier<RouteState> {
             c.phone.replaceAll(' ', '').contains(query) ||
             c.address.toLowerCase().contains(query);
       }).toList();
+    }
+
+    // Sort by distance if enabled
+    if (state.isSortedByDistance && state.userLat != null && state.userLng != null) {
+      filtered = List.from(filtered);
+      filtered.sort((a, b) {
+        if (!a.hasCoordinates && !b.hasCoordinates) return 0;
+        if (!a.hasCoordinates) return 1;
+        if (!b.hasCoordinates) return -1;
+        final distA = Geolocator.distanceBetween(state.userLat!, state.userLng!, a.lat!, a.lng!);
+        final distB = Geolocator.distanceBetween(state.userLat!, state.userLng!, b.lat!, b.lng!);
+        return distA.compareTo(distB);
+      });
     }
 
     // Build DealerEntities
@@ -215,14 +250,67 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   final GetDealerCheckinUseCase getDealerCheckinUseCase;
   final CheckoutDealerUseCase checkoutDealerUseCase;
   Timer? _visitTimer;
-  int _elapsedSeconds = 24 * 60 + 18; // 00:24:18
+  int _elapsedSeconds = 0;
 
   CheckInViewModel({
     required this.getDealerCheckinUseCase,
     required this.checkoutDealerUseCase,
-  }) : super(const CheckInState()) {
+  }) : super(const CheckInState(liveVisitDuration: '00:00:00')) {
     loadCheckinData();
     _startTimer();
+  }
+
+  void initCheckinWithDealer(DealerEntity dealer) {
+    final now = DateTime.now();
+    final localTime =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+
+    final initialCheckinData = DealerCheckinDataEntity(
+      dealer: CheckinDealerEntity(
+        id: dealer.id,
+        name: dealer.name,
+        address: dealer.address,
+        isVip: dealer.isVip,
+        distanceMeters: 48,
+        visitDuration: '00:00:00',
+        lat: dealer.lat,
+        lng: dealer.lng,
+      ),
+      tasks: const [
+        CheckinTaskEntity(
+          id: 'task_form',
+          title: 'Thu thập biểu mẫu',
+          subtitle: 'Đánh giá trưng bày, Tồn kho',
+          completed: 2,
+          total: 3,
+          type: 'form',
+        ),
+        CheckinTaskEntity(
+          id: 'task_photo',
+          title: 'Chụp ảnh điểm bán',
+          subtitle: 'Chưa có ảnh',
+          completed: 0,
+          total: 1,
+          type: 'photo',
+          isError: true,
+        ),
+        CheckinTaskEntity(
+          id: 'task_note',
+          title: 'Ghi chú chuyến ghé',
+          subtitle: 'Thêm ý kiến phản hồi',
+          completed: 0,
+          total: 1,
+          type: 'note',
+        ),
+      ],
+    );
+
+    state = state.copyWith(
+      status: CheckInStatus.loaded,
+      checkinData: initialCheckinData,
+      checkinTime: localTime,
+      liveVisitDuration: '00:00:00',
+    );
   }
 
   void _startTimer() {
@@ -236,20 +324,63 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     });
   }
 
-  Future<void> loadCheckinData() async {
-    state = state.copyWith(status: CheckInStatus.loading);
+  Future<String> _fetchWorldTime() async {
     try {
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 2),
+          receiveTimeout: const Duration(seconds: 2),
+        ),
+      );
+      final response = await dio.get<Map<String, dynamic>>(
+        'https://worldtimeapi.org/api/timezone/Asia/Ho_Chi_Minh',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        final datetimeStr = response.data!['datetime'] as String?;
+        if (datetimeStr != null) {
+          final dt = DateTime.parse(datetimeStr);
+          return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+        }
+      }
+    } catch (_) {
+      // Fallback to local time if API is unreachable / offline
+    }
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> loadCheckinData() async {
+    if (state.checkinData == null) {
+      state = state.copyWith(status: CheckInStatus.loading);
+    }
+    try {
+      final now = DateTime.now();
+      final localTime =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+
+      // 1. Tải dữ liệu điểm bán ngay lập tức (<50ms), không để WorldTimeAPI làm đơ màn hình
       final data = await getDealerCheckinUseCase();
+
       state = state.copyWith(
         status: CheckInStatus.loaded,
         checkinData: data,
-        liveVisitDuration: data.dealer.visitDuration,
+        checkinTime: state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
+        liveVisitDuration: state.liveVisitDuration,
       );
+
+      // 2. Đồng bộ chuẩn thời gian từ WorldTimeAPI ngầm, cập nhật ngay khi nhận được
+      _fetchWorldTime().then((worldTime) {
+        if (mounted) {
+          state = state.copyWith(checkinTime: worldTime);
+        }
+      }).catchError((_) {});
     } catch (e) {
-      state = state.copyWith(
-        status: CheckInStatus.error,
-        errorMessage: e.toString().replaceAll('AppException: ', ''),
-      );
+      if (state.checkinData == null) {
+        state = state.copyWith(
+          status: CheckInStatus.error,
+          errorMessage: e.toString().replaceAll('AppException: ', ''),
+        );
+      }
     }
   }
 
