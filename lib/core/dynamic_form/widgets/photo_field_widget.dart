@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -82,23 +83,54 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
 
     try {
       final picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: isCamera ? ImageSource.camera : ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1920,
-        maxHeight: 1920,
-      );
 
-      if (image != null && context.mounted) {
-        final updated = List<String>.from(photoPaths)..add(image.path);
-        onChanged(updated);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isCamera ? 'Đã chụp và lưu ảnh thành công!' : 'Đã chọn ảnh thành công!'),
-            backgroundColor: AppColors.primary,
-            duration: const Duration(seconds: 2),
-          ),
+      if (isCamera) {
+        final XFile? image = await picker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 85,
+          maxWidth: 1920,
+          maxHeight: 1920,
         );
+
+        if (image != null && context.mounted) {
+          final updated = List<String>.from(photoPaths)..add(image.path);
+          onChanged(updated);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã chụp và lưu ảnh thành công!'),
+              backgroundColor: AppColors.primary,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // Cho phép chọn nhiều ảnh cùng lúc từ Thư viện thiết bị
+        final List<XFile> images = await picker.pickMultiImage(
+          imageQuality: 85,
+          maxWidth: 1920,
+          maxHeight: 1920,
+        );
+
+        if (images.isNotEmpty && context.mounted) {
+          final remaining = field.maxPhotos - photoPaths.length;
+          final selected = images.take(remaining).map((e) => e.path).toList();
+          final updated = List<String>.from(photoPaths)..addAll(selected);
+          onChanged(updated);
+
+          final count = selected.length;
+          final isExceeded = images.length > remaining;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isExceeded
+                    ? 'Đã thêm $count ảnh (đạt giới hạn tối đa ${field.maxPhotos} ảnh).'
+                    : 'Đã chọn $count ảnh thành công!',
+              ),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -265,6 +297,16 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return Image.network(
         path,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
+        ),
+      );
+    }
+    if (path.startsWith('/crm/customer-photos/public/')) {
+      final fullUrl = '${AppConstants.baseUrl}$path';
+      return Image.network(
+        fullUrl,
         fit: fit,
         errorBuilder: (_, __, ___) => const Center(
           child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),

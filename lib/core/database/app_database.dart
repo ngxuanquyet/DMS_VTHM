@@ -154,6 +154,22 @@ class AppDatabase extends _$AppDatabase {
     return query.map((row) => row.read(countExp) ?? 0).watchSingle();
   }
 
+  /// Lấy danh sách các phiếu biểu mẫu đã nộp ngoại tuyến (SyncQueue form_submission)
+  Future<List<SyncQueueEntry>> getFormSubmissionEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.entity.equals('form_submission'))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
+        .get();
+  }
+
+  /// Stream theo dõi các phiếu biểu mẫu ngoại tuyến
+  Stream<List<SyncQueueEntry>> watchFormSubmissionEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.entity.equals('form_submission'))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
+        .watch();
+  }
+
   // ===========================================================================
   // LOCAL CUSTOMER OPERATIONS (§7 SPEC-DONG-BO-OFFLINE)
   // ===========================================================================
@@ -194,6 +210,31 @@ class AppDatabase extends _$AppDatabase {
         approvalStatus: const Value('approved'),
       ),
     );
+  }
+
+  /// Xóa các điểm bán đã đồng bộ trên SQLite nhưng không còn trong danh sách ID từ máy chủ (§7 reconcile)
+  Future<int> deleteSyncedCustomersNotIn(List<int> activeServerIds) {
+    if (activeServerIds.isEmpty) {
+      return (delete(localCustomers)..where((tbl) => tbl.syncStatus.equals('synced'))).go();
+    }
+    return (delete(localCustomers)
+          ..where((tbl) =>
+              tbl.syncStatus.equals('synced') &
+              (tbl.id.isNotNull() & tbl.id.isNotIn(activeServerIds))))
+        .go();
+  }
+
+  /// Xóa 1 điểm bán theo ID khỏi SQLite
+  Future<int> deleteCustomerById(int id) {
+    return (delete(localCustomers)..where((tbl) => tbl.id.equals(id))).go();
+  }
+
+  /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue
+  Future<void> deletePendingCustomer(String clientUuid) async {
+    await (delete(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).go();
+    await (delete(syncQueueEntries)
+          ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+        .go();
   }
 }
 

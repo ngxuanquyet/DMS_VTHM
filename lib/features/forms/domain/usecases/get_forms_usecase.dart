@@ -1,4 +1,4 @@
-import '../entities/form_entity.dart';
+import '../entities/market_form_entity.dart';
 import '../repositories/forms_repository.dart';
 
 class GetFormsUseCase {
@@ -6,7 +6,7 @@ class GetFormsUseCase {
 
   GetFormsUseCase(this._repository);
 
-  Future<List<FormItemEntity>> call() {
-    return _repository.getForms();
+  Future<List<MarketFormConfigEntity>> call({String kind = 'collect', int? customerId}) {
+    return _repository.getAvailableForms(kind: kind, customerId: customerId);
   }
 }

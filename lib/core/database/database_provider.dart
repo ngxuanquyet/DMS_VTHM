@@ -13,3 +13,9 @@ final pendingSyncCountProvider = StreamProvider.autoDispose<int>((ref) {
   final db = ref.watch(appDatabaseProvider);
   return db.watchPendingSyncCount();
 });
+
+final formSubmissionEntriesProvider =
+    StreamProvider.autoDispose<List<SyncQueueEntry>>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchFormSubmissionEntries();
+});

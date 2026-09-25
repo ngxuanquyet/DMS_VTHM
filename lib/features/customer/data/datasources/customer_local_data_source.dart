@@ -35,7 +35,6 @@ class CustomerLocalDataSource {
     final wardName = data['ward_name']?.toString().trim();
     final email = data['email']?.toString().trim();
     final birthday = data['birthday']?.toString().trim();
-    final status = (data['status'] ?? 'active').toString().trim();
     final route = (data['route'] ?? 'Tuyến mặc định').toString().trim();
     final type = (data['type'] ?? data['customer_type_name'] ?? data['customer_type_code'] ?? '').toString().trim();
 
@@ -49,6 +48,22 @@ class CustomerLocalDataSource {
     int? channelId = data['channel_id'] != null ? int.tryParse(data['channel_id'].toString()) : null;
     int? geofenceRadiusM = data['geofence_radius_m'] != null ? int.tryParse(data['geofence_radius_m'].toString()) : null;
     int? photoFileId = data['photo_file_id'] != null ? int.tryParse(data['photo_file_id'].toString()) : null;
+    final photoToken = data['photo_token']?.toString().trim();
+
+    // route_ids bắt buộc với nhân viên thị trường (spec 22/09/2026)
+    List<int> routeIds = [];
+    if (data['route_ids'] is List) {
+      routeIds = (data['route_ids'] as List)
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    } else if (data['route_id'] != null) {
+      final parsedRouteId = int.tryParse(data['route_id'].toString());
+      if (parsedRouteId != null) routeIds.add(parsedRouteId);
+    }
+    if (routeIds.isEmpty) {
+      routeIds = [1];
+    }
 
     double? lat;
     if (data['lat'] != null) {
@@ -60,7 +75,7 @@ class CustomerLocalDataSource {
     }
 
     // Tách ô động vào object 'data' theo đúng spec:
-    // 🔴 Mọi ô động đi trong đúng một khoá data (api/modules/crm/forms/CustomerCreateForm.php:15)
+    // 🔴 Mọi ô động đi trong đúng một khoá data
     final dynamicData = <String, dynamic>{};
     if (data['data'] is Map<String, dynamic>) {
       dynamicData.addAll(data['data'] as Map<String, dynamic>);
@@ -70,13 +85,16 @@ class CustomerLocalDataSource {
     }
 
     const standardKeys = {
-      'name', 'region_id', 'customer_type_id', 'customer_group_id', 'channel_id',
+      'name', 'region_id', 'route_ids', 'route_id', 'customer_type_id', 'customer_group_id', 'channel_id',
       'status', 'address', 'delivery_address', 'province_name', 'ward_name',
       'contact_name', 'contact_title', 'phone', 'email', 'birthday',
-      'lat', 'lng', 'geofence_radius_m', 'photo_file_id', 'client_uuid',
+      'lat', 'lng', 'geofence_radius_m', 'photo_file_id', 'photo_token', 'photo_tokens', 'client_uuid',
       'is_offline_sync', 'data',
-      // Internal client keys
+      // Internal client keys & helper labels (tuyệt đối không đưa vào dynamicData)
       'code', 'id', 'route', 'type', 'contact_person', 'contactPerson', 'dynamic_fields',
+      'customer_type_name', 'customer_type_code', 'channel_name', 'channel_code',
+      'region_name', 'region_code', 'route_name', 'route_code',
+      'photo', 'photos', 'photo_urls', 'photo_url',
     };
 
     data.forEach((key, val) {
@@ -85,12 +103,16 @@ class CustomerLocalDataSource {
       }
     });
 
-    // 🔴 Đóng gói payload gửi lên server:
-    // - KHÔNG gửi code (backend tự sinh theo region_id)
-    // - KHÔNG gửi khóa lạ (client_time, approval_status, route...)
+    // 🔴 Đóng gói payload gửi lên server theo API spec 22/09/2026 & 23/09/2026:
+    // - KHÔNG gửi code (server tự sinh theo region_id)
+    // - KHÔNG gửi status (server mặc định 'active', gửi lên bị 422)
+    // - route_ids là mảng số nguyên [int]
+    // - photo_tokens là mảng token ảnh ở cấp cao nhất (tối đa max_files = 10 theo spec 23/09)
+    // - photo_token là tấm đầu tiên để tương thích ngược
     final payloadMap = <String, dynamic>{
       'name': name,
       'region_id': regionId,
+      'route_ids': routeIds,
       'client_uuid': clientUuid,
       'is_offline_sync': true,
     };
@@ -98,7 +120,6 @@ class CustomerLocalDataSource {
     if (customerTypeId != null) payloadMap['customer_type_id'] = customerTypeId;
     if (customerGroupId != null) payloadMap['customer_group_id'] = customerGroupId;
     if (channelId != null) payloadMap['channel_id'] = channelId;
-    if (status.isNotEmpty) payloadMap['status'] = status;
     if (address.isNotEmpty) payloadMap['address'] = address;
     if (deliveryAddress != null && deliveryAddress.isNotEmpty) payloadMap['delivery_address'] = deliveryAddress;
     if (provinceName != null && provinceName.isNotEmpty) payloadMap['province_name'] = provinceName;
@@ -113,7 +134,34 @@ class CustomerLocalDataSource {
       payloadMap['lng'] = lng;
     }
     if (geofenceRadiusM != null) payloadMap['geofence_radius_m'] = geofenceRadiusM;
-    if (photoFileId != null) payloadMap['photo_file_id'] = photoFileId;
+
+    // Xử lý bộ ảnh theo chuẩn API 23/09/2026 (photo_tokens mảng chuỗi ở gốc body)
+    List<String> photoTokens = [];
+    if (data['photo_tokens'] is List) {
+      photoTokens = (data['photo_tokens'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } else if (data['photo_file_id'] is List) {
+      photoTokens = (data['photo_file_id'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
+    if (photoTokens.isNotEmpty) {
+      payloadMap['photo_tokens'] = photoTokens;
+      payloadMap['photo_token'] = photoTokens.first;
+    } else if (photoToken != null && photoToken.isNotEmpty) {
+      payloadMap['photo_tokens'] = [photoToken];
+      payloadMap['photo_token'] = photoToken;
+    } else if (data['photo_file_id'] is String && data['photo_file_id'].toString().trim().isNotEmpty) {
+      final token = data['photo_file_id'].toString().trim();
+      payloadMap['photo_tokens'] = [token];
+      payloadMap['photo_token'] = token;
+    } else if (photoFileId != null) {
+      payloadMap['photo_file_id'] = photoFileId;
+    }
     if (dynamicData.isNotEmpty) payloadMap['data'] = dynamicData;
 
     // Mã hiển thị tạm thời trên UI/SQLite trước khi server cấp mã thật
@@ -141,7 +189,15 @@ class CustomerLocalDataSource {
         status: const Value('active'),
         approvalStatus: const Value('pending'), // §5.4
         syncStatus: const Value('pending'),
-        dynamicFieldsJson: Value(jsonEncode(dynamicData)),
+        dynamicFieldsJson: Value(jsonEncode({
+          ...dynamicData,
+          'routes': [route],
+          'route_ids': routeIds,
+          if (photoTokens.isNotEmpty) 'photo_tokens': photoTokens,
+          if (photoTokens.isNotEmpty) 'photo_urls': photoTokens,
+          if (photoTokens.isNotEmpty) 'photo_url': photoTokens.first,
+          if (photoToken != null && photoToken.isNotEmpty) 'photo_token': photoToken,
+        })),
         createdAt: Value(clientTimeIso),
       ),
     );
@@ -170,6 +226,8 @@ class CustomerLocalDataSource {
       name: name,
       type: type,
       route: route,
+      routes: [route],
+      routeIds: routeIds,
       address: address,
       contactPerson: contactName,
       contactTitle: contactTitle,
@@ -183,6 +241,8 @@ class CustomerLocalDataSource {
       clientUuid: clientUuid,
       createdAt: clientTimeIso,
       dynamicFields: dynamicData,
+      photoUrl: photoTokens.isNotEmpty ? photoTokens.first : photoToken,
+      photoUrls: photoTokens.isNotEmpty ? photoTokens : (photoToken != null && photoToken.isNotEmpty ? [photoToken] : const []),
     );
   }
 
@@ -200,7 +260,8 @@ class CustomerLocalDataSource {
   }
 
   /// Cập nhật cache từ server về SQLite khi có mạng (không ghi đè các bản ghi đang pending)
-  Future<void> cacheRemoteCustomers(List<CustomerEntity> remoteList) async {
+  /// [reconcile]: Nếu true, tự động xóa các khách hàng đã đồng bộ trên SQLite nhưng không còn tồn tại trên server
+  Future<void> cacheRemoteCustomers(List<CustomerEntity> remoteList, {bool reconcile = false}) async {
     for (final remote in remoteList) {
       final clientUuid = remote.clientUuid ?? 'server_${remote.id}';
       final nameUnaccent = StringUtils.toUnaccentedLower(remote.name);
@@ -231,12 +292,38 @@ class CustomerLocalDataSource {
           status: Value(remote.status),
           approvalStatus: Value(remote.approvalStatus),
           syncStatus: const Value('synced'),
-          dynamicFieldsJson: Value(jsonEncode(remote.dynamicFields)),
+          dynamicFieldsJson: Value(jsonEncode({
+            ...remote.dynamicFields,
+            if (remote.routes.isNotEmpty) 'routes': remote.routes,
+            if (remote.routeIds.isNotEmpty) 'route_ids': remote.routeIds,
+            if (remote.photoUrl != null) 'photo_url': remote.photoUrl,
+            if (remote.photoUrls.isNotEmpty) 'photo_urls': remote.photoUrls,
+          })),
           createdAt: Value(remote.createdAt),
           updatedAt: Value(remote.updatedAt),
         ),
       );
     }
+
+    if (reconcile) {
+      final activeIds = remoteList.map((e) => e.id).where((id) => id > 0).toList();
+      await _db.deleteSyncedCustomersNotIn(activeIds);
+    }
+  }
+
+  /// Xóa điểm bán khỏi SQLite cục bộ
+  Future<void> deleteCustomerLocal(int id) async {
+    await _db.deleteCustomerById(id);
+  }
+
+  /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy hàng đợi sync
+  Future<void> deletePendingCustomer(String clientUuid) async {
+    await _db.deletePendingCustomer(clientUuid);
+  }
+
+  /// Xóa sạch các khách hàng đã đồng bộ khỏi SQLite (dùng khi cần dọn cache cũ nhiễm tên tỉnh/mock data)
+  Future<void> clearSyncedCustomers() async {
+    await _db.deleteSyncedCustomersNotIn(const []);
   }
 
   CustomerEntity _mapRowToEntity(LocalCustomer row) {
@@ -246,6 +333,54 @@ class CustomerLocalDataSource {
         dynFields = jsonDecode(row.dynamicFieldsJson) as Map<String, dynamic>;
       }
     } catch (_) {}
+
+    String? localPhotoUrl;
+    List<String> localPhotoUrls = [];
+    if (dynFields['photo_urls'] is List) {
+      localPhotoUrls = (dynFields['photo_urls'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } else if (dynFields['photo_tokens'] is List) {
+      localPhotoUrls = (dynFields['photo_tokens'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (localPhotoUrls.isNotEmpty) {
+      localPhotoUrl = localPhotoUrls.first;
+    } else if (dynFields['photo_url'] != null && dynFields['photo_url'].toString().trim().isNotEmpty) {
+      localPhotoUrl = dynFields['photo_url'].toString().trim();
+      localPhotoUrls = [localPhotoUrl];
+    } else if (dynFields['photo_token'] != null && dynFields['photo_token'].toString().trim().isNotEmpty) {
+      localPhotoUrl = dynFields['photo_token'].toString().trim();
+      localPhotoUrls = [localPhotoUrl];
+    }
+
+    List<String> localRoutes = [];
+    if (dynFields['routes'] is List) {
+      localRoutes = (dynFields['routes'] as List)
+          .map((e) => e?.toString().trim() ?? '')
+          .where((e) => !CustomerEntity.isInvalidOrProvinceRoute(e, provinceName: row.provinceName))
+          .toList();
+    }
+    if (localRoutes.isEmpty && !CustomerEntity.isInvalidOrProvinceRoute(row.route, provinceName: row.provinceName)) {
+      localRoutes = [row.route.trim()];
+    }
+
+    final resolvedRowRoute = localRoutes.isNotEmpty
+        ? localRoutes.first
+        : (CustomerEntity.isInvalidOrProvinceRoute(row.route, provinceName: row.provinceName)
+            ? 'Chưa phân tuyến'
+            : row.route.trim());
+
+    List<int> localRouteIds = [];
+    if (dynFields['route_ids'] is List) {
+      localRouteIds = (dynFields['route_ids'] as List)
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
 
     Color accent = const Color(0xFF10B981);
     if (row.type.contains('NPP') || row.type.contains('Cấp 1')) {
@@ -263,7 +398,9 @@ class CustomerLocalDataSource {
       channelId: row.channelId,
       channelName: row.channelName,
       regionId: row.regionId,
-      route: row.route,
+      route: resolvedRowRoute,
+      routes: localRoutes,
+      routeIds: localRouteIds,
       address: row.address,
       provinceName: row.provinceName,
       wardName: row.wardName,
@@ -282,6 +419,8 @@ class CustomerLocalDataSource {
       updatedAt: row.updatedAt,
       accentColor: accent,
       dynamicFields: dynFields,
+      photoUrl: localPhotoUrl,
+      photoUrls: localPhotoUrls,
     );
   }
 }

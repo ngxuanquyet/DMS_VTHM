@@ -12,24 +12,72 @@ import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/checkout_success_dialog.dart';
+import '../../../forms/presentation/screens/market_form_fill_screen.dart';
+import '../../../forms/presentation/widgets/market_form_card.dart';
+import '../../../customer/domain/entities/customer_entity.dart';
 
-class CheckInScreen extends ConsumerWidget {
+class CheckInScreen extends ConsumerStatefulWidget {
   const CheckInScreen({super.key});
 
-  Future<void> _showCancelCheckInDialog(BuildContext context) async {
+  @override
+  ConsumerState<CheckInScreen> createState() => _CheckInScreenState();
+}
+
+class _CheckInScreenState extends ConsumerState<CheckInScreen> {
+  final TextEditingController _noteController = TextEditingController();
+  final List<String> _photos = [];
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  void _safePop() {
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      try {
+        context.pop();
+      } catch (_) {}
+    }
+  }
+
+  bool _hasUnsavedData() {
+    return _noteController.text.trim().isNotEmpty || _photos.isNotEmpty;
+  }
+
+  Future<void> _handleExit() async {
+    if (!_hasUnsavedData()) {
+      // Chưa ghi gì -> Thoát ngay lập tức không hiện popup cảnh báo
+      _safePop();
+      return;
+    }
+
+    // Đang nhập / đã có dữ liệu -> Hiện dialog cảnh báo
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
-        title: Text(
-          'Hủy check-in',
-          style: AppTypography.titleLarge(
-            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-          ).copyWith(fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Hủy check-in?',
+                style: AppTypography.titleLarge(
+                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                ).copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
         ),
         content: Text(
-          'Bạn có chắc chắn muốn hủy phiên check-in này không? Dữ liệu chuyến ghé chưa lưu sẽ không được ghi nhận.',
+          'Bạn có ghi chú/thông tin chưa lưu. Bạn có chắc chắn muốn thoát khỏi phiên check-in này không? Dữ liệu bạn vừa nhập sẽ bị mất.',
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
           ),
@@ -38,7 +86,7 @@ class CheckInScreen extends ConsumerWidget {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
-              'Không',
+              'Ở lại',
               style: AppTypography.labelLarge(
                 color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
               ),
@@ -49,6 +97,7 @@ class CheckInScreen extends ConsumerWidget {
               backgroundColor: AppColors.error,
               foregroundColor: Colors.white,
               elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Hủy check-in'),
@@ -57,33 +106,210 @@ class CheckInScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true && context.mounted) {
+    if (confirmed == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đã hủy phiên check-in điểm bán.'),
           backgroundColor: AppColors.error,
         ),
       );
-      context.pop();
+      _safePop();
     }
   }
 
+  void _openNoteDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tempController = TextEditingController(text: _noteController.text);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.edit_note_rounded, color: isDark ? AppColors.primaryFixedDim : AppColors.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Ghi chú chuyến ghé',
+              style: AppTypography.titleLarge(
+                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+              ).copyWith(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: TextField(
+          controller: tempController,
+          maxLines: 4,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Nhập ý kiến phản hồi hoặc ghi chú từ điểm bán...',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('HỦY'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              setState(() {
+                _noteController.text = tempController.text;
+              });
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('LƯU GHI CHÚ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSurveyFormsSheet(BuildContext context, CheckInState state, CheckInViewModel vm) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surveys = state.surveyForms;
+    final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
+    final customerId = customer?.id ??
+        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 8338);
+    final dealerName = customer?.name ?? state.checkinData?.dealer.name ?? 'Điểm bán';
+
+    final customerContext = MarketFormFillArgs.buildCustomerContext(
+      typeId: customer?.customerTypeId,
+      channelId: customer?.channelId,
+      regionId: customer?.regionId,
+      groupId: customer?.customerGroupId,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.marginMobile, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkOutline : AppColors.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Biểu mẫu khảo sát điểm bán',
+                    style: AppTypography.titleLarge(
+                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                    ).copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Điểm bán: $dealerName',
+                style: AppTypography.bodySmall(
+                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (surveys.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('Hiện không có biểu mẫu khảo sát nào cho điểm bán này'),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: surveys.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (c, idx) {
+                      final item = surveys[idx];
+                      final isSubmitted = state.submittedSurveyConfigIds.contains(item.configId);
+                      return MarketFormCard(
+                        config: item,
+                        isSubmitted: isSubmitted,
+                        onTap: () async {
+                          Navigator.of(ctx).pop();
+                          final result = await context.push<bool>(
+                            '/forms/fill',
+                            extra: MarketFormFillArgs(
+                              config: item,
+                              kind: 'survey',
+                              customerId: customerId,
+                              visitId: state.visitId,
+                              dealerName: dealerName,
+                              customerContext: customerContext,
+                            ),
+                          );
+                          if (result == true) {
+                            vm.markSurveySubmitted(item.configId);
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final state = ref.watch(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: VthmTopAppBar(
-        title: strings.visitingStoreTitle,
-        showBackButton: true,
-        showAvatar: false,
-        showLogo: false,
-        trailing: const SizedBox.shrink(),
-      ),
+    final surveyCount = state.surveyForms.length;
+    final completedSurveys = state.submittedSurveyConfigIds.length;
+    final surveyProgress = surveyCount > 0
+        ? (completedSurveys / surveyCount).clamp(0.0, 1.0)
+        : 0.0;
+    final hasRequired = state.hasUnsubmittedRequiredSurveys;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleExit();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
+        appBar: VthmTopAppBar(
+          title: strings.visitingStoreTitle,
+          showBackButton: true,
+          showAvatar: false,
+          showLogo: false,
+          onBackPressed: _handleExit,
+          trailing: const SizedBox.shrink(),
+        ),
       body: state.status == CheckInStatus.loading && state.checkinData == null
           ? const Center(
               child: AppLoading(size: 220),
@@ -295,34 +521,47 @@ class CheckInScreen extends ConsumerWidget {
                               context: context,
                               isDark: isDark,
                               icon: Icons.assignment_outlined,
-                              iconColor: AppColors.primary,
-                              title: 'Thu thập biểu mẫu',
-                              subtitle: 'Đánh giá trưng bày, Tồn kho',
+                              iconColor: completedSurveys > 0 && completedSurveys >= surveyCount
+                                  ? const Color(0xFF10B981)
+                                  : (hasRequired ? AppColors.error : AppColors.primary),
+                              title: 'Khảo sát điểm bán',
+                              subtitle: surveyCount > 0
+                                  ? (hasRequired
+                                      ? 'Còn ${state.unsubmittedRequiredSurveys.length} biểu mẫu bắt buộc'
+                                      : 'Đã hoàn thành $completedSurveys/$surveyCount')
+                                  : 'Không có biểu mẫu khảo sát',
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    '2/3',
+                                    '$completedSurveys/$surveyCount',
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
-                                      color: isDark
-                                          ? AppColors.primaryFixedDim
-                                          : AppColors.primary,
+                                      color: hasRequired
+                                          ? AppColors.error
+                                          : (isDark
+                                              ? AppColors.primaryFixedDim
+                                              : AppColors.primary),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   CustomDonutProgress(
-                                    progress: 0.66,
+                                    progress: surveyProgress,
                                     size: 24,
                                     strokeWidth: 3.5,
-                                    progressColor: isDark
-                                        ? AppColors.primaryFixedDim
-                                        : AppColors.primaryContainer,
+                                    progressColor: completedSurveys > 0 &&
+                                            completedSurveys >= surveyCount
+                                        ? const Color(0xFF10B981)
+                                        : (hasRequired
+                                            ? AppColors.error
+                                            : (isDark
+                                                ? AppColors.primaryFixedDim
+                                                : AppColors.primaryContainer)),
                                   ),
                                 ],
                               ),
-                              onTap: () => context.go('/forms'),
+                              onTap: () => _openSurveyFormsSheet(context, state, vm),
                             ),
                             const SizedBox(height: 12),
 
@@ -331,37 +570,65 @@ class CheckInScreen extends ConsumerWidget {
                               context: context,
                               isDark: isDark,
                               icon: Icons.photo_camera_outlined,
-                              iconColor: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.outline,
+                              iconColor: _photos.isNotEmpty
+                                  ? const Color(0xFF10B981)
+                                  : (isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline),
                               title: 'Chụp ảnh điểm bán',
-                              subtitleWidget: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.error_outline,
-                                    size: 14,
-                                    color: AppColors.error,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Chưa có ảnh',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.error,
+                              subtitleWidget: _photos.isNotEmpty
+                                  ? Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle_rounded,
+                                          size: 14,
+                                          color: Color(0xFF10B981),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${_photos.length} ảnh đã chụp',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF10B981),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.error_outline,
+                                          size: 14,
+                                          color: AppColors.error,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Chưa có ảnh',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.error,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ],
-                              ),
                               trailing: Icon(
-                                Icons.chevron_right,
-                                color: isDark
-                                    ? AppColors.darkOnSurfaceVariant
-                                    : AppColors.outline,
+                                _photos.isNotEmpty
+                                    ? Icons.check_rounded
+                                    : Icons.chevron_right,
+                                color: _photos.isNotEmpty
+                                    ? const Color(0xFF10B981)
+                                    : (isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.outline),
                               ),
                               onTap: () {
+                                setState(() {
+                                  _photos.add('photo_${DateTime.now().millisecondsSinceEpoch}.jpg');
+                                });
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Đang mở Camera chụp ảnh điểm bán...')),
+                                  const SnackBar(content: Text('Đã chụp và đính kèm 1 ảnh điểm bán.')),
                                 );
                               },
                             ),
@@ -372,22 +639,26 @@ class CheckInScreen extends ConsumerWidget {
                               context: context,
                               isDark: isDark,
                               icon: Icons.edit_note_rounded,
-                              iconColor: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.outline,
+                              iconColor: _noteController.text.trim().isNotEmpty
+                                  ? const Color(0xFF10B981)
+                                  : (isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline),
                               title: 'Ghi chú chuyến ghé',
-                              subtitle: 'Thêm ý kiến phản hồi',
+                              subtitle: _noteController.text.trim().isNotEmpty
+                                  ? _noteController.text.trim()
+                                  : 'Thêm ý kiến phản hồi',
                               trailing: Icon(
-                                Icons.chevron_right,
-                                color: isDark
-                                    ? AppColors.darkOnSurfaceVariant
-                                    : AppColors.outline,
+                                _noteController.text.trim().isNotEmpty
+                                    ? Icons.check_circle_rounded
+                                    : Icons.chevron_right,
+                                color: _noteController.text.trim().isNotEmpty
+                                    ? const Color(0xFF10B981)
+                                    : (isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.outline),
                               ),
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Mở form ghi chú chuyến ghé...')),
-                                );
-                              },
+                              onTap: _openNoteDialog,
                             ),
                           ],
                         ),
@@ -423,7 +694,7 @@ class CheckInScreen extends ConsumerWidget {
                   children: [
                     // Hủy check-in Button
                     OutlinedButton.icon(
-                      onPressed: () => _showCancelCheckInDialog(context),
+                      onPressed: _handleExit,
                       icon: const Icon(
                         Icons.close_rounded,
                         size: 20,
@@ -462,6 +733,102 @@ class CheckInScreen extends ConsumerWidget {
                         onPressed: state.status == CheckInStatus.checkingOut
                             ? null
                             : () async {
+                                // 1. Chặn Check-out nếu còn biểu mẫu bắt buộc chưa nộp (§1 & §2)
+                                if (state.hasUnsubmittedRequiredSurveys) {
+                                  final missingList = state.unsubmittedRequiredSurveys
+                                      .map((f) => '• ${f.name}')
+                                      .join('\n');
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      backgroundColor: isDark
+                                          ? AppColors.darkSurfaceContainer
+                                          : AppColors.surface,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      title: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.block_rounded,
+                                            color: AppColors.error,
+                                            size: 28,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              'Chưa thể Check-out',
+                                              style: AppTypography.titleLarge(
+                                                color: isDark
+                                                    ? AppColors.darkOnSurface
+                                                    : AppColors.onSurface,
+                                              ).copyWith(fontWeight: FontWeight.w700),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Bạn chưa hoàn thành các biểu mẫu khảo sát bắt buộc của điểm bán này:',
+                                            style: AppTypography.bodyMedium(
+                                              color: isDark
+                                                  ? AppColors.darkOnSurfaceVariant
+                                                  : AppColors.onSurfaceVariant,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.error.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              missingList,
+                                              style: const TextStyle(
+                                                color: AppColors.error,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            'Theo quy định, bạn phải nộp toàn bộ biểu mẫu khảo sát bắt buộc trước khi check-out kết thúc phiên viếng thăm.',
+                                            style: AppTypography.bodySmall(
+                                              color: isDark
+                                                  ? AppColors.darkOnSurfaceVariant
+                                                  : AppColors.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      actions: [
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.primary,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          onPressed: () {
+                                            Navigator.of(ctx).pop();
+                                            _openSurveyFormsSheet(context, state, vm);
+                                          },
+                                          child: const Text('LÀM KHẢO SÁT NGAY'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
+
                                 final position = await ref
                                     .read(locationServiceProvider)
                                     .checkAndGetLocation(context);
@@ -516,6 +883,7 @@ class CheckInScreen extends ConsumerWidget {
                 ),
               ),
             ),
+      ),
     );
   }
 

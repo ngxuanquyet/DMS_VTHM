@@ -28,11 +28,14 @@ class CustomerCard extends StatelessWidget {
   final bool isInProgress;
   final String? visitedTime;
   final String? syncStatus;
+  final String? photoUrl;
+  final List<String> photoUrls;
 
   /// Tham số button duy nhất của template:
   /// - Màn tuyến: nút Check-in
   /// - Màn khách hàng: nút Sửa
   final Widget? actionButton;
+  final bool showBorder;
 
   final VoidCallback? onTap;
   final VoidCallback? onDirections;
@@ -67,7 +70,10 @@ class CustomerCard extends StatelessWidget {
     this.isInProgress = false,
     this.visitedTime,
     this.syncStatus,
+    this.photoUrl,
+    this.photoUrls = const [],
     this.actionButton,
+    this.showBorder = true,
     this.onTap,
     this.onDirections,
     this.onCallPhone,
@@ -82,6 +88,7 @@ class CustomerCard extends StatelessWidget {
     double? distance,
     String? distanceText,
     Widget? actionButton,
+    bool showBorder = true,
     VoidCallback? onCheckIn,
     VoidCallback? onTap,
     VoidCallback? onDirections,
@@ -101,6 +108,18 @@ class CustomerCard extends StatelessWidget {
             ? (dealer.customer as CustomerEntity).type
             : null);
 
+    final resolvedSyncStatus = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).syncStatus
+        : null;
+
+    final resolvedPhotoUrl = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).fullPhotoUrl
+        : null;
+
+    final resolvedPhotoUrls = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).fullPhotoUrls
+        : const <String>[];
+
     return CustomerCard(
       key: key,
       code: dealer.code?.isNotEmpty == true ? dealer.code! : 'KH${dealer.order}',
@@ -116,7 +135,11 @@ class CustomerCard extends StatelessWidget {
       isCompleted: isCompleted,
       isInProgress: dealer.status == DealerVisitStatus.inProgress,
       visitedTime: dealer.visitedTime,
+      syncStatus: resolvedSyncStatus,
+      photoUrl: resolvedPhotoUrl,
+      photoUrls: resolvedPhotoUrls,
       actionButton: resolvedButton,
+      showBorder: showBorder,
       onTap: onTap,
       onDirections: onDirections,
       onCallPhone: onCallPhone,
@@ -156,6 +179,8 @@ class CustomerCard extends StatelessWidget {
       isCompleted: item.customer.visitStatus == CustomerVisitStatus.visited,
       isInProgress: false,
       syncStatus: item.customer.syncStatus,
+      photoUrl: item.customer.fullPhotoUrl,
+      photoUrls: item.customer.fullPhotoUrls,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -203,6 +228,8 @@ class CustomerCard extends StatelessWidget {
       isCompleted: isCompleted,
       isInProgress: false,
       syncStatus: customer.syncStatus,
+      photoUrl: customer.fullPhotoUrl,
+      photoUrls: customer.fullPhotoUrls,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -410,6 +437,12 @@ class CustomerCard extends StatelessWidget {
             ? effectiveCustomer!.type.trim()
             : null);
 
+    final effectivePhotoUrl = photoUrl ?? effectiveCustomer?.fullPhotoUrl;
+    final effectivePhotoUrls = photoUrls.isNotEmpty
+        ? photoUrls
+        : (effectiveCustomer?.fullPhotoUrls ??
+            (effectivePhotoUrl != null ? [effectivePhotoUrl] : const <String>[]));
+
     final hasCoordinates = effectiveLat != null && effectiveLng != null;
     final isValidDistance = effectiveDistance != null && effectiveDistance <= 100;
     final distText = distanceText ?? (item != null ? item!.formattedDistance : formatDistance(effectiveDistance));
@@ -418,232 +451,198 @@ class CustomerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isInProgress
-              ? const Color(0xFF47B347)
-              : (isDark ? AppColors.darkOutlineVariant : const Color(0xFFE0E3E0)),
-          width: isInProgress ? 2 : 1,
-        ),
+        border: showBorder
+            ? Border.all(
+                color: isInProgress
+                    ? const Color(0xFF47B347)
+                    : (isDark ? AppColors.darkOutlineVariant : const Color(0xFFE0E3E0)),
+                width: isInProgress ? 2 : 1,
+              )
+            : null,
         boxShadow: [
           BoxShadow(
-            color: isInProgress
+            color: isInProgress && showBorder
                 ? const Color(0x1F006E15)
                 : Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: isInProgress ? 8 : 4,
+            blurRadius: isInProgress && showBorder ? 8 : 4,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-                // Header row: Mã KH + Status tag & Distance + Directions button
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header row: Mã KH + Status tag (Left) & Distance chip (Right)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Left: Code + Status Badge
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: effectiveIsCompleted || isInProgress
-                                ? _codeBgCompleted
-                                : (isDark ? AppColors.darkSurfaceContainer : _codeBgNormal),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: isDark ? AppColors.darkOutlineVariant : _codeBorder,
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            effectiveCode,
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: effectiveIsCompleted || isInProgress
-                                  ? (isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15))
-                                  : (isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        // Offline sync status or visit status tag
-                        if (effectiveSyncStatus == 'pending') ...[
+                    Flexible(
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isDark ? _pendingBgDark : _pendingBgLight,
-                              borderRadius: BorderRadius.circular(999),
+                              color: effectiveIsCompleted || isInProgress
+                                  ? _codeBgCompleted
+                                  : (isDark ? AppColors.darkSurfaceContainer : _codeBgNormal),
+                              borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: _pendingBorder,
+                                color: isDark ? AppColors.darkOutlineVariant : _codeBorder,
                                 width: 1,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.cloud_upload_outlined,
-                                  size: 11,
-                                  color: _pendingIcon,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Chờ đồng bộ',
-                                  style: AppTypography.labelSmall(
-                                    color: isDark ? _pendingTextDark : _pendingTextLight,
-                                  ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ] else if (effectiveIsCompleted) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0x33006E15) : const Color(0xFFEFF6E8),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.check_circle,
-                                  size: 13,
-                                  color: Color(0xFF006E15),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Đã ghé',
-                                  style: TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ] else if (!isInProgress) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFE4EADD),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
                             child: Text(
-                              'Chưa ghé',
+                              effectiveCode,
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-
-                    // Right: Distance Chip & Directions Button
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            color: isInProgress && isValidDistance
-                                ? const Color(0xFFEFF6E8)
-                                : (isDark ? AppColors.darkSurfaceContainer : const Color(0xFFE4EADD)),
-                            borderRadius: BorderRadius.circular(8),
-                            border: isInProgress && isValidDistance
-                                ? Border.all(
-                                    color: isDark ? AppColors.primaryFixedDim : const Color(0xFFBECAB7),
-                                    width: 1,
-                                  )
-                                : null,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                hasCoordinates ? Icons.near_me : Icons.location_off_outlined,
-                                size: 13,
-                                color: isInProgress && isValidDistance
-                                    ? const Color(0xFF006E15)
+                                fontWeight: FontWeight.w700,
+                                color: effectiveIsCompleted || isInProgress
+                                    ? (isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15))
                                     : (isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B)),
                               ),
-                              const SizedBox(width: 3),
-                              Text(
-                                !hasCoordinates
-                                    ? 'Chưa có GPS'
-                                    : (isInProgress && isValidDistance
-                                        ? '$distText (Hợp lệ)'
-                                        : distText),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+
+                          // Offline sync status or visit status tag
+                          if (effectiveSyncStatus == 'pending') ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? _pendingBgDark : _pendingBgLight,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: _pendingBorder,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.cloud_upload_outlined,
+                                    size: 11,
+                                    color: _pendingIcon,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Chờ đồng bộ',
+                                    style: AppTypography.labelSmall(
+                                      color: isDark ? _pendingTextDark : _pendingTextLight,
+                                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (effectiveIsCompleted) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0x33006E15) : const Color(0xFFEFF6E8),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    size: 13,
+                                    color: Color(0xFF006E15),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Đã ghé',
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (!isInProgress) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFE4EADD),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Chưa ghé',
                                 style: TextStyle(
                                   fontFamily: 'Inter',
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: isInProgress && isValidDistance
-                                      ? const Color(0xFF006E15)
-                                      : (isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B)),
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
 
-                        // Directions Button
-                        InkWell(
-                          onTap: onDirections ??
-                              () => defaultOpenDirections(
-                                    context,
-                                    lat: effectiveLat,
-                                    lng: effectiveLng,
-                                    address: effectiveAddress,
-                                  ),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-                            decoration: BoxDecoration(
-                              color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF6E8),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFBECAB7),
+                    // Right: Distance Chip
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: isInProgress && isValidDistance
+                            ? const Color(0xFFEFF6E8)
+                            : (isDark ? AppColors.darkSurfaceContainer : const Color(0xFFE4EADD)),
+                        borderRadius: BorderRadius.circular(8),
+                        border: isInProgress && isValidDistance
+                            ? Border.all(
+                                color: isDark ? AppColors.primaryFixedDim : const Color(0xFFBECAB7),
                                 width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.directions,
-                                  size: 14,
-                                  color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Chỉ đường',
-                                  style: TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
-                                  ),
-                                ),
-                              ],
+                              )
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            hasCoordinates ? Icons.near_me : Icons.location_off_outlined,
+                            size: 13,
+                            color: isInProgress && isValidDistance
+                                ? const Color(0xFF006E15)
+                                : (isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B)),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            !hasCoordinates
+                                ? 'Chưa có GPS'
+                                : (isInProgress && isValidDistance
+                                    ? '$distText (Hợp lệ)'
+                                    : distText),
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isInProgress && isValidDistance
+                                  ? const Color(0xFF006E15)
+                                  : (isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF3F4A3B)),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -653,18 +652,51 @@ class CustomerCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: onTap,
-                        child: Text(
-                          effectiveName,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontSize: isInProgress ? 17 : 16,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? AppColors.darkOnSurface : const Color(0xFF181C1B),
-                            height: 1.25,
+                    if (effectivePhotoUrl != null && effectivePhotoUrl.isNotEmpty) ...[
+                      GestureDetector(
+                        onTap: () => _showPhotoGallery(
+                          context,
+                          effectivePhotoUrls.isNotEmpty ? effectivePhotoUrls : [effectivePhotoUrl],
+                          title: effectiveName,
+                        ),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          margin: const EdgeInsets.only(right: 10),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF3EB),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFCDD7C7),
+                            ),
                           ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(7),
+                            child: Image.network(
+                              effectivePhotoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF3EB),
+                                child: const Icon(
+                                  Icons.storefront_outlined,
+                                  size: 22,
+                                  color: AppColors.outline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    Expanded(
+                      child: Text(
+                        effectiveName,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: isInProgress ? 17 : 16,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? AppColors.darkOnSurface : const Color(0xFF181C1B),
+                          height: 1.25,
                         ),
                       ),
                     ),
@@ -706,9 +738,9 @@ class CustomerCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
 
-                // Address Row
+                // Address Row & Directions Button
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Icon(
                       Icons.location_on,
@@ -727,6 +759,50 @@ class CustomerCard extends StatelessWidget {
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Directions Button
+                    InkWell(
+                      onTap: onDirections ??
+                          () => defaultOpenDirections(
+                                context,
+                                lat: effectiveLat,
+                                lng: effectiveLng,
+                                address: effectiveAddress,
+                              ),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF6E8),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFBECAB7),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.directions,
+                              size: 14,
+                              color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Chỉ đường',
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -823,6 +899,75 @@ class CustomerCard extends StatelessWidget {
               ],
             ),
           ),
-        );
-      }
+        ),
+      ),
+    );
+  }
+
+  static void _showPhotoGallery(BuildContext context, List<String> urls, {String? title}) {
+    if (urls.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title?.isNotEmpty == true ? '$title (${urls.length} ảnh)' : 'Ảnh điểm bán (${urls.length})',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 320,
+              child: PageView.builder(
+                itemCount: urls.length,
+                itemBuilder: (context, index) {
+                  final url = urls[index];
+                  return Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (urls.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Vuốt ngang để xem các ảnh tiếp theo',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

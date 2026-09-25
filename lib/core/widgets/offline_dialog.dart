@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../localization/app_language.dart';
+import '../localization/app_strings.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -6,16 +8,22 @@ import 'app_button.dart';
 
 class OfflineDisconnectDialog extends StatelessWidget {
   final VoidCallback? onDismiss;
+  final AppStrings? strings;
 
   const OfflineDisconnectDialog({
     super.key,
     this.onDismiss,
+    this.strings,
   });
 
   static bool isShowing = false;
   static BuildContext? _activeDialogContext;
 
-  static Future<void> show(BuildContext context, {VoidCallback? onDismiss}) {
+  static Future<void> show(
+    BuildContext context, {
+    VoidCallback? onDismiss,
+    AppStrings? strings,
+  }) {
     if (isShowing) return Future.value();
     isShowing = true;
 
@@ -34,6 +42,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
             }
           },
           child: OfflineDisconnectDialog(
+            strings: strings,
             onDismiss: () {
               isShowing = false;
               _activeDialogContext = null;
@@ -63,6 +72,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = strings ?? const AppStrings(AppLanguage.vi);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -98,7 +108,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
 
             // Title
             Text(
-              'Đang ngoại tuyến',
+              s.offlineTitle,
               style: AppTypography.headlineSmall(
                 color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
               ).copyWith(fontWeight: FontWeight.w700),
@@ -109,7 +119,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: Text(
-                'Bạn vẫn có thể tiếp tục làm việc. Dữ liệu sẽ tự động đồng bộ khi có kết nối mạng trở lại.',
+                s.offlineDesc,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
@@ -120,7 +130,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
 
             // CTA Button "ĐÃ HIỂU"
             AppButton(
-              text: 'ĐÃ HIỂU',
+              text: s.understood,
               width: double.infinity,
               height: 48,
               onPressed: () {
@@ -145,7 +155,7 @@ class OfflineDisconnectDialog extends StatelessWidget {
                   onDismiss?.call();
                 },
                 child: Text(
-                  'Đóng',
+                  s.close,
                   style: AppTypography.labelLarge(
                     color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                   ).copyWith(fontWeight: FontWeight.w600),

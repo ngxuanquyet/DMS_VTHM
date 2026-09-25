@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
@@ -115,6 +116,8 @@ class SyncService {
     try {
       if (entry.entity == 'customer' && entry.op == 'create') {
         await _syncCreateCustomer(entry);
+      } else if (entry.entity == 'form_submission' && entry.op == 'create') {
+        await _syncSubmitForm(entry);
       } else {
         // Các loại entity khác nếu có
         await _db.markDone(entry.id);
@@ -127,8 +130,156 @@ class SyncService {
   }
 
   /// Đồng bộ tạo mới khách hàng lên server
+  Future<String?> _resolvePhotoToken(String raw) async {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    // Nếu đã là 32-hex token từ trước
+    if (trimmed.length == 32 && !trimmed.contains('/') && !trimmed.contains(r'\')) {
+      return trimmed;
+    }
+    // Nếu là tệp cục bộ cần tải lên
+    try {
+      final file = File(trimmed);
+      if (await file.exists()) {
+        final fileName = file.path.split(Platform.pathSeparator).last.split('/').last;
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path, filename: fileName),
+        });
+        final res = await _apiClient.postMultipart('/crm/customer-photos', formData: formData);
+        if (res is Map && res['data'] is Map && res['data']['token'] != null) {
+          return res['data']['token'].toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('[SyncService] Lỗi khi upload ảnh điểm bán: $e');
+    }
+    return null;
+  }
+
+  /// Đồng bộ tạo mới khách hàng lên server theo API spec 22/09/2026
   Future<void> _syncCreateCustomer(SyncQueueEntry entry) async {
     final payloadMap = jsonDecode(entry.payload) as Map<String, dynamic>;
+
+    // 1. Loại bỏ các khóa nội bộ hoặc bị cấm gửi lên server
+    payloadMap.remove('status');
+    payloadMap.remove('code');
+    payloadMap.remove('approval_status');
+    payloadMap.remove('created_by_code');
+    payloadMap.remove('created_by_name');
+    payloadMap.remove('mobiwork_id');
+    payloadMap.remove('legacy_source');
+    payloadMap.remove('legacy_key');
+    payloadMap.remove('custom_labels');
+    payloadMap.remove('photo_file_id');
+    payloadMap.remove('customer_type_name');
+    payloadMap.remove('customer_type_code');
+    payloadMap.remove('channel_name');
+    payloadMap.remove('channel_code');
+    payloadMap.remove('region_name');
+    payloadMap.remove('region_code');
+    payloadMap.remove('route_name');
+    payloadMap.remove('route_code');
+    payloadMap.remove('route');
+    payloadMap.remove('type');
+    payloadMap.remove('contact_person');
+    payloadMap.remove('contactPerson');
+    payloadMap.remove('dynamic_fields');
+
+    // 2. route_ids bắt buộc với nhân viên thị trường (phải là List<int>)
+    if (payloadMap['route_ids'] is List) {
+      payloadMap['route_ids'] = (payloadMap['route_ids'] as List)
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    } else if (payloadMap['route_ids'] != null) {
+      final parsed = int.tryParse(payloadMap['route_ids'].toString());
+      if (parsed != null) payloadMap['route_ids'] = [parsed];
+    }
+    if (payloadMap['route_ids'] == null ||
+        (payloadMap['route_ids'] is List && (payloadMap['route_ids'] as List).isEmpty)) {
+      payloadMap['route_ids'] = [5];
+    }
+
+    // 3. Xử lý photo_tokens và photo_token cấp cao nhất theo spec 23/09/2026
+    if (payloadMap['photo_tokens'] is List) {
+      final rawList = payloadMap['photo_tokens'] as List;
+      final resolvedList = <String>[];
+      for (final item in rawList) {
+        final strItem = item.toString().trim();
+        if (strItem.isNotEmpty) {
+          final token = await _resolvePhotoToken(strItem);
+          resolvedList.add(token ?? strItem);
+        }
+      }
+      if (resolvedList.isNotEmpty) {
+        payloadMap['photo_tokens'] = resolvedList;
+        payloadMap['photo_token'] = resolvedList.first;
+      }
+    } else if (payloadMap['photo_token'] != null) {
+      final rawPhoto = payloadMap['photo_token'].toString().trim();
+      if (rawPhoto.isNotEmpty) {
+        final uploadedToken = await _resolvePhotoToken(rawPhoto);
+        final token = uploadedToken ?? rawPhoto;
+        payloadMap['photo_tokens'] = [token];
+        payloadMap['photo_token'] = token;
+      }
+    }
+
+    // 4. Làm sạch dynamic data (loại bỏ ô hiển thị nội bộ, xử lý ảnh token)
+    if (payloadMap['data'] is Map<String, dynamic>) {
+      final dataMap = Map<String, dynamic>.from(payloadMap['data'] as Map<String, dynamic>);
+
+      const nonDynamicKeys = {
+        'customer_type_name',
+        'customer_type_code',
+        'channel_name',
+        'channel_code',
+        'region_name',
+        'region_code',
+        'route_name',
+        'route_code',
+        'route',
+        'type',
+        'status',
+        'code',
+        'id',
+        'client_uuid',
+        'is_offline_sync',
+        'photo_token',
+        'photo_tokens',
+        'photo_file_id',
+        'photo',
+        'photos',
+        'photo_url',
+        'photo_urls',
+        'contact_person',
+        'contactPerson',
+        'dynamic_fields',
+      };
+      dataMap.removeWhere((key, _) => nonDynamicKeys.contains(key));
+
+      for (final key in dataMap.keys.toList()) {
+        final val = dataMap[key];
+        if (val is List) {
+          final resolvedList = <String>[];
+          for (final item in val) {
+            final strItem = item.toString();
+            final token = await _resolvePhotoToken(strItem);
+            resolvedList.add(token ?? strItem);
+          }
+          dataMap[key] = resolvedList;
+        } else if (val is String && (val.endsWith('.jpg') || val.endsWith('.png') || val.endsWith('.jpeg') || val.contains('/') || val.contains(r'\'))) {
+          final token = await _resolvePhotoToken(val);
+          dataMap[key] = [token ?? val];
+        }
+      }
+
+      if (dataMap.isNotEmpty) {
+        payloadMap['data'] = dataMap;
+      } else {
+        payloadMap.remove('data');
+      }
+    }
 
     // Gửi lên API /crm/customers kèm client_uuid (BB-2, BB-3)
     final response = await _apiClient.post(
@@ -166,6 +317,29 @@ class SyncService {
     }
 
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+  }
+
+  /// Đồng bộ phiếu biểu mẫu thị trường (survey / collect) lên server
+  Future<void> _syncSubmitForm(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    payload['is_offline_sync'] = true;
+    payload['client_uuid'] = entry.clientUuid;
+
+    final response = await _apiClient.post(
+      '/dms/form-submissions',
+      data: payload,
+    );
+
+    int? serverId;
+    if (response is Map<String, dynamic>) {
+      final data = response['data'];
+      if (data is Map<String, dynamic> && data['id'] is num) {
+        serverId = (data['id'] as num).toInt();
+      }
+    }
+
+    await _db.markDone(entry.id, serverId: serverId);
+    debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
 
   /// Xử lý lỗi từ Dio theo phân loại của đặc tả (§8.2)

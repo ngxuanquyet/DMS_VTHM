@@ -290,4 +290,239 @@ class AppStrings {
       isVietnamese ? 'Độ chính xác' : 'Confidence';
   String get recognitionLocaleLabel =>
       isVietnamese ? 'Ngôn ngữ nhận diện' : 'Recognition Language';
+
+  // Distance Warning Dialog
+  String get cannotCheckInTitle =>
+      isVietnamese ? 'Không thể Check-in' : 'Cannot Check-in';
+  String get distanceExceededDesc => isVietnamese
+      ? 'Khoảng cách hiện tại vượt quá phạm vi cho phép (tối đa 100m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-in.'
+      : 'Current distance exceeds the allowed radius (max 100m). Please move closer to the store to check in.';
+  String get currentDistance =>
+      isVietnamese ? 'Khoảng cách hiện tại' : 'Current distance';
+  String get invalidDistanceOver100m =>
+      isVietnamese ? 'Không hợp lệ (> 100m)' : 'Invalid (> 100m)';
+  String get yourLocation =>
+      isVietnamese ? 'Vị trí của bạn' : 'Your location';
+  String get directionsNowAction =>
+      isVietnamese ? 'CHỈ ĐƯỜNG NGAY' : 'GET DIRECTIONS';
+  String get closeActionCaps =>
+      isVietnamese ? 'ĐÓNG' : 'CLOSE';
+  String get noCoordsOrAddressForDirections => isVietnamese
+      ? 'Điểm bán chưa có tọa độ hoặc địa chỉ để chỉ đường'
+      : 'Store has no coordinates or address for directions';
+  String get cannotOpenMapsApp => isVietnamese
+      ? 'Không thể mở ứng dụng bản đồ Google Maps'
+      : 'Cannot open Google Maps application';
+
+  // Checkout Celebration Dialog
+  String get checkoutSuccessTitle =>
+      isVietnamese ? 'Check-out thành công!' : 'Check-out Successful!';
+  String get checkoutSuccessDesc => isVietnamese
+      ? 'Bạn đã hoàn tất phiên làm việc tại điểm bán. Toàn bộ dữ liệu chuyến ghé đã được lưu vào hệ thống.'
+      : 'You have completed your store visit. All visit data has been saved to the system.';
+  String get completeActionCaps =>
+      isVietnamese ? 'HOÀN TẤT' : 'DONE';
+
+  // Offline Dialog
+  String get offlineTitle =>
+      isVietnamese ? 'Đang ngoại tuyến' : 'Offline';
+  String get offlineDesc => isVietnamese
+      ? 'Bạn vẫn có thể tiếp tục làm việc. Dữ liệu sẽ tự động đồng bộ khi có kết nối mạng trở lại.'
+      : 'You can continue working. Data will be synchronized automatically when network connection is restored.';
+
+  // Exit Confirmation Dialogs
+  String get leaveScreenTitle =>
+      isVietnamese ? 'Rời khỏi màn hình?' : 'Leave Screen?';
+  String get unsavedCustomerDataWarning => isVietnamese
+      ? 'Dữ liệu điểm bán bạn đang nhập chưa được lưu. Nếu thoát ra, các thông tin đã nhập sẽ bị mất.'
+      : 'The store data you entered has not been saved. If you leave, entered information will be lost.';
+  String get stayAction =>
+      isVietnamese ? 'Ở lại' : 'Stay';
+  String get leaveAction =>
+      isVietnamese ? 'Rời khỏi' : 'Leave';
+  String get cancelCheckinTitle =>
+      isVietnamese ? 'Hủy check-in?' : 'Cancel Check-in?';
+  String get cancelCheckinDesc => isVietnamese
+      ? 'Bạn có ghi chú/thông tin chưa lưu. Bạn có chắc chắn muốn thoát khỏi phiên check-in này không? Dữ liệu bạn vừa nhập sẽ bị mất.'
+      : 'You have unsaved notes or changes. Are you sure you want to exit this check-in session? Entered data will be lost.';
+  String get cancelCheckinAction =>
+      isVietnamese ? 'Hủy check-in' : 'Cancel Check-in';
+  String get checkinCancelledToast =>
+      isVietnamese ? 'Đã hủy phiên check-in điểm bán.' : 'Check-in session cancelled.';
+
+  // Visit Note Dialog & Screen Actions
+  String get visitNoteDialogTitle =>
+      isVietnamese ? 'Ghi chú chuyến ghé' : 'Visit Notes';
+  String get visitNoteHint => isVietnamese
+      ? 'Nhập ý kiến phản hồi hoặc ghi chú từ điểm bán...'
+      : 'Enter feedback or notes from this store...';
+  String get saveNoteActionCaps =>
+      isVietnamese ? 'LƯU GHI CHÚ' : 'SAVE NOTE';
+  String get leaveActionCaps =>
+      isVietnamese ? 'RỜI KHỎI' : 'LEAVE';
+  String get checkoutActionCaps =>
+      isVietnamese ? 'CHECK-OUT' : 'CHECK-OUT';
+  String get customerDefaultName =>
+      isVietnamese ? 'Khách hàng' : 'Customer';
+
+  // Circular Menus & Sync Toasts
+  String get menuAddCustomer =>
+      isVietnamese ? 'Thêm mới khách hàng' : 'Add New Customer';
+  String get menuAddStore =>
+      isVietnamese ? 'Thêm điểm bán' : 'Add Store';
+  String get menuUpload =>
+      isVietnamese ? 'Tải lên' : 'Upload';
+  String get menuSendData =>
+      isVietnamese ? 'Gửi dữ liệu' : 'Send Data';
+  String get menuSync =>
+      isVietnamese ? 'Đồng bộ' : 'Sync';
+  String get menuSyncRoute =>
+      isVietnamese ? 'Đồng bộ tuyến' : 'Sync Route';
+  String get menuSyncing =>
+      isVietnamese ? 'Đang đồng bộ...' : 'Syncing...';
+  String get menuSortByDistance =>
+      isVietnamese ? 'Sắp xếp theo khoảng cách' : 'Sort by Distance';
+  String get menuSortRouteDistance =>
+      isVietnamese ? 'Sắp xếp cự ly' : 'Sort Route Distance';
+  String get menuCancelSortDistance =>
+      isVietnamese ? 'Hủy xếp cự ly' : 'Reset Distance Sort';
+  String get menuLocate =>
+      isVietnamese ? 'Định vị' : 'Locate';
+  String get menuGpsLocate =>
+      isVietnamese ? 'Định vị GPS' : 'GPS Locate';
+  String get allDataUploaded =>
+      isVietnamese ? 'Tất cả dữ liệu đã được gửi lên máy chủ!' : 'All data has been uploaded to the server!';
+  String get uploadingOfflineItems =>
+      isVietnamese ? 'Đang tải lên dữ liệu ngoại tuyến...' : 'Uploading offline items...';
+  String get allDataUploadedSuccess =>
+      isVietnamese ? 'Đã tải lên thành công toàn bộ dữ liệu!' : 'Successfully uploaded all data!';
+  String get canceledSortByDistance =>
+      isVietnamese ? 'Đã hủy sắp xếp theo khoảng cách.' : 'Distance sorting cancelled.';
+  String get sortedByDistanceSuccess =>
+      isVietnamese ? 'Đã sắp xếp điểm bán theo khoảng cách gần nhất!' : 'Stores sorted by nearest distance!';
+  String get noStoresOnRoute =>
+      isVietnamese ? 'Không có điểm bán nào trên tuyến này' : 'No stores assigned to this route';
+
+  // Voice Recording HUD Overlay
+  String get recRecording =>
+      isVietnamese ? 'REC ĐANG GHI ÂM' : 'REC RECORDING';
+  String get recFinalizing =>
+      isVietnamese ? 'ĐANG HOÀN TẤT...' : 'FINALIZING...';
+  String get inputForFieldPrefix =>
+      isVietnamese ? 'Nhập: ' : 'Input: ';
+  String get speakIntoMicHint =>
+      isVietnamese ? 'Hãy nói vào micro...' : 'Speak into the microphone...';
+  String get voiceRecognizing =>
+      isVietnamese ? 'Đang nhận diện giọng nói...' : 'Recognizing speech...';
+  String get releaseToInsertText =>
+      isVietnamese ? 'Thả tay ra để điền văn bản' : 'Release to insert text';
+  String get updatingInput =>
+      isVietnamese ? 'Đang cập nhật ô nhập...' : 'Updating input field...';
+  String get holdMicGuidance =>
+      isVietnamese ? 'Nhấn và giữ biểu tượng mic để nói, thả tay ra khi nói xong.' : 'Press and hold the mic icon to speak, release when finished.';
+  String get speakNow =>
+      isVietnamese ? 'Nói ngay' : 'Speak now';
+  String get recognizedPrefix =>
+      isVietnamese ? 'Đã nhập: ' : 'Recognized: ';
+
+  // Add Customer Screen
+  String get addNewStoreTitle =>
+      isVietnamese ? 'Thêm mới điểm bán' : 'Add New Store';
+  String get storeProfileDefault =>
+      isVietnamese ? 'Hồ sơ điểm bán' : 'Store Profile';
+  String get loadingFormSchema =>
+      isVietnamese ? 'Đang tải cấu hình biểu mẫu...' : 'Loading form schema...';
+  String get loadingDynamicFields =>
+      isVietnamese ? 'Đang tải cấu hình trường nhập liệu động...' : 'Loading dynamic form fields...';
+  String get errorLoadingFormSchema =>
+      isVietnamese ? 'Không thể tải cấu hình form từ hệ thống' : 'Unable to load form schema from server';
+  String get cancelActionCaps =>
+      isVietnamese ? 'HỦY BỎ' : 'CANCEL';
+  String get saveStoreActionCaps =>
+      isVietnamese ? 'LƯU ĐIỂM BÁN' : 'SAVE STORE';
+  String get storeNameRequired =>
+      isVietnamese ? 'Tên điểm bán là bắt buộc.' : 'Store name is required.';
+  String get storeSavedOnline =>
+      isVietnamese ? 'Đã lưu điểm bán! Đang đồng bộ lên hệ thống...' : 'Store saved! Syncing to server...';
+  String get storeSavedOffline =>
+      isVietnamese ? 'Đã lưu trên máy! Điểm bán sẽ tự động đồng bộ khi có mạng.' : 'Saved locally! Will automatically sync when online.';
+
+  // Customer Card
+  String get editAction =>
+      isVietnamese ? 'Sửa' : 'Edit';
+  String get visitedTimePrefix =>
+      isVietnamese ? 'Đã ghé: ' : 'Visited: ';
+  String get notSynced =>
+      isVietnamese ? 'Chưa đồng bộ' : 'Not synced';
+  String get savingOffline =>
+      isVietnamese ? 'Đang lưu offline' : 'Saving offline';
+
+  // Form Card Item
+  String get questionsUnit =>
+      isVietnamese ? 'câu hỏi' : 'questions';
+  String get notStarted =>
+      isVietnamese ? 'Chưa thực hiện' : 'Not started';
+  String get startAction =>
+      isVietnamese ? 'Bắt đầu' : 'Start';
+  String get redoAction =>
+      isVietnamese ? 'Làm lại' : 'Redo';
+  String get reviewAction =>
+      isVietnamese ? 'Xem lại' : 'Review';
+
+  // Dynamic Form Widgets
+  String get cameraPermissionTitle =>
+      isVietnamese ? 'Yêu cầu quyền Máy ảnh' : 'Camera Permission Required';
+  String get cameraPermissionDesc => isVietnamese
+      ? 'Ứng dụng cần quyền truy cập Camera để chụp ảnh thực tế tại điểm bán. Vui lòng cấp quyền trong Cài đặt thiết bị.'
+      : 'The app needs Camera access to take store photos. Please grant permission in device Settings.';
+  String get galleryPermissionTitle =>
+      isVietnamese ? 'Yêu cầu quyền Thư viện ảnh' : 'Photo Library Permission Required';
+  String get galleryPermissionDesc => isVietnamese
+      ? 'Ứng dụng cần quyền truy cập Thư viện ảnh để chọn hình ảnh tải lên. Vui lòng cấp quyền trong Cài đặt thiết bị.'
+      : 'The app needs Photo Library access to upload pictures. Please grant permission in device Settings.';
+  String get openSettings =>
+      isVietnamese ? 'Mở cài đặt' : 'Open settings';
+  String get attachPhotoTitle =>
+      isVietnamese ? 'Đính kèm hình ảnh' : 'Attach Photo';
+  String get takePhotoFromCamera =>
+      isVietnamese ? 'Chụp ảnh từ Camera' : 'Take photo with Camera';
+  String get takePhotoCameraDesc =>
+      isVietnamese ? 'Yêu cầu quyền truy cập Camera để chụp ảnh' : 'Requires Camera permission to take photos';
+  String get chooseFromGallery =>
+      isVietnamese ? 'Chọn từ Thư viện ảnh' : 'Choose from Photo Library';
+  String get chooseFromGalleryDesc =>
+      isVietnamese ? 'Chọn hình ảnh đã lưu trên thiết bị của bạn' : 'Select images saved on your device';
+  String get photoCapturedSuccess =>
+      isVietnamese ? 'Đã chụp và lưu ảnh thành công!' : 'Photo captured and saved successfully!';
+  String get photoSelectedSuccess =>
+      isVietnamese ? 'Đã chọn ảnh thành công!' : 'Photo selected successfully!';
+  String get optionsAvailableSuffix =>
+      isVietnamese ? 'tùy chọn khả dụng' : 'available options';
+  String get searchOptionsHint =>
+      isVietnamese ? 'Tìm kiếm tùy chọn...' : 'Search options...';
+  String get noMatchingOptions =>
+      isVietnamese ? 'Không tìm thấy tùy chọn phù hợp' : 'No matching options found';
+  String get selectOptionPrefix =>
+      isVietnamese ? 'Chọn ' : 'Select ';
+
+  // Edit Customer Dialog
+  String get editCustomerTitle =>
+      isVietnamese ? 'Sửa thông tin khách hàng' : 'Edit Customer Information';
+  String get noChangesMade =>
+      isVietnamese ? 'Không có thay đổi nào được thực hiện.' : 'No changes were made.';
+  String get fieldsUpdatedSuccess =>
+      isVietnamese ? 'Đã cập nhật thông tin thành công!' : 'Customer information updated successfully!';
+  String get updateError =>
+      isVietnamese ? 'Lỗi cập nhật: ' : 'Update error: ';
+  String get sectionIdentityCategory =>
+      isVietnamese ? '1. Định danh & Phân loại' : '1. Identity & Classification';
+  String get sectionContactAddress =>
+      isVietnamese ? '2. Thông tin liên hệ & Địa chỉ' : '2. Contact & Address';
+  String get sectionGpsCheckin =>
+      isVietnamese ? '3. Tọa độ GPS & Check-in' : '3. GPS Coordinates & Check-in';
+  String get saveChangesCaps =>
+      isVietnamese ? 'LƯU THAY ĐỔI' : 'SAVE CHANGES';
+  String get cancelAction =>
+      isVietnamese ? 'HỦY' : 'CANCEL';
 }
+

@@ -107,3 +107,79 @@ class DealerCheckinDataEntity {
     required this.tasks,
   });
 }
+
+/// Tuyến đường của chính nhân viên thị trường (GET /dms/routes/mine)
+class UserRouteEntity {
+  final int id;
+  final String name;
+  final String? code;
+  final int? visitDayOfWeek;
+  final int? saleGroupId;
+  final bool isActive;
+
+  const UserRouteEntity({
+    required this.id,
+    required this.name,
+    this.code,
+    this.visitDayOfWeek,
+    this.saleGroupId,
+    this.isActive = true,
+  });
+
+  /// Tên thứ trong tuần (1: Thứ 2, 2: Thứ 3, ..., 7: Chủ nhật)
+  String get dayOfWeekName {
+    switch (visitDayOfWeek) {
+      case 1:
+        return 'Thứ 2';
+      case 2:
+        return 'Thứ 3';
+      case 3:
+        return 'Thứ 4';
+      case 4:
+        return 'Thứ 5';
+      case 5:
+        return 'Thứ 6';
+      case 6:
+        return 'Thứ 7';
+      case 7:
+        return 'Chủ nhật';
+      default:
+        return '';
+    }
+  }
+
+  factory UserRouteEntity.fromJson(Map<String, dynamic> json) {
+    final rawName = json['name']?.toString() ?? json['title']?.toString() ?? json['code']?.toString() ?? '';
+    return UserRouteEntity(
+      id: json['id'] is int
+          ? json['id'] as int
+          : int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      name: rawName,
+      code: json['code']?.toString(),
+      visitDayOfWeek: json['visit_day_of_week'] is int
+          ? json['visit_day_of_week'] as int
+          : int.tryParse(json['visit_day_of_week']?.toString() ?? ''),
+      saleGroupId: json['sale_group_id'] is int
+          ? json['sale_group_id'] as int
+          : int.tryParse(json['sale_group_id']?.toString() ?? ''),
+      isActive: json['is_active'] == null
+          ? true
+          : (json['is_active'] == true ||
+              json['is_active'] == 1 ||
+              json['status'] == 'active' ||
+              json['status'] == 1),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      if (code != null) 'code': code,
+      if (visitDayOfWeek != null) 'visit_day_of_week': visitDayOfWeek,
+      if (saleGroupId != null) 'sale_group_id': saleGroupId,
+      'is_active': isActive,
+    };
+  }
+}
+

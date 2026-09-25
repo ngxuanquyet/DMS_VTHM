@@ -7,6 +7,7 @@ class CustomerDto {
   final String code;
   final String name;
   final int? customerTypeId;
+  final int? customerGroupId;
   final String? customerTypeName;
   final int? channelId;
   final String? channelName;
@@ -31,17 +32,26 @@ class CustomerDto {
   final String? updatedAt;
   final Map<String, dynamic> dynamicFields;
   final List<CustomerAssigneeEntity> assignees;
+  final String? photoUrl;
+  final List<String> photoUrls;
+  final String? route;
+  final List<String> routes;
+  final List<int> routeIds;
 
   const CustomerDto({
     required this.id,
     required this.code,
     required this.name,
     this.customerTypeId,
+    this.customerGroupId,
     this.customerTypeName,
     this.channelId,
     this.channelName,
     this.regionId,
     this.regionName,
+    this.route,
+    this.routes = const [],
+    this.routeIds = const [],
     required this.address,
     this.provinceName,
     this.wardName,
@@ -61,6 +71,8 @@ class CustomerDto {
     this.updatedAt,
     this.dynamicFields = const {},
     this.assignees = const [],
+    this.photoUrl,
+    this.photoUrls = const [],
   });
 
   factory CustomerDto.fromJson(Map<String, dynamic> json, {Map<int, String>? customerTypeMap}) {
@@ -68,9 +80,24 @@ class CustomerDto {
     final rawId = json['id'];
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '') ?? 0;
 
+    // Safely parse dynamic fields (always map in specs)
+    Map<String, dynamic> dynamicMap = {};
+    if (json['dynamic'] is Map) {
+      dynamicMap = Map<String, dynamic>.from(json['dynamic'] as Map);
+    } else if (json['dynamic_fields'] is Map) {
+      dynamicMap = Map<String, dynamic>.from(json['dynamic_fields'] as Map);
+    }
+
     final rawCustomerTypeId = json['customer_type_id'] is int
         ? json['customer_type_id'] as int
         : int.tryParse(json['customer_type_id']?.toString() ?? '');
+
+    final rawCustomerGroupId = json['customer_group_id'] is int
+        ? json['customer_group_id'] as int
+        : int.tryParse(json['customer_group_id']?.toString() ?? '') ??
+            (dynamicMap['customer_group_id'] != null
+                ? int.tryParse(dynamicMap['customer_group_id'].toString())
+                : null);
 
     // Đọc đa dạng các khóa tên loại điểm bán từ server
     String? parsedTypeName = json['customer_type_name']?.toString() ??
@@ -99,14 +126,6 @@ class CustomerDto {
     final lat = parseCoord(json['lat']);
     final lng = parseCoord(json['lng']);
 
-    // Safely parse dynamic fields (always map in specs)
-    Map<String, dynamic> dynamicMap = {};
-    if (json['dynamic'] is Map) {
-      dynamicMap = Map<String, dynamic>.from(json['dynamic'] as Map);
-    } else if (json['dynamic_fields'] is Map) {
-      dynamicMap = Map<String, dynamic>.from(json['dynamic_fields'] as Map);
-    }
-
     // Safely parse assignees
     List<CustomerAssigneeEntity> assigneesList = [];
     if (json['assignees'] is List) {
@@ -116,11 +135,103 @@ class CustomerDto {
           .toList();
     }
 
+    // Safely parse photo_url and photo_urls (API spec 23/09/2026)
+    final parsedPhotoUrl = json['photo_url']?.toString();
+    List<String> parsedPhotoUrls = [];
+    if (json['photo_urls'] is List) {
+      parsedPhotoUrls = (json['photo_urls'] as List)
+          .map((e) => e?.toString().trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (parsedPhotoUrls.isEmpty && parsedPhotoUrl != null && parsedPhotoUrl.trim().isNotEmpty) {
+      parsedPhotoUrls = [parsedPhotoUrl.trim()];
+    }
+
+    // Safely parse customer routes & route_ids (API spec: routes[], route_ids[], route_name)
+    List<String> parsedRoutes = [];
+    List<int> parsedRouteIds = [];
+    String? parsedRouteName;
+
+    if (json['route_name'] != null && json['route_name'].toString().trim().isNotEmpty) {
+      parsedRouteName = json['route_name'].toString().trim();
+    } else if (json['route'] != null && json['route'] is String && json['route'].toString().trim().isNotEmpty) {
+      parsedRouteName = json['route'].toString().trim();
+    } else if (json['routeName'] != null && json['routeName'].toString().trim().isNotEmpty) {
+      parsedRouteName = json['routeName'].toString().trim();
+    }
+
+    if (json['routes'] is List) {
+      for (final item in json['routes'] as List) {
+        if (item is Map) {
+          final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
+          if (id != null && !parsedRouteIds.contains(id)) {
+            parsedRouteIds.add(id);
+          }
+          final name = (item['name'] ?? item['route_name'] ?? item['code'])?.toString().trim();
+          if (name != null && name.isNotEmpty && !parsedRoutes.contains(name)) {
+            parsedRoutes.add(name);
+          }
+        } else if (item is String && item.trim().isNotEmpty) {
+          final name = item.trim();
+          if (!parsedRoutes.contains(name)) parsedRoutes.add(name);
+        } else if (item is num) {
+          final id = item.toInt();
+          if (!parsedRouteIds.contains(id)) parsedRouteIds.add(id);
+        }
+      }
+    }
+
+    if (json['route_names'] is List) {
+      for (final item in json['route_names'] as List) {
+        final name = item?.toString().trim();
+        if (name != null && name.isNotEmpty && !parsedRoutes.contains(name)) {
+          parsedRoutes.add(name);
+        }
+      }
+    }
+
+    if (json['route_ids'] is List) {
+      for (final item in json['route_ids'] as List) {
+        final id = item is int ? item : int.tryParse(item?.toString() ?? '');
+        if (id != null && !parsedRouteIds.contains(id)) {
+          parsedRouteIds.add(id);
+        }
+      }
+    } else if (json['route_id'] != null) {
+      final id = json['route_id'] is int ? json['route_id'] as int : int.tryParse(json['route_id']?.toString() ?? '');
+      if (id != null && !parsedRouteIds.contains(id)) {
+        parsedRouteIds.add(id);
+      }
+    }
+
+    if (parsedRoutes.isEmpty && parsedRouteName == null) {
+      final dynTuyen = dynamicMap['tuyen'] ?? dynamicMap['route'] ?? dynamicMap['tuyen_ban_hang'] ?? dynamicMap['mw_tuyen'];
+      if (dynTuyen != null && dynTuyen.toString().trim().isNotEmpty) {
+        parsedRouteName = dynTuyen.toString().trim();
+      }
+    }
+
+    if (parsedRouteName != null && parsedRouteName.isNotEmpty && !parsedRoutes.contains(parsedRouteName)) {
+      parsedRoutes.insert(0, parsedRouteName);
+    }
+
+    final rawProvinceName = json['province_name']?.toString();
+    final validRoutes = parsedRoutes
+        .where((r) => !CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: rawProvinceName))
+        .toList();
+
+    final validRouteName = (parsedRouteName != null &&
+            !CustomerEntity.isInvalidOrProvinceRoute(parsedRouteName, provinceName: rawProvinceName))
+        ? parsedRouteName
+        : (validRoutes.isNotEmpty ? validRoutes.first : null);
+
     return CustomerDto(
       id: id,
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       customerTypeId: rawCustomerTypeId,
+      customerGroupId: rawCustomerGroupId,
       customerTypeName: parsedTypeName,
       channelId: json['channel_id'] is int
           ? json['channel_id'] as int
@@ -130,6 +241,9 @@ class CustomerDto {
           ? json['region_id'] as int
           : int.tryParse(json['region_id']?.toString() ?? ''),
       regionName: json['region_name']?.toString(),
+      route: validRouteName,
+      routes: validRoutes,
+      routeIds: parsedRouteIds,
       address: json['address']?.toString() ?? '',
       provinceName: json['province_name']?.toString(),
       wardName: json['ward_name']?.toString(),
@@ -151,6 +265,8 @@ class CustomerDto {
       updatedAt: json['updated_at']?.toString(),
       dynamicFields: dynamicMap,
       assignees: assigneesList,
+      photoUrl: parsedPhotoUrl,
+      photoUrls: parsedPhotoUrls,
     );
   }
 
@@ -184,16 +300,25 @@ class CustomerDto {
             ? channelName!.trim()
             : 'Đại lý');
 
+    final resolvedRoute = routes.isNotEmpty
+        ? routes.first
+        : (route != null && route!.trim().isNotEmpty
+            ? route!.trim()
+            : (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : 'Chưa phân tuyến'));
+
     return CustomerEntity(
       id: id,
       code: code,
       name: name,
       customerTypeId: customerTypeId,
+      customerGroupId: customerGroupId,
       type: resolvedType,
       channelId: channelId,
       channelName: channelName,
       regionId: regionId,
-      route: regionName ?? (provinceName ?? 'Tuyến thị trường'),
+      route: resolvedRoute,
+      routes: routes.isNotEmpty ? routes : (route != null && route!.trim().isNotEmpty ? [route!.trim()] : const []),
+      routeIds: routeIds,
       address: address,
       provinceName: provinceName,
       wardName: wardName,
@@ -215,6 +340,8 @@ class CustomerDto {
       accentColor: accentColor,
       dynamicFields: dynamicFields,
       assignees: assignees,
+      photoUrl: photoUrl,
+      photoUrls: photoUrls,
     );
   }
 }

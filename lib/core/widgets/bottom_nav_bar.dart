@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../localization/language_provider.dart';
 
+/// Provider phát tín hiệu đóng floating circular menu khi user chuyển tab
+final closeFloatingMenuProvider = StateProvider<int>((ref) => 0);
+
 class VthmBottomNavBar extends ConsumerWidget {
   final int currentIndex;
   final ValueChanged<int>? onTap;
@@ -14,7 +17,9 @@ class VthmBottomNavBar extends ConsumerWidget {
     this.onTap,
   });
 
-  void _handleTap(BuildContext context, int index) {
+  void _handleTap(BuildContext context, WidgetRef ref, int index) {
+    ref.read(closeFloatingMenuProvider.notifier).state++;
+
     if (onTap != null) {
       onTap!(index);
       return;
@@ -53,7 +58,7 @@ class VthmBottomNavBar extends ConsumerWidget {
       buttonBackgroundColor: const Color(0xFF10B981), // Emerald brand color
       animationCurve: Curves.easeInOutCubic,
       animationDuration: const Duration(milliseconds: 350),
-      onTap: (index) => _handleTap(context, index),
+      onTap: (index) => _handleTap(context, ref, index),
       items: [
         Tooltip(
           message: strings.navHome,

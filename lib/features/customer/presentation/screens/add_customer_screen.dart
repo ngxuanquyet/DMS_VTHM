@@ -11,6 +11,8 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
+import '../../../route/domain/entities/route_entity.dart';
+import '../../../route/presentation/viewmodels/route_view_model.dart';
 
 /// Provider lấy schema form khách hàng từ API (hoặc cache)
 final customerFormSchemaProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
@@ -24,6 +26,32 @@ final customerMetaProvider = FutureProvider.autoDispose<CustomerMetaData>((ref) 
   return repo.getCustomerMeta(forceRefresh: false);
 });
 
+/// Provider lấy danh sách tuyến của chính nhân viên đăng nhập (GET /dms/routes/mine)
+final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEntity>>((ref) async {
+  final apiService = ref.watch(routeApiServiceProvider);
+  final routes = await apiService.getMyRoutes();
+  if (routes.isNotEmpty) {
+    return routes;
+  }
+
+  // Fallback: Lấy các tuyến thực tế từ danh sách khách hàng của chính user
+  final customerRepo = ref.watch(customerRepositoryProvider);
+  final customers = await customerRepo.getCustomers();
+  final routeNames = <String>{};
+  for (final c in customers) {
+    if (c.route.trim().isNotEmpty && c.route.trim() != 'Tất cả tuyến') {
+      routeNames.add(c.route.trim());
+    }
+  }
+
+  if (routeNames.isNotEmpty) {
+    int idCounter = 1;
+    return routeNames.map((name) => UserRouteEntity(id: idCounter++, name: name)).toList();
+  }
+
+  return [];
+});
+
 class AddCustomerScreen extends ConsumerStatefulWidget {
   const AddCustomerScreen({super.key});
 
@@ -33,7 +61,126 @@ class AddCustomerScreen extends ConsumerStatefulWidget {
 
 class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
+  final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
+
+  bool _isCustomerPhotoKey(String key) {
+    final k = key.toLowerCase();
+    const nonPhotoKeys = {
+      'route_ids',
+      'route_id',
+      'customer_type_id',
+      'channel_id',
+      'region_id',
+      'sale_group_id',
+      'id',
+      'code',
+      'status',
+      'lat',
+      'lng',
+      'data',
+      'customer_type_name',
+      'channel_name',
+      'region_name',
+      'route',
+      'route_name',
+      'type',
+      'name',
+      'phone',
+      'email',
+      'address',
+      'tax_code',
+      'notes',
+      'description',
+      'contact_name',
+      'contact_title',
+      'birthday',
+      'delivery_address',
+      'province_name',
+      'ward_name',
+    };
+    if (nonPhotoKeys.contains(k)) return false;
+    return k.contains('photo') || k.contains('image') || k.contains('anh_') || k.contains('hinh_');
+  }
+
+  bool _hasUserInput() {
+    if (_formKey.currentState != null) {
+      final data = _formKey.currentState!.getFormData();
+      for (final entry in data.entries) {
+        if (entry.key == 'route_ids' || entry.key == 'route_id') continue;
+        final val = entry.value;
+        if (val == null) continue;
+        if (val is String && val.trim().isNotEmpty) return true;
+        if (val is List && val.isNotEmpty) return true;
+      }
+    }
+    for (final entry in _savedFormData.entries) {
+      if (entry.key == 'route_ids' || entry.key == 'route_id') continue;
+      final val = entry.value;
+      if (val == null) continue;
+      if (val is String && val.trim().isNotEmpty) return true;
+      if (val is List && val.isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  Future<bool> _onWillExit() async {
+    if (!_hasUserInput()) {
+      return true;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFEA580C), size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Rời khỏi màn hình?',
+                style: AppTypography.titleLarge(
+                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                ).copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Dữ liệu điểm bán bạn đang nhập chưa được lưu. Nếu thoát ra, các thông tin đã nhập sẽ bị mất.',
+          style: AppTypography.bodyMedium(
+            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Ở lại',
+              style: AppTypography.labelLarge(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Rời khỏi'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldLeave ?? false;
+  }
 
   Future<void> _handleSubmit(Map<String, dynamic> formData) async {
     if (formData['name'] == null || formData['name'].toString().trim().isEmpty) {
@@ -55,12 +202,110 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
       
-      // 🔴 Tuyệt đối không gửi 'code' và 'id' — server tự sinh mã theo region_id
+      // 🔴 Tuyệt đối không gửi 'code', 'id' và 'status' theo spec 22/09/2026:
+      // Server tự động sinh mã theo region_id và đặt trạng thái mặc định active
       payload.remove('code');
       payload.remove('id');
+      payload.remove('status');
 
-      // 🔴 Điểm bán mới luôn mặc định là 'active' (hoạt động)
-      payload['status'] = 'active';
+      final userRoutes = ref.read(userAssignedRoutesProvider).valueOrNull ?? [];
+
+      // 🔴 route_ids là mảng số nguyên [int] - bắt buộc cho nhân viên thị trường
+      List<int> finalRouteIds = [];
+      final rawRouteIds = payload['route_ids'] ?? payload['route_id'];
+      if (rawRouteIds is List) {
+        finalRouteIds = rawRouteIds
+            .map((e) => int.tryParse(e.toString()))
+            .whereType<int>()
+            .toList();
+      } else if (rawRouteIds != null) {
+        final rId = int.tryParse(rawRouteIds.toString());
+        if (rId != null) finalRouteIds = [rId];
+      }
+      if (finalRouteIds.isEmpty) {
+        final fallbackRouteId = userRoutes.firstOrNull?.id ?? 5;
+        finalRouteIds = [fallbackRouteId];
+      }
+      payload['route_ids'] = finalRouteIds;
+
+      // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3)
+      // CHỈ xử lý các trường ảnh, TUYỆT ĐỐI không xử lý route_ids hoặc các trường dữ liệu khác
+      if (isOnline) {
+        for (final key in payload.keys.toList()) {
+          if (!_isCustomerPhotoKey(key)) continue;
+
+          final val = payload[key];
+          if (val is List) {
+            final tokens = <String>[];
+            for (final item in val) {
+              final itemStr = item.toString().trim();
+              if (itemStr.isNotEmpty) {
+                if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
+                  tokens.add(itemStr);
+                } else {
+                  try {
+                    final uploadRes = await repo.uploadCustomerPhoto(itemStr);
+                    if (uploadRes['token'] != null) {
+                      tokens.add(uploadRes['token'].toString());
+                    } else {
+                      tokens.add(itemStr);
+                    }
+                  } catch (_) {
+                    tokens.add(itemStr);
+                  }
+                }
+              }
+            }
+            if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
+              payload['photo_tokens'] = tokens;
+              if (tokens.isNotEmpty) {
+                payload['photo_token'] = tokens.first;
+              }
+              payload.remove('photo_file_id');
+              payload.remove('photo');
+            } else {
+              payload[key] = tokens;
+            }
+          } else if (val is String && val.trim().isNotEmpty) {
+            final valStr = val.trim();
+            if (valStr.length == 32 && !valStr.contains('/') && !valStr.contains(r'\')) {
+              // Đã là token 32-hex
+              if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
+                payload['photo_tokens'] = [valStr];
+                payload['photo_token'] = valStr;
+                payload.remove('photo_file_id');
+                payload.remove('photo');
+              } else {
+                payload[key] = [valStr];
+              }
+            } else if (valStr.endsWith('.jpg') || valStr.endsWith('.png') || valStr.endsWith('.jpeg') || valStr.contains('/') || valStr.contains(r'\')) {
+              try {
+                final uploadRes = await repo.uploadCustomerPhoto(valStr);
+                if (uploadRes['token'] != null) {
+                  final token = uploadRes['token'].toString();
+                  if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
+                    payload['photo_tokens'] = [token];
+                    payload['photo_token'] = token;
+                    payload.remove('photo_file_id');
+                    payload.remove('photo');
+                  } else {
+                    payload[key] = [token];
+                  }
+                }
+              } catch (_) {
+                if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
+                  payload['photo_tokens'] = [valStr];
+                  payload['photo_token'] = valStr;
+                  payload.remove('photo_file_id');
+                  payload.remove('photo');
+                } else {
+                  payload[key] = [valStr];
+                }
+              }
+            }
+          }
+        }
+      }
 
       // 🔴 Bổ sung tên loại khách hàng, kênh, khu vực để SQLite hiển thị ngay lập tức kể cả khi offline
       final meta = ref.read(customerMetaProvider).valueOrNull ?? kDefaultCustomerMeta;
@@ -93,6 +338,16 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           if (match != null) {
             payload['region_name'] = match.name.isNotEmpty ? match.name : match.code;
           }
+        }
+      }
+
+      // 🔴 Bổ sung route và route_name từ tuyến được chọn để SQLite và danh sách KH hiển thị chính xác
+      final selectedRouteId = finalRouteIds.firstOrNull;
+      if (selectedRouteId != null) {
+        final match = userRoutes.where((r) => r.id == selectedRouteId).firstOrNull;
+        if (match != null) {
+          payload['route'] = match.name;
+          payload['route_name'] = match.name;
         }
       }
 
@@ -149,18 +404,36 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     final schemaAsync = ref.watch(customerFormSchemaProvider);
     final meta = ref.watch(customerMetaProvider).valueOrNull ?? kDefaultCustomerMeta;
 
-    return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Thêm mới điểm bán',
-              style: AppTypography.titleLarge(
-                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-              ).copyWith(fontWeight: FontWeight.w700),
-            ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final canLeave = await _onWillExit();
+        if (canLeave && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              final canLeave = await _onWillExit();
+              if (canLeave && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Thêm mới điểm bán',
+                style: AppTypography.titleLarge(
+                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                ).copyWith(fontWeight: FontWeight.w700),
+              ),
             schemaAsync.maybeWhen(
               data: (schemaData) {
                 final formName = schemaData['data']?['form']?['name']?.toString() ?? 'Hồ sơ điểm bán';
@@ -258,6 +531,35 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               })
               .toList();
 
+          // 🔴 Lấy danh sách tuyến thực tế của user (GET /dms/routes/mine)
+          final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
+          final currentRouteState = ref.watch(routeViewModelProvider);
+
+          // Tạo options cho tuyến bán hàng từ tuyến thực tế của nhân viên (GET /dms/routes/mine)
+          final List<DynamicFormOption> dynamicRouteOptions = userRoutes.isNotEmpty
+              ? userRoutes.map((r) => DynamicFormOption(
+                  label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'),
+                  value: r.id,
+                )).toList()
+              : [
+                  const DynamicFormOption(label: 'Vũ Tùng Dương - T2', value: 5),
+                  const DynamicFormOption(label: 'Vũ Tùng Dương - T3', value: 7),
+                ];
+
+          // Xác định tuyến mặc định: ưu tiên tuyến đang chọn ở màn Tuyến bán hàng
+          int? defaultRouteId;
+          if (currentRouteState.selectedRoute.isNotEmpty &&
+              currentRouteState.selectedRoute != 'Tất cả tuyến') {
+            final matched = userRoutes.where((r) =>
+                r.name.toLowerCase().trim() == currentRouteState.selectedRoute.toLowerCase().trim() ||
+                (r.code != null && r.code!.toLowerCase().trim() == currentRouteState.selectedRoute.toLowerCase().trim())
+            ).firstOrNull;
+            if (matched != null) {
+              defaultRouteId = matched.id;
+            }
+          }
+          defaultRouteId ??= userRoutes.firstOrNull?.id ?? (dynamicRouteOptions.firstOrNull?.value as int? ?? 5);
+
           // Cập nhật options cho các trường phân loại nếu schema chưa có options.
           // Để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.
           for (var i = 0; i < fields.length; i++) {
@@ -282,6 +584,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                     ? meta.regions.map((r) => DynamicFormOption(label: '${r.code} - ${r.name}', value: r.id)).toList()
                     : f.options,
                 clearInitialValue: true,
+              );
+            } else if (f.code == 'route_ids' || f.code == 'route_id') {
+              fields[i] = f.copyWith(
+                options: dynamicRouteOptions,
+                initialValue: defaultRouteId,
+                catalog: 'dropdown',
               );
             }
           }
@@ -352,6 +660,54 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             );
           }
 
+          // 🔴 Bắt buộc theo API spec 22/09/2026: route_ids (mảng tuyến bán hàng cho nhân viên thị trường từ GET /dms/routes/mine)
+          if (!fields.any((f) => f.code == 'route_ids' || f.code == 'route_id')) {
+            final insertIdx = fields.indexWhere((f) => f.code == 'region_id');
+            fields.insert(
+              insertIdx != -1 ? insertIdx + 1 : 1,
+              DynamicFormField(
+                code: 'route_ids',
+                label: 'Tuyến bán hàng (Bắt buộc)',
+                type: DynamicFormFieldType.singleChoice,
+                isRequired: true,
+                options: dynamicRouteOptions,
+                initialValue: defaultRouteId,
+                placeholder: 'Chọn tuyến bán hàng...',
+                section: 'Thông tin chung',
+                catalog: 'dropdown',
+              ),
+            );
+          }
+
+          // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế
+          if (!fields.any((f) => f.code == 'photo_file_id' || f.code == 'photo')) {
+            fields.add(
+              const DynamicFormField(
+                code: 'photo_file_id',
+                label: 'Ảnh điểm bán',
+                type: DynamicFormFieldType.photo,
+                maxPhotos: 10,
+                isRequired: false,
+                helperText: 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
+                section: 'Hình ảnh điểm bán',
+              ),
+            );
+          } else {
+            final photoIdx = fields.indexWhere((f) => f.code == 'photo_file_id' || f.code == 'photo');
+            if (photoIdx != -1) {
+              final existing = fields[photoIdx];
+              fields[photoIdx] = existing.copyWith(
+                type: DynamicFormFieldType.photo,
+                maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
+                label: existing.label.isEmpty ? 'Ảnh điểm bán' : existing.label,
+                helperText: existing.helperText ?? 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
+                section: existing.section == null || existing.section!.isEmpty
+                    ? 'Hình ảnh điểm bán'
+                    : existing.section,
+              );
+            }
+          }
+
           if (fields.isEmpty) {
             return const Center(
               child: Text('Không có trường dữ liệu nào trong cấu hình form.'),
@@ -408,8 +764,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                         DynamicFormBuilder(
                           key: _formKey,
                           fields: fields,
-                          initialData: const {
-                            'status': 'active', // Mặc định trạng thái đang hoạt động
+                          initialData: {
+                            'route_ids': defaultRouteId,
+                            ..._savedFormData,
+                          },
+                          onChanged: (data) {
+                            _savedFormData.addAll(data);
                           },
                           onSubmit: _handleSubmit,
                         ),
@@ -444,7 +804,14 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                         child: SizedBox(
                           height: 46,
                           child: OutlinedButton(
-                            onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                            onPressed: _isSubmitting
+                                ? null
+                                : () async {
+                                    final canLeave = await _onWillExit();
+                                    if (canLeave && context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
                             style: OutlinedButton.styleFrom(
                               shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
                             ),
@@ -476,6 +843,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           );
         },
       ),
-    );
+    ),
+  );
   }
 }

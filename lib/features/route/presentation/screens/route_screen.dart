@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/map/goong_providers.dart';
@@ -11,7 +12,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
-import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/route_circular_menu.dart';
@@ -26,6 +26,7 @@ class RouteScreen extends ConsumerStatefulWidget {
 
 class _RouteScreenState extends ConsumerState<RouteScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -259,11 +261,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   }
 
   Future<void> _handleAddCustomer() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddCustomerScreen()),
-    );
-    if (result == true) {
+    final result = await context.push<bool>('/customers/add');
+    if (result == true && mounted) {
       ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
     }
   }
@@ -303,193 +302,234 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       appBar: const VthmTopAppBar(),
       body: Stack(
         children: [
-          state.status == RouteStatus.loading && state.routeDetail == null
-              ? const Center(
-                  child: AppLoading(size: 220),
-                )
-              : state.routeDetail == null
-                  ? Center(
-                      child: Text(state.errorMessage ?? strings.error),
-                    )
-                  : RefreshIndicator(
-                      color: AppColors.primaryContainer,
-                      onRefresh: () async {
-                        await Future.wait([
-                          vm.loadRouteDetail(isRefresh: true),
-                          _requestLocationPermission(),
-                        ]);
-                      },
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.marginMobile,
-                          vertical: AppSpacing.stackMd,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Route title & count header (clean, without progress statistics card)
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    state.routeDetail!.title,
-                                    style: AppTypography.titleMedium(
-                                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                    ).copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.primary.withValues(alpha: 0.2),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${state.routeDetail!.totalDealers} ${strings.isVietnamese ? 'điểm' : 'stops'}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                                    ),
-                                  ),
-                                ),
-                                if (state.isSortedByDistance) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.near_me_rounded, size: 11, color: Color(0xFF0284C7)),
-                                        SizedBox(width: 3),
-                                        Text(
-                                          'Theo cự ly',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF0284C7),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+          SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                // Top Header & Search Bar Section (Collapsible title on scroll)
+                AnimatedBuilder(
+                  animation: _scrollController,
+                  builder: (context, _) {
+                    final offset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+                    final progress = (offset / 60.0).clamp(0.0, 1.0);
 
-                            // Route switcher chips if user has multiple routes
-                            if (state.availableRoutes.length > 1) ...[
-                              const SizedBox(height: 8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: state.availableRoutes.map((r) {
-                                    final isSelected = r == state.selectedRoute;
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: InkWell(
-                                        onTap: () => vm.selectRoute(r),
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    return Container(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkSurface
+                            : AppColors.surfaceContainerLowest,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: isDark
+                                ? AppColors.darkOutlineVariant
+                                : AppColors.outlineVariant,
+                            width: 1,
+                          ),
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x08000000),
+                            offset: Offset(0, 2),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Collapsible Title Area
+                          ClipRect(
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              heightFactor: 1.0 - progress,
+                              child: Opacity(
+                                opacity: (1.0 - progress).clamp(0.0, 1.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Title Row with Count Badge & Distance Chip
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Tuyến',
+                                          style: AppTypography.titleLarge(
+                                            color: isDark
+                                                ? AppColors.darkOnSurface
+                                                : AppColors.onSurface,
+                                          ).copyWith(fontWeight: FontWeight.w700),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: isSelected
-                                                ? (isDark ? AppColors.primaryContainer : const Color(0xFFEFF6E8))
-                                                : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh),
-                                            borderRadius: BorderRadius.circular(20),
+                                            color: AppColors.primary.withValues(alpha: 0.1),
+                                            borderRadius: AppRadius.roundedFull,
                                             border: Border.all(
-                                              color: isSelected
-                                                  ? (isDark ? AppColors.primaryContainer : const Color(0xFFBECAB7))
-                                                  : Colors.transparent,
-                                              width: 1,
+                                              color: AppColors.primary.withValues(alpha: 0.2),
                                             ),
                                           ),
                                           child: Text(
-                                            r,
-                                            style: TextStyle(
-                                              color: isSelected
-                                                ? (isDark ? Colors.white : AppColors.primary)
-                                                : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                              fontSize: 12,
-                                            ),
+                                            '${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}',
+                                            style: AppTypography.labelSmall(
+                                              color: isDark
+                                                  ? AppColors.primaryFixedDim
+                                                  : AppColors.primary,
+                                            ).copyWith(fontWeight: FontWeight.w700),
                                           ),
                                         ),
+                                        if (state.isSortedByDistance) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF0284C7)
+                                                  .withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: const Color(0xFF0284C7)
+                                                    .withValues(alpha: 0.3),
+                                              ),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.near_me_rounded,
+                                                  size: 11,
+                                                  color: Color(0xFF0284C7),
+                                                ),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  'Theo cự ly',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF0284C7),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      strings.isVietnamese
+                                          ? 'Danh sách điểm bán theo tuyến được giao'
+                                          : 'Assigned route store visit plan',
+                                      style: AppTypography.bodySmall(
+                                        color: isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.onSurfaceVariant,
                                       ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: AppSpacing.stackMd),
-
-                            // Search box for customers on the route
-                            Container(
-                              decoration: BoxDecoration(
-                                color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE0E3E0),
-                                  width: 1,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: TextField(
-                                controller: _searchController,
-                                onChanged: (val) => vm.setSearchQuery(val),
-                                decoration: InputDecoration(
-                                  hintText: 'Tìm điểm bán, mã KH, SĐT trên tuyến...',
-                                  hintStyle: TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontSize: 13,
-                                    color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF6F7A74),
-                                  ),
-                                  prefixIcon: Icon(
-                                    Icons.search,
-                                    size: 20,
-                                    color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF6F7A74),
-                                  ),
-                                  suffixIcon: _searchController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, size: 18),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            vm.setSearchQuery('');
-                                          },
-                                        )
-                                      : null,
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 12,
-                                  ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
                                 ),
                               ),
                             ),
-                            const SizedBox(height: AppSpacing.stackMd),
+                          ),
 
-                            // Timeline List of dealers on route
-                            RouteDealerTimeline(dealers: state.routeDetail!.dealers),
-                            const SizedBox(height: 160),
-                          ],
-                        ),
+                          // Search Text Field (Fixed / Pinned)
+                          Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.darkSurfaceContainerLowest
+                                  : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
+                              borderRadius: AppRadius.roundedMd,
+                              border: Border.all(
+                                color: isDark
+                                    ? AppColors.darkOutlineVariant
+                                    : AppColors.outlineVariant,
+                              ),
+                            ),
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (val) => vm.setSearchQuery(val),
+                              style: AppTypography.bodyMedium(
+                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Tìm điểm bán, mã KH, SĐT trên tuyến...',
+                                hintStyle: AppTypography.bodySmall(
+                                  color: isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search_rounded,
+                                  size: 20,
+                                  color: isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline,
+                                ),
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear_rounded, size: 16),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          vm.setSearchQuery('');
+                                        },
+                                      )
+                                    : null,
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                    );
+                  },
+                ),
+
+                // Main Content List
+                Expanded(
+                  child: state.status == RouteStatus.loading && state.routeDetail == null
+                      ? const Center(
+                          child: AppLoading(size: 220),
+                        )
+                      : state.routeDetail == null
+                          ? Center(
+                              child: Text(state.errorMessage ?? strings.error),
+                            )
+                          : RefreshIndicator(
+                              color: AppColors.primaryContainer,
+                              onRefresh: () async {
+                                await Future.wait([
+                                  vm.loadRouteDetail(isRefresh: true),
+                                  _requestLocationPermission(),
+                                ]);
+                              },
+                              child: SingleChildScrollView(
+                                controller: _scrollController,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.marginMobile,
+                                  vertical: AppSpacing.stackMd,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    RouteDealerTimeline(dealers: state.routeDetail!.dealers),
+                                    const SizedBox(height: 160),
+                                  ],
+                                ),
+                              ),
+                            ),
+                ),
+              ],
+            ),
+          ),
 
           // Circular Radial Menu overlay
           Positioned.fill(

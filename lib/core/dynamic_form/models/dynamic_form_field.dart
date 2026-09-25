@@ -264,7 +264,7 @@ class DynamicFormField {
     final typeStr = json['type']?.toString() ??
         json['input_type']?.toString() ??
         json['data_type']?.toString();
-    final type = DynamicFormFieldType.fromString(typeStr);
+    var type = DynamicFormFieldType.fromString(typeStr);
 
     List<DynamicFormOption> opts = [];
     if (json['options'] is List) {
@@ -288,6 +288,41 @@ class DynamicFormField {
         json['key']?.toString() ??
         '';
 
+    // Đảm bảo photo_file_id hoặc các trường ảnh nhận diện đúng DynamicFormFieldType.photo
+    if (code == 'photo_file_id' || code == 'photo_token' || code == 'photo') {
+      type = DynamicFormFieldType.photo;
+    }
+
+    // Đọc số lượng ảnh tối đa từ max_files, max_photos, max hoặc max_count
+    final parsedMaxPhotos = json['max_files'] is int
+        ? json['max_files'] as int
+        : (json['max_photos'] is int
+            ? json['max_photos'] as int
+            : (json['max'] is int
+                ? json['max'] as int
+                : (json['max_count'] is int
+                    ? json['max_count'] as int
+                    : int.tryParse(json['max_files']?.toString() ??
+                        json['max_photos']?.toString() ??
+                        json['max']?.toString() ??
+                        json['max_count']?.toString() ??
+                        ''))));
+
+    final effectiveMaxPhotos = parsedMaxPhotos ?? (code == 'photo_file_id' ? 10 : 5);
+
+    String label = json['label']?.toString() ??
+        json['title']?.toString() ??
+        json['name']?.toString() ??
+        '';
+    if (label.isEmpty && code == 'photo_file_id') {
+      label = 'Ảnh điểm bán';
+    }
+
+    String? helperText = json['description']?.toString() ?? json['helper_text']?.toString();
+    if (helperText == null && (code == 'photo_file_id' || type == DynamicFormFieldType.photo)) {
+      helperText = 'Chụp hoặc tải lên tối đa $effectiveMaxPhotos ảnh thực tế tại điểm bán';
+    }
+
     // Xác định section tự động nếu API chưa truyền section tường minh
     String? section =
         json['section']?.toString() ?? json['group']?.toString() ?? json['category']?.toString();
@@ -300,7 +335,7 @@ class DynamicFormField {
         section = 'Thông tin liên hệ';
       } else if (['address', 'delivery_address', 'province_name', 'ward_name', 'lat', 'lng'].contains(code)) {
         section = 'Địa chỉ & Vị trí';
-      } else if (['photo_file_id'].contains(code) || type == DynamicFormFieldType.photo) {
+      } else if (['photo_file_id', 'photo', 'photo_token'].contains(code) || type == DynamicFormFieldType.photo) {
         section = 'Hình ảnh điểm bán';
       } else {
         section = 'Thông tin khác';
@@ -309,13 +344,10 @@ class DynamicFormField {
 
     return DynamicFormField(
       code: code,
-      label: json['label']?.toString() ??
-          json['title']?.toString() ??
-          json['name']?.toString() ??
-          '',
+      label: label,
       type: type,
       placeholder: json['placeholder']?.toString() ?? json['hint']?.toString(),
-      helperText: json['description']?.toString() ?? json['helper_text']?.toString(),
+      helperText: helperText,
       isRequired: json['required'] == true ||
           json['is_required'] == true ||
           json['is_required'] == 1,
@@ -329,9 +361,7 @@ class DynamicFormField {
       min: json['min'] is num ? json['min'] as num : num.tryParse(json['min']?.toString() ?? ''),
       max: json['max'] is num ? json['max'] as num : num.tryParse(json['max']?.toString() ?? ''),
       step: json['step'] is num ? json['step'] as num : num.tryParse(json['step']?.toString() ?? ''),
-      maxPhotos: json['max_photos'] is int
-          ? json['max_photos'] as int
-          : (int.tryParse(json['max_photos']?.toString() ?? '') ?? 5),
+      maxPhotos: effectiveMaxPhotos,
       kind: kind,
       source: json['source']?.toString(),
       catalog: json['catalog']?.toString(),

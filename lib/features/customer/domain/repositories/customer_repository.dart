@@ -21,7 +21,13 @@ abstract class CustomerRepository {
 
   Future<CustomerEntity> createCustomer(Map<String, dynamic> data);
 
+  Future<CustomerEntity> getCustomerDetail(int id);
+
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false});
 
+  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath);
+
   Future<bool> deleteCustomer(int id);
+
+  Future<bool> deletePendingCustomer(String clientUuid);
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/customer_dto.dart';
 
@@ -25,6 +27,7 @@ class CustomerApiService {
       'page': page,
       'per-page': perPage,
       'context': context,
+      'source': 'all', // §API 16/09/2026: gộp điểm bán kèm mảng routes[] và in_route
     };
 
     if (q != null && q.trim().isNotEmpty) {
@@ -141,5 +144,28 @@ class CustomerApiService {
       return CustomerDto.fromJson(response);
     }
     throw Exception('Không thể tạo mới điểm bán');
+  }
+
+  /// Tải ảnh điểm bán lên server
+  /// POST /crm/customer-photos (multipart/form-data, khóa 'file')
+  /// Trả về Map chứa token (chuỗi 32-hex) và url công khai
+  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async {
+    final fileName = filePath.split(Platform.pathSeparator).last.split('/').last;
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+    });
+
+    final response = await _apiClient.postMultipart(
+      '/crm/customer-photos',
+      formData: formData,
+    );
+
+    if (response is Map<String, dynamic>) {
+      if (response['data'] is Map<String, dynamic>) {
+        return response['data'] as Map<String, dynamic>;
+      }
+      return response;
+    }
+    throw Exception('Không thể tải ảnh điểm bán lên máy chủ');
   }
 }

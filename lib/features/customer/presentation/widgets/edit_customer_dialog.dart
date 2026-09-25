@@ -1,16 +1,21 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
+import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 
-class EditCustomerDialog extends StatefulWidget {
+class EditCustomerDialog extends ConsumerStatefulWidget {
   final CustomerEntity customer;
   final CustomerMetaData meta;
   final List<CustomerDynamicColumn> dynamicColumns;
@@ -32,27 +37,57 @@ class EditCustomerDialog extends StatefulWidget {
     required Future<void> Function(Map<String, dynamic> changes) onSave,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return showModalBottomSheet(
+    return showGeneralDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => EditCustomerDialog(
-        customer: customer,
-        meta: meta,
-        dynamicColumns: dynamicColumns.isNotEmpty ? dynamicColumns : meta.dynamicColumns,
-        onSave: onSave,
-      ),
+      barrierDismissible: true,
+      barrierLabel: 'EditCustomerDialog',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, anim1, anim2) {
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: EditCustomerDialog(
+                customer: customer,
+                meta: meta,
+                dynamicColumns: dynamicColumns.isNotEmpty
+                    ? dynamicColumns
+                    : meta.dynamicColumns,
+                onSave: onSave,
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, secAnim, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return ScaleTransition(
+          alignment: Alignment.bottomCenter,
+          scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
+          child: FadeTransition(
+            opacity: anim,
+            child: child,
+          ),
+        );
+      },
     );
   }
 
   @override
-  State<EditCustomerDialog> createState() => _EditCustomerDialogState();
+  ConsumerState<EditCustomerDialog> createState() => _EditCustomerDialogState();
 }
 
-class _EditCustomerDialogState extends State<EditCustomerDialog> {
+class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
   // 1. Identification & Classification controllers / state
   late final TextEditingController _codeController;
   late final TextEditingController _nameController;
@@ -76,6 +111,10 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
 
   // 4. Dynamic fields controllers
   final Map<String, TextEditingController> _dynamicControllers = {};
+
+  // 5. Photos state (Spec 23/09/2026: photo_tokens array, max 10 photos)
+  late List<String> _photos;
+  bool _photosChanged = false;
 
   bool _isSaving = false;
   bool _isLocating = false;
@@ -109,6 +148,22 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
     _geofenceRadiusController = TextEditingController(
       text: c.geofenceRadiusM?.toString() ?? '50',
     );
+
+    // Initialize photo list from existing customer entity
+    _photos = List<String>.from(c.photoUrls);
+    if (_photos.isEmpty && c.photoUrl != null && c.photoUrl!.isNotEmpty) {
+      _photos.add(c.photoUrl!);
+    }
+    if (_photos.isEmpty && c.dynamicFields['photo_urls'] is List) {
+      _photos = (c.dynamicFields['photo_urls'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (_photos.isEmpty && c.dynamicFields['photo_url'] != null) {
+      final p = c.dynamicFields['photo_url'].toString().trim();
+      if (p.isNotEmpty) _photos.add(p);
+    }
 
     // Initialize dynamic controllers from active schema and customer data
     final effectiveColumns = widget.dynamicColumns.isNotEmpty
@@ -319,7 +374,44 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
       changes['data'] = dynamicChanges;
     }
 
+    // 6. Xử lý ảnh điểm bán (photo_tokens) theo spec 23/09/2026:
+    // 🔴 Ba ngữ nghĩa bắt buộc tuân thủ:
+    // - Không có khoá photo_tokens: server giữ nguyên bộ ảnh hiện có
+    // - "photo_tokens": ["token1", "token2"]: đặt lại trọn bộ đúng thứ tự đó
+    // - "photo_tokens": []: xóa sạch bộ ảnh
+    // TUYỆT ĐỐI không gửi photo_tokens nếu người dùng không chạm vào ô ảnh!
+    if (_photosChanged) {
+      final repo = ref.read(customerRepositoryProvider);
+      final tokens = <String>[];
+      for (final p in _photos) {
+        final pTrim = p.trim();
+        if (pTrim.isEmpty) continue;
+        if (pTrim.length == 32 && !pTrim.contains('/') && !pTrim.contains(r'\')) {
+          tokens.add(pTrim);
+        } else if (pTrim.startsWith('/crm/customer-photos/public/')) {
+          final extracted = pTrim.replaceFirst('/crm/customer-photos/public/', '');
+          tokens.add(extracted);
+        } else if (pTrim.contains('/crm/customer-photos/public/')) {
+          final idx = pTrim.indexOf('/crm/customer-photos/public/');
+          final extracted = pTrim.substring(idx + '/crm/customer-photos/public/'.length);
+          tokens.add(extracted);
+        } else {
+          // Local file path to upload
+          try {
+            final uploadRes = await repo.uploadCustomerPhoto(pTrim);
+            if (uploadRes['token'] != null) {
+              tokens.add(uploadRes['token'].toString());
+            }
+          } catch (e) {
+            debugPrint('[EditCustomerDialog] Lỗi upload ảnh: $e');
+          }
+        }
+      }
+      changes['photo_tokens'] = tokens;
+    }
+
     if (changes.isEmpty) {
+      if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Không có thay đổi nào được thực hiện.')),
@@ -594,8 +686,244 @@ class _EditCustomerDialogState extends State<EditCustomerDialog> {
                   ),
                   const SizedBox(height: 10),
                   _buildDynamicFieldsCard(isDark),
+                  const SizedBox(height: 20),
+
+                  // Section 5: Hình ảnh điểm bán (photo_tokens - tối đa 10 ảnh theo spec 23/09/2026)
+                  _buildSectionHeader(
+                    icon: Icons.photo_library_outlined,
+                    title: '5. Hình ảnh điểm bán',
+                    badge: '${_photos.length}/10 ảnh',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildPhotosSection(isDark),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotosSection(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Tối đa 10 ảnh. Ảnh đầu tiên làm ảnh đại diện điểm bán.',
+                  style: AppTypography.bodySmall(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (_photos.length < 10)
+                TextButton.icon(
+                  onPressed: _showPhotoPickerOptions,
+                  icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                  label: const Text('Thêm ảnh'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_photos.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: InkWell(
+                onTap: _showPhotoPickerOptions,
+                child: Column(
+                  children: [
+                    const Icon(Icons.add_photo_alternate_outlined, size: 36, color: AppColors.outline),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Chưa có ảnh điểm bán. Bấm để thêm.',
+                      style: AppTypography.bodySmall(color: AppColors.outline),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ..._photos.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final path = entry.value;
+                  return Stack(
+                    children: [
+                      Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: idx == 0
+                                ? AppColors.primary
+                                : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+                            width: idx == 0 ? 2 : 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _buildPhotoWidget(path),
+                        ),
+                      ),
+                      if (idx == 0)
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            color: AppColors.primary.withValues(alpha: 0.85),
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: const Text(
+                              'Đại diện',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _photos.removeAt(idx);
+                              _photosChanged = true;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoWidget(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    if (path.startsWith('/')) {
+      return Image.network(
+        '${AppConstants.baseUrl}$path',
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    final file = File(path);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    return const Icon(Icons.image_outlined, size: 24);
+  }
+
+  Future<void> _showPhotoPickerOptions() async {
+    final picker = ImagePicker();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_rounded, color: AppColors.primary),
+              title: const Text('Chụp ảnh từ máy ảnh'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picked = await picker.pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 85,
+                );
+                if (picked != null) {
+                  setState(() {
+                    if (_photos.length < 10) {
+                      _photos.add(picked.path);
+                      _photosChanged = true;
+                    }
+                  });
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: AppColors.secondary),
+              title: const Text('Chọn nhiều ảnh từ thư viện'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final remaining = 10 - _photos.length;
+                if (remaining <= 0) return;
+                final pickedList = await picker.pickMultiImage(
+                  limit: remaining,
+                  imageQuality: 85,
+                );
+                if (pickedList.isNotEmpty) {
+                  setState(() {
+                    for (final f in pickedList) {
+                      if (_photos.length < 10) {
+                        _photos.add(f.path);
+                        _photosChanged = true;
+                      }
+                    }
+                  });
+                }
+              },
             ),
           ],
         ),

@@ -53,9 +53,17 @@ class CustomerRepositoryImpl implements CustomerRepository {
     bool forceRefresh = false,
   }) async {
     // 1. Thử tải từ database SQLite cục bộ trước (§1 BB-1)
+    bool hasStaleMockRoutes = false;
     try {
       final localList = await _localDataSource.getLocalCustomers(query: query);
-      if (localList.isNotEmpty && !forceRefresh) {
+      hasStaleMockRoutes = localList.any((c) =>
+          CustomerEntity.isInvalidOrProvinceRoute(c.route, provinceName: c.provinceName) ||
+          c.routes.any((r) => CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName)));
+
+      if (hasStaleMockRoutes) {
+        // Tự động xóa sạch các bản ghi cache cũ bị dính tên tỉnh/mock data khỏi SQLite
+        await _localDataSource.clearSyncedCustomers();
+      } else if (localList.isNotEmpty && !forceRefresh) {
         _cachedCustomers = localList;
         // Kích hoạt đồng bộ ngầm khi có mạng
         unawaited(_fetchRemoteAndCache(page, perPage, query));
@@ -74,28 +82,29 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
       _cachedColumns = response.dynamicColumns;
 
-      if (response.data.isNotEmpty) {
-        // Lưu cache vào SQLite cục bộ và chờ ghi xong để cập nhật thông tin mới nhất từ server
-        await _localDataSource.cacheRemoteCustomers(response.data);
+      // Lưu cache vào SQLite cục bộ và dọn dẹp các khách hàng đã bị xóa trên server
+      await _localDataSource.cacheRemoteCustomers(
+        response.data,
+        reconcile: query == null || query.isEmpty,
+      );
 
-        // Đọc lại từ SQLite để gộp cả các khách hàng offline vừa tạo đang chờ đồng bộ
-        final mergedList = await _localDataSource.getLocalCustomers(query: query);
-        _cachedCustomers = mergedList.isNotEmpty ? mergedList : response.data;
-        return _cachedCustomers;
-      }
+      // Đọc lại từ SQLite để gộp cả các khách hàng offline vừa tạo đang chờ đồng bộ
+      final mergedList = await _localDataSource.getLocalCustomers(query: query);
+      _cachedCustomers = mergedList;
+      return _cachedCustomers;
     } catch (_) {
-      // Offline hoặc API không khả dụng -> Sử dụng SQLite cục bộ
+      // Offline hoặc API không khả dụng -> Sử dụng SQLite cục bộ nếu không chứa mock cũ
       final localList = await _localDataSource.getLocalCustomers(query: query);
-      if (localList.isNotEmpty) {
+      if (localList.isNotEmpty && !hasStaleMockRoutes) {
         _cachedCustomers = localList;
         return localList;
       }
     }
 
-    // 3. Fallback khởi tạo mock data ban đầu vào SQLite nếu DB hoàn toàn rỗng
-    if (_cachedCustomers.isEmpty) {
+    // 3. Fallback khởi tạo mock data ban đầu vào SQLite nếu DB hoàn toàn rỗng hoặc mock data cũ chứa tên tỉnh
+    if (_cachedCustomers.isEmpty || hasStaleMockRoutes) {
       _cachedCustomers = List.from(kMockCustomers);
-      unawaited(_localDataSource.cacheRemoteCustomers(kMockCustomers));
+      await _localDataSource.cacheRemoteCustomers(kMockCustomers, reconcile: true);
     }
 
     if (query != null && query.trim().isNotEmpty) {
@@ -119,9 +128,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
         q: query,
         context: 'mobile',
       );
-      if (response.data.isNotEmpty) {
-        await _localDataSource.cacheRemoteCustomers(response.data);
-      }
+      await _localDataSource.cacheRemoteCustomers(
+        response.data,
+        reconcile: query == null || query.isEmpty,
+      );
     } catch (_) {}
   }
 
@@ -262,6 +272,30 @@ class CustomerRepositoryImpl implements CustomerRepository {
     return localEntity;
   }
 
+  @override
+  Future<CustomerEntity> getCustomerDetail(int id) async {
+    try {
+      final dto = await _apiService.getCustomerDetail(id);
+      final entity = dto.toEntity();
+      unawaited(_localDataSource.cacheRemoteCustomers([entity]));
+      final index = _cachedCustomers.indexWhere((c) => c.id == id);
+      if (index != -1) {
+        _cachedCustomers[index] = entity;
+      }
+      return entity;
+    } catch (_) {
+      final index = _cachedCustomers.indexWhere((c) => c.id == id);
+      if (index != -1) {
+        return _cachedCustomers[index];
+      }
+      try {
+        final localList = await _localDataSource.getLocalCustomers();
+        return localList.firstWhere((c) => c.id == id);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
   Map<String, dynamic>? _cachedSchema;
 
   @override
@@ -312,12 +346,25 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async {
+    return _apiService.uploadCustomerPhoto(filePath);
+  }
+
+  @override
   Future<bool> deleteCustomer(int id) async {
     try {
       await _apiService.deleteCustomer(id);
     } catch (_) {}
 
+    await _localDataSource.deleteCustomerLocal(id);
     _cachedCustomers.removeWhere((c) => c.id == id);
+    return true;
+  }
+
+  @override
+  Future<bool> deletePendingCustomer(String clientUuid) async {
+    await _localDataSource.deletePendingCustomer(clientUuid);
+    _cachedCustomers.removeWhere((c) => c.clientUuid == clientUuid);
     return true;
   }
 }
@@ -429,6 +476,16 @@ const Map<String, dynamic> kDefaultCustomerFormSchema = {
         'type': 'gps',
         'is_required': false,
         'section': 'Địa chỉ & Vị trí',
+      },
+      {
+        'code': 'photo_file_id',
+        'label': 'Ảnh điểm bán',
+        'type': 'image',
+        'max': 10,
+        'max_files': 10,
+        'is_required': false,
+        'helper_text': 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
+        'section': 'Hình ảnh điểm bán',
       },
     ],
   },

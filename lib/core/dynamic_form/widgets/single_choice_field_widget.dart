@@ -50,6 +50,106 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
           orElse: () => null,
         );
 
+    // 🔴 Hiển thị dạng Dropdown nếu là trường tuyến bán hàng (route_ids/route_id) hoặc được cấu hình dropdown
+    final isDropdown = field.code == 'route_ids' ||
+        field.code == 'route_id' ||
+        field.catalog == 'dropdown' ||
+        field.catalog == 'route' ||
+        field.source == 'dropdown';
+
+    if (isDropdown) {
+      final isRoute = field.code.contains('route');
+      return DynamicFormFieldWrapper(
+        field: field,
+        errorText: errorText,
+        child: DropdownButtonFormField<dynamic>(
+          initialValue: selectedOption?.value,
+          isDense: true,
+          isExpanded: true,
+          icon: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+          ),
+          dropdownColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+          borderRadius: AppRadius.roundedMd,
+          style: AppTypography.bodyMedium(
+            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+          ).copyWith(fontWeight: FontWeight.w600),
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            prefixIcon: Icon(
+              isRoute ? Icons.alt_route_rounded : Icons.arrow_drop_down_circle_outlined,
+              size: 20,
+              color: selectedOption != null
+                  ? AppColors.primary
+                  : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+            ),
+            hintText: field.placeholder ?? 'Chọn ${field.label.toLowerCase()}...',
+            hintStyle: AppTypography.bodyMedium(
+              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+            ),
+            filled: true,
+            fillColor: field.isReadOnly
+                ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
+                : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
+            border: OutlineInputBorder(
+              borderRadius: AppRadius.roundedMd,
+              borderSide: BorderSide(
+                color: errorText != null
+                    ? AppColors.error
+                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: AppRadius.roundedMd,
+              borderSide: BorderSide(
+                color: errorText != null
+                    ? AppColors.error
+                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppRadius.roundedMd,
+              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: AppRadius.roundedMd,
+              borderSide: const BorderSide(color: AppColors.error, width: 1.5),
+            ),
+          ),
+          hint: Text(
+            field.placeholder ?? 'Chọn ${field.label.toLowerCase()}...',
+            style: AppTypography.bodyMedium(
+              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+            ),
+          ),
+          items: options.map((opt) {
+            return DropdownMenuItem<dynamic>(
+              value: opt.value,
+              child: Row(
+                children: [
+                  if (opt.icon != null) ...[
+                    Icon(opt.icon, size: 16, color: opt.color ?? AppColors.primary),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      opt.label,
+                      style: AppTypography.bodyMedium(
+                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: field.isReadOnly ? null : (val) => onChanged(val),
+        ),
+      );
+    }
+
     // Nếu options > 4 hoặc catalog != null, render ô chọn modal/bottomsheet tìm kiếm
     if (options.length > 4 || field.catalog != null) {
       return DynamicFormFieldWrapper(

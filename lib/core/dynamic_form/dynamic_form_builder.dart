@@ -56,22 +56,28 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   @override
   void initState() {
     super.initState();
-    _initializeData();
+    _initializeData(preserveExisting: false);
   }
 
   @override
   void didUpdateWidget(covariant DynamicFormBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.fields != oldWidget.fields || widget.initialData != oldWidget.initialData) {
-      _initializeData();
-    }
+    // Khi widget cập nhật (rebuild, isSubmitting thay đổi, v.v.), luôn giữ lại toàn bộ dữ liệu người dùng đã nhập
+    _initializeData(preserveExisting: true);
   }
 
-  void _initializeData() {
+  void _initializeData({bool preserveExisting = false}) {
+    final existingData = preserveExisting ? Map<String, dynamic>.from(_formData) : <String, dynamic>{};
     _formData.clear();
+
     for (final field in widget.fields) {
-      if (widget.initialData.containsKey(field.code)) {
+      // Nếu người dùng đã nhập hoặc chỉnh sửa dữ liệu của trường này -> Giữ nguyên 100% không bị mất
+      if (preserveExisting && existingData.containsKey(field.code) && existingData[field.code] != null) {
+        _formData[field.code] = existingData[field.code];
+      } else if (widget.initialData.containsKey(field.code)) {
         _formData[field.code] = widget.initialData[field.code];
+      } else if (preserveExisting && existingData.containsKey(field.code)) {
+        _formData[field.code] = existingData[field.code];
       } else if (field.initialValue != null) {
         _formData[field.code] = field.initialValue;
       } else {

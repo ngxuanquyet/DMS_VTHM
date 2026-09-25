@@ -17,6 +17,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final bool showLogo;
   final Widget? trailing;
   final VoidCallback? onNotificationPressed;
+  final VoidCallback? onBackPressed;
 
   const VthmTopAppBar({
     super.key,
@@ -26,6 +27,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
     this.showLogo = true,
     this.trailing,
     this.onNotificationPressed,
+    this.onBackPressed,
   });
 
   @override
@@ -73,7 +75,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
             IconButton(
               icon: const Icon(Icons.arrow_back),
               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-              onPressed: () {
+              onPressed: onBackPressed ?? () {
                 if (Navigator.of(context).canPop()) {
                   Navigator.of(context).pop();
                 } else {

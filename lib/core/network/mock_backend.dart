@@ -13,7 +13,13 @@ class MockBackendInterceptor extends Interceptor {
     if (path.contains('/auth/') ||
         path.contains('/user/me/profile') ||
         path.contains('/hr/me/relations') ||
-        path.contains('/crm/customers')) {
+        path.contains('/crm/customers') ||
+        path.contains('/crm/customer-form') ||
+        path.contains('/crm/customer-photos') ||
+        path.contains('/dms/routes/mine') ||
+        path.contains('/dms/routes/customers') ||
+        path.contains('/dms/forms/available') ||
+        path.contains('/dms/form-submissions')) {
       return handler.next(options);
     }
 
@@ -188,6 +194,7 @@ class MockBackendInterceptor extends Interceptor {
         ),
       );
     }
+
 
     // 5. Dealer Check-in detail
     if (path.contains('/dealers/checkin') && method == 'GET') {
@@ -378,4 +385,73 @@ class MockBackendInterceptor extends Interceptor {
 
     return handler.next(options);
   }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.requestOptions.path.contains('/dms/routes/mine')) {
+      return handler.resolve(
+        Response(
+          requestOptions: err.requestOptions,
+          statusCode: 200,
+          data: {
+            'success': true,
+            'data': [
+              {
+                'id': 5,
+                'code': 'Vũ Tùng Dương - T2',
+                'name': 'Vũ Tùng Dương - T2',
+                'visit_day_of_week': 1,
+                'sale_group_id': 12,
+              },
+              {
+                'id': 7,
+                'code': 'Vũ Tùng Dương - T3',
+                'name': 'Vũ Tùng Dương - T3',
+                'visit_day_of_week': 2,
+                'sale_group_id': 12,
+              },
+            ],
+            'message': 'Thành công',
+          },
+        ),
+      );
+    }
+    if (err.requestOptions.path.contains('/dms/routes/customers')) {
+      return handler.resolve(
+        Response(
+          requestOptions: err.requestOptions,
+          statusCode: 200,
+          data: {
+            'success': true,
+            'data': {
+              'items': [
+                {
+                  'id': 2036,
+                  'code': '08170152',
+                  'name': 'Dịu Khoản',
+                  'address': '38/6 Phan Đình Phùng, Cam Ranh',
+                },
+                {
+                  'id': 5378,
+                  'code': '08120001',
+                  'name': 'VLXD Hoàng Hương',
+                  'address': null,
+                },
+                {
+                  'id': 8338,
+                  'code': '08150022',
+                  'name': 'Cửa hàng Tạp hóa Lan',
+                  'address': 'Khu đô thị Đồng Sơn, Phúc Yên, Vĩnh Phúc',
+                },
+              ],
+              'truncated': false,
+            },
+            'message': 'Thành công',
+          },
+        ),
+      );
+    }
+    super.onError(err, handler);
+  }
 }
+

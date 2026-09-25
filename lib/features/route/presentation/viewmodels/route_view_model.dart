@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/string_utils.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/domain/repositories/customer_repository.dart';
@@ -11,6 +12,8 @@ import '../../data/services/route_api_service.dart';
 import '../../domain/entities/route_entity.dart';
 import '../../domain/repositories/route_repository.dart';
 import '../../domain/usecases/route_usecases.dart';
+import '../../../forms/domain/usecases/get_available_forms_usecase.dart';
+import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../states/route_state.dart';
 
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
@@ -136,14 +139,17 @@ class RouteViewModel extends StateNotifier<RouteState> {
       filtered = filtered.where((c) => c.route == state.selectedRoute).toList();
     }
 
-    // Filter by search query
-    final query = state.searchQuery.trim().toLowerCase();
-    if (query.isNotEmpty) {
+    // Filter by search query (hỗ trợ không dấu)
+    final rawQuery = state.searchQuery.trim();
+    if (rawQuery.isNotEmpty) {
+      final query = StringUtils.toUnaccentedLower(rawQuery);
       filtered = filtered.where((c) {
-        return c.name.toLowerCase().contains(query) ||
+        return StringUtils.toUnaccentedLower(c.name).contains(query) ||
             c.code.toLowerCase().contains(query) ||
             c.phone.replaceAll(' ', '').contains(query) ||
-            c.address.toLowerCase().contains(query);
+            StringUtils.toUnaccentedLower(c.address).contains(query) ||
+            StringUtils.toUnaccentedLower(c.route).contains(query) ||
+            (c.contactTitle != null && StringUtils.toUnaccentedLower(c.contactTitle).contains(query));
       }).toList();
     }
 
@@ -216,7 +222,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
     final progress = total > 0 ? (completed / total) : 0.0;
 
     final title = state.selectedRoute == 'Tất cả tuyến'
-        ? 'Tất cả điểm bán trên tuyến'
+        ? 'Tuyến'
         : state.selectedRoute;
 
     final routeDetail = RouteDetailEntity(
@@ -236,6 +242,19 @@ class RouteViewModel extends StateNotifier<RouteState> {
       errorMessage: null,
     );
   }
+
+  Future<bool> deletePendingCustomer(String clientUuid) async {
+    try {
+      final success = await customerRepository.deletePendingCustomer(clientUuid);
+      if (success) {
+        _rawCustomers.removeWhere((c) => c.clientUuid == clientUuid);
+        _recomputeRouteDetail();
+      }
+      return success;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 final checkInViewModelProvider =
@@ -243,21 +262,36 @@ final checkInViewModelProvider =
   return CheckInViewModel(
     getDealerCheckinUseCase: ref.read(getDealerCheckinUseCaseProvider),
     checkoutDealerUseCase: ref.read(checkoutDealerUseCaseProvider),
+    getAvailableFormsUseCase: ref.read(getAvailableFormsUseCaseProvider),
   );
 });
 
 class CheckInViewModel extends StateNotifier<CheckInState> {
   final GetDealerCheckinUseCase getDealerCheckinUseCase;
   final CheckoutDealerUseCase checkoutDealerUseCase;
+  final GetAvailableFormsUseCase getAvailableFormsUseCase;
   Timer? _visitTimer;
   int _elapsedSeconds = 0;
 
   CheckInViewModel({
     required this.getDealerCheckinUseCase,
     required this.checkoutDealerUseCase,
+    required this.getAvailableFormsUseCase,
   }) : super(const CheckInState(liveVisitDuration: '00:00:00')) {
     loadCheckinData();
     _startTimer();
+  }
+
+  Future<void> loadSurveyForms(int customerId) async {
+    try {
+      final forms = await getAvailableFormsUseCase(kind: 'survey', customerId: customerId);
+      state = state.copyWith(surveyForms: forms);
+    } catch (_) {}
+  }
+
+  void markSurveySubmitted(int configId) {
+    final updated = Set<int>.from(state.submittedSurveyConfigIds)..add(configId);
+    state = state.copyWith(submittedSurveyConfigIds: updated);
   }
 
   void initCheckinWithDealer(DealerEntity dealer) {
@@ -310,7 +344,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       checkinData: initialCheckinData,
       checkinTime: localTime,
       liveVisitDuration: '00:00:00',
+      customer: dealer.customer,
     );
+
+    final customerId = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).id
+        : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 8338);
+    loadSurveyForms(customerId);
   }
 
   void _startTimer() {
@@ -367,6 +407,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         checkinTime: state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
         liveVisitDuration: state.liveVisitDuration,
       );
+
+      final customerId = int.tryParse(data.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 8338;
+      loadSurveyForms(customerId);
 
       // 2. Đồng bộ chuẩn thời gian từ WorldTimeAPI ngầm, cập nhật ngay khi nhận được
       _fetchWorldTime().then((worldTime) {

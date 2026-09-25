@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import '../errors/app_exceptions.dart';
+import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
 import 'mock_backend.dart';
 
@@ -22,13 +23,7 @@ final dioProvider = Provider<Dio>((ref) {
   dio.interceptors.addAll([
     AuthInterceptor(dio),
     MockBackendInterceptor(),
-    LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      requestHeader: true,
-      responseHeader: false,
-      error: true,
-    ),
+    AppApiLoggerInterceptor(),
   ]);
 
   return dio;
@@ -167,6 +162,30 @@ class ApiClient {
         data: data,
         queryParameters: queryParameters,
         options: options,
+      );
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw AppException(e.toString());
+    }
+  }
+
+  Future<dynamic> postMultipart(
+    String path, {
+    required FormData formData,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      final uploadOptions = (options ?? Options()).copyWith(
+        contentType: 'multipart/form-data',
+      );
+      final response = await _dio.post(
+        path,
+        data: formData,
+        queryParameters: queryParameters,
+        options: uploadOptions,
       );
       return response.data;
     } on DioException catch (e) {

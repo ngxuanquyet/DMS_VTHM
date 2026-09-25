@@ -9,7 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/presentation/widgets/customer_card.dart';
-import '../../../customer/presentation/widgets/edit_customer_dialog.dart';
+import '../../../customer/presentation/widgets/pending_sync_dismissible.dart';
 import '../../domain/entities/route_entity.dart';
 import '../viewmodels/route_view_model.dart';
 import 'checkin_distance_warning_dialog.dart';
@@ -67,15 +67,34 @@ class RouteDealerTimeline extends ConsumerWidget {
           );
         }
 
-        return CustomerCard.fromDealer(
-          dealer: dealer,
-          distance: distance,
-          onCheckIn: () => _handleCheckin(context, ref, dealer, distance),
-          onTap: () {
-            if (dealer.customer is CustomerEntity) {
-              _showCustomerDetail(context, dealer.customer as CustomerEntity);
+        final isPending = dealer.customer is CustomerEntity &&
+            (dealer.customer as CustomerEntity).syncStatus == 'pending';
+        final clientUuid = (dealer.customer is CustomerEntity)
+            ? (dealer.customer as CustomerEntity).clientUuid
+            : null;
+        final itemKey = clientUuid ?? 'dealer_${dealer.id}_$index';
+
+        return PendingSyncDismissible(
+          key: ValueKey('dismissible_$itemKey'),
+          itemKey: itemKey,
+          title: dealer.name,
+          isPending: isPending,
+          onConfirmDelete: () async {
+            if (clientUuid != null) {
+              return await ref.read(routeViewModelProvider.notifier).deletePendingCustomer(clientUuid);
             }
+            return false;
           },
+          child: CustomerCard.fromDealer(
+            key: ValueKey(itemKey),
+            dealer: dealer,
+            distance: distance,
+            showBorder: index != 0,
+            onCheckIn: () => _handleCheckin(context, ref, dealer, distance),
+            onTap: dealer.customer is CustomerEntity
+                ? () => context.push('/customers/detail', extra: dealer.customer)
+                : null,
+          ),
         );
       },
     );
@@ -156,18 +175,6 @@ class RouteDealerTimeline extends ConsumerWidget {
     if (context.mounted) {
       context.push('/check-in');
     }
-  }
-
-  void _showCustomerDetail(BuildContext context, CustomerEntity customer) {
-    EditCustomerDialog.show(
-      context,
-      customer: customer,
-      onSave: (changes) async {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã cập nhật thông tin điểm bán')),
-        );
-      },
-    );
   }
 }
 

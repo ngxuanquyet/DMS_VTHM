@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/bottom_nav_bar.dart';
 
 class CircularMenuItem {
   final String label;
@@ -21,7 +23,7 @@ class CircularMenuItem {
 }
 
 /// Circular Radial Floating Menu cho màn Tuyến (RouteScreen)
-class RouteCircularMenu extends StatefulWidget {
+class RouteCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onSortByDistance;
   final VoidCallback onSync;
   final VoidCallback onSendOfflineData;
@@ -44,15 +46,17 @@ class RouteCircularMenu extends StatefulWidget {
   });
 
   @override
-  State<RouteCircularMenu> createState() => _RouteCircularMenuState();
+  ConsumerState<RouteCircularMenu> createState() => _RouteCircularMenuState();
 }
 
-class _RouteCircularMenuState extends State<RouteCircularMenu>
+class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _expandAnimation;
   late final Animation<double> _rotationAnimation;
   bool _isOpen = false;
+  bool _wasTickerEnabled = true;
+  bool _wasRouteCurrent = true;
 
   @override
   void initState() {
@@ -72,6 +76,25 @@ class _RouteCircularMenuState extends State<RouteCircularMenu>
         curve: Curves.easeInOutCubic,
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tickerEnabled = TickerMode.valuesOf(context).enabled;
+    final routeCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+
+    // Đóng menu ngay lập tức nếu tab bị ẩn (TickerMode tắt),
+    // hoặc màn hình bị che bởi route khác,
+    // hoặc khi quay lại màn hình này từ màn khác / tab khác.
+    if (!tickerEnabled || !routeCurrent) {
+      _closeImmediately();
+    } else if (!_wasTickerEnabled || !_wasRouteCurrent) {
+      _closeImmediately();
+    }
+
+    _wasTickerEnabled = tickerEnabled;
+    _wasRouteCurrent = routeCurrent;
   }
 
   @override
@@ -100,8 +123,25 @@ class _RouteCircularMenuState extends State<RouteCircularMenu>
     }
   }
 
+  void _closeImmediately() {
+    if (_isOpen || _controller.value > 0) {
+      if (mounted) {
+        setState(() {
+          _isOpen = false;
+        });
+      } else {
+        _isOpen = false;
+      }
+      _controller.reset();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Lắng nghe tín hiệu chuyển tab từ BottomNavBar để đóng ngay lập tức
+    ref.listen<int>(closeFloatingMenuProvider, (previous, next) {
+      _closeImmediately();
+    });
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final items = [
@@ -156,42 +196,50 @@ class _RouteCircularMenuState extends State<RouteCircularMenu>
       ),
     ];
 
-    return Stack(
-      alignment: Alignment.bottomRight,
-      clipBehavior: Clip.none,
-      children: [
-        // 1. Semi-transparent backdrop when open (click anywhere to close)
-        if (_isOpen)
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _close,
-              child: AnimatedBuilder(
-                animation: _expandAnimation,
-                builder: (context, child) => Container(
-                  color: Colors.black.withValues(alpha: 0.35 * _expandAnimation.value),
+    return PopScope(
+      canPop: !_isOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isOpen) {
+          _close();
+        }
+      },
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        clipBehavior: Clip.none,
+        children: [
+          // 1. Semi-transparent backdrop when open (click anywhere to close)
+          if (_isOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _close,
+                child: AnimatedBuilder(
+                  animation: _expandAnimation,
+                  builder: (context, child) => Container(
+                    color: Colors.black.withValues(alpha: 0.35 * _expandAnimation.value),
+                  ),
                 ),
               ),
             ),
+
+          // 2. Radial Circular Menu Items
+          ...List.generate(items.length, (index) {
+            return _buildRadialItem(
+              item: items[index],
+              index: index,
+              totalItems: items.length,
+              isDark: isDark,
+            );
+          }),
+
+          // 3. Center Trigger Floating Action Button
+          Positioned(
+            bottom: 88,
+            right: 16,
+            child: _buildMainFab(isDark),
           ),
-
-        // 2. Radial Circular Menu Items
-        ...List.generate(items.length, (index) {
-          return _buildRadialItem(
-            item: items[index],
-            index: index,
-            totalItems: items.length,
-            isDark: isDark,
-          );
-        }),
-
-        // 3. Center Trigger Floating Action Button
-        Positioned(
-          bottom: 88,
-          right: 16,
-          child: _buildMainFab(isDark),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
