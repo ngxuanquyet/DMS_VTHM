@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../../../../core/map/goong_models.dart';
+import '../../../../../core/map/goong_providers.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_typography.dart';
 import '../../../../../core/widgets/app_loading.dart';
@@ -34,6 +37,7 @@ class _RefCustomerFieldWidgetState
     BuildContext context,
     RouteCustomersData data,
     bool isDark,
+    GoongLatLng? livePoint,
   ) {
     showModalBottomSheet(
       context: context,
@@ -45,6 +49,7 @@ class _RefCustomerFieldWidgetState
             : 'Chọn điểm bán',
         data: data,
         selectedId: widget.selectedId,
+        livePoint: livePoint,
         onSelected: (item) {
           widget.onChanged(item?.id);
         },
@@ -62,9 +67,10 @@ class _RefCustomerFieldWidgetState
     final description = block.resolved.description;
 
     final customersAsync = ref.watch(routeCustomersListProvider);
+    final livePoint = ref.watch(currentPointProvider).value;
 
     return customersAsync.when(
-      data: (data) => _buildField(context, data, isDark, label, description),
+      data: (data) => _buildField(context, data, isDark, label, description, livePoint),
       loading: () => _buildLoadingField(isDark, label, description),
       error: (_, __) => _buildField(
         context,
@@ -72,6 +78,7 @@ class _RefCustomerFieldWidgetState
         isDark,
         label,
         description,
+        livePoint,
       ),
     );
   }
@@ -121,6 +128,7 @@ class _RefCustomerFieldWidgetState
     bool isDark,
     String label,
     String? description,
+    GoongLatLng? livePoint,
   ) {
     RouteCustomerItem? selectedItem;
     if (widget.selectedId != null) {
@@ -131,6 +139,16 @@ class _RefCustomerFieldWidgetState
       }
     }
 
+    double? selectedDistance;
+    if (selectedItem != null && livePoint != null && selectedItem.hasCoordinates) {
+      selectedDistance = Geolocator.distanceBetween(
+        livePoint.lat,
+        livePoint.lng,
+        selectedItem.lat!,
+        selectedItem.lng!,
+      );
+    }
+
     final hasError = widget.errorText != null;
 
     return Column(
@@ -139,7 +157,7 @@ class _RefCustomerFieldWidgetState
         _buildLabel(label, description, isDark),
         const SizedBox(height: 6),
         InkWell(
-          onTap: () => _openPicker(context, data, isDark),
+          onTap: () => _openPicker(context, data, isDark, livePoint),
           borderRadius: BorderRadius.circular(10),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -185,13 +203,27 @@ class _RefCustomerFieldWidgetState
                       ? Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              selectedItem.name,
-                              style: AppTypography.titleMedium(
-                                color: isDark
-                                    ? AppColors.darkOnSurface
-                                    : AppColors.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w600),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    selectedItem.name,
+                                    style: AppTypography.titleMedium(
+                                      color: isDark
+                                          ? AppColors.darkOnSurface
+                                          : AppColors.onSurface,
+                                    ).copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                if (selectedItem.hasCoordinates || selectedDistance != null) ...[
+                                  const SizedBox(width: 8),
+                                  _RouteCustomerPickerSheet.buildDistanceBadge(
+                                    distanceMeters: selectedDistance,
+                                    hasCoordinates: selectedItem.hasCoordinates,
+                                    isDark: isDark,
+                                  ),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: 2),
                             Row(
@@ -349,26 +381,160 @@ class _RefCustomerFieldWidgetState
   }
 }
 
-/// Bottom Sheet tìm kiếm và chọn Điểm bán thuộc tuyến
-class _RouteCustomerPickerSheet extends StatefulWidget {
+/// Bottom Sheet tìm kiếm và chọn Điểm bán thuộc tuyến (mặc định sắp xếp theo khoảng cách)
+class _RouteCustomerPickerSheet extends ConsumerStatefulWidget {
   final String title;
   final RouteCustomersData data;
   final int? selectedId;
+  final GoongLatLng? livePoint;
   final ValueChanged<RouteCustomerItem?> onSelected;
 
   const _RouteCustomerPickerSheet({
     required this.title,
     required this.data,
     required this.selectedId,
+    this.livePoint,
     required this.onSelected,
   });
 
+  static String formatDistance(double? meters) {
+    if (meters == null) return '—';
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    }
+    return '${(meters / 1000).toStringAsFixed(1)} km';
+  }
+
+  static Widget buildDistanceBadge({
+    required double? distanceMeters,
+    required bool hasCoordinates,
+    required bool isDark,
+  }) {
+    if (!hasCoordinates) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.darkSurfaceContainer
+              : AppColors.surfaceContainer,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.location_off_outlined,
+              size: 11,
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant.withValues(alpha: 0.7)
+                  : AppColors.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              'Chưa có GPS',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant.withValues(alpha: 0.7)
+                    : AppColors.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (distanceMeters == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.darkSurfaceContainer
+              : AppColors.surfaceContainer,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.near_me_outlined,
+              size: 11,
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant
+                  : AppColors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              'Chưa định vị',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant
+                    : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final formatted = formatDistance(distanceMeters);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
+            : const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFF059669).withValues(alpha: 0.6)
+              : const Color(0xFFA7F3D0),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.near_me_rounded,
+            size: 11,
+            color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            formatted,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
-  State<_RouteCustomerPickerSheet> createState() =>
+  ConsumerState<_RouteCustomerPickerSheet> createState() =>
       _RouteCustomerPickerSheetState();
 }
 
-class _RouteCustomerPickerSheetState extends State<_RouteCustomerPickerSheet> {
+class _CustomerItemWithDistance {
+  final RouteCustomerItem item;
+  final double? distanceMeters;
+
+  const _CustomerItemWithDistance({
+    required this.item,
+    this.distanceMeters,
+  });
+}
+
+class _RouteCustomerPickerSheetState
+    extends ConsumerState<_RouteCustomerPickerSheet> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -378,12 +544,48 @@ class _RouteCustomerPickerSheetState extends State<_RouteCustomerPickerSheet> {
     super.dispose();
   }
 
-  List<RouteCustomerItem> get _filteredItems {
+  List<_CustomerItemWithDistance> _computeSortedItems(GoongLatLng? point) {
+    final list = widget.data.items.map((item) {
+      double? dist;
+      if (point != null && item.hasCoordinates) {
+        dist = Geolocator.distanceBetween(
+          point.lat,
+          point.lng,
+          item.lat!,
+          item.lng!,
+        );
+      }
+      return _CustomerItemWithDistance(item: item, distanceMeters: dist);
+    }).toList();
+
+    // Mặc định sắp xếp theo khoảng cách từ gần đến xa
+    list.sort((a, b) {
+      if (a.distanceMeters != null && b.distanceMeters != null) {
+        return a.distanceMeters!.compareTo(b.distanceMeters!);
+      }
+      if (a.distanceMeters != null && b.distanceMeters == null) {
+        return -1; // có khoảng cách xếp trước
+      }
+      if (a.distanceMeters == null && b.distanceMeters != null) {
+        return 1;
+      }
+      return a.item.name.compareTo(b.item.name);
+    });
+
+    return list;
+  }
+
+  List<_CustomerItemWithDistance> get _filteredItems {
+    final currentPoint =
+        widget.livePoint ?? ref.watch(currentPointProvider).value;
+    final allSorted = _computeSortedItems(currentPoint);
+
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) {
-      return widget.data.items;
+      return allSorted;
     }
-    return widget.data.items.where((item) {
+    return allSorted.where((entry) {
+      final item = entry.item;
       final nameMatches = item.name.toLowerCase().contains(query);
       final codeMatches = item.code.toLowerCase().contains(query);
       final addressMatches =
@@ -502,6 +704,33 @@ class _RouteCustomerPickerSheetState extends State<_RouteCustomerPickerSheet> {
               ),
             ),
 
+            // Sắp xếp theo vị trí gần bạn nhất
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.near_me_outlined,
+                    size: 13,
+                    color: isDark
+                        ? AppColors.darkOnSurfaceVariant
+                        : AppColors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Sắp xếp theo vị trí gần bạn nhất',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Cảnh báo truncated nếu danh sách chạm trần 2.000 dòng (§1b)
             if (widget.data.truncated) ...[
               Container(
@@ -598,7 +827,8 @@ class _RouteCustomerPickerSheetState extends State<_RouteCustomerPickerSheet> {
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 8),
                           itemBuilder: (ctx, index) {
-                            final item = filtered[index];
+                            final entry = filtered[index];
+                            final item = entry.item;
                             final isSelected = item.id == widget.selectedId;
 
                             return InkWell(
@@ -664,17 +894,32 @@ class _RouteCustomerPickerSheetState extends State<_RouteCustomerPickerSheet> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            item.name,
-                                            style: AppTypography.titleMedium(
-                                              color: isDark
-                                                  ? AppColors.darkOnSurface
-                                                  : AppColors.onSurface,
-                                            ).copyWith(
-                                              fontWeight: isSelected
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w600,
-                                            ),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  item.name,
+                                                  style: AppTypography.titleMedium(
+                                                    color: isDark
+                                                        ? AppColors.darkOnSurface
+                                                        : AppColors.onSurface,
+                                                  ).copyWith(
+                                                    fontWeight: isSelected
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              _RouteCustomerPickerSheet
+                                                  .buildDistanceBadge(
+                                                distanceMeters:
+                                                    entry.distanceMeters,
+                                                hasCoordinates:
+                                                    item.hasCoordinates,
+                                                isDark: isDark,
+                                              ),
+                                            ],
                                           ),
                                           const SizedBox(height: 4),
                                           Row(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vthm_dms/core/map/goong_models.dart';
+import 'package:vthm_dms/core/map/goong_providers.dart';
 import 'package:vthm_dms/features/forms/data/models/route_customer_model.dart';
 import 'package:vthm_dms/features/forms/data/services/route_customers_service.dart';
 import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
@@ -15,25 +17,47 @@ void main() {
   });
 
   group('RouteCustomer Model Tests (§1b Spec 24/09/2026)', () {
-    test('RouteCustomerItem serializes to JSON and deserializes correctly', () {
+    test('RouteCustomerItem serializes to JSON and deserializes correctly with coordinates', () {
       final item = const RouteCustomerItem(
         id: 2036,
         code: '08170152',
         name: 'Dịu Khoản',
         address: '38/6 Phan Đình Phùng, Cam Ranh',
+        lat: 11.9082,
+        lng: 109.1523,
       );
+
+      expect(item.hasCoordinates, isTrue);
 
       final json = item.toJson();
       expect(json['id'], 2036);
       expect(json['code'], '08170152');
       expect(json['name'], 'Dịu Khoản');
       expect(json['address'], '38/6 Phan Đình Phùng, Cam Ranh');
+      expect(json['lat'], 11.9082);
+      expect(json['lng'], 109.1523);
 
       final fromJson = RouteCustomerItem.fromJson(json);
       expect(fromJson.id, 2036);
       expect(fromJson.code, '08170152');
       expect(fromJson.name, 'Dịu Khoản');
       expect(fromJson.address, '38/6 Phan Đình Phùng, Cam Ranh');
+      expect(fromJson.lat, 11.9082);
+      expect(fromJson.lng, 109.1523);
+      expect(fromJson.hasCoordinates, isTrue);
+
+      // Deserializes with latitude / longitude keys as well
+      final altJson = {
+        'id': 5000,
+        'code': 'KH01',
+        'name': 'Đại lý ABC',
+        'latitude': '21.0285',
+        'longitude': '105.8544',
+      };
+      final fromAltJson = RouteCustomerItem.fromJson(altJson);
+      expect(fromAltJson.lat, closeTo(21.0285, 0.0001));
+      expect(fromAltJson.lng, closeTo(105.8544, 0.0001));
+      expect(fromAltJson.hasCoordinates, isTrue);
     });
 
     test('RouteCustomersData serializes and deserializes with truncated flag', () {
@@ -312,6 +336,101 @@ void main() {
 
       // Báo lỗi đúng tên ô (§2)
       expect(find.text('Điểm bán khảo sát không được để trống.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Sorts customers by distance ascending from current location and displays distance labels',
+        (tester) async {
+      // User location at Cam Ranh
+      const userPoint = GoongLatLng(11.9080, 109.1520);
+
+      const customerFar = RouteCustomerItem(
+        id: 100,
+        code: 'KH_FAR',
+        name: 'Đại lý Nha Trang (Xa)',
+        address: '123 Đường 2/4, Nha Trang',
+        lat: 12.2388,
+        lng: 109.1967, // ~37 km
+      );
+
+      const customerNear = RouteCustomerItem(
+        id: 200,
+        code: 'KH_NEAR',
+        name: 'Tạp hóa Gần (Cam Ranh)',
+        address: 'Gần chợ Cam Ranh',
+        lat: 11.9085,
+        lng: 109.1525, // ~77 m
+      );
+
+      const customerNoGps = RouteCustomerItem(
+        id: 300,
+        code: 'KH_NOGPS',
+        name: 'Cửa hàng Chưa GPS',
+        address: 'Không rõ toạ độ',
+        lat: null,
+        lng: null,
+      );
+
+      // Given original list has Far first, then NoGps, then Near
+      final originalList = [customerFar, customerNoGps, customerNear];
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentPointProvider.overrideWith((ref) => Future.value(userPoint)),
+            routeCustomersListProvider.overrideWith(
+              (ref) => Future.value(
+                RouteCustomersData(
+                  items: originalList,
+                  truncated: false,
+                ),
+              ),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: MarketFormRenderer(
+                blocks: [testBlock],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Open customer picker sheet
+      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.pumpAndSettle();
+
+      // Notice about distance sorting should be visible
+      expect(find.text('Sắp xếp theo vị trí gần bạn nhất'), findsOneWidget);
+
+      // Verify badges:
+      // customerNear (~78 m)
+      expect(find.text('78 m'), findsOneWidget);
+      // customerFar (distance in km)
+      expect(find.textContaining(' km'), findsOneWidget);
+      // customerNoGps
+      expect(find.text('Chưa có GPS'), findsOneWidget);
+
+      // Verify sorted order: KH_NEAR should appear before KH_FAR in the render tree
+      final nearTopLeft = tester.getTopLeft(find.text('Tạp hóa Gần (Cam Ranh)'));
+      final farTopLeft = tester.getTopLeft(find.text('Đại lý Nha Trang (Xa)'));
+      final noGpsTopLeft = tester.getTopLeft(find.text('Cửa hàng Chưa GPS'));
+
+      expect(nearTopLeft.dy < farTopLeft.dy, isTrue,
+          reason: 'Nearest customer should be displayed first');
+      expect(farTopLeft.dy < noGpsTopLeft.dy, isTrue,
+          reason: 'Customer with GPS should appear before customer without GPS');
+
+      // Select nearest customer
+      await tester.tap(find.text('Tạp hóa Gần (Cam Ranh)'));
+      await tester.pumpAndSettle();
+
+      // Sheet closed, form displays selected customer and its distance label
+      expect(find.text('Tạp hóa Gần (Cam Ranh)'), findsOneWidget);
+      expect(find.text('78 m'), findsOneWidget);
     });
   });
 }

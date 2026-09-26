@@ -24,19 +24,15 @@ class FormsMenuItem {
 /// Thiết kế, icon và hoạt ảnh đồng bộ 100% với RouteCircularMenu ở màn Tuyến
 class FormsCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onSync;
-  final VoidCallback onViewDrafts;
   final VoidCallback onSendOfflineData;
   final int pendingOfflineCount;
-  final int draftCount;
   final bool isSyncing;
 
   const FormsCircularMenu({
     super.key,
     required this.onSync,
-    required this.onViewDrafts,
     required this.onSendOfflineData,
     this.pendingOfflineCount = 0,
-    this.draftCount = 0,
     this.isSyncing = false,
   });
 
@@ -136,18 +132,6 @@ class _FormsCircularMenuState extends ConsumerState<FormsCircularMenu>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final items = [
-      FormsMenuItem(
-        label: widget.draftCount > 0
-            ? 'Xem nháp (${widget.draftCount})'
-            : 'Xem nháp',
-        icon: Icons.drafts_rounded,
-        color: const Color(0xFF6366F1), // Indigo
-        badgeCount: widget.draftCount > 0 ? widget.draftCount : null,
-        onTap: () {
-          _close();
-          widget.onViewDrafts();
-        },
-      ),
       FormsMenuItem(
         label: widget.pendingOfflineCount > 0
             ? 'Tải lên (${widget.pendingOfflineCount})'
@@ -370,7 +354,7 @@ class _FormsCircularMenuState extends ConsumerState<FormsCircularMenu>
   /// Nút FAB chính: Màu sắc, kích thước, hiệu ứng xoay và icon Icons.widgets_rounded
   /// giống hệt 100% như ở màn Route (route_circular_menu.dart)
   Widget _buildMainFab(bool isDark) {
-    final totalBadge = widget.pendingOfflineCount + widget.draftCount;
+    final totalBadge = widget.pendingOfflineCount;
     final hasBadge = totalBadge > 0;
 
     return Stack(

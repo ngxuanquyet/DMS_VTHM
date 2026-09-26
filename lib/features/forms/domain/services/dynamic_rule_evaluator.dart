@@ -40,10 +40,10 @@ class DynamicRuleEvaluator {
 
       // 3. { "field": ..., "op": ..., "value": ... } -> Lá: một phép so sánh
       if (rule.containsKey('field')) {
-        final field = rule['field']?.toString()?.trim();
+        final field = rule['field']?.toString().trim();
         if (field == null || field.isEmpty) return false;
 
-        final op = rule['op']?.toString()?.trim();
+        final op = rule['op']?.toString().trim();
         if (op == null || op.isEmpty) return false;
 
         final expected = rule['value'];

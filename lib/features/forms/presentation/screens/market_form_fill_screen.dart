@@ -13,10 +13,6 @@ import '../../domain/entities/market_form_entity.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../widgets/dynamic_renderer/market_form_renderer.dart';
 
-import 'package:uuid/uuid.dart';
-import '../../data/models/form_draft_model.dart';
-import '../../data/services/form_draft_service.dart';
-
 class MarketFormFillArgs {
   final MarketFormConfigEntity config;
   final String kind; // 'survey' | 'collect'
@@ -24,7 +20,6 @@ class MarketFormFillArgs {
   final int? visitId;
   final String? dealerName;
   final Map<String, dynamic>? initialAnswers;
-  final String? draftId;
   final Map<String, dynamic>? customerContext;
 
   const MarketFormFillArgs({
@@ -34,7 +29,6 @@ class MarketFormFillArgs {
     this.visitId,
     this.dealerName,
     this.initialAnswers,
-    this.draftId,
     this.customerContext,
   });
 
@@ -68,12 +62,6 @@ class MarketFormFillScreen extends ConsumerStatefulWidget {
   ConsumerState<MarketFormFillScreen> createState() => _MarketFormFillScreenState();
 }
 
-enum _ExitDialogAction {
-  stay,
-  discard,
-  saveDraft,
-}
-
 class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
   final GlobalKey<MarketFormRendererState> _rendererKey = GlobalKey();
   bool _isSubmitting = false;
@@ -91,7 +79,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
     }
   }
 
-  bool _hasDraftableData([Map<String, dynamic>? answers]) {
+  bool _hasEnteredData([Map<String, dynamic>? answers]) {
     final ans = answers ?? _rendererKey.currentState?.currentAnswers ?? {};
     if (ans.isEmpty) return false;
     for (final val in ans.values) {
@@ -105,75 +93,16 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
     return false;
   }
 
-  Future<bool> _saveDraftInternal() async {
-    final answers = _rendererKey.currentState?.currentAnswers ?? {};
-    if (!_hasDraftableData(answers)) {
-      return false;
-    }
-
-    final draftService = ref.read(formDraftServiceProvider);
-    final draftId = widget.args.draftId ?? const Uuid().v4();
-    final draft = FormDraft(
-      id: draftId,
-      configId: widget.args.config.configId,
-      configName: widget.args.config.name,
-      configCode: widget.args.config.code,
-      kind: widget.args.kind,
-      customerId: widget.args.customerId,
-      visitId: widget.args.visitId,
-      dealerName: widget.args.dealerName,
-      answers: answers,
-      updatedAt: DateTime.now(),
-    );
-
-    await draftService.saveDraft(draft);
-    ref.invalidate(formDraftsListProvider);
-    return true;
-  }
-
-  Future<void> _handleSaveDraft() async {
-    final saved = await _saveDraftInternal();
-    if (!saved) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Vui lòng điền ít nhất một trường thông tin để lưu nháp.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.bookmark_added_rounded, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Đã lưu bản nháp thành công!'),
-            ],
-          ),
-          backgroundColor: Color(0xFF6366F1),
-          duration: Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      _safePop(false);
-    }
-  }
-
   Future<void> _handleExit() async {
     if (_isSubmitting || _isExiting) return;
 
-    if (!_hasDraftableData()) {
+    if (!_hasEnteredData()) {
       _safePop(false);
       return;
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final action = await showDialog<_ExitDialogAction>(
+    final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
@@ -184,19 +113,19 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                color: AppColors.error.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.bookmark_outline_rounded,
-                color: Color(0xFF6366F1),
+                Icons.warning_amber_rounded,
+                color: AppColors.error,
                 size: 22,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Lưu bản nháp?',
+                'Rời khỏi biểu mẫu?',
                 style: AppTypography.titleLarge(
                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                 ).copyWith(fontWeight: FontWeight.w700),
@@ -205,17 +134,15 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
           ],
         ),
         content: Text(
-          'Bạn đang điền biểu mẫu này. Bạn có muốn lưu bản nháp các thông tin đã nhập trước khi thoát không?',
+          'Dữ liệu bạn đã nhập sẽ không được lưu. Bạn có chắc chắn muốn rời khỏi không?',
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
           ),
         ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        actionsOverflowButtonSpacing: 8,
-        actionsAlignment: MainAxisAlignment.end,
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_ExitDialogAction.stay),
+            onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
               'Tiếp tục điền',
               style: AppTypography.labelLarge(
@@ -223,27 +150,17 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
               ),
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_ExitDialogAction.discard),
-            child: Text(
-              'Không lưu',
-              style: AppTypography.labelLarge(
-                color: AppColors.error,
-              ),
-            ),
-          ),
-          ElevatedButton.icon(
+          ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
+              backgroundColor: AppColors.error,
               foregroundColor: Colors.white,
               elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: () => Navigator.of(ctx).pop(_ExitDialogAction.saveDraft),
-            icon: const Icon(Icons.bookmark_added_rounded, size: 16),
-            label: const Text(
-              'Lưu nháp',
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Rời khỏi',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
@@ -251,34 +168,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
       ),
     );
 
-    if (!mounted || action == null || action == _ExitDialogAction.stay) {
-      return;
-    }
-
-    if (action == _ExitDialogAction.discard) {
+    if (confirmed == true && mounted) {
       _safePop(false);
-      return;
-    }
-
-    if (action == _ExitDialogAction.saveDraft) {
-      await _saveDraftInternal();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.bookmark_added_rounded, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Đã lưu bản nháp thành công!'),
-              ],
-            ),
-            backgroundColor: Color(0xFF6366F1),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _safePop(false);
-      }
     }
   }
 
@@ -382,16 +273,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
           _isSubmitting = false;
         });
 
-        // Xóa bản nháp nếu có sau khi nộp thành công
         if (result.success) {
-          if (widget.args.draftId != null) {
-            await ref.read(formDraftServiceProvider).deleteDraft(widget.args.draftId!);
-          }
-          await ref.read(formDraftServiceProvider).deleteDraftByConfig(
-                widget.args.config.configId,
-                customerId: widget.args.customerId,
-              );
-          ref.invalidate(formDraftsListProvider);
+          // Thành công
         }
 
         if (mounted) {
@@ -601,67 +484,36 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
           ),
         ),
         child: SafeArea(
-          child: Row(
-            children: [
-              // Nút Lưu Nháp
-              Expanded(
-                flex: 2,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF6366F1),
-                    side: const BorderSide(color: Color(0xFF6366F1), width: 1.2),
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _isSubmitting ? null : _handleSaveDraft,
-                  icon: const Icon(Icons.bookmark_outline_rounded, size: 18),
-                  label: const Text(
-                    'LƯU NHÁP',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Nút Nộp Biểu Mẫu
-              Expanded(
-                flex: 3,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    elevation: 1,
-                  ),
-                  onPressed: _isSubmitting ? null : _handleSubmit,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: AppLoading(size: 24),
-                        )
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.send_rounded, size: 18),
-                            SizedBox(width: 6),
-                            Text(
-                              'NỘP BIỂU MẪU',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 1,
+            ),
+            onPressed: _isSubmitting ? null : _handleSubmit,
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: AppLoading(size: 24),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.send_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'NỘP BIỂU MẪU',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
                         ),
-                ),
-              ),
-            ],
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),

@@ -6,13 +6,20 @@ class RouteCustomerItem {
   final String code;
   final String name;
   final String? address;
+  final double? lat;
+  final double? lng;
 
   const RouteCustomerItem({
     required this.id,
     required this.code,
     required this.name,
     this.address,
+    this.lat,
+    this.lng,
   });
+
+  bool get hasCoordinates =>
+      lat != null && lng != null && lat != 0 && lng != 0;
 
   factory RouteCustomerItem.fromJson(Map<String, dynamic> json) {
     return RouteCustomerItem(
@@ -22,6 +29,14 @@ class RouteCustomerItem {
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       address: json['address']?.toString(),
+      lat: (json['lat'] ?? json['latitude']) is num
+          ? (json['lat'] ?? json['latitude'] as num).toDouble()
+          : double.tryParse(
+              (json['lat'] ?? json['latitude'])?.toString() ?? ''),
+      lng: (json['lng'] ?? json['longitude']) is num
+          ? (json['lng'] ?? json['longitude'] as num).toDouble()
+          : double.tryParse(
+              (json['lng'] ?? json['longitude'])?.toString() ?? ''),
     );
   }
 
@@ -31,7 +46,27 @@ class RouteCustomerItem {
       'code': code,
       'name': name,
       if (address != null) 'address': address,
+      if (lat != null) 'lat': lat,
+      if (lng != null) 'lng': lng,
     };
+  }
+
+  RouteCustomerItem copyWith({
+    int? id,
+    String? code,
+    String? name,
+    String? address,
+    double? lat,
+    double? lng,
+  }) {
+    return RouteCustomerItem(
+      id: id ?? this.id,
+      code: code ?? this.code,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+    );
   }
 
   @override

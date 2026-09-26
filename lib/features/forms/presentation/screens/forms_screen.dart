@@ -10,12 +10,10 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
-import '../../data/services/form_draft_service.dart';
 import '../states/forms_state.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../widgets/forms_circular_menu.dart';
 import '../widgets/market_form_card.dart';
-import '../widgets/market_form_drafts_sheet.dart';
 import 'market_form_fill_screen.dart';
 
 class FormsScreen extends ConsumerStatefulWidget {
@@ -81,10 +79,6 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
         ),
       );
     }
-  }
-
-  void _handleViewDrafts() {
-    MarketFormDraftsSheet.show(context);
   }
 
   Future<void> _handleSendOfflineData() async {
@@ -203,14 +197,6 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
 
     final pendingOfflineCount =
         ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
-    final draftCount = ref.watch(formDraftsCountProvider).valueOrNull ?? 0;
-    final offlineEntries =
-        ref.watch(formSubmissionEntriesProvider).valueOrNull ?? [];
-    final pendingFormCount = offlineEntries
-        .where((e) =>
-            e.state == 'pending' || e.state == 'sending' || e.state == 'dead')
-        .length;
-    final totalDraftCount = draftCount + pendingFormCount;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
@@ -435,10 +421,8 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
           Positioned.fill(
             child: FormsCircularMenu(
               onSync: _handleSync,
-              onViewDrafts: _handleViewDrafts,
               onSendOfflineData: _handleSendOfflineData,
               pendingOfflineCount: pendingOfflineCount,
-              draftCount: totalDraftCount,
               isSyncing: state.status == FormsStatus.loading,
             ),
           ),

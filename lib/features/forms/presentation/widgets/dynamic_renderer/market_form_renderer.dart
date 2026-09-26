@@ -75,7 +75,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-  /// Trả về bản sao các câu trả lời hiện tại (phục vụ lưu bản nháp)
+  /// Trả về bản sao các câu trả lời hiện tại
   Map<String, dynamic> get currentAnswers => Map<String, dynamic>.from(_answers);
 
   /// Danh sách các mã code thuộc nhóm trình bày (không thu dữ liệu)

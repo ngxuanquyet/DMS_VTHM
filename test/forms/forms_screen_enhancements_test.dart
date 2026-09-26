@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vthm_dms/features/forms/data/models/form_draft_model.dart';
-import 'package:vthm_dms/features/forms/data/services/form_draft_service.dart';
 import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
 import 'package:vthm_dms/features/forms/presentation/screens/market_form_fill_screen.dart';
 import 'package:vthm_dms/features/forms/presentation/widgets/forms_circular_menu.dart';
@@ -45,76 +43,6 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-  });
-
-  group('FormDraft Model & Service Tests', () {
-    test('FormDraft serializes to JSON and deserializes correctly', () {
-      final now = DateTime.now();
-      final draft = FormDraft(
-        id: 'test-uuid-123',
-        configId: 101,
-        configName: 'Khảo sát giá thị trường',
-        configCode: 'KS_GIA',
-        kind: 'collect',
-        customerId: 55,
-        dealerName: 'Đại lý ABC',
-        answers: {'gia_ban': 150000, 'vi_tri': 'ke_chinh'},
-        updatedAt: now,
-      );
-
-      final json = draft.toJson();
-      expect(json['id'], 'test-uuid-123');
-      expect(json['config_id'], 101);
-      expect(json['config_name'], 'Khảo sát giá thị trường');
-      expect(json['answers']['gia_ban'], 150000);
-
-      final fromJson = FormDraft.fromJson(json);
-      expect(fromJson.id, draft.id);
-      expect(fromJson.configId, draft.configId);
-      expect(fromJson.configName, draft.configName);
-      expect(fromJson.answers['gia_ban'], 150000);
-      expect(fromJson.answers['vi_tri'], 'ke_chinh');
-    });
-
-    test('FormDraftService saves, retrieves, and deletes drafts', () async {
-      final service = FormDraftService();
-      expect(await service.getDrafts(), isEmpty);
-
-      final draft1 = FormDraft(
-        id: 'draft-1',
-        configId: 1,
-        configName: 'Biểu mẫu 1',
-        configCode: 'BM01',
-        kind: 'collect',
-        answers: {'q1': 'val1'},
-        updatedAt: DateTime.now(),
-      );
-
-      await service.saveDraft(draft1);
-      var drafts = await service.getDrafts();
-      expect(drafts.length, 1);
-      expect(drafts.first.id, 'draft-1');
-
-      // Update draft
-      final updatedDraft1 = FormDraft(
-        id: 'draft-1',
-        configId: 1,
-        configName: 'Biểu mẫu 1',
-        configCode: 'BM01',
-        kind: 'collect',
-        answers: {'q1': 'val1_updated'},
-        updatedAt: DateTime.now(),
-      );
-      await service.saveDraft(updatedDraft1);
-      drafts = await service.getDrafts();
-      expect(drafts.length, 1);
-      expect(drafts.first.answers['q1'], 'val1_updated');
-
-      // Delete draft
-      await service.deleteDraft('draft-1');
-      drafts = await service.getDrafts();
-      expect(drafts, isEmpty);
-    });
   });
 
   group('MarketFormCard Widget Tests (showStatus: false)', () {
@@ -179,10 +107,9 @@ void main() {
   });
 
   group('FormsCircularMenu Widget Tests', () {
-    testWidgets('FormsCircularMenu renders main FAB and expands 3 options',
+    testWidgets('FormsCircularMenu renders main FAB and expands 2 options',
         (tester) async {
       bool syncTapped = false;
-      bool draftsTapped = false;
       bool uploadTapped = false;
 
       await tester.pumpWidget(
@@ -194,10 +121,8 @@ void main() {
                   Positioned.fill(
                     child: FormsCircularMenu(
                       onSync: () => syncTapped = true,
-                      onViewDrafts: () => draftsTapped = true,
                       onSendOfflineData: () => uploadTapped = true,
                       pendingOfflineCount: 2,
-                      draftCount: 3,
                     ),
                   ),
                 ],
@@ -215,8 +140,7 @@ void main() {
       await tester.tap(fabFinder);
       await tester.pumpAndSettle();
 
-      // Kiểm tra 3 tính năng: Đồng bộ, Xem nháp (3), Tải lên (2)
-      expect(find.text('Xem nháp (3)'), findsOneWidget);
+      // Kiểm tra 2 tính năng: Đồng bộ, Tải lên (2)
       expect(find.text('Tải lên (2)'), findsOneWidget);
       expect(find.text('Đồng bộ'), findsOneWidget);
 
@@ -224,13 +148,6 @@ void main() {
       await tester.tap(find.text('Đồng bộ'));
       await tester.pump();
       expect(syncTapped, isTrue);
-
-      // Mở lại và nhấn Xem nháp
-      await tester.tap(find.byType(GestureDetector).last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Xem nháp (3)'));
-      await tester.pump();
-      expect(draftsTapped, isTrue);
 
       // Mở lại và nhấn Tải lên
       await tester.tap(find.byType(GestureDetector).last);
@@ -255,10 +172,8 @@ void main() {
                   Positioned.fill(
                     child: FormsCircularMenu(
                       onSync: _noop,
-                      onViewDrafts: _noop,
                       onSendOfflineData: _noop,
                       pendingOfflineCount: 0,
-                      draftCount: 0,
                     ),
                   ),
                 ],
@@ -278,12 +193,12 @@ void main() {
     });
   });
 
-  group('MarketFormFillScreen Exit Confirmation & Draft Saving Tests', () {
+  group('MarketFormFillScreen Exit Confirmation Tests', () {
     const testConfig = MarketFormConfigEntity(
       configId: 105,
       formId: 1,
       code: 'KS_TEST',
-      name: 'Khảo sát nháp test',
+      name: 'Khảo sát test',
       kind: 'collect',
       isRequired: false,
       sortOrder: 1,
@@ -304,10 +219,9 @@ void main() {
       ),
     );
 
-    Widget buildTestApp({required FormDraftService draftService}) {
+    Widget buildTestApp() {
       return ProviderScope(
         overrides: [
-          formDraftServiceProvider.overrideWithValue(draftService),
           profileRepositoryProvider
               .overrideWithValue(_FakeProfileRepository()),
         ],
@@ -339,27 +253,25 @@ void main() {
     testWidgets(
         'Exiting with empty form does not show dialog and pops immediately',
         (tester) async {
-      final draftService = FormDraftService();
-      await tester.pumpWidget(buildTestApp(draftService: draftService));
+      await tester.pumpWidget(buildTestApp());
 
       await tester.tap(find.text('Mở Form'));
       await tester.pumpAndSettle();
-      expect(find.text('Khảo sát nháp test'), findsNWidgets(2));
+      expect(find.text('Khảo sát test'), findsNWidgets(2));
 
       // Nhấn nút back trên VthmTopAppBar khi chưa nhập gì
       await tester.tap(find.byIcon(Icons.arrow_back));
       await tester.pumpAndSettle();
 
       // Không hiển thị dialog, đã quay về màn hình trước
-      expect(find.text('Lưu bản nháp?'), findsNothing);
+      expect(find.text('Rời khỏi biểu mẫu?'), findsNothing);
       expect(find.text('Mở Form'), findsOneWidget);
     });
 
     testWidgets(
         'Exiting with filled answers shows confirmation dialog, staying keeps screen open',
         (tester) async {
-      final draftService = FormDraftService();
-      await tester.pumpWidget(buildTestApp(draftService: draftService));
+      await tester.pumpWidget(buildTestApp());
 
       await tester.tap(find.text('Mở Form'));
       await tester.pumpAndSettle();
@@ -374,26 +286,24 @@ void main() {
       await tester.pumpAndSettle();
 
       // Hiển thị dialog xác nhận
-      expect(find.text('Lưu bản nháp?'), findsOneWidget);
+      expect(find.text('Rời khỏi biểu mẫu?'), findsOneWidget);
       expect(find.text('Tiếp tục điền'), findsOneWidget);
-      expect(find.text('Không lưu'), findsOneWidget);
-      expect(find.text('Lưu nháp'), findsOneWidget);
+      expect(find.text('Rời khỏi'), findsOneWidget);
 
       // Nhấn "Tiếp tục điền"
       await tester.tap(find.text('Tiếp tục điền'));
       await tester.pumpAndSettle();
 
       // Dialog biến mất nhưng vẫn ở lại màn hình form
-      expect(find.text('Lưu bản nháp?'), findsNothing);
-      expect(find.text('Khảo sát nháp test'), findsNWidgets(2));
+      expect(find.text('Rời khỏi biểu mẫu?'), findsNothing);
+      expect(find.text('Khảo sát test'), findsNWidgets(2));
       expect(find.text('Nội dung đang điền dở dang'), findsOneWidget);
     });
 
     testWidgets(
-        'Exiting with filled answers and choosing "Không lưu" exits without saving draft',
+        'Exiting with filled answers and choosing "Rời khỏi" exits without saving',
         (tester) async {
-      final draftService = FormDraftService();
-      await tester.pumpWidget(buildTestApp(draftService: draftService));
+      await tester.pumpWidget(buildTestApp());
 
       await tester.tap(find.text('Mở Form'));
       await tester.pumpAndSettle();
@@ -404,52 +314,14 @@ void main() {
       await tester.tap(find.byIcon(Icons.arrow_back));
       await tester.pumpAndSettle();
 
-      expect(find.text('Lưu bản nháp?'), findsOneWidget);
+      expect(find.text('Rời khỏi biểu mẫu?'), findsOneWidget);
 
-      // Nhấn "Không lưu"
-      await tester.tap(find.text('Không lưu'));
+      // Nhấn "Rời khỏi"
+      await tester.tap(find.text('Rời khỏi'));
       await tester.pumpAndSettle();
 
       // Đã thoát về màn hình trước
       expect(find.text('Mở Form'), findsOneWidget);
-
-      // Kiểm tra danh sách nháp trong service vẫn rỗng
-      final drafts = await draftService.getDrafts();
-      expect(drafts, isEmpty);
-    });
-
-    testWidgets(
-        'Exiting with filled answers and choosing "Lưu nháp" saves draft and exits',
-        (tester) async {
-      final draftService = FormDraftService();
-      await tester.pumpWidget(buildTestApp(draftService: draftService));
-
-      await tester.tap(find.text('Mở Form'));
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-          find.byType(TextField), 'Nội dung quan trọng cần lưu nháp');
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byIcon(Icons.arrow_back));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Lưu bản nháp?'), findsOneWidget);
-
-      // Nhấn "Lưu nháp"
-      await tester.tap(find.text('Lưu nháp'));
-      await tester.pumpAndSettle();
-
-      // Đã thoát về màn hình trước
-      expect(find.text('Mở Form'), findsOneWidget);
-
-      // Kiểm tra nháp đã được lưu thành công
-      final drafts = await draftService.getDrafts();
-      expect(drafts.length, 1);
-      expect(drafts.first.configId, 105);
-      expect(drafts.first.dealerName, 'Đại lý Test');
-      expect(
-          drafts.first.answers['ghi_chu'], 'Nội dung quan trọng cần lưu nháp');
     });
   });
 }
