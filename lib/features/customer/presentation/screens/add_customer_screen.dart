@@ -8,6 +8,8 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/sync/sync_service.dart';
+import '../../../../core/database/database_provider.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
@@ -183,10 +185,72 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   }
 
   Future<void> _handleSubmit(Map<String, dynamic> formData) async {
+    // 1. Validate Tên điểm bán (§5)
     if (formData['name'] == null || formData['name'].toString().trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Tên điểm bán là bắt buộc.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // 2. Validate Khu vực (§5)
+    if (formData['region_id'] == null || formData['region_id'].toString().trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn khu vực quản lý (Region).'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // 3. Validate Tuyến bán hàng (§5: route_ids bắt buộc với nhân viên thị trường)
+    final userRoutes = ref.read(userAssignedRoutesProvider).valueOrNull ?? [];
+    List<int> finalRouteIds = [];
+    final rawRouteIds = formData['route_ids'] ?? formData['route_id'];
+    if (rawRouteIds is List) {
+      finalRouteIds = rawRouteIds
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    } else if (rawRouteIds != null) {
+      final rId = int.tryParse(rawRouteIds.toString());
+      if (rId != null) finalRouteIds = [rId];
+    }
+    if (finalRouteIds.isEmpty && userRoutes.isNotEmpty) {
+      finalRouteIds = [userRoutes.first.id];
+    }
+    if (finalRouteIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hãy chọn ít nhất một tuyến bán hàng cho điểm bán mới.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu)
+    bool hasPhoto = false;
+    for (final key in formData.keys) {
+      if (_isCustomerPhotoKey(key)) {
+        final val = formData[key];
+        if (val is List && val.isNotEmpty) {
+          hasPhoto = true;
+          break;
+        } else if (val is String && val.trim().isNotEmpty) {
+          hasPhoto = true;
+          break;
+        }
+      }
+    }
+    if (!hasPhoto) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chụp ảnh điểm bán trước khi lưu.'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -202,34 +266,15 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
       
-      // 🔴 Tuyệt đối không gửi 'code', 'id' và 'status' theo spec 22/09/2026:
+      // 🔴 Tuyệt đối không gửi 'code', 'id' và 'status' theo spec 22/09 & 30/09:
       // Server tự động sinh mã theo region_id và đặt trạng thái mặc định active
       payload.remove('code');
       payload.remove('id');
       payload.remove('status');
 
-      final userRoutes = ref.read(userAssignedRoutesProvider).valueOrNull ?? [];
-
-      // 🔴 route_ids là mảng số nguyên [int] - bắt buộc cho nhân viên thị trường
-      List<int> finalRouteIds = [];
-      final rawRouteIds = payload['route_ids'] ?? payload['route_id'];
-      if (rawRouteIds is List) {
-        finalRouteIds = rawRouteIds
-            .map((e) => int.tryParse(e.toString()))
-            .whereType<int>()
-            .toList();
-      } else if (rawRouteIds != null) {
-        final rId = int.tryParse(rawRouteIds.toString());
-        if (rId != null) finalRouteIds = [rId];
-      }
-      if (finalRouteIds.isEmpty) {
-        final fallbackRouteId = userRoutes.firstOrNull?.id ?? 5;
-        finalRouteIds = [fallbackRouteId];
-      }
       payload['route_ids'] = finalRouteIds;
 
-      // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3)
-      // CHỈ xử lý các trường ảnh, TUYỆT ĐỐI không xử lý route_ids hoặc các trường dữ liệu khác
+      // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)
       if (isOnline) {
         for (final key in payload.keys.toList()) {
           if (!_isCustomerPhotoKey(key)) continue;
@@ -353,26 +398,36 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
       await repo.createCustomer(payload);
 
+      if (isOnline) {
+        // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
+        try {
+          await ref.read(syncServiceProvider).syncQueue(force: true);
+        } catch (_) {}
+      }
+
       if (mounted) {
+        final pendingCount = await ref.read(appDatabaseProvider).countPendingSync();
+        if (!mounted) return;
+        final hasPending = pendingCount > 0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
                 Icon(
-                  isOnline ? Icons.check_circle_rounded : Icons.offline_pin_rounded,
+                  !hasPending ? Icons.check_circle_rounded : Icons.offline_pin_rounded,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isOnline
-                        ? 'Đã lưu điểm bán! Đang đồng bộ lên hệ thống...'
+                    !hasPending
+                        ? 'Đã tạo và đồng bộ điểm bán lên hệ thống thành công!'
                         : 'Đã lưu trên máy! Điểm bán sẽ tự động đồng bộ khi có mạng.',
                   ),
                 ),
               ],
             ),
-            backgroundColor: isOnline ? AppColors.primary : const Color(0xFFD97706),
+            backgroundColor: !hasPending ? AppColors.primary : const Color(0xFFD97706),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -679,15 +734,15 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             );
           }
 
-          // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế
+          // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
           if (!fields.any((f) => f.code == 'photo_file_id' || f.code == 'photo')) {
             fields.add(
               const DynamicFormField(
                 code: 'photo_file_id',
-                label: 'Ảnh điểm bán',
+                label: 'Ảnh điểm bán (Bắt buộc)',
                 type: DynamicFormFieldType.photo,
                 maxPhotos: 10,
-                isRequired: false,
+                isRequired: true,
                 helperText: 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
                 section: 'Hình ảnh điểm bán',
               ),
@@ -697,9 +752,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             if (photoIdx != -1) {
               final existing = fields[photoIdx];
               fields[photoIdx] = existing.copyWith(
+                isRequired: true,
                 type: DynamicFormFieldType.photo,
                 maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
-                label: existing.label.isEmpty ? 'Ảnh điểm bán' : existing.label,
+                label: existing.label.isEmpty ? 'Ảnh điểm bán (Bắt buộc)' : existing.label,
                 helperText: existing.helperText ?? 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
                 section: existing.section == null || existing.section!.isEmpty
                     ? 'Hình ảnh điểm bán'

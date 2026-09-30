@@ -342,7 +342,7 @@ class CustomerCard extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            visitedTime ?? '08:30 AM',
+            visitedTime ?? '08:30 - 08:45',
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 11,
@@ -544,6 +544,35 @@ class CustomerCard extends StatelessWidget {
                                     'Chờ đồng bộ',
                                     style: AppTypography.labelSmall(
                                       color: isDark ? _pendingTextDark : _pendingTextLight,
+                                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (effectiveSyncStatus == 'error') ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0xFFEF4444),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.error_outline_rounded,
+                                    size: 11,
+                                    color: Color(0xFFDC2626),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Lỗi đồng bộ (4xx)',
+                                    style: AppTypography.labelSmall(
+                                      color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
                                     ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
                                   ),
                                 ],

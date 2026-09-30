@@ -106,6 +106,27 @@ class RouteDealerTimeline extends ConsumerWidget {
     DealerEntity dealer,
     double? distance,
   ) async {
+    // 0. Nếu điểm bán đã hoàn thành viếng thăm hôm nay (§3 Luật 2)
+    if (dealer.status == DealerVisitStatus.completed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.'),
+          backgroundColor: Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Nếu điểm bán đang có phiên viếng thăm mở (§3 Luật 3) -> Vào tiếp tục ngay
+    if (dealer.status == DealerVisitStatus.inProgress) {
+      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
+      if (context.mounted) {
+        context.push('/check-in', extra: dealer);
+      }
+      return;
+    }
+
     // 1. Kiểm tra nhanh quyền vị trí & trạng thái GPS từ RAM (0ms)
     final locState = ref.read(locationProvider);
     if (!locState.isReady) {
@@ -114,66 +135,56 @@ class RouteDealerTimeline extends ConsumerWidget {
       return;
     }
 
-    // 2. Tính khoảng cách ngay lập tức (< 1ms) từ dữ liệu đã có sẵn
-    double actualDistance;
-    if (distance != null) {
-      actualDistance = distance;
-    } else if (dealer.lat == null || dealer.lng == null) {
-      // Điểm bán chưa có tọa độ GPS -> Không gọi GPS vô ích, hiện cảnh báo khoảng cách ngay
-      actualDistance = 850;
-    } else {
-      final livePoint = ref.read(currentPointProvider).value;
-      if (livePoint != null) {
-        actualDistance = Geolocator.distanceBetween(
-          livePoint.lat,
-          livePoint.lng,
-          dealer.lat!,
-          dealer.lng!,
-        );
+    // 2. Tính khoảng cách (nếu điểm bán có toạ độ GPS)
+    // Theo đặc tả §3: Điểm bán không có toạ độ trong hồ sơ -> Luật 4 luôn cho qua
+    if (dealer.lat != null && dealer.lng != null) {
+      double actualDistance;
+      if (distance != null) {
+        actualDistance = distance;
       } else {
-        final cachedPos = LocationService.currentCachedPosition;
-        if (cachedPos != null) {
+        final livePoint = ref.read(currentPointProvider).value;
+        if (livePoint != null) {
           actualDistance = Geolocator.distanceBetween(
-            cachedPos.latitude,
-            cachedPos.longitude,
+            livePoint.lat,
+            livePoint.lng,
             dealer.lat!,
             dealer.lng!,
           );
         } else {
-          final lastKnown = await Geolocator.getLastKnownPosition();
-          if (lastKnown != null) {
+          final cachedPos = LocationService.currentCachedPosition;
+          if (cachedPos != null) {
             actualDistance = Geolocator.distanceBetween(
-              lastKnown.latitude,
-              lastKnown.longitude,
+              cachedPos.latitude,
+              cachedPos.longitude,
               dealer.lat!,
               dealer.lng!,
             );
           } else {
-            actualDistance = 850;
+            actualDistance = 0;
           }
         }
       }
-    }
 
-    // 3. Nếu khoảng cách > 100m -> Hiển thị popup cảnh báo tức thì (<5ms)
-    if (actualDistance > 100) {
-      if (context.mounted) {
-        showCheckinDistanceWarningDialog(
-          context,
-          dealerName: dealer.name,
-          distanceMeters: actualDistance,
-          lat: dealer.lat,
-          lng: dealer.lng,
-          address: dealer.address,
-        );
+      // Nếu khoảng cách > 100m -> Hiển thị popup cảnh báo
+      if (actualDistance > 100) {
+        if (context.mounted) {
+          showCheckinDistanceWarningDialog(
+            context,
+            dealerName: dealer.name,
+            distanceMeters: actualDistance,
+            lat: dealer.lat,
+            lng: dealer.lng,
+            address: dealer.address,
+          );
+        }
+        return;
       }
-      return;
     }
 
-    // 4. Hợp lệ (<= 100m) -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
+    // 3. Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
-      context.push('/check-in');
+      context.push('/check-in', extra: dealer);
     }
   }
 }

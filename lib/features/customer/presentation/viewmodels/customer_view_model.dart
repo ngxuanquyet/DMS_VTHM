@@ -215,6 +215,7 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
         );
       }).toList();
 
+      if (!mounted) return;
       state = state.copyWith(
         allCustomers: resolvedCustomers,
         assignedRoutes: assignedRouteNames,
@@ -223,6 +224,7 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
         isLoading: false,
       );
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Không thể tải danh sách điểm bán: ${e.toString()}',

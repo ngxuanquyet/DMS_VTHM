@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/home_state.dart';
@@ -25,6 +28,19 @@ class HomeScreen extends ConsumerWidget {
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    ref.listen<HomeState>(homeViewModelProvider, (prev, next) {
+      if (next.status == HomeStatus.error &&
+          next.errorMessage != null &&
+          next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải trang chủ',
+          message: next.errorMessage!,
+          onRetry: () => homeVM.loadDashboard(isRefresh: true),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: const VthmTopAppBar(),
@@ -34,21 +50,51 @@ class HomeScreen extends ConsumerWidget {
             )
           : homeState.status == HomeStatus.error && homeState.dashboard == null
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-                      const SizedBox(height: 12),
-                      Text(homeState.errorMessage ?? strings.error),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => homeVM.loadDashboard(),
-                        child: Text(strings.retry),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline_rounded, size: 48, color: AppColors.error),
+                        const SizedBox(height: 12),
+                        Text(
+                          homeState.errorMessage ?? strings.error,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium(
+                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () => homeVM.loadDashboard(),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: Text(strings.retry),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 )
-              : RefreshIndicator(
+              : homeState.dashboard == null
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 80.0),
+                          child: AppEmptyState(
+                            icon: Icons.dashboard_outlined,
+                            title: 'Chưa có dữ liệu trang chủ',
+                            description: 'Không tìm thấy thông tin tổng hợp cho tài khoản của bạn.',
+                            actionText: 'Tải lại dữ liệu',
+                            onAction: () => homeVM.loadDashboard(isRefresh: true),
+                          ),
+                        ),
+                      ],
+                    )
+                  : RefreshIndicator(
                   color: AppColors.primaryContainer,
                   onRefresh: () => homeVM.loadDashboard(isRefresh: true),
                   child: SingleChildScrollView(

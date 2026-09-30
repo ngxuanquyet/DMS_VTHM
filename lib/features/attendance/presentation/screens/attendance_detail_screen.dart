@@ -9,6 +9,8 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/attendance_state.dart';
@@ -32,6 +34,17 @@ class AttendanceDetailScreen extends ConsumerWidget {
     final selectedWorkplace = ref.watch(selectedWorkplaceProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    ref.listen<String?>(attendanceViewModelProvider.select((s) => s.errorMessage), (prev, next) {
+      if (next != null && next != prev) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi chấm công',
+          message: next,
+          onRetry: () => vm.loadAttendance(),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: VthmTopAppBar(
@@ -44,7 +57,42 @@ class AttendanceDetailScreen extends ConsumerWidget {
             )
           : detail == null
               ? Center(
-                  child: Text(errorMessage ?? strings.error),
+                  child: status == AttendanceStatus.error
+                      ? Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.error_outline_rounded,
+                                  size: 48, color: AppColors.error),
+                              const SizedBox(height: 12),
+                              Text(
+                                errorMessage ?? strings.error,
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodyMedium(
+                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () => vm.loadAttendance(),
+                                icon: const Icon(Icons.refresh_rounded, size: 18),
+                                label: Text(strings.retry),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : AppEmptyState(
+                          icon: Icons.timer_off_outlined,
+                          title: 'Chưa có dữ liệu chấm công',
+                          description: 'Không tìm thấy dữ liệu ca làm việc hiện tại.',
+                          actionText: 'Tải lại',
+                          onAction: () => vm.loadAttendance(),
+                        ),
                 )
               : SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(

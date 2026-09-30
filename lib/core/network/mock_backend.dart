@@ -19,7 +19,9 @@ class MockBackendInterceptor extends Interceptor {
         path.contains('/dms/routes/mine') ||
         path.contains('/dms/routes/customers') ||
         path.contains('/dms/forms/available') ||
-        path.contains('/dms/form-submissions')) {
+        path.contains('/dms/form-submissions') ||
+        path.contains('/dms/visits') ||
+        path.contains('/dms/visit-photos')) {
       return handler.next(options);
     }
 
@@ -156,7 +158,7 @@ class MockBackendInterceptor extends Interceptor {
                 'address': 'Số 12 Quang Trung, Vĩnh Yên',
                 'status': 'completed', // completed | in_progress | pending
                 'statusLabel': 'Đã ghé',
-                'visitedTime': '08:30 AM',
+                'visitedTime': '08:30 - 08:45',
                 'isVip': false,
               },
               {
@@ -166,7 +168,7 @@ class MockBackendInterceptor extends Interceptor {
                 'address': 'Ngã 4 Định Trung, Vĩnh Yên',
                 'status': 'completed',
                 'statusLabel': 'Đã ghé',
-                'visitedTime': '10:15 AM',
+                'visitedTime': '10:15 - 10:35',
                 'isVip': true,
               },
               {

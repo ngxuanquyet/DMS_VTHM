@@ -1,3 +1,5 @@
+import '../../../visit/domain/entities/visit_entity.dart';
+
 enum DealerVisitStatus { completed, inProgress, pending }
 
 class DealerEntity {
@@ -16,6 +18,7 @@ class DealerEntity {
   final double? lat;
   final double? lng;
   final dynamic customer;
+  final VisitEntity? visit;
 
   const DealerEntity({
     required this.id,
@@ -33,6 +36,7 @@ class DealerEntity {
     this.lat,
     this.lng,
     this.customer,
+    this.visit,
   });
 }
 

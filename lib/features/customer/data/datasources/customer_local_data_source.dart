@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/string_utils.dart';
+import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../utils/customer_payload_helper.dart';
 
 class CustomerLocalDataSource {
   final AppDatabase _db;
@@ -35,10 +37,8 @@ class CustomerLocalDataSource {
     final wardName = data['ward_name']?.toString().trim();
     final email = data['email']?.toString().trim();
     final birthday = data['birthday']?.toString().trim();
-    final route = (data['route'] ?? 'Tuyến mặc định').toString().trim();
     final type = (data['type'] ?? data['customer_type_name'] ?? data['customer_type_code'] ?? '').toString().trim();
 
-    // FK danh mục theo spec
     int regionId = 1;
     if (data['region_id'] != null) {
       regionId = int.tryParse(data['region_id'].toString()) ?? 1;
@@ -47,8 +47,6 @@ class CustomerLocalDataSource {
     int? customerGroupId = data['customer_group_id'] != null ? int.tryParse(data['customer_group_id'].toString()) : null;
     int? channelId = data['channel_id'] != null ? int.tryParse(data['channel_id'].toString()) : null;
     int? geofenceRadiusM = data['geofence_radius_m'] != null ? int.tryParse(data['geofence_radius_m'].toString()) : null;
-    int? photoFileId = data['photo_file_id'] != null ? int.tryParse(data['photo_file_id'].toString()) : null;
-    final photoToken = data['photo_token']?.toString().trim();
 
     // route_ids bắt buộc với nhân viên thị trường (spec 22/09/2026)
     List<int> routeIds = [];
@@ -65,6 +63,8 @@ class CustomerLocalDataSource {
       routeIds = [1];
     }
 
+    final route = (data['route'] ?? (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : 'Tuyến 1')).toString().trim();
+
     double? lat;
     if (data['lat'] != null) {
       lat = double.tryParse(data['lat'].toString());
@@ -74,95 +74,24 @@ class CustomerLocalDataSource {
       lng = double.tryParse(data['lng'].toString());
     }
 
-    // Tách ô động vào object 'data' theo đúng spec:
-    // 🔴 Mọi ô động đi trong đúng một khoá data
-    final dynamicData = <String, dynamic>{};
-    if (data['data'] is Map<String, dynamic>) {
-      dynamicData.addAll(data['data'] as Map<String, dynamic>);
-    }
-    if (data['dynamic_fields'] is Map<String, dynamic>) {
-      dynamicData.addAll(data['dynamic_fields'] as Map<String, dynamic>);
-    }
+    // 🔴 Sử dụng CustomerPayloadHelper đóng gói payload chuẩn theo hợp đồng 30/09/2026:
+    // - Chỉ đúng 25 khoá gốc được phép
+    // - Không client_boot_id, queued_seconds
+    // - Toàn bộ ô động (mw_*) gom vào 'data'
+    // - lat/lng đi thành cặp
+    // - route_ids là List<int>
+    final payloadMap = CustomerPayloadHelper.buildCustomerApiPayload(
+      sourceData: data,
+      clientUuid: clientUuid,
+      isOfflineSync: true,
+    );
 
-    const standardKeys = {
-      'name', 'region_id', 'route_ids', 'route_id', 'customer_type_id', 'customer_group_id', 'channel_id',
-      'status', 'address', 'delivery_address', 'province_name', 'ward_name',
-      'contact_name', 'contact_title', 'phone', 'email', 'birthday',
-      'lat', 'lng', 'geofence_radius_m', 'photo_file_id', 'photo_token', 'photo_tokens', 'client_uuid',
-      'is_offline_sync', 'data',
-      // Internal client keys & helper labels (tuyệt đối không đưa vào dynamicData)
-      'code', 'id', 'route', 'type', 'contact_person', 'contactPerson', 'dynamic_fields',
-      'customer_type_name', 'customer_type_code', 'channel_name', 'channel_code',
-      'region_name', 'region_code', 'route_name', 'route_code',
-      'photo', 'photos', 'photo_urls', 'photo_url',
-    };
+    final dynamicData = payloadMap['data'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(payloadMap['data'] as Map<String, dynamic>)
+        : <String, dynamic>{};
 
-    data.forEach((key, val) {
-      if (!standardKeys.contains(key) && val != null) {
-        dynamicData[key] = val;
-      }
-    });
-
-    // 🔴 Đóng gói payload gửi lên server theo API spec 22/09/2026 & 23/09/2026:
-    // - KHÔNG gửi code (server tự sinh theo region_id)
-    // - KHÔNG gửi status (server mặc định 'active', gửi lên bị 422)
-    // - route_ids là mảng số nguyên [int]
-    // - photo_tokens là mảng token ảnh ở cấp cao nhất (tối đa max_files = 10 theo spec 23/09)
-    // - photo_token là tấm đầu tiên để tương thích ngược
-    final payloadMap = <String, dynamic>{
-      'name': name,
-      'region_id': regionId,
-      'route_ids': routeIds,
-      'client_uuid': clientUuid,
-      'is_offline_sync': true,
-    };
-
-    if (customerTypeId != null) payloadMap['customer_type_id'] = customerTypeId;
-    if (customerGroupId != null) payloadMap['customer_group_id'] = customerGroupId;
-    if (channelId != null) payloadMap['channel_id'] = channelId;
-    if (address.isNotEmpty) payloadMap['address'] = address;
-    if (deliveryAddress != null && deliveryAddress.isNotEmpty) payloadMap['delivery_address'] = deliveryAddress;
-    if (provinceName != null && provinceName.isNotEmpty) payloadMap['province_name'] = provinceName;
-    if (wardName != null && wardName.isNotEmpty) payloadMap['ward_name'] = wardName;
-    if (contactName.isNotEmpty) payloadMap['contact_name'] = contactName;
-    if (contactTitle != null && contactTitle.isNotEmpty) payloadMap['contact_title'] = contactTitle;
-    if (phone.isNotEmpty) payloadMap['phone'] = phone;
-    if (email != null && email.isNotEmpty) payloadMap['email'] = email;
-    if (birthday != null && birthday.isNotEmpty) payloadMap['birthday'] = birthday;
-    if (lat != null && lng != null) {
-      payloadMap['lat'] = lat;
-      payloadMap['lng'] = lng;
-    }
-    if (geofenceRadiusM != null) payloadMap['geofence_radius_m'] = geofenceRadiusM;
-
-    // Xử lý bộ ảnh theo chuẩn API 23/09/2026 (photo_tokens mảng chuỗi ở gốc body)
-    List<String> photoTokens = [];
-    if (data['photo_tokens'] is List) {
-      photoTokens = (data['photo_tokens'] as List)
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-    } else if (data['photo_file_id'] is List) {
-      photoTokens = (data['photo_file_id'] as List)
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-    }
-
-    if (photoTokens.isNotEmpty) {
-      payloadMap['photo_tokens'] = photoTokens;
-      payloadMap['photo_token'] = photoTokens.first;
-    } else if (photoToken != null && photoToken.isNotEmpty) {
-      payloadMap['photo_tokens'] = [photoToken];
-      payloadMap['photo_token'] = photoToken;
-    } else if (data['photo_file_id'] is String && data['photo_file_id'].toString().trim().isNotEmpty) {
-      final token = data['photo_file_id'].toString().trim();
-      payloadMap['photo_tokens'] = [token];
-      payloadMap['photo_token'] = token;
-    } else if (photoFileId != null) {
-      payloadMap['photo_file_id'] = photoFileId;
-    }
-    if (dynamicData.isNotEmpty) payloadMap['data'] = dynamicData;
+    final photoTokens = (payloadMap['photo_tokens'] as List<String>?) ?? [];
+    final photoToken = payloadMap['photo_token']?.toString();
 
     // Mã hiển thị tạm thời trên UI/SQLite trước khi server cấp mã thật
     final tempCode = 'PENDING_${clientUuid.substring(0, 6).toUpperCase()}';
@@ -180,17 +109,23 @@ class CustomerLocalDataSource {
         type: Value(type),
         route: Value(route),
         address: Value(address),
+        provinceName: Value(provinceName),
+        wardName: Value(wardName),
         contactPerson: Value(contactName),
         contactTitle: Value(contactTitle),
         phone: Value(phone),
         email: Value(email),
         lat: Value(lat),
         lng: Value(lng),
+        geofenceRadiusM: Value(geofenceRadiusM),
         status: const Value('active'),
         approvalStatus: const Value('pending'), // §5.4
         syncStatus: const Value('pending'),
         dynamicFieldsJson: Value(jsonEncode({
           ...dynamicData,
+          if (deliveryAddress != null && deliveryAddress.isNotEmpty) 'delivery_address': deliveryAddress,
+          if (birthday != null && birthday.isNotEmpty) 'birthday': birthday,
+          if (customerGroupId != null) 'customer_group_id': customerGroupId,
           'routes': [route],
           'route_ids': routeIds,
           if (photoTokens.isNotEmpty) 'photo_tokens': photoTokens,
@@ -214,8 +149,8 @@ class CustomerLocalDataSource {
         attempts: const Value(0),
         nextAttemptAt: Value(nowMs),
         createdAt: Value(nowMs),
-        createdElapsed: Value(nowMs), // monotonic ms
-        bootId: const Value('session_active'),
+        createdElapsed: Value(SystemClock.nowMonotonicMs), // monotonic ms (§9.1)
+        bootId: Value(SystemClock.bootId),
       ),
     );
 

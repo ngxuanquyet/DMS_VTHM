@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/market_form_entity.dart';
 import '../../domain/repositories/forms_repository.dart';
 import '../models/market_form_model.dart';
@@ -92,8 +93,8 @@ class FormsRepositoryImpl implements FormsRepository {
         payload: Value(jsonEncode(offlinePayload)),
         state: const Value('pending'),
         createdAt: Value(nowMs),
-        createdElapsed: Value(nowMs),
-        bootId: const Value('dms_session'),
+        createdElapsed: Value(SystemClock.nowMonotonicMs),
+        bootId: Value(SystemClock.bootId),
         attempts: const Value(0),
       ),
     );

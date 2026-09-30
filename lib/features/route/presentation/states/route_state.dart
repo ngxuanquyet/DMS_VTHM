@@ -1,5 +1,8 @@
 import '../../domain/entities/route_entity.dart';
 import '../../../forms/domain/entities/market_form_entity.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../visit/domain/entities/visit_photo_entity.dart';
+import '../../../visit/domain/entities/visit_requirements_entity.dart';
 
 enum RouteStatus { initial, loading, loaded, error }
 
@@ -15,6 +18,8 @@ class RouteState {
   final bool isSortedByDistance;
   final double? userLat;
   final double? userLng;
+  final VisitEntity? activeVisit;
+  final List<VisitEntity> todayVisits;
 
   const RouteState({
     this.status = RouteStatus.initial,
@@ -28,6 +33,8 @@ class RouteState {
     this.isSortedByDistance = false,
     this.userLat,
     this.userLng,
+    this.activeVisit,
+    this.todayVisits = const [],
   });
 
   RouteState copyWith({
@@ -42,6 +49,9 @@ class RouteState {
     bool? isSortedByDistance,
     double? userLat,
     double? userLng,
+    VisitEntity? activeVisit,
+    bool clearActiveVisit = false,
+    List<VisitEntity>? todayVisits,
   }) {
     return RouteState(
       status: status ?? this.status,
@@ -55,6 +65,8 @@ class RouteState {
       isSortedByDistance: isSortedByDistance ?? this.isSortedByDistance,
       userLat: userLat ?? this.userLat,
       userLng: userLng ?? this.userLng,
+      activeVisit: clearActiveVisit ? null : (activeVisit ?? this.activeVisit),
+      todayVisits: todayVisits ?? this.todayVisits,
     );
   }
 }
@@ -71,6 +83,14 @@ class CheckInState {
   final String checkinTime;
   final int visitId;
   final dynamic customer;
+  final VisitEntity? visitEntity;
+  final VisitRequirementsEntity? requirements;
+  final List<VisitPhotoEntity> photos;
+  final bool isUploadingPhoto;
+  final bool isDeletingPhoto;
+  final bool isRefreshingRequirements;
+  final String visitResult; // 'visited' | 'closed'
+  final String closedNote;
 
   const CheckInState({
     this.status = CheckInStatus.initial,
@@ -80,8 +100,16 @@ class CheckInState {
     this.errorMessage,
     this.liveVisitDuration = '00:00:00',
     this.checkinTime = '--:--:--',
-    this.visitId = 41066,
+    this.visitId = 0,
     this.customer,
+    this.visitEntity,
+    this.requirements,
+    this.photos = const [],
+    this.isUploadingPhoto = false,
+    this.isDeletingPhoto = false,
+    this.isRefreshingRequirements = false,
+    this.visitResult = 'visited',
+    this.closedNote = '',
   });
 
   /// Danh sách các biểu mẫu khảo sát bắt buộc chưa hoàn thành
@@ -93,6 +121,12 @@ class CheckInState {
 
   bool get hasUnsubmittedRequiredSurveys => unsubmittedRequiredSurveys.isNotEmpty;
 
+  /// Đã thỏa mãn tất cả điều kiện theo requirements API (§6)
+  bool get canCheckout => requirements?.satisfied == true;
+
+  /// Danh sách câu việc cần làm từ server (§6 blockers)
+  List<String> get blockers => requirements?.blockers ?? const [];
+
   CheckInState copyWith({
     CheckInStatus? status,
     DealerCheckinDataEntity? checkinData,
@@ -103,6 +137,14 @@ class CheckInState {
     String? checkinTime,
     int? visitId,
     dynamic customer,
+    VisitEntity? visitEntity,
+    VisitRequirementsEntity? requirements,
+    List<VisitPhotoEntity>? photos,
+    bool? isUploadingPhoto,
+    bool? isDeletingPhoto,
+    bool? isRefreshingRequirements,
+    String? visitResult,
+    String? closedNote,
   }) {
     return CheckInState(
       status: status ?? this.status,
@@ -114,6 +156,14 @@ class CheckInState {
       checkinTime: checkinTime ?? this.checkinTime,
       visitId: visitId ?? this.visitId,
       customer: customer ?? this.customer,
+      visitEntity: visitEntity ?? this.visitEntity,
+      requirements: requirements ?? this.requirements,
+      photos: photos ?? this.photos,
+      isUploadingPhoto: isUploadingPhoto ?? this.isUploadingPhoto,
+      isDeletingPhoto: isDeletingPhoto ?? this.isDeletingPhoto,
+      isRefreshingRequirements: isRefreshingRequirements ?? this.isRefreshingRequirements,
+      visitResult: visitResult ?? this.visitResult,
+      closedNote: closedNote ?? this.closedNote,
     );
   }
 }

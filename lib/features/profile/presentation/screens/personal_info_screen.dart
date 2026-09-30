@@ -8,6 +8,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../domain/entities/user_profile_detail_entity.dart';
 import '../../domain/entities/user_relation_entity.dart';
@@ -23,6 +25,19 @@ class PersonalInfoScreen extends ConsumerWidget {
     final viewModel = ref.read(personalInfoViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    ref.listen<PersonalInfoState>(personalInfoViewModelProvider, (prev, next) {
+      if (next.status == PersonalInfoStatus.error &&
+          next.errorMessage != null &&
+          next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải hồ sơ cá nhân',
+          message: next.errorMessage!,
+          onRetry: () => viewModel.loadData(isRefresh: true),
+        );
+      }
+    });
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
@@ -108,7 +123,16 @@ class PersonalInfoScreen extends ConsumerWidget {
 
     final profile = state.profileDetail;
     if (profile == null) {
-      return const SizedBox.shrink();
+      return Center(
+        child: AppEmptyState(
+          icon: Icons.person_off_outlined,
+          title: 'Chưa có thông tin nhân viên',
+          description:
+              'Không tìm thấy hồ sơ cá nhân hoặc dữ liệu chưa được cập nhật từ máy chủ.',
+          actionText: 'Tải lại dữ liệu',
+          onAction: () => viewModel.loadData(isRefresh: true),
+        ),
+      );
     }
 
     return SingleChildScrollView(

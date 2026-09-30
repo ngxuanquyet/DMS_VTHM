@@ -16,6 +16,7 @@ import '../../features/profile/presentation/screens/dynamic_form_demo_screen.dar
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/voice_to_text_screen.dart';
+import '../../features/route/domain/entities/route_entity.dart';
 import '../../features/route/presentation/screens/check_in_screen.dart';
 import '../../features/route/presentation/screens/route_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
@@ -144,7 +145,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) => ZoomPageTransition(
           key: state.pageKey,
-          child: const CheckInScreen(),
+          child: CheckInScreen(
+            dealer: state.extra is DealerEntity ? state.extra as DealerEntity : null,
+          ),
         ),
       ),
       GoRoute(

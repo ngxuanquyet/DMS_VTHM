@@ -7,6 +7,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
@@ -88,12 +89,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Không thể tải lại chi tiết: ${e.toString()}'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi làm mới chi tiết điểm bán',
+          message: e.toString().replaceAll('AppException: ', ''),
+          onRetry: _handleRefresh,
         );
       }
     }
@@ -226,6 +226,50 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 4xx Error Banner if unrecoverable sync failure
+                    if (_customer.syncStatus == 'error') ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 20),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Lỗi đồng bộ dữ liệu vĩnh viễn (4xx)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                      color: Color(0xFF991B1B),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Dữ liệu điểm bán này bị máy chủ từ chối tiếp nhận (lỗi 4xx). Hệ thống đã dừng tự động gửi lại để tránh lỗi lặp lại. Vui lòng bấm Sửa để chỉnh lại thông tin điểm bán.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFFB91C1C),
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     // 2. Identity & Summary Card
                     _buildIdentityCard(isDark),
                     const SizedBox(height: 16),
@@ -512,6 +556,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   Widget _buildIdentityCard(bool isDark) {
     final isPending = _customer.syncStatus == 'pending';
+    final isError = _customer.syncStatus == 'error';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -585,7 +630,31 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               const SizedBox(width: 8),
 
               // Status Chip
-              if (isPending)
+              if (isError)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFEF4444)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline_rounded, size: 13, color: Color(0xFFDC2626)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Lỗi đồng bộ (4xx)',
+                        style: TextStyle(
+                          color: Color(0xFFB91C1C),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (isPending)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(

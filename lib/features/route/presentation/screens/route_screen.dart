@@ -10,12 +10,16 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/route_circular_menu.dart';
 import '../widgets/route_dealer_timeline.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
+import '../../domain/entities/route_entity.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
@@ -297,6 +301,19 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pendingOfflineCount = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
 
+    ref.listen<RouteState>(routeViewModelProvider, (prev, next) {
+      if (next.status == RouteStatus.error &&
+          next.errorMessage != null &&
+          next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải lộ trình',
+          message: next.errorMessage!,
+          onRetry: () => vm.loadRouteDetail(isRefresh: true),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: const VthmTopAppBar(),
@@ -492,15 +509,49 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   },
                 ),
 
+                // Active Hanging Visit Banner (§3 Luật 3)
+                if (state.activeVisit != null) ...[
+                  _buildActiveVisitBanner(context, state.activeVisit!, state.routeDetail?.dealers),
+                ],
+
                 // Main Content List
                 Expanded(
                   child: state.status == RouteStatus.loading && state.routeDetail == null
                       ? const Center(
                           child: AppLoading(size: 220),
                         )
-                      : state.routeDetail == null
+                      : state.status == RouteStatus.error && state.routeDetail == null
                           ? Center(
-                              child: Text(state.errorMessage ?? strings.error),
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error_outline_rounded,
+                                        size: 48, color: AppColors.error),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      state.errorMessage ?? strings.error,
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodyMedium(
+                                        color: isDark
+                                            ? AppColors.darkOnSurface
+                                            : AppColors.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: () => vm.loadRouteDetail(isRefresh: true),
+                                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                                      label: Text(strings.retry),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primary,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             )
                           : RefreshIndicator(
                               color: AppColors.primaryContainer,
@@ -510,21 +561,53 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                   _requestLocationPermission(),
                                 ]);
                               },
-                              child: SingleChildScrollView(
-                                controller: _scrollController,
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.marginMobile,
-                                  vertical: AppSpacing.stackMd,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    RouteDealerTimeline(dealers: state.routeDetail!.dealers),
-                                    const SizedBox(height: 160),
-                                  ],
-                                ),
-                              ),
+                              child: state.routeDetail == null || state.routeDetail!.dealers.isEmpty
+                                  ? ListView(
+                                      controller: _scrollController,
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 40.0),
+                                          child: state.searchQuery.trim().isNotEmpty
+                                              ? AppEmptyState(
+                                                  icon: Icons.search_off_rounded,
+                                                  title: 'Không tìm thấy điểm bán',
+                                                  description:
+                                                      'Không có điểm bán nào trên tuyến khớp với từ khóa "${state.searchQuery}".',
+                                                  actionText: 'Xóa tìm kiếm',
+                                                  onAction: () {
+                                                    _searchController.clear();
+                                                    vm.setSearchQuery('');
+                                                  },
+                                                )
+                                              : AppEmptyState(
+                                                  icon: Icons.alt_route_rounded,
+                                                  title: 'Chưa có lộ trình điểm bán',
+                                                  description:
+                                                      'Hiện tại chưa có điểm bán nào trên tuyến được giao trong ngày hôm nay. Hãy bấm làm mới để đồng bộ dữ liệu tuyến.',
+                                                  actionText: 'Làm mới lộ trình',
+                                                  onAction: () => vm.loadRouteDetail(isRefresh: true),
+                                                  secondaryActionText: 'Thêm điểm bán',
+                                                  onSecondaryAction: _handleAddCustomer,
+                                                ),
+                                        ),
+                                      ],
+                                    )
+                                  : SingleChildScrollView(
+                                      controller: _scrollController,
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.marginMobile,
+                                        vertical: AppSpacing.stackMd,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          RouteDealerTimeline(dealers: state.routeDetail!.dealers),
+                                          const SizedBox(height: 160),
+                                        ],
+                                      ),
+                                    ),
                             ),
                 ),
               ],
@@ -543,6 +626,96 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               pendingOfflineCount: pendingOfflineCount,
               isSyncing: state.status == RouteStatus.loading,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveVisitBanner(
+    BuildContext context,
+    VisitEntity visit,
+    List<DealerEntity>? dealers,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dealer = dealers?.where((d) => d.id == visit.customerId.toString() || d.visit?.id == visit.id).firstOrNull;
+    final customerName = visit.customerName.isNotEmpty
+        ? visit.customerName
+        : (dealer?.name ?? 'Điểm bán');
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0284C7),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.storefront_rounded, size: 16, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ĐANG CÓ LƯỢT VIẾNG THĂM CHƯA ĐÓNG',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0284C7),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  customerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: const Size(0, 32),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () {
+              if (dealer != null) {
+                ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
+                context.push('/check-in', extra: dealer);
+              } else {
+                final fallbackDealer = DealerEntity(
+                  id: visit.customerId.toString(),
+                  order: '01',
+                  name: customerName,
+                  address: '',
+                  status: DealerVisitStatus.inProgress,
+                  statusLabel: 'Đang ghé',
+                  isVip: false,
+                  visit: visit,
+                );
+                ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(fallbackDealer);
+                context.push('/check-in', extra: fallbackDealer);
+              }
+            },
+            child: const Text('Vào lượt', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

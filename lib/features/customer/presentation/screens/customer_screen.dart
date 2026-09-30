@@ -11,6 +11,8 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -163,37 +165,67 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       );
     }
 
-    await ref.read(syncServiceProvider).syncQueue();
+    final syncResult = await ref.read(syncServiceProvider).syncQueue(force: true);
+    await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
     final remaining = await db.countPendingSync();
+    final deadCount = await db.countDeadSync();
 
     if (mounted) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(
-                remaining == 0
-                    ? Icons.check_circle_rounded
-                    : Icons.warning_amber_rounded,
-                color: Colors.white,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  remaining == 0
-                      ? 'Đã tải lên thành công toàn bộ dữ liệu!'
-                      : 'Đã hoàn tất gửi dữ liệu, còn $remaining mục đang chờ xử lý.',
+
+      if (syncResult.hasDeadErrors || deadCount > 0) {
+        final deadItems = await db.getDeadQueueEntries();
+        if (!mounted) return;
+        final msgs = deadItems.map((e) => e.lastError ?? 'Lỗi không xác định (4xx)').take(3).join('\n• ');
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
+          message: 'Máy chủ từ chối $deadCount mục do lỗi dữ liệu hoặc thông tin không hợp lệ (4xx):\n\n• $msgs\n\nCác mục này sẽ KHÔNG được gửi lại để tránh lỗi lặp lại. Vui lòng kiểm tra hoặc chỉnh sửa lại thông tin điểm bán.',
+          dismissText: 'Đã hiểu',
+        );
+      } else if (remaining == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: Colors.white,
                 ),
-              ),
-            ],
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Đã tải lên thành công toàn bộ dữ liệu!'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.primary,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
           ),
-          backgroundColor:
-              remaining == 0 ? AppColors.primary : const Color(0xFFD97706),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.wifi_off_rounded,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Mất mạng hoặc lỗi máy chủ (500), còn $remaining mục sẽ tự động thử lại khi có kết nối.',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFD97706),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -325,11 +357,21 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
 
     try {
       if (isOnline && initialPending > 0) {
-        await ref.read(syncServiceProvider).syncQueue();
+        final syncResult = await ref.read(syncServiceProvider).syncQueue(force: true);
+        if (syncResult.hasDeadErrors && mounted) {
+          final msgs = syncResult.deadErrors.map((e) => e.message).take(3).join('\n• ');
+          AppErrorDialog.show(
+            context,
+            title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
+            message: 'Máy chủ từ chối ${syncResult.deadErrors.length} mục do dữ liệu không hợp lệ (4xx):\n\n• $msgs\n\nCác mục này sẽ KHÔNG được gửi lại để tránh lỗi lặp lại.',
+            dismissText: 'Đã hiểu',
+          );
+        }
       }
       await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
 
       final remaining = await db.countPendingSync();
+      final deadCount = await db.countDeadSync();
       final totalCustomers = ref.read(customerViewModelProvider).totalCount;
 
       if (mounted) {
@@ -339,16 +381,22 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
             content: Row(
               children: [
                 Icon(
-                  isOnline ? Icons.check_circle_rounded : Icons.offline_pin_rounded,
+                  isOnline
+                      ? (deadCount > 0
+                          ? Icons.warning_amber_rounded
+                          : Icons.check_circle_rounded)
+                      : Icons.offline_pin_rounded,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     isOnline
-                        ? (initialPending > 0 && remaining == 0
-                            ? 'Đã gửi $initialPending mục ngoại tuyến và cập nhật $totalCustomers điểm bán!'
-                            : 'Đã đồng bộ $totalCustomers điểm bán từ máy chủ thành công!')
+                        ? (deadCount > 0
+                            ? 'Đã đồng bộ xong! Có $deadCount mục lỗi dữ liệu vĩnh viễn (4xx).'
+                            : (initialPending > 0 && remaining == 0
+                                ? 'Đã gửi $initialPending mục ngoại tuyến và cập nhật $totalCustomers điểm bán!'
+                                : 'Đã đồng bộ $totalCustomers điểm bán từ máy chủ thành công!'))
                         : (initialPending > 0
                             ? 'Đang offline. Có $initialPending mục chờ gửi, đã làm mới $totalCustomers điểm bán trên máy.'
                             : 'Đã tải lại $totalCustomers điểm bán từ bộ nhớ máy.'),
@@ -356,7 +404,9 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                 ),
               ],
             ),
-            backgroundColor: isOnline ? const Color(0xFF10B981) : const Color(0xFFD97706),
+            backgroundColor: isOnline
+                ? (deadCount > 0 ? const Color(0xFFDC2626) : const Color(0xFF10B981))
+                : const Color(0xFFD97706),
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
@@ -401,10 +451,22 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pendingCount = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    final deadCount = ref.watch(deadSyncCountProvider).valueOrNull ?? 0;
     final isFiltered = state.activeFiltersCount > 0 ||
         state.searchQuery.trim().isNotEmpty ||
         state.selectedTab != CustomerFilterTab.all ||
         customerList.length != state.totalCount;
+
+    ref.listen<CustomerState>(customerViewModelProvider, (prev, next) {
+      if (next.errorMessage != null && next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải dữ liệu điểm bán',
+          message: next.errorMessage!,
+          onRetry: () => ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true),
+        );
+      }
+    });
 
     return Scaffold(
       key: _scaffoldKey,
@@ -616,6 +678,67 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
               },
             ),
 
+            // Banner cảnh báo lỗi vĩnh viễn (4xx) không thể tự động retry
+            if (deadCount > 0)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFEF2F2),
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFFFCA5A5), width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, size: 18, color: Color(0xFFDC2626)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Có $deadCount mục lỗi dữ liệu (4xx) không thể gửi.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFB91C1C),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () async {
+                        final db = ref.read(appDatabaseProvider);
+                        final deadEntries = await db.getDeadQueueEntries();
+                        if (!context.mounted) return;
+                        final msgs = deadEntries
+                            .map((e) => e.lastError ?? 'Lỗi không xác định (4xx)')
+                            .take(3)
+                            .join('\n• ');
+                        AppErrorDialog.show(
+                          context,
+                          title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
+                          message:
+                              'Máy chủ từ chối các mục này do dữ liệu không hợp lệ (4xx):\n\n• $msgs\n\nHệ thống đã dừng gửi lại các mục này để tránh lỗi lặp lại. Vui lòng bấm Sửa để chỉnh lại thông tin điểm bán.',
+                          dismissText: 'Đã hiểu',
+                        );
+                      },
+                      child: const Text(
+                        'Xem lỗi',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFDC2626),
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Customer List View / Status Area
             Expanded(
               child: state.isLoading && state.allCustomers.isEmpty
@@ -666,30 +789,31 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                   physics: const AlwaysScrollableScrollPhysics(),
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.only(top: 80.0),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.person_search_rounded,
-                                              size: 56,
-                                              color: isDark
-                                                  ? AppColors.darkOnSurfaceVariant
-                                                  : AppColors.outline,
+                                      padding: const EdgeInsets.only(top: 40.0),
+                                      child: isFiltered
+                                          ? AppEmptyState(
+                                              icon: Icons.search_off_rounded,
+                                              title: 'Không tìm thấy điểm bán phù hợp',
+                                              description: state.searchQuery.trim().isNotEmpty
+                                                  ? 'Không có điểm bán nào khớp với từ khóa "${state.searchQuery}".'
+                                                  : 'Không có điểm bán nào khớp với bộ lọc đang chọn.',
+                                              actionText: 'Đặt lại bộ lọc',
+                                              onAction: () {
+                                                _debounceTimer?.cancel();
+                                                _searchController.clear();
+                                                vm.resetFilters();
+                                              },
+                                            )
+                                          : AppEmptyState(
+                                              icon: Icons.storefront_outlined,
+                                              title: 'Chưa có dữ liệu điểm bán',
+                                              description:
+                                                  'Danh sách điểm bán hiện đang trống hoặc chưa được đồng bộ từ hệ thống máy chủ.',
+                                              actionText: 'Làm mới dữ liệu',
+                                              onAction: () => vm.loadCustomers(isRefresh: true),
+                                              secondaryActionText: 'Thêm điểm bán',
+                                              onSecondaryAction: _handleAddCustomer,
                                             ),
-                                            const SizedBox(height: 12),
-                                            Text(
-                                              'Không tìm thấy điểm bán nào',
-                                              style: AppTypography.titleMedium(
-                                                color: isDark
-                                                    ? AppColors.darkOnSurfaceVariant
-                                                    : AppColors.onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
                                     ),
                                   ],
                                 )

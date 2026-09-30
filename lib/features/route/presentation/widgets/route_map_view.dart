@@ -409,7 +409,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     // 4. Hợp lệ (<= 100m) -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
-      context.push('/check-in');
+      context.push('/check-in', extra: dealer);
     }
   }
 

@@ -70,19 +70,32 @@ class AppDatabase extends _$AppDatabase {
   // SYNC QUEUE OPERATIONS (§3 & §8 SPEC-DONG-BO-OFFLINE)
   // ===========================================================================
 
-  /// Hồi phục các mục 'sending' mồ côi về 'pending' khi app khởi động (§3.3 Luật 5)
-  Future<int> recoverOrphanedSendingEntries() {
-    return (update(syncQueueEntries)..where((tbl) => tbl.state.equals('sending')))
-        .write(const SyncQueueEntriesCompanion(state: Value('pending')));
+  /// Hồi phục các mục 'sending' mồ côi về 'pending' khi khởi động hoặc cưỡng chế đồng bộ (§3.3 Luật 5)
+  /// TUYỆT ĐỐI không hồi phục các mục 'dead' (lỗi 4xx) vì đó là lỗi hỏng vĩnh viễn (§3.2, §3.3 Luật 1).
+  Future<int> recoverOrphanedSendingEntries({bool resetPendingBackoff = false}) {
+    final query = update(syncQueueEntries);
+    if (resetPendingBackoff) {
+      query.where((tbl) => tbl.state.equals('sending') | tbl.state.equals('pending'));
+    } else {
+      query.where((tbl) => tbl.state.equals('sending'));
+    }
+    return query.write(const SyncQueueEntriesCompanion(
+      state: Value('pending'),
+      attempts: Value(0),
+      nextAttemptAt: Value(null),
+    ));
   }
 
-  /// Lấy các mục pending có thể gửi (đã tới hạn nextAttemptAt) theo thứ tự FIFO (§3.3 Luật 1 & 6)
-  Future<List<SyncQueueEntry>> getPendingQueueEntries({int limit = 50}) {
+  /// Lấy các mục pending có thể gửi theo thứ tự FIFO (§3.3 Luật 1 & 6)
+  /// TUYỆT ĐỐI KHÔNG lấy các mục 'dead' (lỗi 4xx là hỏng vĩnh viễn, không retry).
+  /// Nếu [force] = true: lấy tất cả các mục pending/sending mà không cần đợi nextAttemptAt (người dùng bấm đồng bộ thủ công).
+  Future<List<SyncQueueEntry>> getPendingQueueEntries({int limit = 50, bool force = false}) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return (select(syncQueueEntries)
-          ..where((tbl) =>
-              tbl.state.equals('pending') &
-              (tbl.nextAttemptAt.isNull() | tbl.nextAttemptAt.isSmallerOrEqualValue(nowMs)))
+          ..where((tbl) => force
+              ? (tbl.state.equals('pending') | tbl.state.equals('sending'))
+              : (tbl.state.equals('pending') &
+                  (tbl.nextAttemptAt.isNull() | tbl.nextAttemptAt.isSmallerOrEqualValue(nowMs))))
           ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)])
           ..limit(limit))
         .get();
@@ -111,12 +124,13 @@ class AppDatabase extends _$AppDatabase {
     return updated > 0;
   }
 
-  /// Đánh dấu mục bị lỗi vĩnh viễn (403, 422, INVALID) -> chuyển sang 'dead' (§3.2, §3.3 Luật 1)
+  /// Đánh dấu mục bị lỗi vĩnh viễn (4xx, 403, 422, INVALID) -> chuyển sang 'dead' (§3.2, §3.3 Luật 1)
   Future<bool> markDead(int id, String error) async {
     final updated = await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).write(
       SyncQueueEntriesCompanion(
         state: const Value('dead'),
         lastError: Value(error),
+        nextAttemptAt: const Value(null),
       ),
     );
     return updated > 0;
@@ -135,23 +149,67 @@ class AppDatabase extends _$AppDatabase {
     return updated > 0;
   }
 
-  /// Đếm số mục đang chờ đồng bộ
+  /// Đếm số mục đang chờ đồng bộ hoặc đang gửi (KHÔNG bao gồm các mục dead đã hỏng vĩnh viễn)
   Future<int> countPendingSync() async {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('pending') | syncQueueEntries.state.equals('sending'));
+      ..where(syncQueueEntries.state.equals('pending') |
+          syncQueueEntries.state.equals('sending'));
     final result = await query.map((row) => row.read(countExp)).getSingle();
     return result ?? 0;
   }
 
-  /// Stream theo dõi số mục đang chờ đồng bộ theo thời gian thực
+  /// Stream theo dõi số mục đang chờ đồng bộ theo thời gian thực (chỉ pending & sending)
   Stream<int> watchPendingSyncCount() {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('pending') | syncQueueEntries.state.equals('sending'));
+      ..where(syncQueueEntries.state.equals('pending') |
+          syncQueueEntries.state.equals('sending'));
     return query.map((row) => row.read(countExp) ?? 0).watchSingle();
+  }
+
+  /// Đếm số mục lỗi hỏng vĩnh viễn (dead / 4xx)
+  Future<int> countDeadSync() async {
+    final countExp = syncQueueEntries.id.count();
+    final query = selectOnly(syncQueueEntries)
+      ..addColumns([countExp])
+      ..where(syncQueueEntries.state.equals('dead'));
+    final result = await query.map((row) => row.read(countExp)).getSingle();
+    return result ?? 0;
+  }
+
+  /// Stream theo dõi số mục lỗi vĩnh viễn (dead / 4xx)
+  Stream<int> watchDeadSyncCount() {
+    final countExp = syncQueueEntries.id.count();
+    final query = selectOnly(syncQueueEntries)
+      ..addColumns([countExp])
+      ..where(syncQueueEntries.state.equals('dead'));
+    return query.map((row) => row.read(countExp) ?? 0).watchSingle();
+  }
+
+  /// Lấy danh sách các mục lỗi hỏng vĩnh viễn (dead) để thông báo chi tiết cho người dùng
+  Future<List<SyncQueueEntry>> getDeadQueueEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.state.equals('dead'))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
+        .get();
+  }
+
+  /// Xóa các mục dead đã được xử lý hoặc dọn dẹp
+  Future<int> clearDeadEntries() {
+    return (delete(syncQueueEntries)..where((tbl) => tbl.state.equals('dead'))).go();
+  }
+
+  /// Đánh dấu điểm bán bị lỗi đồng bộ vĩnh viễn (4xx)
+  Future<void> markCustomerSyncError(String clientUuid, String error) async {
+    await (update(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).write(
+      const LocalCustomersCompanion(
+        syncStatus: Value('error'),
+        approvalStatus: Value('rejected'),
+      ),
+    );
   }
 
   /// Lấy danh sách các phiếu biểu mẫu đã nộp ngoại tuyến (SyncQueue form_submission)

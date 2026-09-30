@@ -8,6 +8,8 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/forms_state.dart';
@@ -198,6 +200,19 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
     final pendingOfflineCount =
         ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
 
+    ref.listen<FormsState>(formsViewModelProvider, (prev, next) {
+      if (next.status == FormsStatus.error &&
+          next.errorMessage != null &&
+          next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải biểu mẫu',
+          message: next.errorMessage!,
+          onRetry: () => vm.loadForms(),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: const VthmTopAppBar(),
@@ -346,40 +361,72 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
                             child: AppLoading(size: 80),
                           ),
                         )
-                      : state.filteredMarketForms.isEmpty
+                      : state.status == FormsStatus.error &&
+                              state.marketForms.isEmpty
                           ? Center(
                               child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 48.0),
+                                padding: const EdgeInsets.all(24.0),
                                 child: Column(
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(
-                                      Icons.assignment_turned_in_outlined,
-                                      size: 54,
-                                      color: isDark
-                                          ? AppColors.darkOutline
-                                          : AppColors.outlineVariant,
-                                    ),
+                                    const Icon(Icons.error_outline_rounded,
+                                        size: 48, color: AppColors.error),
                                     const SizedBox(height: 12),
                                     Text(
-                                      state.marketForms.isEmpty
-                                          ? (strings.isVietnamese
-                                              ? 'Hiện chưa có biểu mẫu thị trường khả dụng'
-                                              : 'No market forms available at this time')
-                                          : (strings.isVietnamese
-                                              ? 'Không tìm thấy biểu mẫu phù hợp'
-                                              : 'No matching forms found'),
-                                      style: AppTypography.bodyLarge(
+                                      state.errorMessage ?? strings.error,
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodyMedium(
                                         color: isDark
-                                            ? AppColors.darkOnSurfaceVariant
-                                            : AppColors.onSurfaceVariant,
+                                            ? AppColors.darkOnSurface
+                                            : AppColors.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: () => vm.loadForms(),
+                                      icon: const Icon(Icons.refresh_rounded,
+                                          size: 18),
+                                      label: Text(strings.retry),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primary,
+                                        foregroundColor: Colors.white,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                             )
+                          : state.filteredMarketForms.isEmpty
+                              ? ListView(
+                                  controller: _scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 40.0),
+                                      child: state.searchQuery.trim().isNotEmpty
+                                          ? AppEmptyState(
+                                              icon: Icons.search_off_rounded,
+                                              title: 'Không tìm thấy biểu mẫu',
+                                              description:
+                                                  'Không có biểu mẫu nào khớp với từ khóa "${state.searchQuery}".',
+                                              actionText: 'Xóa tìm kiếm',
+                                              onAction: () {
+                                                _searchController.clear();
+                                                vm.setSearchQuery('');
+                                              },
+                                            )
+                                          : AppEmptyState(
+                                              icon: Icons.assignment_outlined,
+                                              title: 'Chưa có biểu mẫu thị trường',
+                                              description:
+                                                  'Hiện tại chưa có biểu mẫu thu thập nào khả dụng trên hệ thống. Kéo xuống để tải lại từ máy chủ.',
+                                              actionText: 'Làm mới danh sách',
+                                              onAction: () => vm.loadForms(),
+                                            ),
+                                    ),
+                                  ],
+                                )
                           : RefreshIndicator(
                               color: AppColors.primary,
                               onRefresh: () => vm.loadForms(),

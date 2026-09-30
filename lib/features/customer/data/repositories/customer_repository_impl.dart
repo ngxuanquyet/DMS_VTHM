@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../../domain/repositories/customer_repository.dart';
 import '../datasources/customer_local_data_source.dart';
-import '../models/customer_model.dart';
 import '../services/customer_api_service.dart';
+import '../utils/customer_payload_helper.dart';
 
 final customerApiServiceProvider = Provider<CustomerApiService>((ref) {
   return CustomerApiService(ref.read(apiClientProvider));
@@ -27,6 +30,7 @@ final customerRepositoryProvider = Provider<CustomerRepository>((ref) {
     ref.read(customerApiServiceProvider),
     ref.read(customerLocalDataSourceProvider),
     ref.read(syncServiceProvider),
+    ref,
   );
 });
 
@@ -34,6 +38,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
   final CustomerApiService _apiService;
   final CustomerLocalDataSource _localDataSource;
   final SyncService _syncService;
+  final Ref? _ref;
+  final bool Function()? _isOnlineChecker;
 
   List<CustomerEntity> _cachedCustomers = [];
   List<CustomerDynamicColumn> _cachedColumns = [];
@@ -42,8 +48,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
   CustomerRepositoryImpl(
     this._apiService,
     this._localDataSource,
-    this._syncService,
-  );
+    this._syncService, [
+    this._ref,
+    this._isOnlineChecker,
+  ]);
+
+  bool get _isOnline => _isOnlineChecker != null
+      ? _isOnlineChecker()
+      : (_ref?.read(connectivityProvider).isOnline ?? true);
 
   @override
   Future<List<CustomerEntity>> getCustomers({
@@ -58,7 +70,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
       final localList = await _localDataSource.getLocalCustomers(query: query);
       hasStaleMockRoutes = localList.any((c) =>
           CustomerEntity.isInvalidOrProvinceRoute(c.route, provinceName: c.provinceName) ||
-          c.routes.any((r) => CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName)));
+          c.routes.any((r) => CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName)) ||
+          const {'08880149', '08880415', '08880382'}.contains(c.code));
 
       if (hasStaleMockRoutes) {
         // Tự động xóa sạch các bản ghi cache cũ bị dính tên tỉnh/mock data khỏi SQLite
@@ -99,25 +112,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
         _cachedCustomers = localList;
         return localList;
       }
+      // Khi không có dữ liệu offline và API lỗi, ném ngoại lệ để ViewModel kích hoạt popup báo lỗi
+      rethrow;
     }
-
-    // 3. Fallback khởi tạo mock data ban đầu vào SQLite nếu DB hoàn toàn rỗng hoặc mock data cũ chứa tên tỉnh
-    if (_cachedCustomers.isEmpty || hasStaleMockRoutes) {
-      _cachedCustomers = List.from(kMockCustomers);
-      await _localDataSource.cacheRemoteCustomers(kMockCustomers, reconcile: true);
-    }
-
-    if (query != null && query.trim().isNotEmpty) {
-      final q = query.trim().toLowerCase();
-      return _cachedCustomers.where((c) {
-        return c.name.toLowerCase().contains(q) ||
-            c.code.toLowerCase().contains(q) ||
-            c.phone.replaceAll(' ', '').contains(q) ||
-            c.address.toLowerCase().contains(q);
-      }).toList();
-    }
-
-    return _cachedCustomers;
   }
 
   Future<void> _fetchRemoteAndCache(int page, int perPage, String? query) async {
@@ -262,6 +259,46 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   @override
   Future<CustomerEntity> createCustomer(Map<String, dynamic> data) async {
+    final isOnline = _isOnline;
+
+    if (isOnline) {
+      try {
+        final cleanPayload = await _prepareCleanCustomerPayload(data);
+        final dto = await _apiService.createCustomer(cleanPayload);
+
+        final serverId = dto.id > 0 ? dto.id : 0;
+        final serverCode = dto.code.isNotEmpty ? dto.code : '';
+
+        if (serverId > 0) {
+          final entity = _buildSyncedCustomerEntity(
+            data: data,
+            serverId: serverId,
+            serverCode: serverCode,
+            cleanPayload: cleanPayload,
+          );
+
+          await _localDataSource.cacheRemoteCustomers([entity]);
+          _cachedCustomers.removeWhere((c) =>
+              (entity.clientUuid != null && c.clientUuid == entity.clientUuid) ||
+              (entity.id > 0 && c.id == entity.id));
+          _cachedCustomers.insert(0, entity);
+          return entity;
+        }
+      } catch (e) {
+        debugPrint('[CustomerRepositoryImpl] Lỗi khi tạo online ($e)');
+        // 🔴 Theo spec 30/09 §7: Lỗi 4xx (400 <= statusCode < 500, trừ 408/429) là hỏng vĩnh viễn (validate thất bại).
+        // TUYỆT ĐỐI không fallback sang ghi offline để tránh tạo rác và làm tắc hàng đợi SyncQueue!
+        if (e is AppException &&
+            e.statusCode != null &&
+            e.statusCode! >= 400 &&
+            e.statusCode! < 500 &&
+            e.statusCode != 408 &&
+            e.statusCode != 429) {
+          rethrow;
+        }
+      }
+    }
+
     // 1. Ghi máy trước, sinh client_uuid lúc nhập (BB-1, BB-2)
     final localEntity = await _localDataSource.createCustomerOffline(data);
     _cachedCustomers.insert(0, localEntity);
@@ -270,6 +307,117 @@ class CustomerRepositoryImpl implements CustomerRepository {
     unawaited(_syncService.syncQueue());
 
     return localEntity;
+  }
+
+  Future<Map<String, dynamic>> _prepareCleanCustomerPayload(Map<String, dynamic> data) async {
+    // 1. Tải ảnh lên server để lấy token nếu đang là đường dẫn cục bộ
+    final resolvedTokens = <String>[];
+    final rawTokens = data['photo_tokens'] ?? data['photo_token'] ?? data['photo_file_id'] ?? data['photo'];
+    if (rawTokens is List) {
+      for (final item in rawTokens) {
+        final itemStr = item.toString().trim();
+        if (itemStr.isEmpty) continue;
+        if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
+          resolvedTokens.add(itemStr);
+        } else {
+          try {
+            final uploadRes = await _apiService.uploadCustomerPhoto(itemStr);
+            if (uploadRes['token'] != null) {
+              resolvedTokens.add(uploadRes['token'].toString().trim());
+            }
+          } catch (_) {}
+        }
+      }
+    } else if (rawTokens != null) {
+      final itemStr = rawTokens.toString().trim();
+      if (itemStr.isNotEmpty) {
+        if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
+          resolvedTokens.add(itemStr);
+        } else {
+          try {
+            final uploadRes = await _apiService.uploadCustomerPhoto(itemStr);
+            if (uploadRes['token'] != null) {
+              resolvedTokens.add(uploadRes['token'].toString().trim());
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 2. Sử dụng CustomerPayloadHelper để xây dựng payload chuẩn 25 khoá gốc
+    return CustomerPayloadHelper.buildCustomerApiPayload(
+      sourceData: data,
+      resolvedPhotoTokens: resolvedTokens.isNotEmpty ? resolvedTokens : null,
+      isOfflineSync: false,
+    );
+  }
+
+  CustomerEntity _buildSyncedCustomerEntity({
+    required Map<String, dynamic> data,
+    required int serverId,
+    required String serverCode,
+    required Map<String, dynamic> cleanPayload,
+  }) {
+    final name = (data['name'] ?? 'Điểm bán mới').toString().trim();
+    final address = (data['address'] ?? '').toString().trim();
+    final phone = (data['phone'] ?? '').toString().trim();
+    final contactName = (data['contact_name'] ?? data['contact_person'] ?? data['contactPerson'] ?? '').toString().trim();
+    final contactTitle = data['contact_title']?.toString().trim();
+    final type = (data['type'] ?? data['customer_type_name'] ?? '').toString().trim();
+    final route = (data['route'] ?? data['route_name'] ?? 'Tuyến mặc định').toString().trim();
+    final routeIds = (cleanPayload['route_ids'] as List<int>?) ?? [];
+    final clientUuid = cleanPayload['client_uuid']?.toString();
+    final photoToken = cleanPayload['photo_token']?.toString();
+
+    final regionId = cleanPayload['region_id'] is int
+        ? cleanPayload['region_id'] as int
+        : int.tryParse(cleanPayload['region_id']?.toString() ?? '') ?? 1;
+
+    final customerTypeId = cleanPayload['customer_type_id'] is int
+        ? cleanPayload['customer_type_id'] as int
+        : int.tryParse(cleanPayload['customer_type_id']?.toString() ?? '');
+
+    final channelId = cleanPayload['channel_id'] is int
+        ? cleanPayload['channel_id'] as int
+        : int.tryParse(cleanPayload['channel_id']?.toString() ?? '');
+
+    final channelName = (data['channel_name'] ?? '').toString().trim();
+
+    double? lat;
+    if (cleanPayload['lat'] != null) lat = double.tryParse(cleanPayload['lat'].toString());
+    double? lng;
+    if (cleanPayload['lng'] != null) lng = double.tryParse(cleanPayload['lng'].toString());
+
+    final now = DateTime.now();
+    final clientTimeIso = '${now.toIso8601String()}+07:00';
+
+    return CustomerEntity(
+      id: serverId,
+      code: serverCode,
+      name: name,
+      type: type,
+      customerTypeId: customerTypeId,
+      channelId: channelId,
+      channelName: channelName.isNotEmpty ? channelName : null,
+      regionId: regionId,
+      route: route,
+      routes: [route],
+      routeIds: routeIds,
+      address: address,
+      contactPerson: contactName,
+      contactTitle: contactTitle,
+      phone: phone,
+      lat: lat,
+      lng: lng,
+      status: 'active',
+      approvalStatus: 'approved',
+      syncStatus: 'synced',
+      clientUuid: clientUuid,
+      photoUrl: photoToken,
+      photoUrls: photoToken != null ? [photoToken] : const [],
+      createdAt: clientTimeIso,
+      updatedAt: clientTimeIso,
+    );
   }
 
   @override

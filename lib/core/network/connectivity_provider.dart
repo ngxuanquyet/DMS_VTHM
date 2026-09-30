@@ -35,11 +35,13 @@ final connectivityProvider =
   return ConnectivityNotifier();
 });
 
-class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
+class ConnectivityNotifier extends StateNotifier<ConnectivityState>
+    with WidgetsBindingObserver {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   Timer? _heartbeatTimer;
   bool _isChecking = false;
+  bool _isInBackground = false;
 
   ConnectivityNotifier() : super(const ConnectivityState()) {
     _initConnectivityListener();
@@ -54,15 +56,34 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
       _processConnectivityResults(results);
     });
 
-    // 3. Fallback active ping every 5 seconds
+    // 3. Fallback active ping every 5 seconds (chỉ khi app foreground)
     final bindingName = WidgetsBinding.instance.runtimeType.toString();
-    if (!bindingName.contains('TestWidgetsFlutterBinding') &&
-        !bindingName.contains('AutomatedTestWidgetsFlutterBinding')) {
+    final isTest = bindingName.contains('TestWidgetsFlutterBinding') ||
+        bindingName.contains('AutomatedTestWidgetsFlutterBinding');
+
+    if (!isTest) {
+      WidgetsBinding.instance.addObserver(this);
       _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (mounted) {
+        if (mounted && !_isInBackground) {
           checkConnectivity();
         }
       });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isInBackground = false;
+      // Chờ 1.5s để hệ điều hành khôi phục kết nối socket sau khi trở lại foreground
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted && !_isInBackground) {
+          checkConnectivity();
+        }
+      });
+    } else {
+      // paused, inactive, detached, hidden (ví dụ: đang mở camera hệ thống)
+      _isInBackground = true;
     }
   }
 
@@ -73,6 +94,9 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
       // Hardware is completely disconnected
       _handleStatusChange(false);
     } else {
+      // Nếu app đang ở background (ví dụ chụp ảnh), không ping tránh bị OS timeout
+      if (_isInBackground) return;
+
       // Connected to WiFi/Mobile network - verify internet reachability
       final hasRealInternet = await _pingInternet();
       _handleStatusChange(hasRealInternet);
@@ -81,6 +105,7 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
 
   Future<bool> checkConnectivity() async {
     if (!mounted || _isChecking) return mounted ? state.isOnline : true;
+    if (_isInBackground) return state.isOnline;
     _isChecking = true;
 
     try {
@@ -107,9 +132,38 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
   }
 
   Future<bool> _pingInternet() async {
+    if (_isInBackground) return state.isOnline;
+
+    bool canReach = await _checkDnsLookup();
+    if (!canReach && !_isInBackground) {
+      // Thử lại lần 2 sau 1 giây trước khi kết luận mất mạng
+      await Future.delayed(const Duration(milliseconds: 1000));
+      if (_isInBackground || !mounted) return state.isOnline;
+      canReach = await _checkDnsLookup();
+    }
+    return canReach;
+  }
+
+  Future<bool> _checkDnsLookup() async {
+    try {
+      final result = await InternetAddress.lookup('api-app.vthmgroup.vn')
+          .timeout(const Duration(milliseconds: 3000));
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        return true;
+      }
+    } catch (_) {}
+
+    try {
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(milliseconds: 3000));
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        return true;
+      }
+    } catch (_) {}
+
     try {
       final result = await InternetAddress.lookup('8.8.8.8')
-          .timeout(const Duration(milliseconds: 2000));
+          .timeout(const Duration(milliseconds: 2500));
       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
     } catch (_) {
       return false;
@@ -125,8 +179,10 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
       state = state.copyWith(isOnline: hasConnection);
 
       if (!hasConnection) {
-        // MẤT MẠNG -> Tự động hiện popup modal mất mạng
-        showOfflineDialog();
+        // MẤT MẠNG -> Tự động hiện popup modal mất mạng (chỉ khi app ở foreground)
+        if (!_isInBackground) {
+          showOfflineDialog();
+        }
       } else {
         // CÓ MẠNG LẠI -> Tự động ẩn popup (nếu đang mở) và hiện thanh thông báo màu xanh trong 3s
         hideOfflineDialog();
@@ -137,14 +193,14 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
 
   /// Triggered automatically on network loss or from ApiClient on Dio network errors
   void handleNetworkDisconnection() {
-    if (!mounted) return;
+    if (!mounted || _isInBackground) return;
     state = state.copyWith(isOnline: false);
     showOfflineDialog();
   }
 
   /// Manually or automatically open the offline disconnect dialog
   void showOfflineDialog() {
-    if (!mounted) return;
+    if (!mounted || _isInBackground) return;
 
     try {
       final context = rootNavigatorKey.currentContext;
@@ -265,6 +321,12 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState> {
 
   @override
   void dispose() {
+    final bindingName = WidgetsBinding.instance.runtimeType.toString();
+    final isTest = bindingName.contains('TestWidgetsFlutterBinding') ||
+        bindingName.contains('AutomatedTestWidgetsFlutterBinding');
+    if (!isTest) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _subscription?.cancel();
     _heartbeatTimer?.cancel();
     super.dispose();

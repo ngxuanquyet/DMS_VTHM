@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/network/api_client.dart';
-import '../../../customer/data/models/customer_model.dart';
 import '../models/route_customer_model.dart';
 
 final routeCustomersServiceProvider = Provider<RouteCustomersService>((ref) {
@@ -76,12 +75,6 @@ class RouteCustomersService {
       } catch (_) {}
     }
 
-    for (final c in kMockCustomers) {
-      if (c.lat != null && c.lng != null && c.lat != 0 && c.lng != 0) {
-        idCoords.putIfAbsent(c.id, () => (c.lat!, c.lng!));
-        codeCoords.putIfAbsent(c.code, () => (c.lat!, c.lng!));
-      }
-    }
 
     final enriched = data.items.map((it) {
       if (it.hasCoordinates) return it;

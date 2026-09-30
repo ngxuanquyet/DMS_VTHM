@@ -4,6 +4,8 @@ import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/notifications_state.dart';
@@ -21,6 +23,19 @@ class NotificationsScreen extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final filters = [strings.all, strings.unread, strings.work, strings.system];
+
+    ref.listen<NotificationsState>(notificationsViewModelProvider, (prev, next) {
+      if (next.status == NotificationStatus.error &&
+          next.errorMessage != null &&
+          next.errorMessage != prev?.errorMessage) {
+        AppErrorDialog.show(
+          context,
+          title: 'Lỗi tải thông báo',
+          message: next.errorMessage!,
+          onRetry: () => vm.loadNotifications(),
+        );
+      }
+    });
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
@@ -47,7 +62,40 @@ class NotificationsScreen extends ConsumerWidget {
           ? const Center(
               child: AppLoading(size: 220),
             )
-          : RefreshIndicator(
+          : state.status == NotificationStatus.error && state.data == null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline_rounded,
+                            size: 48, color: AppColors.error),
+                        const SizedBox(height: 12),
+                        Text(
+                          state.errorMessage ?? strings.error,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium(
+                            color: isDark
+                                ? AppColors.darkOnSurface
+                                : AppColors.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () => vm.loadNotifications(),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: Text(strings.retry),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
               color: AppColors.primaryContainer,
               onRefresh: () => vm.loadNotifications(),
               child: SingleChildScrollView(
@@ -157,28 +205,13 @@ class NotificationsScreen extends ConsumerWidget {
                     ],
 
                     if (state.filteredToday.isEmpty && state.filteredEarlier.isEmpty)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 64.0),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.notifications_off_outlined,
-                                size: 54,
-                                color: isDark ? AppColors.darkOutline : AppColors.outlineVariant,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                strings.noNotifications,
-                                style: AppTypography.bodyLarge(
-                                  color: isDark
-                                      ? AppColors.darkOnSurfaceVariant
-                                      : AppColors.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      AppEmptyState(
+                        icon: Icons.notifications_off_outlined,
+                        title: strings.noNotifications,
+                        description:
+                            'Hiện tại bạn không có thông báo nào trong mục này.',
+                        actionText: 'Làm mới',
+                        onAction: () => vm.loadNotifications(),
                       ),
 
                     const SizedBox(height: 40),

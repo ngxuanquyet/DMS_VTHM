@@ -1,9 +1,13 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/string_utils.dart';
+import '../../../../core/utils/system_clock.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/domain/repositories/customer_repository.dart';
@@ -14,6 +18,13 @@ import '../../domain/repositories/route_repository.dart';
 import '../../domain/usecases/route_usecases.dart';
 import '../../../forms/domain/usecases/get_available_forms_usecase.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
+import '../../../visit/data/models/checkin_request_model.dart';
+import '../../../visit/data/models/checkout_request_model.dart';
+import '../../../visit/data/repositories/visit_repository_impl.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../visit/domain/entities/visit_photo_entity.dart';
+import '../../../visit/domain/repositories/visit_repository.dart';
+import '../../../visit/domain/usecases/visit_usecases.dart';
 import '../states/route_state.dart';
 
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
@@ -40,20 +51,24 @@ final routeViewModelProvider =
     StateNotifierProvider.autoDispose<RouteViewModel, RouteState>((ref) {
   final customerRepository = ref.read(customerRepositoryProvider);
   final getRouteDetailUseCase = ref.read(getRouteDetailUseCaseProvider);
+  final getTodayVisitsUseCase = ref.read(getTodayVisitsUseCaseProvider);
   return RouteViewModel(
     customerRepository: customerRepository,
     getRouteDetailUseCase: getRouteDetailUseCase,
+    getTodayVisitsUseCase: getTodayVisitsUseCase,
   );
 });
 
 class RouteViewModel extends StateNotifier<RouteState> {
   final CustomerRepository customerRepository;
   final GetRouteDetailUseCase getRouteDetailUseCase;
+  final GetTodayVisitsUseCase getTodayVisitsUseCase;
   List<CustomerEntity> _rawCustomers = [];
 
   RouteViewModel({
     required this.customerRepository,
     required this.getRouteDetailUseCase,
+    required this.getTodayVisitsUseCase,
   }) : super(const RouteState()) {
     loadRouteDetail();
   }
@@ -103,7 +118,23 @@ class RouteViewModel extends StateNotifier<RouteState> {
       final customers = await customerRepository.getCustomers(forceRefresh: isRefresh);
       _rawCustomers = customers;
 
-      // 2. Extract unique route names from customer list
+      // 2. Fetch today's visits to detect visited/in-progress dealers (§2.3)
+      List<VisitEntity> todayVisits = [];
+      try {
+        todayVisits = await getTodayVisitsUseCase();
+      } catch (e) {
+        debugPrint('[RouteViewModel] Lỗi khi tải lượt viếng thăm hôm nay: $e');
+      }
+
+      VisitEntity? activeVisit;
+      for (final v in todayVisits) {
+        if (v.isOpen) {
+          activeVisit = v;
+          break;
+        }
+      }
+
+      // 3. Extract unique route names from customer list
       final Set<String> routeSet = {'Tất cả tuyến'};
       for (final c in customers) {
         if (c.route.trim().isNotEmpty) {
@@ -121,6 +152,9 @@ class RouteViewModel extends StateNotifier<RouteState> {
       state = state.copyWith(
         availableRoutes: availableRoutes,
         selectedRoute: selectedRoute,
+        todayVisits: todayVisits,
+        activeVisit: activeVisit,
+        clearActiveVisit: activeVisit == null,
       );
 
       _recomputeRouteDetail();
@@ -166,29 +200,57 @@ class RouteViewModel extends StateNotifier<RouteState> {
       });
     }
 
+    // Map today's visits by customer_id (§2.3)
+    final Map<int, VisitEntity> visitMap = {};
+    for (final v in state.todayVisits) {
+      visitMap[v.customerId] = v;
+    }
+
     // Build DealerEntities
-    bool hasFoundFirstPending = false;
     final dealers = <DealerEntity>[];
 
     for (int i = 0; i < filtered.length; i++) {
       final c = filtered[i];
+      final visit = visitMap[c.id];
+
       DealerVisitStatus visitStatus;
       String statusLabel;
       String? visitedTime;
 
-      if (c.visitStatus == CustomerVisitStatus.visited) {
-        visitStatus = DealerVisitStatus.completed;
-        statusLabel = 'Đã ghé';
-        visitedTime = '08:45 AM';
-      } else {
-        if (!hasFoundFirstPending) {
+      if (visit != null) {
+        if (visit.isOpen) {
           visitStatus = DealerVisitStatus.inProgress;
           statusLabel = 'Đang ghé';
-          hasFoundFirstPending = true;
+          if (visit.checkinAt != null) {
+            visitedTime =
+                '${visit.checkinAt!.hour.toString().padLeft(2, '0')}:${visit.checkinAt!.minute.toString().padLeft(2, '0')}';
+          }
         } else {
-          visitStatus = DealerVisitStatus.pending;
-          statusLabel = 'Chưa ghé';
+          visitStatus = DealerVisitStatus.completed;
+          statusLabel = 'Đã ghé';
+          final inTime = visit.checkinAt;
+          final outTime = visit.checkoutAt;
+          if (inTime != null && outTime != null) {
+            final inStr =
+                '${inTime.hour.toString().padLeft(2, '0')}:${inTime.minute.toString().padLeft(2, '0')}';
+            final outStr =
+                '${outTime.hour.toString().padLeft(2, '0')}:${outTime.minute.toString().padLeft(2, '0')}';
+            visitedTime = '$inStr - $outStr';
+          } else if (outTime != null) {
+            visitedTime =
+                '${outTime.hour.toString().padLeft(2, '0')}:${outTime.minute.toString().padLeft(2, '0')}';
+          } else if (inTime != null) {
+            visitedTime =
+                '${inTime.hour.toString().padLeft(2, '0')}:${inTime.minute.toString().padLeft(2, '0')}';
+          }
         }
+      } else if (c.visitStatus == CustomerVisitStatus.visited) {
+        visitStatus = DealerVisitStatus.completed;
+        statusLabel = 'Đã ghé';
+        visitedTime = '08:30 - 08:45';
+      } else {
+        visitStatus = DealerVisitStatus.pending;
+        statusLabel = 'Chưa ghé';
       }
 
       final isVip = c.type.toLowerCase().contains('npp') ||
@@ -212,6 +274,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           lat: c.lat,
           lng: c.lng,
           customer: c,
+          visit: visit,
         ),
       );
     }
@@ -219,15 +282,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
     final total = dealers.length;
     final completed = dealers.where((d) => d.status == DealerVisitStatus.completed).length;
     final pending = total - completed;
-    final progress = total > 0 ? (completed / total) : 0.0;
+    final progress = total > 0 ? completed / total : 0.0;
 
-    final title = state.selectedRoute == 'Tất cả tuyến'
-        ? 'Tuyến'
-        : state.selectedRoute;
-
-    final routeDetail = RouteDetailEntity(
-      id: state.selectedRoute,
-      title: title,
+    final detail = RouteDetailEntity(
+      id: 'active_route',
+      title: state.selectedRoute,
       totalDealers: total,
       completedDealers: completed,
       pendingDealers: pending,
@@ -237,9 +296,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
     state = state.copyWith(
       status: RouteStatus.loaded,
-      routeDetail: routeDetail,
-      selectedDealerId: state.selectedDealerId ?? (dealers.isNotEmpty ? dealers.first.id : null),
-      errorMessage: null,
+      routeDetail: detail,
     );
   }
 
@@ -258,11 +315,18 @@ class RouteViewModel extends StateNotifier<RouteState> {
 }
 
 final checkInViewModelProvider =
-    StateNotifierProvider.autoDispose<CheckInViewModel, CheckInState>((ref) {
+    StateNotifierProvider<CheckInViewModel, CheckInState>((ref) {
   return CheckInViewModel(
     getDealerCheckinUseCase: ref.read(getDealerCheckinUseCaseProvider),
     checkoutDealerUseCase: ref.read(checkoutDealerUseCaseProvider),
     getAvailableFormsUseCase: ref.read(getAvailableFormsUseCaseProvider),
+    checkinUseCase: ref.read(checkinUseCaseProvider),
+    checkoutUseCase: ref.read(checkoutUseCaseProvider),
+    getVisitRequirementsUseCase: ref.read(getVisitRequirementsUseCaseProvider),
+    uploadVisitPhotoUseCase: ref.read(uploadVisitPhotoUseCaseProvider),
+    deleteVisitPhotoUseCase: ref.read(deleteVisitPhotoUseCaseProvider),
+    cancelVisitUseCase: ref.read(cancelVisitUseCaseProvider),
+    visitRepository: ref.read(visitRepositoryProvider),
   );
 });
 
@@ -270,16 +334,70 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   final GetDealerCheckinUseCase getDealerCheckinUseCase;
   final CheckoutDealerUseCase checkoutDealerUseCase;
   final GetAvailableFormsUseCase getAvailableFormsUseCase;
+  final CheckinUseCase checkinUseCase;
+  final CheckoutUseCase checkoutUseCase;
+  final GetVisitRequirementsUseCase getVisitRequirementsUseCase;
+  final UploadVisitPhotoUseCase uploadVisitPhotoUseCase;
+  final DeleteVisitPhotoUseCase deleteVisitPhotoUseCase;
+  final CancelVisitUseCase cancelVisitUseCase;
+  final VisitRepository visitRepository;
+
   Timer? _visitTimer;
   int _elapsedSeconds = 0;
+  DateTime? _targetDoneTime;
+  String _sessionClientUuid = const Uuid().v4();
 
   CheckInViewModel({
     required this.getDealerCheckinUseCase,
     required this.checkoutDealerUseCase,
     required this.getAvailableFormsUseCase,
+    required this.checkinUseCase,
+    required this.checkoutUseCase,
+    required this.getVisitRequirementsUseCase,
+    required this.uploadVisitPhotoUseCase,
+    required this.deleteVisitPhotoUseCase,
+    required this.cancelVisitUseCase,
+    required this.visitRepository,
   }) : super(const CheckInState(liveVisitDuration: '00:00:00')) {
-    loadCheckinData();
     _startTimer();
+  }
+
+  /// Tải dữ liệu điểm bán mặc định / hiện tại nếu chưa được khởi tạo
+  Future<void> loadCheckinData() async {
+    if (state.checkinData == null) {
+      state = state.copyWith(status: CheckInStatus.loading);
+    }
+    try {
+      final now = DateTime.now();
+      final localTime =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+
+      final data = await getDealerCheckinUseCase();
+      state = state.copyWith(
+        status: CheckInStatus.loaded,
+        checkinData: data,
+        checkinTime: state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
+        liveVisitDuration: state.liveVisitDuration,
+      );
+
+      final customerId = int.tryParse(data.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 8338;
+      loadSurveyForms(customerId);
+    } catch (e) {
+      if (state.checkinData == null) {
+        state = state.copyWith(
+          status: CheckInStatus.error,
+          errorMessage: e.toString().replaceAll('AppException: ', ''),
+        );
+      }
+    }
+  }
+
+  void resetSession() {
+    _visitTimer?.cancel();
+    _elapsedSeconds = 0;
+    _targetDoneTime = null;
+    _sessionClientUuid = const Uuid().v4();
+    state = const CheckInState(liveVisitDuration: '00:00:00');
   }
 
   Future<void> loadSurveyForms(int customerId) async {
@@ -291,9 +409,40 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
   void markSurveySubmitted(int configId) {
     final updated = Set<int>.from(state.submittedSurveyConfigIds)..add(configId);
-    state = state.copyWith(submittedSurveyConfigIds: updated);
+    
+    var updatedReq = state.requirements;
+    if (updatedReq != null) {
+      final remainingForms = updatedReq.missingForms.where((f) => f.formId != configId).toList();
+      final isTimeOk = updatedReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+      final isFormsOk = remainingForms.isEmpty || state.visitResult == 'closed';
+      final isPhotosOk = updatedReq.photosMissing <= 0;
+      final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+
+      List<String> newBlockers = List<String>.from(updatedReq.blockers);
+      if (remainingForms.isEmpty) {
+        newBlockers.removeWhere((b) =>
+            b.toLowerCase().contains('khảo sát') ||
+            b.toLowerCase().contains('biểu mẫu'));
+      }
+
+      updatedReq = updatedReq.copyWith(
+        missingForms: remainingForms,
+        satisfied: newSatisfied,
+        blockers: newBlockers,
+      );
+    }
+
+    state = state.copyWith(
+      submittedSurveyConfigIds: updated,
+      requirements: updatedReq,
+    );
+    if (state.visitId > 0) {
+      refreshRequirements();
+    }
   }
 
+  /// Khởi tạo phiên viếng thăm với Dealer
+  /// Nếu dealer đã có lượt mở (inProgress) -> Tự động phục hồi phiên
   void initCheckinWithDealer(DealerEntity dealer) {
     final now = DateTime.now();
     final localTime =
@@ -305,40 +454,42 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         name: dealer.name,
         address: dealer.address,
         isVip: dealer.isVip,
-        distanceMeters: 48,
+        distanceMeters: 0,
         visitDuration: '00:00:00',
         lat: dealer.lat,
         lng: dealer.lng,
       ),
-      tasks: const [
-        CheckinTaskEntity(
-          id: 'task_form',
-          title: 'Thu thập biểu mẫu',
-          subtitle: 'Đánh giá trưng bày, Tồn kho',
-          completed: 2,
-          total: 3,
-          type: 'form',
-        ),
-        CheckinTaskEntity(
-          id: 'task_photo',
-          title: 'Chụp ảnh điểm bán',
-          subtitle: 'Chưa có ảnh',
-          completed: 0,
-          total: 1,
-          type: 'photo',
-          isError: true,
-        ),
-        CheckinTaskEntity(
-          id: 'task_note',
-          title: 'Ghi chú chuyến ghé',
-          subtitle: 'Thêm ý kiến phản hồi',
-          completed: 0,
-          total: 1,
-          type: 'note',
-        ),
-      ],
+      tasks: const [],
     );
 
+    // Kiểm tra nếu dealer đã có lượt viếng thăm đang mở (§2.3)
+    if (dealer.visit != null && dealer.visit!.isOpen) {
+      final existingVisit = dealer.visit!;
+      _sessionClientUuid = const Uuid().v4();
+      _setupVisitTimer(existingVisit.checkinAt);
+
+      state = state.copyWith(
+        status: CheckInStatus.loaded,
+        checkinData: initialCheckinData,
+        checkinTime: existingVisit.checkinAt != null
+            ? '${existingVisit.checkinAt!.hour.toString().padLeft(2, '0')}:${existingVisit.checkinAt!.minute.toString().padLeft(2, '0')}:${existingVisit.checkinAt!.second.toString().padLeft(2, '0')}'
+            : localTime,
+        visitId: existingVisit.id,
+        visitEntity: existingVisit,
+        requirements: existingVisit.requirements,
+        customer: dealer.customer,
+      );
+
+      final customerId = dealer.customer is CustomerEntity
+          ? (dealer.customer as CustomerEntity).id
+          : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 8338);
+      loadSurveyForms(customerId);
+      refreshRequirements();
+      return;
+    }
+
+    // Trường hợp mới bắt đầu check-in
+    _sessionClientUuid = const Uuid().v4();
     state = state.copyWith(
       status: CheckInStatus.loaded,
       checkinData: initialCheckinData,
@@ -353,6 +504,74 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     loadSurveyForms(customerId);
   }
 
+  /// Gọi API check-in thật lên server (§3)
+  /// Trả về null nếu thành công; trả về chuỗi thông báo lỗi tiếng Việt nếu bị từ chối
+  Future<String?> performCheckin({
+    required int customerId,
+    double? lat,
+    double? lng,
+    double? accuracyM,
+    String? address,
+    bool? isMockLocation,
+    String? note,
+  }) async {
+    try {
+      final request = CheckinRequestModel(
+        customerId: customerId,
+        lat: lat,
+        lng: lng,
+        accuracyM: accuracyM,
+        address: address,
+        isMockLocation: isMockLocation,
+        clientUuid: _sessionClientUuid,
+        clientTime: DateTime.now().toIso8601String(),
+        clientBootId: SystemClock.bootId,
+        note: note,
+      );
+
+      final visit = await checkinUseCase(request);
+      _setupVisitTimer(visit.checkinAt);
+
+      var req = visit.requirements;
+      if (req != null && req.secondsRemaining > 0) {
+        _targetDoneTime = DateTime.now().add(Duration(seconds: req.secondsRemaining));
+      }
+
+      final cTime = visit.checkinAt != null
+          ? '${visit.checkinAt!.hour.toString().padLeft(2, '0')}:${visit.checkinAt!.minute.toString().padLeft(2, '0')}:${visit.checkinAt!.second.toString().padLeft(2, '0')}'
+          : state.checkinTime;
+
+      state = state.copyWith(
+        visitId: visit.id,
+        visitEntity: visit,
+        requirements: req,
+        checkinTime: cTime,
+        status: CheckInStatus.loaded,
+      );
+
+      loadSurveyForms(customerId);
+      if (req == null) {
+        refreshRequirements();
+      }
+      return null;
+    } catch (e) {
+      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      state = state.copyWith(errorMessage: msg);
+      return msg;
+    }
+  }
+
+  void _setupVisitTimer(DateTime? checkinTime) {
+    _visitTimer?.cancel();
+    if (checkinTime != null) {
+      final diff = DateTime.now().difference(checkinTime).inSeconds;
+      _elapsedSeconds = diff > 0 ? diff : 0;
+    } else {
+      _elapsedSeconds = 0;
+    }
+    _startTimer();
+  }
+
   void _startTimer() {
     _visitTimer?.cancel();
     _visitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -360,86 +579,255 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final h = (_elapsedSeconds ~/ 3600).toString().padLeft(2, '0');
       final m = ((_elapsedSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
       final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
-      state = state.copyWith(liveVisitDuration: '$h:$m:$s');
+
+      var updatedReq = state.requirements;
+      if (updatedReq != null) {
+        int newSec = updatedReq.secondsRemaining;
+        if (_targetDoneTime != null) {
+          final diff = _targetDoneTime!.difference(DateTime.now()).inSeconds;
+          newSec = diff > 0 ? diff : 0;
+        } else if (newSec > 0) {
+          newSec = newSec - 1;
+        }
+
+        final isTimeOk = newSec <= 0 || state.visitResult == 'closed';
+        final isFormsOk = updatedReq.missingForms.isEmpty || state.visitResult == 'closed';
+        final isPhotosOk = updatedReq.photosMissing <= 0;
+        final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+
+        List<String> newBlockers = List<String>.from(updatedReq.blockers);
+        if (newSec <= 0) {
+          newBlockers.removeWhere((b) =>
+              b.toLowerCase().contains('thời gian') ||
+              b.toLowerCase().contains('giây') ||
+              b.toLowerCase().contains('phút') ||
+              b.toLowerCase().contains('ở lại thêm'));
+        }
+
+        final hadSecondsLeft = updatedReq.secondsRemaining > 0;
+        updatedReq = updatedReq.copyWith(
+          secondsRemaining: newSec,
+          satisfied: newSatisfied,
+          blockers: newBlockers,
+        );
+
+        if (hadSecondsLeft && newSec == 0 && state.visitId > 0) {
+          refreshRequirements();
+        }
+      }
+
+      state = state.copyWith(
+        liveVisitDuration: '$h:$m:$s',
+        requirements: updatedReq,
+      );
     });
   }
 
-  Future<String> _fetchWorldTime() async {
-    try {
-      final dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 2),
-          receiveTimeout: const Duration(seconds: 2),
-        ),
-      );
-      final response = await dio.get<Map<String, dynamic>>(
-        'https://worldtimeapi.org/api/timezone/Asia/Ho_Chi_Minh',
-      );
-      if (response.statusCode == 200 && response.data != null) {
-        final datetimeStr = response.data!['datetime'] as String?;
-        if (datetimeStr != null) {
-          final dt = DateTime.parse(datetimeStr);
-          return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
-        }
-      }
-    } catch (_) {
-      // Fallback to local time if API is unreachable / offline
+  /// Tải 1 tấm ảnh lên cho lượt viếng thăm (§4.1)
+  Future<(bool, String?)> uploadPhoto(
+    File file, {
+    String photoType = 'other',
+    double? lat,
+    double? lng,
+  }) async {
+    if (state.visitId <= 0) {
+      return (false, 'Chưa có lượt viếng thăm hợp lệ');
     }
-    final now = DateTime.now();
-    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> loadCheckinData() async {
-    if (state.checkinData == null) {
-      state = state.copyWith(status: CheckInStatus.loading);
-    }
+    state = state.copyWith(isUploadingPhoto: true);
     try {
-      final now = DateTime.now();
-      final localTime =
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-
-      // 1. Tải dữ liệu điểm bán ngay lập tức (<50ms), không để WorldTimeAPI làm đơ màn hình
-      final data = await getDealerCheckinUseCase();
-
-      state = state.copyWith(
-        status: CheckInStatus.loaded,
-        checkinData: data,
-        checkinTime: state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
-        liveVisitDuration: state.liveVisitDuration,
+      final photo = await uploadVisitPhotoUseCase(
+        visitId: state.visitId,
+        file: file,
+        photoType: photoType,
+        takenAt: DateTime.now(),
+        lat: lat,
+        lng: lng,
       );
 
-      final customerId = int.tryParse(data.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 8338;
-      loadSurveyForms(customerId);
+      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)..add(photo);
+      var currentReq = state.requirements;
+      if (currentReq != null && !photo.duplicate) {
+        final newPhotosMissing = math.max(0, currentReq.photosMissing - 1);
+        final isTimeOk = currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+        final isFormsOk = currentReq.missingForms.isEmpty || state.visitResult == 'closed';
+        final isPhotosOk = newPhotosMissing <= 0;
+        final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
-      // 2. Đồng bộ chuẩn thời gian từ WorldTimeAPI ngầm, cập nhật ngay khi nhận được
-      _fetchWorldTime().then((worldTime) {
-        if (mounted) {
-          state = state.copyWith(checkinTime: worldTime);
+        List<String> newBlockers = List<String>.from(currentReq.blockers);
+        if (newPhotosMissing <= 0) {
+          newBlockers.removeWhere((b) =>
+              b.toLowerCase().contains('ảnh') ||
+              b.toLowerCase().contains('chụp'));
         }
-      }).catchError((_) {});
-    } catch (e) {
-      if (state.checkinData == null) {
-        state = state.copyWith(
-          status: CheckInStatus.error,
-          errorMessage: e.toString().replaceAll('AppException: ', ''),
+
+        currentReq = currentReq.copyWith(
+          photosMissing: newPhotosMissing,
+          satisfied: newSatisfied,
+          blockers: newBlockers,
         );
       }
+
+      state = state.copyWith(
+        photos: updatedPhotos,
+        requirements: currentReq,
+        isUploadingPhoto: false,
+      );
+
+      await refreshRequirements();
+
+      if (photo.duplicate) {
+        return (true, 'Ảnh này đã có trong lượt viếng thăm, không thêm gì thêm.');
+      }
+      return (true, null);
+    } catch (e) {
+      state = state.copyWith(isUploadingPhoto: false);
+      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      return (false, msg);
     }
   }
 
-  Future<bool> checkout() async {
+  /// Xoá 1 tấm ảnh (§4.2)
+  Future<(bool, String?)> deletePhoto(int photoId) async {
+    if (state.visitId <= 0) {
+      return (false, 'Chưa có lượt viếng thăm');
+    }
+    state = state.copyWith(isDeletingPhoto: true);
+    try {
+      final newReq = await deleteVisitPhotoUseCase(
+        visitId: state.visitId,
+        photoId: photoId,
+      );
+
+      final updatedPhotos = state.photos.where((p) => p.id != photoId).toList();
+      state = state.copyWith(
+        photos: updatedPhotos,
+        requirements: newReq,
+        isDeletingPhoto: false,
+      );
+      return (true, null);
+    } catch (e) {
+      state = state.copyWith(isDeletingPhoto: false);
+      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      return (false, msg);
+    }
+  }
+
+  /// Làm mới thông tin điều kiện check-out từ server (§6)
+  Future<void> refreshRequirements({String? visitResult}) async {
+    if (state.visitId <= 0) return;
+    try {
+      final req = await getVisitRequirementsUseCase(
+        state.visitId,
+        visitResult: visitResult ?? state.visitResult,
+      );
+      if (req.secondsRemaining > 0) {
+        _targetDoneTime = DateTime.now().add(Duration(seconds: req.secondsRemaining));
+      } else {
+        _targetDoneTime = null;
+      }
+      state = state.copyWith(requirements: req);
+    } catch (_) {}
+  }
+
+  /// Đổi kết quả viếng thăm: 'visited' (Mở cửa) hoặc 'closed' (Đóng cửa)
+  void setVisitResult(String result) {
+    if (state.visitResult != result) {
+      final isClosed = result == 'closed';
+      var currentReq = state.requirements;
+      if (currentReq != null) {
+        final isPhotosOk = currentReq.photosMissing <= 0;
+        final isTimeOk = isClosed || currentReq.secondsRemaining <= 0;
+        final isFormsOk = isClosed || currentReq.missingForms.isEmpty;
+        final satisfied = isPhotosOk && isTimeOk && isFormsOk;
+        currentReq = currentReq.copyWith(satisfied: satisfied);
+      }
+      state = state.copyWith(
+        visitResult: result,
+        requirements: currentReq,
+      );
+      refreshRequirements(visitResult: result);
+    }
+  }
+
+  /// Ghi chú lý do đóng cửa
+  void setClosedNote(String note) {
+    state = state.copyWith(closedNote: note);
+  }
+
+  /// Thực hiện check-out (§7)
+  Future<(bool, String?)> checkout({
+    double? lat,
+    double? lng,
+    double? accuracyM,
+  }) async {
+    if (state.visitId <= 0) {
+      return (false, 'Lượt viếng thăm chưa được tạo trên máy chủ');
+    }
+
     state = state.copyWith(status: CheckInStatus.checkingOut);
     try {
-      final dealerId = state.checkinData?.dealer.id ?? 'DL-VP-00128';
-      await checkoutDealerUseCase(dealerId);
-      state = state.copyWith(status: CheckInStatus.checkedOut);
-      return true;
-    } catch (e) {
-      state = state.copyWith(
-        status: CheckInStatus.error,
-        errorMessage: e.toString().replaceAll('AppException: ', ''),
+      final request = CheckoutRequestModel(
+        visitResult: state.visitResult,
+        closedNote: state.visitResult == 'closed' ? state.closedNote : null,
+        lat: lat,
+        lng: lng,
+        accuracyM: accuracyM,
+        clientTime: DateTime.now().toIso8601String(),
+        clientBootId: SystemClock.bootId,
       );
-      return false;
+
+      await checkoutUseCase(
+        visitId: state.visitId,
+        request: request,
+      );
+
+      _visitTimer?.cancel();
+      state = state.copyWith(status: CheckInStatus.checkedOut);
+      return (true, null);
+    } catch (e) {
+      final rawMsg = e.toString();
+      // Nếu server trả về 422 "đã check-out rồi" / "đã đóng" thì coi là thành công (§9)
+      if (rawMsg.contains('đã check-out rồi') || rawMsg.contains('đã đóng')) {
+        _visitTimer?.cancel();
+        state = state.copyWith(status: CheckInStatus.checkedOut);
+        return (true, null);
+      }
+
+      final msg = rawMsg.replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      state = state.copyWith(
+        status: CheckInStatus.loaded,
+        errorMessage: msg,
+      );
+      return (false, msg);
+    }
+  }
+
+  /// Huỷ lượt check-in (§3.4 HUY-LUOT-VIENG-THAM-2026-09-30.md)
+  Future<(bool, String?)> cancelVisit() async {
+    final visitId = state.visitId;
+
+    // Nếu lượt chưa kịp tạo trên máy chủ (ví dụ mới khởi tạo cục bộ) -> chỉ cần xoá session
+    if (visitId <= 0) {
+      _visitTimer?.cancel();
+      resetSession();
+      return (true, null);
+    }
+
+    try {
+      await cancelVisitUseCase(visitId);
+      _visitTimer?.cancel();
+      resetSession();
+      return (true, null);
+    } catch (e) {
+      final rawMsg = e.toString();
+      // Server idempotent (§3.4): Nếu đã huỷ trước đó thì coi là thành công
+      if (rawMsg.contains('đã bị huỷ') || rawMsg.contains('đã huỷ')) {
+        _visitTimer?.cancel();
+        resetSession();
+        return (true, null);
+      }
+      final msg = rawMsg.replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      return (false, msg);
     }
   }
 

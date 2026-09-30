@@ -658,6 +658,7 @@ void main() {
       expect(find.text('Đại lý Test'), findsOneWidget);
 
       // Open note dialog and enter note
+      await tester.ensureVisible(find.text('Ghi chú chuyến ghé'));
       await tester.tap(find.text('Ghi chú chuyến ghé'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
@@ -673,9 +674,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // MUST show warning dialog
-      expect(find.text('Hủy check-in?'), findsOneWidget);
-      expect(find.text('Bạn có ghi chú/thông tin chưa lưu. Bạn có chắc chắn muốn thoát khỏi phiên check-in này không? Dữ liệu bạn vừa nhập sẽ bị mất.'), findsOneWidget);
+      // MUST show cancel visit confirmation dialog (§3.4 HUY-LUOT-VIENG-THAM)
+      expect(find.text('Hủy lượt check-in?'), findsOneWidget);
+      expect(find.text('XÁC NHẬN HỦY'), findsOneWidget);
     } finally {
       container.dispose();
     }
