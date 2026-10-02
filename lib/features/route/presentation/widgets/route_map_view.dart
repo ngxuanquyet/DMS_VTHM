@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/location/location_provider.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/map/goong_config.dart';
 import '../../../../core/map/goong_map_view.dart';
 import '../../../../core/map/goong_providers.dart';
@@ -15,8 +16,12 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
+import '../../../customer/domain/entities/customer_entity.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../../domain/entities/route_entity.dart';
 import '../viewmodels/route_view_model.dart';
+import 'active_visit_blocking_dialog.dart';
 import 'checkin_distance_warning_dialog.dart';
 
 class RouteMapView extends ConsumerStatefulWidget {
@@ -344,6 +349,64 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   }
 
   Future<void> _handleCheckin(BuildContext context, DealerEntity dealer) async {
+    // 0. Nếu điểm bán đã hoàn thành viếng thăm hôm nay (§3 Luật 2)
+    if (dealer.status == DealerVisitStatus.completed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.'),
+          backgroundColor: Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Nếu điểm bán đang có phiên viếng thăm mở (§3 Luật 3) -> Vào tiếp tục ngay
+    if (dealer.status == DealerVisitStatus.inProgress) {
+      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
+      if (context.mounted) {
+        context.push('/check-in', extra: dealer);
+      }
+      return;
+    }
+
+    // 0.1. Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
+    // Hoạt động cả khi Online lẫn Offline
+    final checkInState = ref.read(checkInViewModelProvider);
+    final routeState = ref.read(routeViewModelProvider);
+    VisitEntity? activeVisit = checkInState.visitId > 0 && checkInState.visitEntity?.isOpen == true
+        ? checkInState.visitEntity
+        : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
+
+    if (activeVisit == null) {
+      try {
+        final saved = await ref.read(visitRepositoryProvider).getActiveVisit();
+        if (saved != null && saved.isOpen) {
+          activeVisit = saved;
+        }
+      } catch (_) {}
+    }
+
+    final targetCustomerId = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).id
+        : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+
+    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
+      final activeDealerName = activeVisit.customerName.isNotEmpty
+          ? activeVisit.customerName
+          : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');
+      if (context.mounted) {
+        await showActiveVisitBlockingDialog(
+          context: context,
+          ref: ref,
+          activeVisit: activeVisit,
+          activeDealerName: activeDealerName,
+          targetDealerName: dealer.name,
+        );
+      }
+      return;
+    }
+
     // 1. Kiểm tra nhanh quyền vị trí & trạng thái GPS từ RAM (0ms)
     final locState = ref.read(locationProvider);
     if (!locState.isReady) {
@@ -353,11 +416,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     }
 
     // 2. Tính khoảng cách ngay lập tức (< 1ms) từ dữ liệu sẵn có
-    double actualDistance;
-    if (dealer.lat == null || dealer.lng == null) {
-      // Điểm bán chưa có tọa độ GPS -> Không gọi GPS vô ích, hiện cảnh báo ngay
-      actualDistance = 850;
-    } else {
+    // ⚠️ Theo đặc tả 01/10/2026: Điểm bán chưa có toạ độ (lat/lng = null) -> Server luôn cho qua, app cũng cho qua, đừng chặn!
+    if (dealer.lat != null && dealer.lng != null) {
+      double actualDistance;
       final livePoint = ref.read(currentPointProvider).value;
       if (livePoint != null) {
         actualDistance = Geolocator.distanceBetween(
@@ -385,28 +446,36 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               dealer.lng!,
             );
           } else {
-            actualDistance = 850;
+            actualDistance = 0;
           }
         }
       }
-    }
 
-    // 3. Nếu khoảng cách > 100m -> Hiển thị popup cảnh báo tức thì (<5ms)
-    if (actualDistance > 100) {
-      if (context.mounted) {
-        showCheckinDistanceWarningDialog(
-          context,
-          dealerName: dealer.name,
-          distanceMeters: actualDistance,
-          lat: dealer.lat,
-          lng: dealer.lng,
-          address: dealer.address,
-        );
+      final mobileRules = ref.read(mobileRulesProvider);
+      final allowedRadius = dealer.geofenceRadiusM ??
+          (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).geofenceRadiusM
+              : null) ??
+          mobileRules.visit.defaultRadiusM;
+
+      // 3. Nếu yêu cầu geofence và khoảng cách > bán kính cho phép -> Hiển thị popup cảnh báo
+      if (mobileRules.visit.requireGeofence && actualDistance > allowedRadius) {
+        if (context.mounted) {
+          showCheckinDistanceWarningDialog(
+            context,
+            dealerName: dealer.name,
+            distanceMeters: actualDistance,
+            allowedRadiusMeters: allowedRadius,
+            lat: dealer.lat,
+            lng: dealer.lng,
+            address: dealer.address,
+          );
+        }
+        return;
       }
-      return;
     }
 
-    // 4. Hợp lệ (<= 100m) -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
+    // 4. Hợp lệ -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
       context.push('/check-in', extra: dealer);

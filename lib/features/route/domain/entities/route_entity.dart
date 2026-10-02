@@ -17,6 +17,7 @@ class DealerEntity {
   final bool isVip;
   final double? lat;
   final double? lng;
+  final int? geofenceRadiusM;
   final dynamic customer;
   final VisitEntity? visit;
 
@@ -35,6 +36,7 @@ class DealerEntity {
     required this.isVip,
     this.lat,
     this.lng,
+    this.geofenceRadiusM,
     this.customer,
     this.visit,
   });
@@ -69,6 +71,7 @@ class CheckinDealerEntity {
   final String visitDuration;
   final double? lat;
   final double? lng;
+  final int? geofenceRadiusM;
 
   const CheckinDealerEntity({
     required this.id,
@@ -79,6 +82,7 @@ class CheckinDealerEntity {
     required this.visitDuration,
     this.lat,
     this.lng,
+    this.geofenceRadiusM,
   });
 }
 

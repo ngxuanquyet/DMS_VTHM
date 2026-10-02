@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -94,35 +93,6 @@ class AttendanceSummaryCard extends ConsumerWidget {
                 ],
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-          const Divider(height: 1),
-          const SizedBox(height: 10),
-          Center(
-            child: InkWell(
-              onTap: () => context.push('/attendance'),
-              borderRadius: AppRadius.roundedSm,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      strings.viewDetails,
-                      style: AppTypography.labelLarge(
-                        color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                      ).copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 16,
-                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ),
         ],
       ),

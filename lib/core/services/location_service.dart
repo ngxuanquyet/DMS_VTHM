@@ -164,11 +164,11 @@ class LocationService {
         return lastKnown;
       }
 
-      // 3. Fallback lấy vị trí mới với timeout nhanh 2 giây
+      // 3. Fallback lấy vị trí mới với timeout hợp lý cho thiết bị đời cũ (6 giây)
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 2),
+          timeLimit: Duration(seconds: 6),
         ),
       );
 
@@ -195,7 +195,7 @@ class LocationService {
       Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 3),
+          timeLimit: Duration(seconds: 8),
         ),
       ).then((freshPos) {
         _cachedPosition = freshPos;

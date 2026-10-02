@@ -12,6 +12,7 @@ import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/forms/presentation/screens/market_form_fill_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
+import '../../features/position_declaration/presentation/screens/position_declaration_screen.dart';
 import '../../features/profile/presentation/screens/dynamic_form_demo_screen.dart';
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
@@ -148,6 +149,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           child: CheckInScreen(
             dealer: state.extra is DealerEntity ? state.extra as DealerEntity : null,
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/position-declaration',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const PositionDeclarationScreen(),
         ),
       ),
       GoRoute(

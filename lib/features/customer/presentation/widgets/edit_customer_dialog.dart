@@ -875,60 +875,18 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
 
   Future<void> _showPhotoPickerOptions() async {
     final picker = ImagePicker();
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_rounded, color: AppColors.primary),
-              title: const Text('Chụp ảnh từ máy ảnh'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final picked = await picker.pickImage(
-                  source: ImageSource.camera,
-                  imageQuality: 85,
-                );
-                if (picked != null) {
-                  setState(() {
-                    if (_photos.length < 10) {
-                      _photos.add(picked.path);
-                      _photosChanged = true;
-                    }
-                  });
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded, color: AppColors.secondary),
-              title: const Text('Chọn nhiều ảnh từ thư viện'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final remaining = 10 - _photos.length;
-                if (remaining <= 0) return;
-                final pickedList = await picker.pickMultiImage(
-                  limit: remaining,
-                  imageQuality: 85,
-                );
-                if (pickedList.isNotEmpty) {
-                  setState(() {
-                    for (final f in pickedList) {
-                      if (_photos.length < 10) {
-                        _photos.add(f.path);
-                        _photosChanged = true;
-                      }
-                    }
-                  });
-                }
-              },
-            ),
-          ],
-        ),
-      ),
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
     );
+    if (picked != null) {
+      setState(() {
+        if (_photos.length < 10) {
+          _photos.add(picked.path);
+          _photosChanged = true;
+        }
+      });
+    }
   }
 
   Widget _buildSectionHeader({

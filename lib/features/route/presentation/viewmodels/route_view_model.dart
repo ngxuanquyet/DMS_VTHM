@@ -52,25 +52,49 @@ final routeViewModelProvider =
   final customerRepository = ref.read(customerRepositoryProvider);
   final getRouteDetailUseCase = ref.read(getRouteDetailUseCaseProvider);
   final getTodayVisitsUseCase = ref.read(getTodayVisitsUseCaseProvider);
+  final visitRepository = ref.read(visitRepositoryProvider);
   return RouteViewModel(
     customerRepository: customerRepository,
     getRouteDetailUseCase: getRouteDetailUseCase,
     getTodayVisitsUseCase: getTodayVisitsUseCase,
+    visitRepository: visitRepository,
   );
 });
+
+String _formatTimeHHmmss(DateTime? dt) {
+  if (dt == null) return '--:--:--';
+  final local = dt.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}:${local.second.toString().padLeft(2, '0')}';
+}
+
+String _formatTimeHHmm(DateTime? dt) {
+  if (dt == null) return '--:--';
+  final local = dt.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
 
 class RouteViewModel extends StateNotifier<RouteState> {
   final CustomerRepository customerRepository;
   final GetRouteDetailUseCase getRouteDetailUseCase;
   final GetTodayVisitsUseCase getTodayVisitsUseCase;
+  final VisitRepository? visitRepository;
   List<CustomerEntity> _rawCustomers = [];
 
   RouteViewModel({
     required this.customerRepository,
     required this.getRouteDetailUseCase,
     required this.getTodayVisitsUseCase,
+    this.visitRepository,
   }) : super(const RouteState()) {
     loadRouteDetail();
+  }
+
+  void setActiveVisit(VisitEntity? visit) {
+    state = state.copyWith(
+      activeVisit: visit,
+      clearActiveVisit: visit == null,
+    );
+    _recomputeRouteDetail();
   }
 
   void selectTab(int index) {
@@ -132,6 +156,17 @@ class RouteViewModel extends StateNotifier<RouteState> {
           activeVisit = v;
           break;
         }
+      }
+
+      // Nếu không có lượt mở từ API (ví dụ đang offline hoặc lỗi mạng),
+      // kiểm tra bản ghi active visit lưu trữ cục bộ trong SharedPreferences
+      if (activeVisit == null && visitRepository != null) {
+        try {
+          final saved = await visitRepository!.getActiveVisit();
+          if (saved != null && saved.isOpen) {
+            activeVisit = saved;
+          }
+        } catch (_) {}
       }
 
       // 3. Extract unique route names from customer list
@@ -205,6 +240,10 @@ class RouteViewModel extends StateNotifier<RouteState> {
     for (final v in state.todayVisits) {
       visitMap[v.customerId] = v;
     }
+    // Bổ sung activeVisit vào visitMap nếu chưa có (rất quan trọng khi offline)
+    if (state.activeVisit != null && state.activeVisit!.isOpen) {
+      visitMap[state.activeVisit!.customerId] = state.activeVisit!;
+    }
 
     // Build DealerEntities
     final dealers = <DealerEntity>[];
@@ -222,8 +261,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           visitStatus = DealerVisitStatus.inProgress;
           statusLabel = 'Đang ghé';
           if (visit.checkinAt != null) {
-            visitedTime =
-                '${visit.checkinAt!.hour.toString().padLeft(2, '0')}:${visit.checkinAt!.minute.toString().padLeft(2, '0')}';
+            visitedTime = _formatTimeHHmm(visit.checkinAt);
           }
         } else {
           visitStatus = DealerVisitStatus.completed;
@@ -231,17 +269,13 @@ class RouteViewModel extends StateNotifier<RouteState> {
           final inTime = visit.checkinAt;
           final outTime = visit.checkoutAt;
           if (inTime != null && outTime != null) {
-            final inStr =
-                '${inTime.hour.toString().padLeft(2, '0')}:${inTime.minute.toString().padLeft(2, '0')}';
-            final outStr =
-                '${outTime.hour.toString().padLeft(2, '0')}:${outTime.minute.toString().padLeft(2, '0')}';
+            final inStr = _formatTimeHHmm(inTime);
+            final outStr = _formatTimeHHmm(outTime);
             visitedTime = '$inStr - $outStr';
           } else if (outTime != null) {
-            visitedTime =
-                '${outTime.hour.toString().padLeft(2, '0')}:${outTime.minute.toString().padLeft(2, '0')}';
+            visitedTime = _formatTimeHHmm(outTime);
           } else if (inTime != null) {
-            visitedTime =
-                '${inTime.hour.toString().padLeft(2, '0')}:${inTime.minute.toString().padLeft(2, '0')}';
+            visitedTime = _formatTimeHHmm(inTime);
           }
         }
       } else if (c.visitStatus == CustomerVisitStatus.visited) {
@@ -273,6 +307,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           isVip: isVip,
           lat: c.lat,
           lng: c.lng,
+          geofenceRadiusM: c.geofenceRadiusM,
           customer: c,
           visit: visit,
         ),
@@ -369,14 +404,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
     try {
       final now = DateTime.now();
-      final localTime =
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+      final localTime = _formatTimeHHmmss(now);
 
       final data = await getDealerCheckinUseCase();
       state = state.copyWith(
         status: CheckInStatus.loaded,
         checkinData: data,
-        checkinTime: state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
+        checkinTime: state.visitId > 0 && state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
         liveVisitDuration: state.liveVisitDuration,
       );
 
@@ -444,9 +478,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   /// Khởi tạo phiên viếng thăm với Dealer
   /// Nếu dealer đã có lượt mở (inProgress) -> Tự động phục hồi phiên
   void initCheckinWithDealer(DealerEntity dealer) {
+    // Nếu đang có một lượt viếng thăm khác đang mở, không được ghi đè phiên bằng điểm bán mới
+    if (state.visitId > 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
+      final currentCId = state.visitEntity!.customerId;
+      final newCId = dealer.customer is CustomerEntity
+          ? (dealer.customer as CustomerEntity).id
+          : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+      if (newCId != null && currentCId != newCId) {
+        debugPrint('[CheckInViewModel] Bỏ qua initCheckinWithDealer: Đang có lượt mở id=${state.visitId} tại customer=$currentCId');
+        return;
+      }
+    }
+
     final now = DateTime.now();
-    final localTime =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    final localTime = _formatTimeHHmmss(now);
 
     final initialCheckinData = DealerCheckinDataEntity(
       dealer: CheckinDealerEntity(
@@ -458,6 +503,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         visitDuration: '00:00:00',
         lat: dealer.lat,
         lng: dealer.lng,
+        geofenceRadiusM: dealer.geofenceRadiusM,
       ),
       tasks: const [],
     );
@@ -468,12 +514,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       _sessionClientUuid = const Uuid().v4();
       _setupVisitTimer(existingVisit.checkinAt);
 
-      state = state.copyWith(
+      state = CheckInState(
         status: CheckInStatus.loaded,
         checkinData: initialCheckinData,
         checkinTime: existingVisit.checkinAt != null
-            ? '${existingVisit.checkinAt!.hour.toString().padLeft(2, '0')}:${existingVisit.checkinAt!.minute.toString().padLeft(2, '0')}:${existingVisit.checkinAt!.second.toString().padLeft(2, '0')}'
+            ? _formatTimeHHmmss(existingVisit.checkinAt)
             : localTime,
+        liveVisitDuration: state.liveVisitDuration,
         visitId: existingVisit.id,
         visitEntity: existingVisit,
         requirements: existingVisit.requirements,
@@ -490,7 +537,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     // Trường hợp mới bắt đầu check-in
     _sessionClientUuid = const Uuid().v4();
-    state = state.copyWith(
+    _elapsedSeconds = 0;
+    _startTimer();
+    state = CheckInState(
       status: CheckInStatus.loaded,
       checkinData: initialCheckinData,
       checkinTime: localTime,
@@ -504,6 +553,33 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     loadSurveyForms(customerId);
   }
 
+  /// Phục hồi phiên viếng thăm đang mở từ SharedPreferences (hữu ích khi mở app lại offline)
+  Future<bool> restoreActiveVisitIfAvailable() async {
+    if (state.visitId > 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
+      return true;
+    }
+    try {
+      final saved = await visitRepository.getActiveVisit();
+      if (saved != null && saved.isOpen) {
+        final localTime = saved.checkinAt != null
+            ? _formatTimeHHmmss(saved.checkinAt)
+            : _formatTimeHHmmss(DateTime.now());
+        _setupVisitTimer(saved.checkinAt);
+        state = state.copyWith(
+          status: CheckInStatus.loaded,
+          visitId: saved.id,
+          visitEntity: saved,
+          requirements: saved.requirements,
+          checkinTime: localTime,
+        );
+        loadSurveyForms(saved.customerId);
+        refreshRequirements();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   /// Gọi API check-in thật lên server (§3)
   /// Trả về null nếu thành công; trả về chuỗi thông báo lỗi tiếng Việt nếu bị từ chối
   Future<String?> performCheckin({
@@ -515,6 +591,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     bool? isMockLocation,
     String? note,
   }) async {
+    // Chặn cả online và offline nếu đang có một lượt viếng thăm khác chưa đóng (§3 Luật 3)
+    if (state.visitId > 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
+      final currentCId = state.visitEntity!.customerId;
+      if (currentCId != customerId) {
+        return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
+      }
+    }
+    try {
+      final savedActive = await visitRepository.getActiveVisit();
+      if (savedActive != null && savedActive.isOpen && savedActive.customerId != customerId) {
+        return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
+      }
+    } catch (_) {}
+
     try {
       final request = CheckinRequestModel(
         customerId: customerId,
@@ -538,7 +628,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
 
       final cTime = visit.checkinAt != null
-          ? '${visit.checkinAt!.hour.toString().padLeft(2, '0')}:${visit.checkinAt!.minute.toString().padLeft(2, '0')}:${visit.checkinAt!.second.toString().padLeft(2, '0')}'
+          ? _formatTimeHHmmss(visit.checkinAt)
           : state.checkinTime;
 
       state = state.copyWith(
@@ -564,7 +654,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   void _setupVisitTimer(DateTime? checkinTime) {
     _visitTimer?.cancel();
     if (checkinTime != null) {
-      final diff = DateTime.now().difference(checkinTime).inSeconds;
+      final diff = DateTime.now().difference(checkinTime.toLocal()).inSeconds;
       _elapsedSeconds = diff > 0 ? diff : 0;
     } else {
       _elapsedSeconds = 0;
@@ -762,6 +852,33 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }) async {
     if (state.visitId <= 0) {
       return (false, 'Lượt viếng thăm chưa được tạo trên máy chủ');
+    }
+
+    // Kiểm tra khoảng cách với điểm bán khi có toạ độ (giới hạn tối đa 100m)
+    double? dealerLat = state.checkinData?.dealer.lat;
+    double? dealerLng = state.checkinData?.dealer.lng;
+    if (dealerLat == null && state.customer is CustomerEntity) {
+      final cust = state.customer as CustomerEntity;
+      dealerLat = cust.lat;
+      dealerLng = cust.lng;
+    }
+
+    if (dealerLat != null && dealerLng != null && lat != null && lng != null) {
+      final distanceM = Geolocator.distanceBetween(
+        lat,
+        lng,
+        dealerLat,
+        dealerLng,
+      );
+      if (distanceM > 100) {
+        final distText = distanceM < 1000
+            ? '${distanceM.round()}m'
+            : '${(distanceM / 1000).toStringAsFixed(1)}km';
+        return (
+          false,
+          'Khoảng cách hiện tại ($distText) vượt quá phạm vi cho phép (tối đa 100m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-out.',
+        );
+      }
     }
 
     state = state.copyWith(status: CheckInStatus.checkingOut);

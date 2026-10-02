@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/dynamic_form_builder.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
+import 'package:vthm_dms/core/dynamic_form/widgets/photo_field_widget.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_source.dart';
 import 'package:drift/native.dart';
@@ -50,7 +51,7 @@ void main() {
       expect(field.section, 'Hình ảnh điểm bán');
     });
 
-    test('kDefaultCustomerFormSchema includes photo_file_id with maxPhotos 10', () {
+    test('kDefaultCustomerFormSchema includes photo_file_id with maxPhotos 10 and allowGallery false', () {
       final fieldsJson = (kDefaultCustomerFormSchema['data'] as Map)['fields'] as List;
       final photoFieldJson = fieldsJson.cast<dynamic>().firstWhere(
         (f) => f['code'] == 'photo_file_id',
@@ -61,6 +62,38 @@ void main() {
       expect(field.code, 'photo_file_id');
       expect(field.type, DynamicFormFieldType.photo);
       expect(field.maxPhotos, 10);
+      expect(field.allowGallery, false);
+    });
+
+    testWidgets('DynamicPhotoFieldWidget with allowGallery false only triggers camera and does not show gallery option', (tester) async {
+      const field = DynamicFormField(
+        code: 'photo_file_id',
+        label: 'Ảnh điểm bán',
+        type: DynamicFormFieldType.photo,
+        maxPhotos: 5,
+        allowGallery: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DynamicPhotoFieldWidget(
+              field: field,
+              photoPaths: const [],
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byIcon(Icons.add_a_photo_rounded), findsOneWidget);
+      expect(find.text('0/5'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.add_a_photo_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('Chọn từ Thư viện'), findsNothing);
     });
 
     test('createCustomerOffline conforms strictly to spec: no code, no status, has route_ids [int], photo_token, and data map', () async {

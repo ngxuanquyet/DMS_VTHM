@@ -11,9 +11,11 @@ import '../database/database_provider.dart';
 import '../errors/app_exceptions.dart';
 import '../network/api_client.dart';
 import '../network/connectivity_provider.dart';
+import '../utils/image_upload_helper.dart';
 import '../utils/system_clock.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 import '../../features/customer/data/utils/customer_payload_helper.dart';
+import '../../features/position_declaration/data/repositories/position_declaration_repository_impl.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -209,6 +211,8 @@ class SyncService {
         await _syncCreateCustomer(entry);
       } else if (entry.entity == 'form_submission' && entry.op == 'create') {
         await _syncSubmitForm(entry);
+      } else if (entry.entity == 'declaration' && entry.op == 'create') {
+        await _syncPositionDeclaration(entry);
       } else {
         // Các loại entity khác nếu có
         await _db.markDone(entry.id);
@@ -237,9 +241,10 @@ class SyncService {
     try {
       final file = File(trimmed);
       if (await file.exists()) {
-        final fileName = file.path.split(Platform.pathSeparator).last.split('/').last;
+        final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+        final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
         final formData = FormData.fromMap({
-          'file': await MultipartFile.fromFile(file.path, filename: fileName),
+          'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
         });
         final res = await _apiClient.postMultipart('/crm/customer-photos', formData: formData);
         if (res is Map && res['data'] is Map && res['data']['token'] != null) {
@@ -384,6 +389,135 @@ class SyncService {
     debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
 
+  /// Tải ảnh khai báo vị trí lên /dms/position-photos
+  Future<String?> _uploadPositionPhoto(File file) async {
+    try {
+      final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+      final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
+      });
+      final res = await _apiClient.postMultipart('/dms/position-photos', formData: formData);
+      if (res is Map && res['data'] is Map && res['data']['token'] != null) {
+        return res['data']['token'].toString();
+      }
+    } catch (e) {
+      debugPrint('[SyncService] Lỗi khi upload ảnh khai báo vị trí: $e');
+    }
+    return null;
+  }
+
+  /// Đồng bộ bản ghi khai báo vị trí lên máy chủ (§4 & §5)
+  Future<void> _syncPositionDeclaration(SyncQueueEntry entry) async {
+    final rawSource = jsonDecode(entry.payload) as Map<String, dynamic>;
+
+    // 1. Phân giải & upload các ảnh cục bộ
+    final resolvedTokens = <String>[];
+    final existingTokens = rawSource['photo_tokens'];
+    if (existingTokens is List) {
+      for (final t in existingTokens) {
+        final str = t.toString().trim();
+        if (str.length == 32 && !str.contains('/') && !str.contains(r'\')) {
+          resolvedTokens.add(str);
+        }
+      }
+    }
+
+    final localPaths = rawSource['local_photo_paths'];
+    if (localPaths is List) {
+      for (final p in localPaths) {
+        final path = p.toString().trim();
+        if (path.isNotEmpty) {
+          final file = File(path);
+          if (await file.exists()) {
+            final token = await _uploadPositionPhoto(file);
+            if (token != null && !resolvedTokens.contains(token)) {
+              resolvedTokens.add(token);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Tính toán queued_seconds (§5.1) dùng đồng hồ đơn điệu
+    final queuedSeconds = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+
+    // 3. Gửi lên POST /dms/position-declarations
+    final payloadMap = <String, dynamic>{
+      'reason_id': rawSource['reason_id'],
+      'lat': rawSource['lat'],
+      'lng': rawSource['lng'],
+      'photo_tokens': resolvedTokens,
+      'is_offline_sync': true,
+      'client_uuid': entry.clientUuid,
+      'client_boot_id': entry.bootId,
+    };
+
+    if (queuedSeconds != null) {
+      payloadMap['queued_seconds'] = queuedSeconds;
+    }
+    if (rawSource['accuracy_m'] != null) {
+      payloadMap['accuracy_m'] = rawSource['accuracy_m'];
+    }
+    if (rawSource['title'] != null && rawSource['title'].toString().trim().isNotEmpty) {
+      payloadMap['title'] = rawSource['title'].toString().trim();
+    }
+    if (rawSource['address'] != null && rawSource['address'].toString().trim().isNotEmpty) {
+      payloadMap['address'] = rawSource['address'].toString().trim();
+    }
+    if (rawSource['note'] != null && rawSource['note'].toString().trim().isNotEmpty) {
+      payloadMap['note'] = rawSource['note'].toString().trim();
+    }
+    if (rawSource['is_mock_location'] != null) {
+      payloadMap['is_mock_location'] = rawSource['is_mock_location'];
+    }
+    if (rawSource['client_time'] != null && rawSource['client_time'].toString().isNotEmpty) {
+      payloadMap['client_time'] = rawSource['client_time'];
+    }
+    if (rawSource['device_info'] != null) {
+      payloadMap['device_info'] = rawSource['device_info'];
+    }
+
+    final response = await _apiClient.post(
+      '/dms/position-declarations',
+      data: payloadMap,
+    );
+
+    int? serverId;
+    String? declaredAt;
+    String? declaredDate;
+
+    if (response is Map<String, dynamic>) {
+      final data = response['data'] is Map<String, dynamic>
+          ? response['data'] as Map<String, dynamic>
+          : response;
+      if (data['id'] != null) {
+        serverId = int.tryParse(data['id'].toString());
+      }
+      declaredAt = data['declared_at']?.toString();
+      declaredDate = data['declared_date']?.toString();
+    }
+
+    await _db.markDone(entry.id, serverId: serverId);
+    debugPrint('[SyncService] Đồng bộ khai báo vị trí thành công! UUID: ${entry.clientUuid}, Server ID: $serverId, mốc: $declaredAt');
+
+    // Cập nhật trạng thái 'synced' trong danh sách lịch sử cục bộ
+    try {
+      await _ref.read(positionDeclarationRepositoryProvider).updateLocalDeclarationStatus(
+        entry.clientUuid,
+        syncStatus: 'synced',
+        serverId: serverId,
+        declaredAt: declaredAt,
+        declaredDate: declaredDate,
+      );
+    } catch (_) {}
+  }
+
+
   String _extractDioErrorMessage(DioException dioErr) {
     final data = dioErr.response?.data;
     if (data is Map) {
@@ -461,6 +595,14 @@ class SyncService {
         await _db.markCustomerSyncError(entry.clientUuid, errorMsg);
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+        } catch (_) {}
+      } else if (entry.entity == 'declaration') {
+        try {
+          await _ref.read(positionDeclarationRepositoryProvider).updateLocalDeclarationStatus(
+            entry.clientUuid,
+            syncStatus: 'error',
+            error: errorMsg,
+          );
         } catch (_) {}
       }
 

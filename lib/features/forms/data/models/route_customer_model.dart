@@ -8,6 +8,7 @@ class RouteCustomerItem {
   final String? address;
   final double? lat;
   final double? lng;
+  final int? geofenceRadiusM;
 
   const RouteCustomerItem({
     required this.id,
@@ -16,6 +17,7 @@ class RouteCustomerItem {
     this.address,
     this.lat,
     this.lng,
+    this.geofenceRadiusM,
   });
 
   bool get hasCoordinates =>
@@ -37,6 +39,9 @@ class RouteCustomerItem {
           ? (json['lng'] ?? json['longitude'] as num).toDouble()
           : double.tryParse(
               (json['lng'] ?? json['longitude'])?.toString() ?? ''),
+      geofenceRadiusM: json['geofence_radius_m'] is num
+          ? (json['geofence_radius_m'] as num).toInt()
+          : int.tryParse(json['geofence_radius_m']?.toString() ?? ''),
     );
   }
 
@@ -48,6 +53,7 @@ class RouteCustomerItem {
       if (address != null) 'address': address,
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
+      if (geofenceRadiusM != null) 'geofence_radius_m': geofenceRadiusM,
     };
   }
 
@@ -58,6 +64,7 @@ class RouteCustomerItem {
     String? address,
     double? lat,
     double? lng,
+    int? geofenceRadiusM,
   }) {
     return RouteCustomerItem(
       id: id ?? this.id,
@@ -66,6 +73,7 @@ class RouteCustomerItem {
       address: address ?? this.address,
       lat: lat ?? this.lat,
       lng: lng ?? this.lng,
+      geofenceRadiusM: geofenceRadiusM ?? this.geofenceRadiusM,
     );
   }
 

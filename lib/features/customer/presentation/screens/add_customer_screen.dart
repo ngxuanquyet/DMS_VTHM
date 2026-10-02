@@ -735,6 +735,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           }
 
           // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
+          // Ở màn nhập khách hàng: chỉ cho phép chụp ảnh từ camera, không cho chọn từ thư viện
           if (!fields.any((f) => f.code == 'photo_file_id' || f.code == 'photo')) {
             fields.add(
               const DynamicFormField(
@@ -743,7 +744,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 type: DynamicFormFieldType.photo,
                 maxPhotos: 10,
                 isRequired: true,
-                helperText: 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
+                allowGallery: false,
+                helperText: 'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
                 section: 'Hình ảnh điểm bán',
               ),
             );
@@ -754,12 +756,26 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               fields[photoIdx] = existing.copyWith(
                 isRequired: true,
                 type: DynamicFormFieldType.photo,
+                allowGallery: false,
                 maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
                 label: existing.label.isEmpty ? 'Ảnh điểm bán (Bắt buộc)' : existing.label,
-                helperText: existing.helperText ?? 'Chụp hoặc tải lên tối đa 10 ảnh thực tế điểm bán',
+                helperText: existing.helperText?.replaceAll('hoặc tải lên ', '') ??
+                    'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
                 section: existing.section == null || existing.section!.isEmpty
                     ? 'Hình ảnh điểm bán'
                     : existing.section,
+              );
+            }
+          }
+
+          // Cấu hình toàn bộ các trường ảnh ở màn nhập khách hàng: chỉ cho phép chụp từ camera, không cho chọn từ thư viện
+          for (int i = 0; i < fields.length; i++) {
+            if (fields[i].type == DynamicFormFieldType.photo || _isCustomerPhotoKey(fields[i].code)) {
+              fields[i] = fields[i].copyWith(
+                type: DynamicFormFieldType.photo,
+                allowGallery: false,
+                helperText: fields[i].helperText?.replaceAll('hoặc tải lên ', '') ??
+                    'Chụp tối đa ${fields[i].maxPhotos} ảnh thực tế điểm bán từ máy ảnh',
               );
             }
           }

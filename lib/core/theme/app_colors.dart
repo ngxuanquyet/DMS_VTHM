@@ -40,6 +40,10 @@ class AppColors {
   static const Color errorContainer = Color(0xFFFFDAD6);
   static const Color onErrorContainer = Color(0xFF93000A);
 
+  // Success palette
+  static const Color success = Color(0xFF10B981);
+  static const Color onSuccess = Color(0xFFFFFFFF);
+
   // Neutral / Surface palette (Light Mode)
   static const Color surface = Color(0xFFF7FAF6);
   static const Color surfaceDim = Color(0xFFD5DCCF);

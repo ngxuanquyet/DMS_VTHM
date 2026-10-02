@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../data/services/auth_api_service.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 import '../states/auth_state.dart';
@@ -36,6 +37,7 @@ final authViewModelProvider = StateNotifierProvider<AuthViewModel, AuthState>((r
     checkAuthUseCase: ref.read(checkAuthUseCaseProvider),
     logoutUseCase: ref.read(logoutUseCaseProvider),
     getSavedUsernameUseCase: ref.read(getSavedUsernameUseCaseProvider),
+    ref: ref,
   );
 });
 
@@ -44,12 +46,14 @@ class AuthViewModel extends StateNotifier<AuthState> {
   final CheckAuthUseCase checkAuthUseCase;
   final LogoutUseCase logoutUseCase;
   final GetSavedUsernameUseCase getSavedUsernameUseCase;
+  final Ref? ref;
 
   AuthViewModel({
     required this.loginUseCase,
     required this.checkAuthUseCase,
     required this.logoutUseCase,
     required this.getSavedUsernameUseCase,
+    this.ref,
   }) : super(const AuthState()) {
     _init();
   }
@@ -69,6 +73,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
           status: AuthStatus.authenticated,
           user: user,
         );
+        // Tải luật thị trường khi khởi động phiên đăng nhập (§1.3)
+        ref?.read(mobileRulesProvider.notifier).fetchRules();
         return true;
       } else {
         state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -110,6 +116,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
         status: AuthStatus.authenticated,
         user: user,
       );
+      // Gọi GET /dms/mobile-rules lúc đăng nhập, lưu bản sao trong máy (§1.3)
+      ref?.read(mobileRulesProvider.notifier).fetchRules();
       return true;
     } catch (e) {
       state = state.copyWith(

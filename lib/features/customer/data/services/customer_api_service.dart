@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/image_upload_helper.dart';
 import '../models/customer_dto.dart';
 
 class CustomerApiService {
@@ -150,9 +151,11 @@ class CustomerApiService {
   /// POST /crm/customer-photos (multipart/form-data, khóa 'file')
   /// Trả về Map chứa token (chuỗi 32-hex) và url công khai
   Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async {
-    final fileName = filePath.split(Platform.pathSeparator).last.split('/').last;
+    final originalFile = File(filePath);
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(originalFile);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
     final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
     });
 
     final response = await _apiClient.postMultipart(

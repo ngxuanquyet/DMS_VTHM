@@ -10,10 +10,16 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/custom_donut_chart.dart';
 import '../../../../core/widgets/top_app_bar.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
+import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
+import '../widgets/active_visit_blocking_dialog.dart';
+import '../widgets/checkin_distance_warning_dialog.dart';
 import '../widgets/checkout_success_dialog.dart';
 import '../../../forms/presentation/screens/market_form_fill_screen.dart';
 import '../../../forms/presentation/widgets/market_form_card.dart';
@@ -37,8 +43,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initAndCheckin();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _initAndCheckin();
+      await _checkLostData();
     });
   }
 
@@ -51,12 +58,57 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<void> _initAndCheckin() async {
     final vm = ref.read(checkInViewModelProvider.notifier);
+
+    // Kiểm tra xem có phiên viếng thăm khác đang mở không (§3 Luật 3)
+    // Áp dụng cả khi online lẫn offline
+    final currentState = ref.read(checkInViewModelProvider);
+    VisitEntity? activeVisit = currentState.visitId > 0 && currentState.visitEntity?.isOpen == true
+        ? currentState.visitEntity
+        : null;
+
+    if (activeVisit == null) {
+      try {
+        final saved = await ref.read(visitRepositoryProvider).getActiveVisit();
+        if (saved != null && saved.isOpen) {
+          activeVisit = saved;
+        }
+      } catch (_) {}
+    }
+
+    if (activeVisit != null && widget.dealer != null) {
+      final targetCustomerId = widget.dealer!.customer is CustomerEntity
+          ? (widget.dealer!.customer as CustomerEntity).id
+          : int.tryParse(widget.dealer!.id.replaceAll(RegExp(r'[^\d]'), ''));
+
+      if (targetCustomerId != null && targetCustomerId != activeVisit.customerId) {
+        final activeName = activeVisit.customerName.isNotEmpty
+            ? activeVisit.customerName
+            : (currentState.checkinData?.dealer.name ?? 'Điểm bán khác');
+        if (mounted) {
+          await showActiveVisitBlockingDialog(
+            context: context,
+            ref: ref,
+            activeVisit: activeVisit,
+            activeDealerName: activeName,
+            targetDealerName: widget.dealer!.name,
+            onClose: () {
+              if (mounted) _safePop();
+            },
+          );
+        }
+        return;
+      }
+    }
+
     if (widget.dealer != null) {
       vm.initCheckinWithDealer(widget.dealer!);
     } else {
-      final state = ref.read(checkInViewModelProvider);
-      if (state.checkinData == null) {
-        await vm.loadCheckinData();
+      final restored = await vm.restoreActiveVisitIfAvailable();
+      if (!restored) {
+        final state = ref.read(checkInViewModelProvider);
+        if (state.checkinData == null) {
+          await vm.loadCheckinData();
+        }
       }
     }
     await _checkinIfNeeded();
@@ -73,13 +125,22 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
     if (state.visitId > 0) return;
 
-    setState(() {
-      _isCheckingIn = true;
-    });
-
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
         (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 8338);
+
+    // Kiểm tra bản ghi active visit lưu trữ cục bộ để chặn offline (§3 Luật 3)
+    try {
+      final savedActive = await ref.read(visitRepositoryProvider).getActiveVisit();
+      if (savedActive != null && savedActive.isOpen && savedActive.customerId != customerId) {
+        _showCheckinErrorDialog('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.');
+        return;
+      }
+    } catch (_) {}
+
+    setState(() {
+      _isCheckingIn = true;
+    });
 
     if (!mounted) return;
     final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
@@ -100,6 +161,12 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
     if (error != null) {
       _showCheckinErrorDialog(error);
+    } else {
+      final updatedState = ref.read(checkInViewModelProvider);
+      if (updatedState.visitEntity != null) {
+        ref.read(routeViewModelProvider.notifier).setActiveVisit(updatedState.visitEntity);
+        await ref.read(visitRepositoryProvider).saveActiveVisit(updatedState.visitEntity!);
+      }
     }
   }
 
@@ -263,6 +330,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       }
 
       if (success && mounted) {
+        ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
+        await ref.read(visitRepositoryProvider).clearActiveVisit();
         ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -369,6 +438,29 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     );
 
     if (choice == 'leave' && mounted) {
+      final currentVisit = state.visitEntity;
+      if (currentVisit != null) {
+        await ref.read(visitRepositoryProvider).saveActiveVisit(currentVisit);
+        ref.read(routeViewModelProvider.notifier).setActiveVisit(currentVisit);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Đang tạm rời. Lượt viếng thăm tại "${state.checkinData?.dealer.name ?? 'điểm bán'}" vẫn tiếp tục chạy trong nền.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF0284C7),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
       _safePop();
     } else if (choice == 'cancel' && mounted) {
       await _confirmAndCancelVisit(vm);
@@ -502,6 +594,49 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         );
       }
     }
+  }
+
+  /// Khôi phục ảnh chụp nếu ứng dụng bị Android kill tiến trình nền khi mở Camera (§Tối ưu máy ít RAM)
+  Future<void> _checkLostData() async {
+    try {
+      final response = await _picker.retrieveLostData();
+      if (response.isEmpty || response.file == null || !mounted) return;
+
+      final lostFile = File(response.file!.path);
+      if (!lostFile.existsSync()) return;
+
+      final photoType = await _showPhotoTypeSelectionSheet();
+      if (photoType == null || !mounted) return;
+
+      final vm = ref.read(checkInViewModelProvider.notifier);
+      final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+
+      final (success, message) = await vm.uploadPhoto(
+        lostFile,
+        photoType: photoType,
+        lat: pos?.latitude,
+        lng: pos?.longitude,
+      );
+
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(message ?? 'Đã khôi phục và tải ảnh chụp lên thành công.'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<String?> _showPhotoTypeSelectionSheet() async {
@@ -1818,6 +1953,68 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       .read(locationServiceProvider)
                                       .checkAndGetLocation(context);
 
+                                  // Kiểm tra khoảng cách check-out (nếu điểm bán có toạ độ GPS)
+                                  double? dealerLat = widget.dealer?.lat ?? state.checkinData?.dealer.lat;
+                                  double? dealerLng = widget.dealer?.lng ?? state.checkinData?.dealer.lng;
+                                  String dealerName = widget.dealer?.name ?? state.checkinData?.dealer.name ?? '';
+                                  String? dealerAddress = widget.dealer?.address ?? state.checkinData?.dealer.address;
+
+                                  if (dealerLat == null && state.customer is CustomerEntity) {
+                                    final cust = state.customer as CustomerEntity;
+                                    dealerLat = cust.lat;
+                                    dealerLng = cust.lng;
+                                    if (dealerName.isEmpty) dealerName = cust.name;
+                                    dealerAddress ??= cust.address;
+                                  }
+                                  if (dealerName.isEmpty) {
+                                    dealerName = state.visitEntity?.customerName ?? 'Điểm bán';
+                                  }
+
+                                  if (dealerLat != null && dealerLng != null) {
+                                    if (pos == null) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Vui lòng bật định vị GPS để xác thực khoảng cách khi check-out'),
+                                            backgroundColor: AppColors.error,
+                                          ),
+                                        );
+                                      }
+                                      return;
+                                    }
+
+                                    final distanceM = Geolocator.distanceBetween(
+                                      pos.latitude,
+                                      pos.longitude,
+                                      dealerLat,
+                                      dealerLng,
+                                    );
+
+                                    final mobileRules = ref.read(mobileRulesProvider);
+                                    final allowedRadius = widget.dealer?.geofenceRadiusM ??
+                                        (state.customer is CustomerEntity
+                                            ? (state.customer as CustomerEntity).geofenceRadiusM
+                                            : null) ??
+                                        state.checkinData?.dealer.geofenceRadiusM ??
+                                        mobileRules.visit.defaultRadiusM;
+
+                                    if (mobileRules.visit.requireGeofence && distanceM > allowedRadius) {
+                                      if (context.mounted) {
+                                        showCheckinDistanceWarningDialog(
+                                          context,
+                                          dealerName: dealerName,
+                                          distanceMeters: distanceM,
+                                          allowedRadiusMeters: allowedRadius,
+                                          lat: dealerLat,
+                                          lng: dealerLng,
+                                          address: dealerAddress,
+                                          isCheckout: true,
+                                        );
+                                      }
+                                      return;
+                                    }
+                                  }
+
                                   final (success, errorMsg) = await vm.checkout(
                                     lat: pos?.latitude,
                                     lng: pos?.longitude,
@@ -1826,6 +2023,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
                                   if (success && context.mounted) {
                                     // Tải lại danh sách tuyến để cập nhật trạng thái "Đã ghé" (§2.3)
+                                    ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
+                                    await ref.read(visitRepositoryProvider).clearActiveVisit();
                                     ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
 
                                     await CheckoutSuccessDialog.show(

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/image_upload_helper.dart';
 import '../../domain/entities/visit_entity.dart';
 import '../../domain/entities/visit_photo_entity.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
@@ -101,10 +102,11 @@ class VisitApiService {
     double? lat,
     double? lng,
   }) async {
-    final fileName = file.path.split(Platform.pathSeparator).last.split('/').last;
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
 
     final Map<String, dynamic> formMap = {
-      'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
       'photo_type': photoType,
     };
     if (takenAt != null) {

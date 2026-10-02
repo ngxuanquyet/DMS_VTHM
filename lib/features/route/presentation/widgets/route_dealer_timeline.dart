@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/location/location_provider.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/map/goong_providers.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,8 +11,11 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/presentation/widgets/customer_card.dart';
 import '../../../customer/presentation/widgets/pending_sync_dismissible.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../../domain/entities/route_entity.dart';
 import '../viewmodels/route_view_model.dart';
+import 'active_visit_blocking_dialog.dart';
 import 'checkin_distance_warning_dialog.dart';
 
 class RouteDealerTimeline extends ConsumerWidget {
@@ -56,6 +60,13 @@ class RouteDealerTimeline extends ConsumerWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final dealer = dealers[index];
+        final mobileRules = ref.watch(mobileRulesProvider);
+        final defaultRadius = mobileRules.visit.defaultRadiusM;
+        final allowedRadius = dealer.geofenceRadiusM ??
+            (dealer.customer is CustomerEntity
+                ? (dealer.customer as CustomerEntity).geofenceRadiusM
+                : null) ??
+            defaultRadius;
 
         double? distance;
         if (livePoint != null && dealer.lat != null && dealer.lng != null) {
@@ -65,7 +76,27 @@ class RouteDealerTimeline extends ConsumerWidget {
             dealer.lat!,
             dealer.lng!,
           );
+        } else if (dealer.lat != null && dealer.lng != null) {
+          final cachedPos = LocationService.currentCachedPosition;
+          if (cachedPos != null) {
+            distance = Geolocator.distanceBetween(
+              cachedPos.latitude,
+              cachedPos.longitude,
+              dealer.lat!,
+              dealer.lng!,
+            );
+          }
         }
+
+        // Tự đo khoảng cách theo §2 API-THAY-DOI-CHO-MOBILE-2026-10-01.md
+        final bool hasCoords = dealer.lat != null && dealer.lng != null;
+        final bool isOutOfGeofence = hasCoords &&
+            mobileRules.visit.requireGeofence &&
+            distance != null &&
+            distance > allowedRadius;
+        final String? disabledReason = isOutOfGeofence
+            ? 'Bạn đang cách cửa hàng ${distance.round()} m, cần vào trong $allowedRadius m'
+            : null;
 
         final isPending = dealer.customer is CustomerEntity &&
             (dealer.customer as CustomerEntity).syncStatus == 'pending';
@@ -90,7 +121,15 @@ class RouteDealerTimeline extends ConsumerWidget {
             dealer: dealer,
             distance: distance,
             showBorder: index != 0,
-            onCheckIn: () => _handleCheckin(context, ref, dealer, distance),
+            isCheckInDisabled: isOutOfGeofence,
+            checkInDisabledReason: disabledReason,
+            onCheckIn: () => _handleCheckin(
+              context,
+              ref,
+              dealer,
+              distance,
+              allowedRadius: allowedRadius,
+            ),
             onTap: dealer.customer is CustomerEntity
                 ? () => context.push('/customers/detail', extra: dealer.customer)
                 : null,
@@ -104,8 +143,9 @@ class RouteDealerTimeline extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     DealerEntity dealer,
-    double? distance,
-  ) async {
+    double? distance, {
+    int? allowedRadius,
+  }) async {
     // 0. Nếu điểm bán đã hoàn thành viếng thăm hôm nay (§3 Luật 2)
     if (dealer.status == DealerVisitStatus.completed) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +163,43 @@ class RouteDealerTimeline extends ConsumerWidget {
       ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
       if (context.mounted) {
         context.push('/check-in', extra: dealer);
+      }
+      return;
+    }
+
+    // 0.1. Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
+    // Hoạt động cả khi Online lẫn Offline
+    final checkInState = ref.read(checkInViewModelProvider);
+    final routeState = ref.read(routeViewModelProvider);
+    VisitEntity? activeVisit = checkInState.visitId > 0 && checkInState.visitEntity?.isOpen == true
+        ? checkInState.visitEntity
+        : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
+
+    if (activeVisit == null) {
+      try {
+        final saved = await ref.read(visitRepositoryProvider).getActiveVisit();
+        if (saved != null && saved.isOpen) {
+          activeVisit = saved;
+        }
+      } catch (_) {}
+    }
+
+    final targetCustomerId = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).id
+        : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+
+    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
+      final activeDealerName = activeVisit.customerName.isNotEmpty
+          ? activeVisit.customerName
+          : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');
+      if (context.mounted) {
+        await showActiveVisitBlockingDialog(
+          context: context,
+          ref: ref,
+          activeVisit: activeVisit,
+          activeDealerName: activeDealerName,
+          targetDealerName: dealer.name,
+        );
       }
       return;
     }
@@ -165,13 +242,22 @@ class RouteDealerTimeline extends ConsumerWidget {
         }
       }
 
-      // Nếu khoảng cách > 100m -> Hiển thị popup cảnh báo
-      if (actualDistance > 100) {
+      final mobileRules = ref.read(mobileRulesProvider);
+      final effectiveRadius = allowedRadius ??
+          dealer.geofenceRadiusM ??
+          (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).geofenceRadiusM
+              : null) ??
+          mobileRules.visit.defaultRadiusM;
+
+      // Nếu yêu cầu geofence và khoảng cách > bán kính áp dụng -> Hiển thị popup cảnh báo
+      if (mobileRules.visit.requireGeofence && actualDistance > effectiveRadius) {
         if (context.mounted) {
           showCheckinDistanceWarningDialog(
             context,
             dealerName: dealer.name,
             distanceMeters: actualDistance,
+            allowedRadiusMeters: effectiveRadius,
             lat: dealer.lat,
             lng: dealer.lng,
             address: dealer.address,

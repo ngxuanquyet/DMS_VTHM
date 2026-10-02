@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
+import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -9,20 +10,155 @@ import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
+import '../../../customer/presentation/viewmodels/customer_view_model.dart';
+import '../../../forms/data/services/route_customers_service.dart';
+import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
 import '../widgets/attendance_summary_card.dart';
-import '../widgets/form_summary_card.dart';
 import '../widgets/greeting_header.dart';
-import '../widgets/quick_actions_grid.dart';
-import '../widgets/recent_activity_timeline.dart';
-import '../widgets/route_progress_card.dart';
+import '../widgets/home_quick_actions.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _isSyncing = false;
+
+  /// Gọi tất cả các API để đồng bộ dữ liệu mới nhất:
+  /// - Quy tắc vận hành (/dms/mobile-rules)
+  /// - Danh sách điểm bán theo tuyến (/dms/routes/customers)
+  /// - Khách hàng (/dms/customers)
+  /// - Tuyến bán hàng & lượt viếng thăm hôm nay (/dms/routes, /dms/visits/today)
+  /// - Dashboard trang chủ (/dms/dashboard)
+  /// - Đẩy hàng đợi ngoại tuyến nếu có
+  Future<void> _handleSyncAll() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Đang đồng bộ dữ liệu (điểm bán, tuyến, quy tắc)...',
+                style: AppTypography.bodyMedium(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF0284C7),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    int failureCount = 0;
+
+    // 1. Cập nhật rules thị trường (/dms/mobile-rules)
+    try {
+      await ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi fetchRules: $e');
+      failureCount++;
+    }
+
+    // 2. Cập nhật danh sách điểm bán theo tuyến (/dms/routes/customers)
+    try {
+      await ref.read(routeCustomersServiceProvider).getRouteCustomers(forceRefresh: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi getRouteCustomers: $e');
+      failureCount++;
+    }
+
+    // 3. Cập nhật khách hàng (/dms/customers)
+    try {
+      await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi loadCustomers: $e');
+      failureCount++;
+    }
+
+    // 4. Cập nhật tuyến bán hàng & lượt viếng thăm hôm nay
+    try {
+      await ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi loadRouteDetail: $e');
+      failureCount++;
+    }
+
+    // 5. Cập nhật dashboard trang chủ & trạng thái chấm công
+    try {
+      await ref.read(homeViewModelProvider.notifier).loadDashboard(isRefresh: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi loadDashboard: $e');
+      failureCount++;
+    }
+
+    // 6. Đẩy dữ liệu ngoại tuyến nếu có
+    try {
+      await ref.read(syncServiceProvider).syncQueue(force: true);
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi syncQueue: $e');
+    }
+
+    if (!mounted) return;
+    setState(() => _isSyncing = false);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (failureCount >= 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('Không thể đồng bộ toàn bộ dữ liệu. Vui lòng kiểm tra kết nối mạng.'),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('Đồng bộ thành công! Đã cập nhật điểm bán, tuyến và quy tắc mới nhất.'),
+              ),
+            ],
+          ),
+          backgroundColor: Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final homeState = ref.watch(homeViewModelProvider);
     final homeVM = ref.read(homeViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
@@ -78,23 +214,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                 )
-              : homeState.dashboard == null
-                  ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(top: 80.0),
-                          child: AppEmptyState(
-                            icon: Icons.dashboard_outlined,
-                            title: 'Chưa có dữ liệu trang chủ',
-                            description: 'Không tìm thấy thông tin tổng hợp cho tài khoản của bạn.',
-                            actionText: 'Tải lại dữ liệu',
-                            onAction: () => homeVM.loadDashboard(isRefresh: true),
-                          ),
-                        ),
-                      ],
-                    )
-                  : RefreshIndicator(
+              : RefreshIndicator(
                   color: AppColors.primaryContainer,
                   onRefresh: () => homeVM.loadDashboard(isRefresh: true),
                   child: SingleChildScrollView(
@@ -111,84 +231,59 @@ class HomeScreen extends ConsumerWidget {
                           GreetingHeader(greeting: homeState.dashboard!.greeting),
                         const SizedBox(height: AppSpacing.stackLg),
 
-                        // Quick Actions
-                        const QuickActionsGrid(),
-                        const SizedBox(height: AppSpacing.stackLg),
-
-                        // Bento Grid Metrics
-                        if (homeState.dashboard?.attendance != null)
+                        // Card trạng thái chấm công
+                        if (homeState.dashboard?.attendance != null) ...[
                           AttendanceSummaryCard(attendance: homeState.dashboard!.attendance),
-                        const SizedBox(height: AppSpacing.stackMd),
+                          const SizedBox(height: AppSpacing.stackMd),
+                        ],
 
-                        if (homeState.dashboard?.routeSummary != null)
-                          RouteProgressCard(route: homeState.dashboard!.routeSummary),
-                        const SizedBox(height: AppSpacing.stackMd),
+                        // Thao tác nhanh dạng card màu (Chấm công & Khai báo vị trí)
+                        const HomeQuickActions(),
 
-                        if (homeState.dashboard?.formSummary != null)
-                          FormSummaryCard(formSummary: homeState.dashboard!.formSummary),
-                        const SizedBox(height: AppSpacing.stackLg),
-
-                        // Recent Activity Timeline
-                        if (homeState.dashboard?.recentActivities != null &&
-                            homeState.dashboard!.recentActivities.isNotEmpty)
-                          RecentActivityTimeline(
-                            activities: homeState.dashboard!.recentActivities,
+                        if (homeState.dashboard == null) ...[
+                          const SizedBox(height: AppSpacing.stackLg),
+                          AppEmptyState(
+                            icon: Icons.dashboard_outlined,
+                            title: 'Chưa có dữ liệu trang chủ',
+                            description: 'Bấm nút Đồng bộ bên dưới để tải dữ liệu mới nhất từ máy chủ.',
+                            actionText: 'Tải lại dữ liệu',
+                            onAction: () => homeVM.loadDashboard(isRefresh: true),
                           ),
-                        const SizedBox(height: 160), // Padding for FAB & nav
+                        ],
+
+                        const SizedBox(height: 160), // Padding cho FAB & nav bar
                       ],
                     ),
                   ),
                 ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton(
-          backgroundColor: AppColors.primaryContainer,
-          foregroundColor: AppColors.onPrimary,
+        child: FloatingActionButton.extended(
+          heroTag: 'home_sync_fab',
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
           elevation: 4,
-          shape: const CircleBorder(),
-          onPressed: () {
-            _showActionBottomSheet(context, strings);
-          },
-          child: const Icon(Icons.add, size: 28),
-        ),
-      ),
-    );
-  }
-
-  void _showActionBottomSheet(BuildContext context, dynamic strings) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.location_on, color: AppColors.secondary),
-                  title: Text(strings.isVietnamese ? 'Check-in tại điểm bán mới' : 'Check-in at new store'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    context.push('/check-in');
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.assignment, color: AppColors.primary),
-                  title: Text(strings.isVietnamese ? 'Tạo biểu mẫu mới' : 'Create new form'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    context.go('/forms');
-                  },
-                ),
-              ],
+          onPressed: _isSyncing ? null : _handleSyncAll,
+          icon: _isSyncing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Icon(Icons.sync_rounded, size: 24),
+          label: Text(
+            _isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              letterSpacing: 0.2,
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

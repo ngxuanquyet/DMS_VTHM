@@ -222,6 +222,9 @@ class DynamicFormField {
   /// Số lượng ảnh tối đa cho phép chụp
   final int maxPhotos;
 
+  /// Cho phép chọn ảnh từ thư viện thiết bị (nếu false chỉ cho phép chụp từ camera)
+  final bool allowGallery;
+
   /// Loại trường: 'fixed' hoặc 'dynamic'
   final String? kind;
 
@@ -253,6 +256,7 @@ class DynamicFormField {
     this.max,
     this.step,
     this.maxPhotos = 5,
+    this.allowGallery = true,
     this.kind,
     this.source,
     this.catalog,
@@ -362,6 +366,11 @@ class DynamicFormField {
       max: json['max'] is num ? json['max'] as num : num.tryParse(json['max']?.toString() ?? ''),
       step: json['step'] is num ? json['step'] as num : num.tryParse(json['step']?.toString() ?? ''),
       maxPhotos: effectiveMaxPhotos,
+      allowGallery: json['allow_gallery'] == null
+          ? true
+          : (json['allow_gallery'] == true ||
+              json['allow_gallery'] == 1 ||
+              json['allow_gallery'] == 'true'),
       kind: kind,
       source: json['source']?.toString(),
       catalog: json['catalog']?.toString(),
@@ -387,6 +396,7 @@ class DynamicFormField {
     num? max,
     num? step,
     int? maxPhotos,
+    bool? allowGallery,
     String? kind,
     String? source,
     String? catalog,
@@ -409,6 +419,7 @@ class DynamicFormField {
       max: max ?? this.max,
       step: step ?? this.step,
       maxPhotos: maxPhotos ?? this.maxPhotos,
+      allowGallery: allowGallery ?? this.allowGallery,
       kind: kind ?? this.kind,
       source: source ?? this.source,
       catalog: catalog ?? this.catalog,

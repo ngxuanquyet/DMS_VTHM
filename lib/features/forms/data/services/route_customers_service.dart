@@ -60,27 +60,29 @@ class RouteCustomersService {
     if (data.items.isEmpty) return data;
     if (data.items.every((it) => it.hasCoordinates)) return data;
 
-    final Map<int, (double, double)> idCoords = {};
-    final Map<String, (double, double)> codeCoords = {};
+    final Map<int, (double, double, int?)> idCoords = {};
+    final Map<String, (double, double, int?)> codeCoords = {};
 
     if (_db != null) {
       try {
         final locals = await _db.getAllLocalCustomers();
         for (final c in locals) {
           if (c.lat != null && c.lng != null && c.lat != 0 && c.lng != 0) {
-            if (c.id != null) idCoords[c.id!] = (c.lat!, c.lng!);
-            if (c.code.isNotEmpty) codeCoords[c.code] = (c.lat!, c.lng!);
+            if (c.id != null) idCoords[c.id!] = (c.lat!, c.lng!, c.geofenceRadiusM);
+            if (c.code.isNotEmpty) codeCoords[c.code] = (c.lat!, c.lng!, c.geofenceRadiusM);
           }
         }
       } catch (_) {}
     }
 
-
     final enriched = data.items.map((it) {
-      if (it.hasCoordinates) return it;
       final found = idCoords[it.id] ?? codeCoords[it.code];
       if (found != null) {
-        return it.copyWith(lat: found.$1, lng: found.$2);
+        return it.copyWith(
+          lat: it.lat ?? found.$1,
+          lng: it.lng ?? found.$2,
+          geofenceRadiusM: it.geofenceRadiusM ?? found.$3,
+        );
       }
       return it;
     }).toList();

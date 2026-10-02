@@ -25,7 +25,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       isWorking: !current.isWorking,
       currentTime: current.currentTime,
       currentDateFormatted: current.currentDateFormatted,
-      checkInTime: current.isWorking ? '--:--' : '07:42',
+      checkInTime: current.isWorking
+          ? '--:--'
+          : '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
       workDurationSeconds: current.isWorking ? 0 : current.workDurationSeconds,
       location: current.location,
       monthlyStats: current.monthlyStats,

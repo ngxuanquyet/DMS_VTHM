@@ -56,29 +56,26 @@ class VisitEntity {
   bool get isCompleted => checkoutAt != null && cancelledAt == null;
 
   factory VisitEntity.fromJson(Map<String, dynamic> json) {
-    DateTime? parsedCheckin;
+    DateTime? parseDateTime(dynamic val) {
+      if (val == null) return null;
+      final str = val.toString().trim();
+      if (str.isEmpty) return null;
+      try {
+        final normalized = str.replaceAllMapped(RegExp(r'\s+([\+\-]\d{2})'), (m) => m[1]!);
+        return DateTime.parse(normalized).toLocal();
+      } catch (_) {
+        return null;
+      }
+    }
+
     final rawCheckin = json['checkin_at']?.toString();
-    if (rawCheckin != null && rawCheckin.isNotEmpty) {
-      try {
-        parsedCheckin = DateTime.parse(rawCheckin);
-      } catch (_) {}
-    }
+    final parsedCheckin = parseDateTime(rawCheckin);
 
-    DateTime? parsedCheckout;
     final rawCheckout = json['checkout_at']?.toString();
-    if (rawCheckout != null && rawCheckout.isNotEmpty) {
-      try {
-        parsedCheckout = DateTime.parse(rawCheckout);
-      } catch (_) {}
-    }
+    final parsedCheckout = parseDateTime(rawCheckout);
 
-    DateTime? parsedCancelled;
     final rawCancelled = json['cancelled_at']?.toString();
-    if (rawCancelled != null && rawCancelled.isNotEmpty) {
-      try {
-        parsedCancelled = DateTime.parse(rawCancelled);
-      } catch (_) {}
-    }
+    final parsedCancelled = parseDateTime(rawCancelled);
 
     VisitRequirementsEntity? req;
     if (json['requirements'] is Map<String, dynamic>) {

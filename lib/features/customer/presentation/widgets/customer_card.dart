@@ -74,12 +74,17 @@ class CustomerCard extends StatelessWidget {
     this.photoUrls = const [],
     this.actionButton,
     this.showBorder = true,
+    this.isCheckInDisabled = false,
+    this.checkInDisabledReason,
     this.onTap,
     this.onDirections,
     this.onCallPhone,
   })  : code = code ?? (item != null ? item.customer.code : ''),
         name = name ?? (item != null ? item.customer.name : ''),
         address = address ?? (item != null ? item.customer.address : '');
+
+  final bool isCheckInDisabled;
+  final String? checkInDisabledReason;
 
   /// Factory khởi tạo từ DealerEntity (Màn Tuyến: tham số button mặc định là Check-in)
   factory CustomerCard.fromDealer({
@@ -89,6 +94,8 @@ class CustomerCard extends StatelessWidget {
     String? distanceText,
     Widget? actionButton,
     bool showBorder = true,
+    bool isCheckInDisabled = false,
+    String? checkInDisabledReason,
     VoidCallback? onCheckIn,
     VoidCallback? onTap,
     VoidCallback? onDirections,
@@ -99,7 +106,11 @@ class CustomerCard extends StatelessWidget {
         (isCompleted
             ? CustomerCard.buildVisitedTimeChip(visitedTime: dealer.visitedTime)
             : (onCheckIn != null
-                ? CustomerCard.buildCheckInButton(onTap: onCheckIn)
+                ? CustomerCard.buildCheckInButton(
+                    onTap: onCheckIn,
+                    isDisabled: isCheckInDisabled,
+                    disabledReason: checkInDisabledReason,
+                  )
                 : null));
 
     final resolvedType = dealer.type?.isNotEmpty == true
@@ -140,6 +151,8 @@ class CustomerCard extends StatelessWidget {
       photoUrls: resolvedPhotoUrls,
       actionButton: resolvedButton,
       showBorder: showBorder,
+      isCheckInDisabled: isCheckInDisabled,
+      checkInDisabledReason: checkInDisabledReason,
       onTap: onTap,
       onDirections: onDirections,
       onCallPhone: onCallPhone,
@@ -240,33 +253,35 @@ class CustomerCard extends StatelessWidget {
   /// Nút Check-in chuẩn của template (dùng cho màn Tuyến)
   static Widget buildCheckInButton({
     required VoidCallback onTap,
+    bool isDisabled = false,
+    String? disabledReason,
   }) {
     return Material(
-      color: const Color(0xFF47B347),
+      color: isDisabled ? const Color(0xFFB0BEC5) : const Color(0xFF47B347),
       borderRadius: BorderRadius.circular(8),
-      elevation: 1,
+      elevation: isDisabled ? 0 : 1,
       shadowColor: const Color(0x33006E15),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.how_to_reg,
                 size: 16,
-                color: Colors.white,
+                color: isDisabled ? Colors.white70 : Colors.white,
               ),
-              SizedBox(width: 4),
+              const SizedBox(width: 4),
               Text(
                 'Check-in',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: isDisabled ? Colors.white70 : Colors.white,
                 ),
               ),
             ],
@@ -836,6 +851,42 @@ class CustomerCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (checkInDisabledReason != null) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: 13,
+                          color: Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            checkInDisabledReason!,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
 
                 // Contact & Action Row (Phone, Action Button parameter)

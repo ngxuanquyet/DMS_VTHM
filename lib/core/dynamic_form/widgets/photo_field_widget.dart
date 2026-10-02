@@ -28,6 +28,17 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
   }
 
   Future<void> _pickFromGallery(BuildContext context) {
+    if (!field.allowGallery) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hệ thống chỉ cho phép chụp ảnh thực tế từ Camera.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return Future.value();
+    }
     return _handleImageAction(context, isCamera: false);
   }
 
@@ -207,6 +218,12 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
       return;
     }
 
+    if (!field.allowGallery) {
+      // Chỉ cho phép chụp từ Camera -> Kích hoạt camera trực tiếp
+      _requestCameraAndCapture(context);
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -239,18 +256,19 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
                     _requestCameraAndCapture(context);
                   },
                 ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: AppColors.secondaryContainer,
-                    child: Icon(Icons.photo_library_rounded, color: Colors.white),
+                if (field.allowGallery)
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: AppColors.secondaryContainer,
+                      child: Icon(Icons.photo_library_rounded, color: Colors.white),
+                    ),
+                    title: const Text('Chọn từ Thư viện'),
+                    subtitle: const Text('Chọn ảnh có sẵn từ thiết bị'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickFromGallery(context);
+                    },
                   ),
-                  title: const Text('Chọn từ Thư viện'),
-                  subtitle: const Text('Chọn ảnh có sẵn từ thiết bị'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickFromGallery(context);
-                  },
-                ),
               ],
             ),
           ),

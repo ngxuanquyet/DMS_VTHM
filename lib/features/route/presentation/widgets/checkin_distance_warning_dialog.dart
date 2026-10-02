@@ -7,9 +7,11 @@ Future<void> showCheckinDistanceWarningDialog(
   BuildContext context, {
   required String dealerName,
   required double distanceMeters,
+  int allowedRadiusMeters = 100,
   double? lat,
   double? lng,
   String? address,
+  bool isCheckout = false,
 }) {
   return showDialog<void>(
     context: context,
@@ -17,9 +19,11 @@ Future<void> showCheckinDistanceWarningDialog(
     builder: (ctx) => CheckinDistanceWarningDialog(
       dealerName: dealerName,
       distanceMeters: distanceMeters,
+      allowedRadiusMeters: allowedRadiusMeters,
       lat: lat,
       lng: lng,
       address: address,
+      isCheckout: isCheckout,
     ),
   );
 }
@@ -27,17 +31,21 @@ Future<void> showCheckinDistanceWarningDialog(
 class CheckinDistanceWarningDialog extends StatelessWidget {
   final String dealerName;
   final double distanceMeters;
+  final int allowedRadiusMeters;
   final double? lat;
   final double? lng;
   final String? address;
+  final bool isCheckout;
 
   const CheckinDistanceWarningDialog({
     super.key,
     required this.dealerName,
     required this.distanceMeters,
+    this.allowedRadiusMeters = 100,
     this.lat,
     this.lng,
     this.address,
+    this.isCheckout = false,
   });
 
   String _formatDistance(double meters) {
@@ -177,7 +185,7 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
 
             // Title
             Text(
-              'Không thể Check-in',
+              isCheckout ? 'Không thể Check-out' : 'Không thể Check-in',
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmallMobile(
                 color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
@@ -187,7 +195,9 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
 
             // Description
             Text(
-              'Khoảng cách hiện tại vượt quá phạm vi cho phép (tối đa 100m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-in.',
+              isCheckout
+                  ? 'Khoảng cách hiện tại vượt quá phạm vi cho phép (tối đa ${allowedRadiusMeters}m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-out.'
+                  : 'Khoảng cách hiện tại vượt quá phạm vi cho phép (tối đa ${allowedRadiusMeters}m). Vui lòng di chuyển đến gần điểm bán để thực hiện check-in.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Inter',
@@ -265,18 +275,18 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
                         color: AppColors.error.withValues(alpha: 0.2),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.error_rounded,
                           size: 12,
                           color: AppColors.error,
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          'Không hợp lệ (> 100m)',
-                          style: TextStyle(
+                          'Không hợp lệ (> ${allowedRadiusMeters}m)',
+                          style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: AppColors.error,

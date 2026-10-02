@@ -26,6 +26,9 @@ class AppMapLocationCard extends StatefulWidget {
   /// Địa chỉ khởi tạo (nếu đã có sẵn, tránh gọi lại geocode)
   final String? initialAddress;
 
+  /// Độ chính xác GPS (mét), nếu có
+  final double? accuracyM;
+
   /// Chiều cao khung bản đồ
   final double mapHeight;
 
@@ -68,6 +71,7 @@ class AppMapLocationCard extends StatefulWidget {
     required this.lat,
     required this.lng,
     this.initialAddress,
+    this.accuracyM,
     this.mapHeight = 220,
     this.zoom = 17.0,
     this.isReadOnly = false,
@@ -104,9 +108,18 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
   @override
   void didUpdateWidget(covariant AppMapLocationCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.initialAddress != oldWidget.initialAddress &&
+        widget.initialAddress != null &&
+        widget.initialAddress!.isNotEmpty) {
+      setState(() => _resolvedAddress = widget.initialAddress);
+    }
     if (widget.lat != oldWidget.lat || widget.lng != oldWidget.lng) {
       if (widget.lat != null && widget.lng != null) {
-        _fetchAddress(widget.lat!.toDouble(), widget.lng!.toDouble());
+        if (widget.initialAddress != null && widget.initialAddress!.isNotEmpty) {
+          setState(() => _resolvedAddress = widget.initialAddress);
+        } else {
+          _fetchAddress(widget.lat!.toDouble(), widget.lng!.toDouble());
+        }
       } else {
         setState(() => _resolvedAddress = null);
       }
@@ -402,6 +415,17 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                                 ).copyWith(fontWeight: FontWeight.w600, height: 1.3),
                               ),
+                              if (widget.lat != null && widget.lng != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Tọa độ: ${widget.lat!.toStringAsFixed(6)}, ${widget.lng!.toStringAsFixed(6)}${widget.accuracyM != null ? ' (±${widget.accuracyM!.toStringAsFixed(1)}m)' : ''}',
+                                  style: AppTypography.bodySmall(
+                                    color: isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.onSurfaceVariant,
+                                  ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
+                                ),
+                              ],
                               const SizedBox(height: 2),
                               Text(
                                 'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí',

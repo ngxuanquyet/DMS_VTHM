@@ -6,6 +6,7 @@ import 'package:vthm_dms/features/customer/domain/repositories/customer_reposito
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
 import 'package:vthm_dms/features/route/domain/repositories/route_repository.dart';
 import 'package:vthm_dms/features/route/domain/usecases/route_usecases.dart';
+import 'package:vthm_dms/features/route/presentation/states/route_state.dart';
 import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model.dart';
 import 'package:vthm_dms/features/visit/data/models/checkin_request_model.dart';
 import 'package:vthm_dms/features/visit/data/models/checkout_request_model.dart';
@@ -14,6 +15,10 @@ import 'package:vthm_dms/features/visit/domain/entities/visit_photo_entity.dart'
 import 'package:vthm_dms/features/visit/domain/entities/visit_requirements_entity.dart';
 import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
 import 'package:vthm_dms/features/visit/domain/repositories/visit_repository.dart';
+import 'package:vthm_dms/features/forms/domain/repositories/forms_repository.dart';
+import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
+import 'package:vthm_dms/features/forms/data/models/market_form_submission_model.dart';
+import 'package:vthm_dms/features/forms/domain/usecases/get_available_forms_usecase.dart';
 
 class FakeCustomerRepository implements CustomerRepository {
   final List<CustomerEntity> customers;
@@ -63,12 +68,22 @@ class FakeRouteRepository implements RouteRepository {
 
 class FakeVisitRepository implements VisitRepository {
   final List<VisitEntity> todayVisits;
-  FakeVisitRepository(this.todayVisits);
+  VisitEntity? activeVisit;
+  FakeVisitRepository(this.todayVisits, {this.activeVisit});
 
   @override
   Future<List<VisitEntity>> getTodayVisits() async => todayVisits;
   @override
-  Future<VisitEntity> checkin(CheckinRequestModel request) => throw UnimplementedError();
+  Future<VisitEntity> checkin(CheckinRequestModel request) async {
+    final v = VisitEntity(
+      id: 999,
+      customerId: request.customerId,
+      customerName: 'Customer ${request.customerId}',
+      checkinAt: DateTime.now(),
+    );
+    activeVisit = v;
+    return v;
+  }
   @override
   Future<VisitRequirementsEntity> getRequirements(int visitId, {String? visitResult}) => throw UnimplementedError();
   @override
@@ -76,15 +91,56 @@ class FakeVisitRepository implements VisitRepository {
   @override
   Future<VisitRequirementsEntity> deletePhoto({required int visitId, required int photoId}) => throw UnimplementedError();
   @override
-  Future<VisitEntity> checkout({required int visitId, required CheckoutRequestModel request}) => throw UnimplementedError();
+  Future<VisitEntity> checkout({required int visitId, required CheckoutRequestModel request}) async {
+    final v = VisitEntity(
+      id: visitId,
+      customerId: 101,
+      customerName: 'Customer 101',
+      checkoutAt: DateTime.now(),
+      checkoutLat: request.lat,
+      checkoutLng: request.lng,
+    );
+    activeVisit = null;
+    return v;
+  }
   @override
-  Future<void> cancelVisit(int visitId) async {}
+  Future<void> cancelVisit(int visitId) async {
+    activeVisit = null;
+  }
   @override
-  Future<void> saveActiveVisit(VisitEntity visit) async {}
+  Future<void> saveActiveVisit(VisitEntity visit) async {
+    activeVisit = visit;
+  }
   @override
-  Future<VisitEntity?> getActiveVisit() async => null;
+  Future<VisitEntity?> getActiveVisit() async => activeVisit;
   @override
-  Future<void> clearActiveVisit() async {}
+  Future<void> clearActiveVisit() async {
+    activeVisit = null;
+  }
+}
+
+class FakeFormsRepository implements FormsRepository {
+  @override
+  Future<List<MarketFormConfigEntity>> getAvailableForms({required String kind, int? customerId}) async => [];
+  @override
+  Future<MarketFormSubmitResult> submitForm(MarketFormSubmissionModel submission, {bool isOffline = false}) => throw UnimplementedError();
+}
+
+CheckInViewModel createCheckInViewModel(VisitRepository visitRepo) {
+  final routeRepo = FakeRouteRepository();
+  final formsRepo = FakeFormsRepository();
+  return CheckInViewModel(
+    getDealerCheckinUseCase: GetDealerCheckinUseCase(routeRepo),
+    checkoutDealerUseCase: CheckoutDealerUseCase(routeRepo),
+    getAvailableFormsUseCase: GetAvailableFormsUseCase(formsRepo),
+    checkinUseCase: CheckinUseCase(visitRepo),
+    checkoutUseCase: CheckoutUseCase(visitRepo),
+    getVisitRequirementsUseCase: GetVisitRequirementsUseCase(visitRepo),
+    uploadVisitPhotoUseCase: UploadVisitPhotoUseCase(visitRepo),
+    deleteVisitPhotoUseCase: DeleteVisitPhotoUseCase(visitRepo),
+    cancelVisitUseCase: CancelVisitUseCase(visitRepo),
+    visitRepository: visitRepo,
+  );
 }
 
 void main() {
@@ -299,14 +355,33 @@ void main() {
       final dealer1 = dealers.firstWhere((d) => d.id == '101');
       expect(dealer1.status, DealerVisitStatus.completed);
       expect(dealer1.statusLabel, 'Đã ghé');
+      expect(dealer1.visitedTime, '08:30 - 08:45');
 
       final dealer2 = dealers.firstWhere((d) => d.id == '102');
       expect(dealer2.status, DealerVisitStatus.inProgress);
       expect(dealer2.statusLabel, 'Đang ghé');
+      expect(dealer2.visitedTime, '09:00');
 
       final dealer3 = dealers.firstWhere((d) => d.id == '103');
       expect(dealer3.status, DealerVisitStatus.pending);
       expect(dealer3.statusLabel, 'Chưa ghé');
+    });
+
+    test('VisitEntity converts server checkin_at with timezone +07 to local DateTime without hour loss', () {
+      final json = {
+        "id": 127954,
+        "visit_date": "2026-09-29",
+        "checkin_at": "2026-09-29 16:17:05+07",
+        "checkout_at": "2026-09-29 16:24:18+07",
+      };
+
+      final visit = VisitEntity.fromJson(json);
+
+      expect(visit.checkinAt, isNotNull);
+      expect(visit.checkinAt!.isUtc, false);
+      expect(visit.checkoutAt, isNotNull);
+      expect(visit.checkoutAt!.isUtc, false);
+      expect(visit.checkoutAt!.difference(visit.checkinAt!).inSeconds, 433);
     });
 
     test('VisitEntity handles cancelled_at and isCancelled correctly (§3 & §4 HUY-LUOT-VIENG-THAM)', () {
@@ -327,6 +402,218 @@ void main() {
       expect(visit.isCancelled, isTrue);
       expect(visit.isOpen, isFalse);
       expect(visit.isCompleted, isFalse);
+    });
+  });
+
+  group('Active Visit & Offline Blocking Tests (§3 Luật 3)', () {
+    test('RouteViewModel recovers activeVisit from local storage when offline (todayVisits is empty)', () async {
+      final custRepo = FakeCustomerRepository([
+        const CustomerEntity(id: 101, code: 'C101', name: 'Đại lý A', address: '123 Đường 1', contactPerson: 'Người liên hệ', phone: '0901', route: 'Tuyến 1', type: 'Đại lý'),
+        const CustomerEntity(id: 102, code: 'C102', name: 'Đại lý B', address: '456 Đường 2', contactPerson: 'Người liên hệ', phone: '0902', route: 'Tuyến 1', type: 'Đại lý'),
+      ]);
+      final savedVisit = VisitEntity(
+        id: 777,
+        customerId: 101,
+        customerName: 'Đại lý A',
+        checkinAt: DateTime.now(),
+      );
+      final visitRepo = FakeVisitRepository([], activeVisit: savedVisit);
+
+      final vm = RouteViewModel(
+        customerRepository: custRepo,
+        getRouteDetailUseCase: GetRouteDetailUseCase(FakeRouteRepository()),
+        getTodayVisitsUseCase: GetTodayVisitsUseCase(visitRepo),
+        visitRepository: visitRepo,
+      );
+
+      await vm.loadRouteDetail();
+
+      expect(vm.state.activeVisit, isNotNull);
+      expect(vm.state.activeVisit?.id, 777);
+      expect(vm.state.activeVisit?.customerId, 101);
+
+      final dealers = vm.state.routeDetail!.dealers;
+      final dealerA = dealers.firstWhere((d) => d.id == '101');
+      expect(dealerA.status, DealerVisitStatus.inProgress);
+      expect(dealerA.statusLabel, 'Đang ghé');
+    });
+
+    test('RouteViewModel.setActiveVisit immediately updates activeVisit and recomputes dealer status', () async {
+      final custRepo = FakeCustomerRepository([
+        const CustomerEntity(id: 101, code: 'C101', name: 'Đại lý A', address: '123 Đường 1', contactPerson: 'Người liên hệ', phone: '0901', route: 'Tuyến 1', type: 'Đại lý'),
+      ]);
+      final visitRepo = FakeVisitRepository([]);
+      final vm = RouteViewModel(
+        customerRepository: custRepo,
+        getRouteDetailUseCase: GetRouteDetailUseCase(FakeRouteRepository()),
+        getTodayVisitsUseCase: GetTodayVisitsUseCase(visitRepo),
+        visitRepository: visitRepo,
+      );
+
+      await vm.loadRouteDetail();
+      expect(vm.state.activeVisit, isNull);
+
+      final newVisit = VisitEntity(
+        id: 555,
+        customerId: 101,
+        customerName: 'Đại lý A',
+        checkinAt: DateTime.now(),
+      );
+      vm.setActiveVisit(newVisit);
+
+      expect(vm.state.activeVisit?.id, 555);
+      final dealerA = vm.state.routeDetail!.dealers.firstWhere((d) => d.id == '101');
+      expect(dealerA.status, DealerVisitStatus.inProgress);
+
+      vm.setActiveVisit(null);
+      expect(vm.state.activeVisit, isNull);
+    });
+
+    test('CheckInViewModel blocks check-in to a different dealer when an active visit is open in memory', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      // Check-in đại lý 101
+      final err1 = await vm.performCheckin(customerId: 101);
+      expect(err1, isNull);
+      expect(vm.state.visitId, 999);
+
+      // Thử check-in đại lý 102 khi đại lý 101 chưa check-out
+      final err2 = await vm.performCheckin(customerId: 102);
+      expect(err2, contains('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out'));
+    });
+
+    test('CheckInViewModel blocks check-in to another dealer when active visit is stored in repository (offline check)', () async {
+      final savedVisit = VisitEntity(
+        id: 888,
+        customerId: 101,
+        customerName: 'Đại lý A',
+        checkinAt: DateTime.now(),
+      );
+      final visitRepo = FakeVisitRepository([], activeVisit: savedVisit);
+      final vm = createCheckInViewModel(visitRepo);
+
+      // Thử check-in đại lý 102 trong khi repo đang lưu active visit của 101
+      final err = await vm.performCheckin(customerId: 102);
+      expect(err, contains('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out'));
+    });
+
+    test('CheckInViewModel.initCheckinWithDealer does not overwrite in-progress session if different dealer is passed', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+
+      const otherDealer = DealerEntity(
+        id: '102',
+        order: '02',
+        name: 'Đại lý B',
+        address: '456 Đường 2',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+      );
+
+      vm.initCheckinWithDealer(otherDealer);
+      // Phiên vẫn giữ nguyên id 999 của đại lý 101, không bị ghi đè thành 102
+      expect(vm.state.visitId, 999);
+    });
+
+    test('CheckInViewModel.checkout blocks checkout if distance to dealer > 100m', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      // Điểm bán có tọa độ tại (10.7725, 106.6980)
+      const dealer = DealerEntity(
+        id: '101',
+        order: '01',
+        name: 'Đại lý Bến Thành',
+        address: 'Quận 1',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        lat: 10.7725,
+        lng: 106.6980,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+
+      // Vị trí người dùng ở xa (~3km, Landmark 81: 10.7950, 106.7218)
+      final (success, errorMsg) = await vm.checkout(
+        lat: 10.7950,
+        lng: 106.7218,
+      );
+
+      expect(success, isFalse);
+      expect(errorMsg, contains('vượt quá phạm vi cho phép (tối đa 100m)'));
+      expect(vm.state.status, isNot(CheckInStatus.checkedOut));
+    });
+
+    test('CheckInViewModel.checkout succeeds if distance to dealer <= 100m', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      // Điểm bán có tọa độ tại (10.77250, 106.69800)
+      const dealer = DealerEntity(
+        id: '101',
+        order: '01',
+        name: 'Đại lý Bến Thành',
+        address: 'Quận 1',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        lat: 10.77250,
+        lng: 106.69800,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+
+      // Vị trí người dùng cách 11m (10.77260, 106.69800)
+      final (success, errorMsg) = await vm.checkout(
+        lat: 10.77260,
+        lng: 106.69800,
+      );
+
+      expect(success, isTrue);
+      expect(errorMsg, isNull);
+      expect(vm.state.status, CheckInStatus.checkedOut);
+    });
+
+    test('CheckInViewModel.checkout allows checkout if dealer has no coordinates (Luật 4)', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      // Điểm bán không có tọa độ (lat: null, lng: null)
+      const dealer = DealerEntity(
+        id: '101',
+        order: '01',
+        name: 'Đại lý Chưa có GPS',
+        address: 'Hẻm sâu',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        lat: null,
+        lng: null,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+
+      // Bất kể vị trí check-out ở đâu, đều được thông qua theo Luật 4
+      final (success, errorMsg) = await vm.checkout(
+        lat: 10.7950,
+        lng: 106.7218,
+      );
+
+      expect(success, isTrue);
+      expect(errorMsg, isNull);
+      expect(vm.state.status, CheckInStatus.checkedOut);
     });
   });
 }

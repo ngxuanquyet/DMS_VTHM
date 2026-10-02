@@ -9,6 +9,9 @@ class DealerModel {
   final String statusLabel;
   final String? visitedTime;
   final bool isVip;
+  final double? lat;
+  final double? lng;
+  final int? geofenceRadiusM;
 
   const DealerModel({
     required this.id,
@@ -19,6 +22,9 @@ class DealerModel {
     required this.statusLabel,
     this.visitedTime,
     this.isVip = false,
+    this.lat,
+    this.lng,
+    this.geofenceRadiusM,
   });
 
   factory DealerModel.fromJson(Map<String, dynamic> json) {
@@ -31,6 +37,11 @@ class DealerModel {
       statusLabel: json['statusLabel'] as String? ?? '',
       visitedTime: json['visitedTime'] as String?,
       isVip: json['isVip'] as bool? ?? false,
+      lat: (json['lat'] as num?)?.toDouble(),
+      lng: (json['lng'] as num?)?.toDouble(),
+      geofenceRadiusM: (json['geofence_radius_m'] ?? json['geofenceRadiusM']) is num
+          ? (json['geofence_radius_m'] ?? json['geofenceRadiusM'] as num).toInt()
+          : int.tryParse((json['geofence_radius_m'] ?? json['geofenceRadiusM'])?.toString() ?? ''),
     );
   }
 
@@ -43,6 +54,9 @@ class DealerModel {
         'statusLabel': statusLabel,
         'visitedTime': visitedTime,
         'isVip': isVip,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
+        if (geofenceRadiusM != null) 'geofence_radius_m': geofenceRadiusM,
       };
 
   DealerEntity toEntity() {
@@ -67,6 +81,9 @@ class DealerModel {
       statusLabel: statusLabel,
       visitedTime: visitedTime,
       isVip: isVip,
+      lat: lat,
+      lng: lng,
+      geofenceRadiusM: geofenceRadiusM,
     );
   }
 }
@@ -134,6 +151,7 @@ class CheckinDealerModel {
   final String visitDuration;
   final double? lat;
   final double? lng;
+  final int? geofenceRadiusM;
 
   const CheckinDealerModel({
     required this.id,
@@ -144,6 +162,7 @@ class CheckinDealerModel {
     required this.visitDuration,
     this.lat,
     this.lng,
+    this.geofenceRadiusM,
   });
 
   factory CheckinDealerModel.fromJson(Map<String, dynamic> json) {
@@ -156,6 +175,9 @@ class CheckinDealerModel {
       visitDuration: json['visitDuration'] as String? ?? '00:00:00',
       lat: (json['lat'] as num?)?.toDouble() ?? 21.3508,
       lng: (json['lng'] as num?)?.toDouble() ?? 105.6592,
+      geofenceRadiusM: (json['geofence_radius_m'] ?? json['geofenceRadiusM']) is num
+          ? (json['geofence_radius_m'] ?? json['geofenceRadiusM'] as num).toInt()
+          : int.tryParse((json['geofence_radius_m'] ?? json['geofenceRadiusM'])?.toString() ?? ''),
     );
   }
 
@@ -168,6 +190,7 @@ class CheckinDealerModel {
         'visitDuration': visitDuration,
         'lat': lat,
         'lng': lng,
+        if (geofenceRadiusM != null) 'geofence_radius_m': geofenceRadiusM,
       };
 
   CheckinDealerEntity toEntity() => CheckinDealerEntity(
@@ -179,6 +202,7 @@ class CheckinDealerModel {
         visitDuration: visitDuration,
         lat: lat,
         lng: lng,
+        geofenceRadiusM: geofenceRadiusM,
       );
 }
 

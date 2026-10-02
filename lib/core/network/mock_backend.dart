@@ -21,7 +21,9 @@ class MockBackendInterceptor extends Interceptor {
         path.contains('/dms/forms/available') ||
         path.contains('/dms/form-submissions') ||
         path.contains('/dms/visits') ||
-        path.contains('/dms/visit-photos')) {
+        path.contains('/dms/visit-photos') ||
+        path.contains('/dms/mobile-rules') ||
+        path.contains('/dms/position-')) {
       return handler.next(options);
     }
 
@@ -418,6 +420,32 @@ class MockBackendInterceptor extends Interceptor {
         ),
       );
     }
+    if (err.requestOptions.path.contains('/dms/mobile-rules')) {
+      return handler.resolve(
+        Response(
+          requestOptions: err.requestOptions,
+          statusCode: 200,
+          data: {
+            'success': true,
+            'message': 'Luật thị trường cho app di động.',
+            'data': {
+              'visit': {
+                'require_geofence': true,
+                'default_radius_m': 100,
+                'block_on_mock_location': false,
+                'min_duration_minutes': 5,
+                'min_photos': 2,
+                'closed_min_photos': 1,
+                'route_scope': 'assigned',
+                'auto_close_after_hours': 12,
+              },
+              'position': {'min_photos': 1, 'block_on_mock_location': false},
+              'clock': {'skew_tolerance_minutes': 15, 'offline_max_queue_hours': 24},
+            },
+          },
+        ),
+      );
+    }
     if (err.requestOptions.path.contains('/dms/routes/customers')) {
       return handler.resolve(
         Response(
@@ -432,24 +460,27 @@ class MockBackendInterceptor extends Interceptor {
                   'code': '08170152',
                   'name': 'Dịu Khoản',
                   'address': '38/6 Phan Đình Phùng, Cam Ranh',
-                  'lat': 11.9167,
-                  'lng': 109.1500,
+                  'lat': '11.9167000',
+                  'lng': '109.1500000',
+                  'geofence_radius_m': null,
                 },
                 {
                   'id': 5378,
                   'code': '08120001',
                   'name': 'VLXD Hoàng Hương',
                   'address': null,
-                  'lat': 21.3120,
-                  'lng': 105.6010,
+                  'lat': '21.3120000',
+                  'lng': '105.6010000',
+                  'geofence_radius_m': null,
                 },
                 {
                   'id': 8338,
                   'code': '08150022',
                   'name': 'Cửa hàng Tạp hóa Lan',
                   'address': 'Khu đô thị Đồng Sơn, Phúc Yên, Vĩnh Phúc',
-                  'lat': 21.3093,
-                  'lng': 105.6049,
+                  'lat': '21.3093000',
+                  'lng': '105.6049000',
+                  'geofence_radius_m': 120,
                 },
               ],
               'truncated': false,
