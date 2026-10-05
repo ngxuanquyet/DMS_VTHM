@@ -1,32 +1,41 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../viewmodels/attendance_view_model.dart';
 
 class AttendancePhotoCaptureDialog extends ConsumerStatefulWidget {
-  final AttendancePunchEntity punch;
+  final AttendancePunchEntity? punch;
+  final Position? position;
 
   const AttendancePhotoCaptureDialog({
     super.key,
-    required this.punch,
-  });
+    this.punch,
+    this.position,
+  }) : assert(punch != null || position != null, 'Cần cung cấp punch hoặc position');
 
   static Future<void> show(
     BuildContext context, {
-    required AttendancePunchEntity punch,
+    AttendancePunchEntity? punch,
+    Position? position,
   }) {
     return showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AttendancePhotoCaptureDialog(punch: punch),
+      builder: (ctx) => AttendancePhotoCaptureDialog(
+        punch: punch,
+        position: position,
+      ),
     );
   }
 
@@ -41,11 +50,14 @@ class _AttendancePhotoCaptureDialogState
 
   bool _isUploadingFront = false;
   bool _isUploadingBack = false;
+  bool _isSubmitting = false;
 
   File? _localFrontFile;
   File? _localBackFile;
 
   AttendancePunchEntity? _livePunch;
+
+  bool get isNewPunch => widget.punch == null;
 
   @override
   void initState() {
@@ -53,13 +65,22 @@ class _AttendancePhotoCaptureDialogState
     _livePunch = widget.punch;
   }
 
-  AttendancePunchEntity get punch => _livePunch ?? widget.punch;
-  AttendanceRequirementsEntity get req => punch.requirements;
+  AttendancePunchEntity? get punch => _livePunch ?? widget.punch;
 
   bool get hasFrontPhoto =>
-      punch.photos.any((p) => p.photoType == 'front') || _localFrontFile != null;
+      _localFrontFile != null || (punch?.photos.any((p) => p.photoType == 'front') ?? false);
   bool get hasBackPhoto =>
-      punch.photos.any((p) => p.photoType == 'back') || _localBackFile != null;
+      _localBackFile != null || (punch?.photos.any((p) => p.photoType == 'back') ?? false);
+
+  int get capturedCount {
+    if (isNewPunch) {
+      int count = 0;
+      if (_localFrontFile != null) count++;
+      if (_localBackFile != null) count++;
+      return count;
+    }
+    return punch?.photos.length ?? 0;
+  }
 
   Future<void> _capturePhoto({
     required String photoType,
@@ -75,8 +96,39 @@ class _AttendancePhotoCaptureDialogState
       );
 
       if (xFile == null) return;
-      final file = File(xFile.path);
+      final rawFile = File(xFile.path);
 
+      // Đóng dấu Watermark thông tin chấm công (thời gian, toạ độ GPS, tên nhân sự, địa điểm)
+      final user = ref.read(authViewModelProvider).user;
+      final staffName = user?.name;
+      final pos = widget.position;
+      final locations = ref.read(attendanceViewModelProvider).config?.locations;
+      final locName = punch?.geofenceName ??
+          (locations != null && locations.isNotEmpty ? locations.first.name : null);
+
+      final file = await PhotoWatermarkHelper.addWatermark(
+        imageFile: rawFile,
+        timestamp: DateTime.now(),
+        latitude: pos?.latitude ?? punch?.lat,
+        longitude: pos?.longitude ?? punch?.lng,
+        accuracy: pos?.accuracy ?? punch?.accuracyM,
+        locationName: locName,
+        staffName: staffName,
+      );
+
+      if (isNewPunch) {
+        // Luồng chấm công mới: Chỉ lưu file cục bộ, chưa gửi mạng và chưa lưu lịch sử
+        setState(() {
+          if (photoType == 'front') {
+            _localFrontFile = file;
+          } else if (photoType == 'back') {
+            _localBackFile = file;
+          }
+        });
+        return;
+      }
+
+      // Luồng bổ sung ảnh cho lượt chấm đã có trên server
       setState(() {
         if (photoType == 'front') {
           _isUploadingFront = true;
@@ -89,11 +141,11 @@ class _AttendancePhotoCaptureDialogState
 
       final vm = ref.read(attendanceViewModelProvider.notifier);
       final photo = await vm.uploadPunchPhoto(
-        punchId: punch.id,
+        punchId: punch!.id,
         file: file,
         photoType: photoType,
-        lat: punch.lat,
-        lng: punch.lng,
+        lat: punch!.lat,
+        lng: punch!.lng,
       );
 
       if (mounted) {
@@ -101,9 +153,8 @@ class _AttendancePhotoCaptureDialogState
           if (photoType == 'front') _isUploadingFront = false;
           if (photoType == 'back') _isUploadingBack = false;
 
-          if (photo != null) {
-            // Cập nhật punch cục bộ
-            final updatedPhotos = List<AttendancePunchPhotoEntity>.from(punch.photos);
+          if (photo != null && punch != null) {
+            final updatedPhotos = List<AttendancePunchPhotoEntity>.from(punch!.photos);
             updatedPhotos.removeWhere((p) => p.photoType == photoType);
             updatedPhotos.add(photo);
 
@@ -112,8 +163,8 @@ class _AttendancePhotoCaptureDialogState
 
             final updatedReq = AttendanceRequirementsEntity(
               photoCount: updatedPhotos.length,
-              minPhotos: req.minPhotos,
-              maxPhotos: req.maxPhotos,
+              minPhotos: punch!.requirements.minPhotos,
+              maxPhotos: punch!.requirements.maxPhotos,
               needFront: !hasFront,
               needBack: !hasBack,
               requireBoth: true,
@@ -121,18 +172,18 @@ class _AttendancePhotoCaptureDialogState
             );
 
             _livePunch = AttendancePunchEntity(
-              id: punch.id,
-              punchAt: punch.punchAt,
-              clientUuid: punch.clientUuid,
-              lat: punch.lat,
-              lng: punch.lng,
-              accuracyM: punch.accuracyM,
-              geofenceId: punch.geofenceId,
-              geofenceName: punch.geofenceName,
-              isOutsideGeofence: punch.isOutsideGeofence,
-              isMockLocation: punch.isMockLocation,
-              isTimeTampered: punch.isTimeTampered,
-              duplicate: punch.duplicate,
+              id: punch!.id,
+              punchAt: punch!.punchAt,
+              clientUuid: punch!.clientUuid,
+              lat: punch!.lat,
+              lng: punch!.lng,
+              accuracyM: punch!.accuracyM,
+              geofenceId: punch!.geofenceId,
+              geofenceName: punch!.geofenceName,
+              isOutsideGeofence: punch!.isOutsideGeofence,
+              isMockLocation: punch!.isMockLocation,
+              isTimeTampered: punch!.isTimeTampered,
+              duplicate: punch!.duplicate,
               photos: updatedPhotos,
               requirements: updatedReq,
             );
@@ -146,7 +197,7 @@ class _AttendancePhotoCaptureDialogState
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Đã hoàn tất chụp ảnh chấm công!'),
+                content: Text('Đã hoàn tất chụp ảnh bổ sung!'),
                 backgroundColor: AppColors.primary,
               ),
             );
@@ -161,8 +212,59 @@ class _AttendancePhotoCaptureDialogState
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Lỗi tải ảnh: ${e.toString().replaceAll("AppException: ", "")}'),
+            content: Text('Lỗi chụp ảnh: ${e.toString().replaceAll("AppException: ", "")}'),
             backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Gửi lượt chấm công thật kèm ảnh đã chụp
+  Future<void> _handleConfirmNewPunch() async {
+    final photoConfig = ref.read(attendanceViewModelProvider).config?.photo;
+    final minPhotos = photoConfig?.minPhotos ?? 2;
+    final requireBoth = photoConfig?.requireBoth ?? true;
+
+    if (requireBoth) {
+      if (_localFrontFile == null || _localBackFile == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Vui lòng chụp đủ cả 2 ảnh: camera trước và camera sau!'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    } else {
+      if (capturedCount < minPhotos) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Vui lòng chụp ít nhất $minPhotos ảnh trước khi gửi chấm công!'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final vm = ref.read(attendanceViewModelProvider.notifier);
+    final success = await vm.submitPunchWithPhotos(
+      position: widget.position!,
+      frontPhoto: _localFrontFile,
+      backPhoto: _localBackFile,
+    );
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      if (success) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã chấm công thành công!'),
+            backgroundColor: AppColors.primary,
           ),
         );
       }
@@ -172,7 +274,11 @@ class _AttendancePhotoCaptureDialogState
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSatisfied = req.satisfied;
+    final photoConfig = ref.watch(attendanceViewModelProvider.select((s) => s.config?.photo));
+    final minPhotos = isNewPunch ? (photoConfig?.minPhotos ?? 2) : (punch?.requirements.minPhotos ?? 2);
+    final isSatisfied = isNewPunch
+        ? (_localFrontFile != null && _localBackFile != null)
+        : (punch?.requirements.satisfied ?? false);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -189,6 +295,21 @@ class _AttendancePhotoCaptureDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Nút đóng góc trên
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                      size: 22,
+                    ),
+                    onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+
               // Header Icon
               Container(
                 width: 60,
@@ -221,7 +342,9 @@ class _AttendancePhotoCaptureDialogState
 
               // Description
               Text(
-                'Lượt chấm đã ghi nhận lúc ${punch.timeFormatted}. Vui lòng chụp đủ 2 ảnh (camera trước và camera sau) theo quy định.',
+                isNewPunch
+                    ? 'Vui lòng chụp đủ 2 ảnh (camera trước và camera sau) để thực hiện lượt chấm công.'
+                    : 'Lượt chấm đã ghi nhận lúc ${punch!.timeFormatted}. Vui lòng chụp bổ sung ảnh theo quy định.',
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
@@ -248,7 +371,7 @@ class _AttendancePhotoCaptureDialogState
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Đã có: ${punch.photos.length}/${req.minPhotos} ảnh bắt buộc',
+                      'Đã chụp: $capturedCount/$minPhotos ảnh bắt buộc',
                       style: AppTypography.labelLarge(
                         color: isSatisfied
                             ? AppColors.primary
@@ -260,7 +383,7 @@ class _AttendancePhotoCaptureDialogState
               ),
               const SizedBox(height: 20),
 
-              // 2 Nút chụp ảnh: Camera trước + Camera sau (§2: đọc từ photo.require_both)
+              // 2 Nút chụp ảnh: Camera trước + Camera sau (§2)
               Row(
                 children: [
                   // Nút 1: Camera trước (Ảnh chân dung)
@@ -269,10 +392,10 @@ class _AttendancePhotoCaptureDialogState
                       title: 'Camera trước',
                       subtitle: 'Ảnh chân dung',
                       isFront: true,
-                      isUploaded: punch.photos.any((p) => p.photoType == 'front'),
+                      isUploaded: hasFrontPhoto,
                       isLoading: _isUploadingFront,
                       localFile: _localFrontFile,
-                      serverPhoto: punch.frontPhoto,
+                      serverPhoto: punch?.frontPhoto,
                       onTap: () => _capturePhoto(
                         photoType: 'front',
                         preferredCamera: CameraDevice.front,
@@ -287,10 +410,10 @@ class _AttendancePhotoCaptureDialogState
                       title: 'Camera sau',
                       subtitle: 'Ảnh khung cảnh',
                       isFront: false,
-                      isUploaded: punch.photos.any((p) => p.photoType == 'back'),
+                      isUploaded: hasBackPhoto,
                       isLoading: _isUploadingBack,
                       localFile: _localBackFile,
-                      serverPhoto: punch.backPhoto,
+                      serverPhoto: punch?.backPhoto,
                       onTap: () => _capturePhoto(
                         photoType: 'back',
                         preferredCamera: CameraDevice.rear,
@@ -302,34 +425,62 @@ class _AttendancePhotoCaptureDialogState
               const SizedBox(height: 24),
 
               // Actions
-              if (isSatisfied)
-                AppButton(
-                  text: 'Hoàn tất',
-                  icon: Icons.check_rounded,
-                  height: 48,
-                  onPressed: () => Navigator.of(context).pop(),
-                )
-              else
-                Column(
+              if (isNewPunch) ...[
+                Row(
                   children: [
-                    Text(
-                      'Bạn có thể chụp bổ sung sau từ mục Lịch sử.',
-                      style: AppTypography.bodySmall(
-                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                        ),
+                        child: const Text('Hủy bỏ'),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: Text(
-                        'Để sau / Đóng',
-                        style: AppTypography.labelLarge(
-                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                        ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: AppButton(
+                        text: _isSubmitting ? 'Đang gửi...' : 'Gửi chấm công',
+                        isLoading: _isSubmitting,
+                        icon: Icons.send_rounded,
+                        height: 48,
+                        onPressed: _isSubmitting ? null : _handleConfirmNewPunch,
                       ),
                     ),
                   ],
                 ),
+              ] else ...[
+                if (isSatisfied)
+                  AppButton(
+                    text: 'Hoàn tất',
+                    icon: Icons.check_rounded,
+                    height: 48,
+                    onPressed: () => Navigator.of(context).pop(),
+                  )
+                else
+                  Column(
+                    children: [
+                      Text(
+                        'Bạn có thể chụp bổ sung sau từ mục Lịch sử.',
+                        style: AppTypography.bodySmall(
+                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(
+                          'Để sau / Đóng',
+                          style: AppTypography.labelLarge(
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ],
           ),
         ),
@@ -350,7 +501,7 @@ class _AttendancePhotoCaptureDialogState
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return InkWell(
-      onTap: isLoading ? null : onTap,
+      onTap: isLoading || _isSubmitting ? null : onTap,
       borderRadius: AppRadius.roundedLg,
       child: Container(
         height: 155,
@@ -375,27 +526,20 @@ class _AttendancePhotoCaptureDialogState
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    if (serverPhoto != null && serverPhoto.url.isNotEmpty)
-                      Image.network(
-                        serverPhoto.getFullUrl(AppConstants.baseUrl),
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        errorBuilder: (_, __, ___) => localFile != null
-                            ? Image.file(
-                                localFile,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: double.infinity,
-                              )
-                            : _placeholderIcon(isFront),
-                      )
-                    else if (localFile != null)
+                    if (localFile != null)
                       Image.file(
                         localFile,
                         fit: BoxFit.cover,
                         width: double.infinity,
                         height: double.infinity,
+                      )
+                    else if (serverPhoto != null && serverPhoto.url.isNotEmpty)
+                      Image.network(
+                        serverPhoto.getFullUrl(AppConstants.baseUrl),
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        errorBuilder: (_, __, ___) => _placeholderIcon(isFront),
                       )
                     else
                       _placeholderIcon(isFront),
@@ -440,9 +584,11 @@ class _AttendancePhotoCaptureDialogState
               ).copyWith(fontWeight: FontWeight.w600),
             ),
             Text(
-              subtitle,
+              isUploaded ? 'Chạm để chụp lại' : subtitle,
               style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                color: isUploaded
+                    ? AppColors.primary
+                    : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
               ).copyWith(fontSize: 10),
             ),
           ],

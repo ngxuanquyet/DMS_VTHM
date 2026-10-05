@@ -121,7 +121,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: VthmTopAppBar(
-        title: 'Chấm công bằng app',
+        title: 'Chấm công',
         showBackButton: true,
       ),
       body: state.status == AttendanceStatus.loading && state.config == null
@@ -356,7 +356,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     }
 
     return AppButton(
-      text: isPunching ? 'Đang gửi lượt chấm...' : 'Chấm công bằng app',
+      text: isPunching ? 'Đang gửi lượt chấm...' : 'Chấm công',
       height: 52,
       isLoading: isPunching,
       icon: Icons.fingerprint_rounded,
@@ -387,15 +387,18 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
                 return;
               }
 
-              // 3. Thực hiện chấm công (§3)
-              final punchResult = await vm.punch(position: position);
-              if (punchResult == null) return;
+              // 3. Nếu không yêu cầu ảnh (min_photos == 0): gửi trực tiếp
+              final minPhotos = state.config?.photo.minPhotos ?? 2;
+              if (minPhotos == 0) {
+                await vm.submitPunchWithPhotos(position: position);
+                return;
+              }
 
-              // 4. Nếu chưa đủ ảnh (requirements.satisfied == false): mở màn chụp ảnh ngay (§4.1)
-              if (context.mounted && !punchResult.requirements.satisfied) {
+              // 4. Mở dialog chụp ảnh xác thực trước khi gửi lượt chấm công thật
+              if (context.mounted) {
                 AttendancePhotoCaptureDialog.show(
                   context,
-                  punch: punchResult,
+                  position: position,
                 );
               }
             },

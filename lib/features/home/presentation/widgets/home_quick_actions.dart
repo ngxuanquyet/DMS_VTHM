@@ -6,12 +6,19 @@ import 'report_menu_bottom_sheet.dart';
 /// Thiết kế theo phong cách UI thẻ màu thanh lịch, tone màu nhạt (pastel) hiện đại:
 /// - Cột trái:
 ///   + "Chấm công" (Tone vàng nhạt / soft amber) -> chuyển đến màn hình chấm công (/attendance)
-///   + "Báo cáo" (Tone chàm nhạt / soft indigo) -> mở menu danh mục báo cáo & lịch sử (viếng thăm, chấm công, khai báo vị trí, nghi vấn gian lận)
+///   + "Báo cáo" (Tone chàm nhạt / soft indigo) -> mở menu danh mục báo cáo & lịch sử
 /// - Cột phải:
 ///   + "Khai báo vị trí" (Tone xanh ngọc nhạt / soft teal) -> chuyển đến màn hình khai báo vị trí (/position-declaration)
-///   + Dành sẵn vị trí cho ô thứ 4 sau này
+///   + "Đồng bộ" (Tone xanh da trời nhạt / soft sky blue) -> kích hoạt đồng bộ dữ liệu
 class HomeQuickActions extends StatelessWidget {
-  const HomeQuickActions({super.key});
+  final bool isSyncing;
+  final VoidCallback? onSync;
+
+  const HomeQuickActions({
+    super.key,
+    this.isSyncing = false,
+    this.onSync,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +52,7 @@ class HomeQuickActions extends StatelessWidget {
         ),
         const SizedBox(width: 14),
 
-        // Cột phải: Khai báo vị trí (trên), giữ nguyên chiều cao chuẩn dành sẵn chỗ cho ô thứ 4
+        // Cột phải: Khai báo vị trí (trên) & Đồng bộ (dưới ô khai báo vị trí)
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -57,6 +64,20 @@ class HomeQuickActions extends StatelessWidget {
                 foregroundColor: const Color(0xFF0D9488),
                 borderColor: const Color(0xFF99F6E4),
                 onTap: () => context.push('/position-declaration'),
+              ),
+              const SizedBox(height: 14),
+              _QuickActionCard(
+                title: isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ',
+                icon: Icons.sync_rounded,
+                isLoading: isSyncing,
+                backgroundColor: const Color(0xFFE0F2FE),
+                foregroundColor: const Color(0xFF0284C7),
+                borderColor: const Color(0xFFBAE6FD),
+                onTap: () {
+                  if (!isSyncing && onSync != null) {
+                    onSync!();
+                  }
+                },
               ),
             ],
           ),
@@ -73,6 +94,7 @@ class _QuickActionCard extends StatelessWidget {
   final Color foregroundColor;
   final Color borderColor;
   final VoidCallback onTap;
+  final bool isLoading;
 
   const _QuickActionCard({
     required this.title,
@@ -81,6 +103,7 @@ class _QuickActionCard extends StatelessWidget {
     required this.foregroundColor,
     required this.borderColor,
     required this.onTap,
+    this.isLoading = false,
   });
 
   @override
@@ -116,7 +139,7 @@ class _QuickActionCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          onTap: isLoading ? null : onTap,
           borderRadius: BorderRadius.circular(16),
           splashColor: foregroundColor.withValues(alpha: 0.18),
           highlightColor: foregroundColor.withValues(alpha: 0.08),
@@ -127,8 +150,18 @@ class _QuickActionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Icon góc trên trái
-                Icon(icon, color: effectiveFgColor, size: 34),
+                // Icon góc trên trái (hoặc loading indicator)
+                if (isLoading)
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.8,
+                      valueColor: AlwaysStoppedAnimation<Color>(effectiveFgColor),
+                    ),
+                  )
+                else
+                  Icon(icon, color: effectiveFgColor, size: 34),
 
                 // Nhãn góc dưới phải
                 Align(

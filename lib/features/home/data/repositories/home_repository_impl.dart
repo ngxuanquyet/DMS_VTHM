@@ -72,34 +72,74 @@ class HomeRepositoryImpl implements HomeRepository {
     }
 
     final currentDate = _formatVietnameseDate(now);
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
 
-    // 2. Chấm công / Phiên làm việc thực tế
+    // 2. Chấm công thực tế từ lịch sử module Attendance (SPEC 2026-10-05)
     bool isCheckedIn = false;
     String checkInTime = '--:--';
     String workDuration = '00:00';
     String statusLabel = 'Chưa vào ca';
 
-    // 2a. Kiểm tra nếu đang có lượt viếng thăm mở
-    final activeVisitJson = prefs.getString(_activeVisitKey);
-    if (activeVisitJson != null && activeVisitJson.isNotEmpty) {
+    // 2a. Ưu tiên đọc từ cache lịch sử chấm công thật của mobile (att_mobile_history_cache)
+    final attHistoryJson = prefs.getString('att_mobile_history_cache');
+    if (attHistoryJson != null && attHistoryJson.isNotEmpty) {
       try {
-        final vMap = jsonDecode(activeVisitJson) as Map<String, dynamic>;
-        final activeVisit = VisitEntity.fromJson(vMap);
-        if (activeVisit.isOpen) {
+        final list = jsonDecode(attHistoryJson) as List<dynamic>;
+        final todayPunches = <Map<String, dynamic>>[];
+        for (final item in list) {
+          if (item is Map) {
+            final punchAt = item['punch_at']?.toString() ?? '';
+            if (punchAt.startsWith(todayStr)) {
+              todayPunches.add(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+
+        if (todayPunches.isNotEmpty) {
+          todayPunches.sort((a, b) => (a['punch_at']?.toString() ?? '').compareTo(b['punch_at']?.toString() ?? ''));
           isCheckedIn = true;
-          if (activeVisit.checkinAt != null) {
-            checkInTime = DateFormat('HH:mm').format(activeVisit.checkinAt!.toLocal());
-            final diff = now.difference(activeVisit.checkinAt!.toLocal());
+          final firstPunchAt = todayPunches.first['punch_at']?.toString() ?? '';
+          try {
+            final cleanIso = firstPunchAt.replaceAll('+07', '+0700');
+            final dt = DateTime.parse(cleanIso);
+            checkInTime = DateFormat('HH:mm').format(dt.toLocal());
+            final diff = now.difference(dt.toLocal());
             final hours = diff.inHours.toString().padLeft(2, '0');
             final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
             workDuration = '$hours:$mins';
+          } catch (_) {
+            if (firstPunchAt.length >= 16) {
+              checkInTime = firstPunchAt.substring(11, 16);
+            }
           }
-          statusLabel = 'Đang viếng thăm';
+          statusLabel = todayPunches.length > 1 ? 'Đã chấm (${todayPunches.length} lượt)' : 'Đang làm việc';
         }
       } catch (_) {}
     }
 
-    // 2b. Kiểm tra nếu có phiên chấm công ca làm việc độc lập
+    // 2b. Kiểm tra nếu có lượt viếng thăm mở
+    if (!isCheckedIn) {
+      final activeVisitJson = prefs.getString(_activeVisitKey);
+      if (activeVisitJson != null && activeVisitJson.isNotEmpty) {
+        try {
+          final vMap = jsonDecode(activeVisitJson) as Map<String, dynamic>;
+          final activeVisit = VisitEntity.fromJson(vMap);
+          if (activeVisit.isOpen) {
+            isCheckedIn = true;
+            if (activeVisit.checkinAt != null) {
+              checkInTime = DateFormat('HH:mm').format(activeVisit.checkinAt!.toLocal());
+              final diff = now.difference(activeVisit.checkinAt!.toLocal());
+              final hours = diff.inHours.toString().padLeft(2, '0');
+              final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
+              workDuration = '$hours:$mins';
+            }
+            statusLabel = 'Đang viếng thăm';
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2c. Kiểm tra nếu có phiên chấm công ca làm việc độc lập cũ
     if (!isCheckedIn) {
       final attSessionJson = prefs.getString(_attendanceStorageKey);
       if (attSessionJson != null && attSessionJson.isNotEmpty) {
@@ -123,7 +163,6 @@ class HomeRepositoryImpl implements HomeRepository {
     }
 
     // 3. Tuyến bán hàng và lượt viếng thăm thực tế trong ngày
-    final todayStr = DateFormat('yyyy-MM-dd').format(now);
     int completedCount = 0;
     int totalCount = 0;
     String routeName = 'Tất cả tuyến';

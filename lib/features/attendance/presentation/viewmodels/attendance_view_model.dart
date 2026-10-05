@@ -166,6 +166,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   /// Trả về đối tượng lượt chấm thành công hoặc null nếu thất bại
   Future<AttendancePunchEntity?> punch({
     required Position position,
+    bool addToHistory = true,
   }) async {
     // 🔴 QUY TẮC §3: client_uuid SINH LÚC BẤM NÚT
     final clickUuid = const Uuid().v4();
@@ -185,22 +186,31 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         clientUuid: clickUuid,
       );
 
-      // Cập nhật danh sách lịch sử
-      final updatedHistory = List<AttendancePunchEntity>.from(state.history);
-      updatedHistory.removeWhere((p) => p.clientUuid == punchResult.clientUuid);
-      updatedHistory.insert(0, punchResult);
-
       final msg = punchResult.duplicate
           ? 'Lượt chấm này đã có trên hệ thống trước đó.'
           : 'Đã ghi nhận chấm công lúc ${punchResult.timeFormatted}.';
 
-      state = state.copyWith(
-        isPunching: false,
-        latestPunch: punchResult,
-        history: updatedHistory,
-        successMessage: msg,
-        errorMessage: null,
-      );
+      if (addToHistory) {
+        // Cập nhật danh sách lịch sử
+        final updatedHistory = List<AttendancePunchEntity>.from(state.history);
+        updatedHistory.removeWhere((p) => p.clientUuid == punchResult.clientUuid);
+        updatedHistory.insert(0, punchResult);
+
+        state = state.copyWith(
+          isPunching: false,
+          latestPunch: punchResult,
+          history: updatedHistory,
+          successMessage: msg,
+          errorMessage: null,
+        );
+      } else {
+        state = state.copyWith(
+          isPunching: false,
+          latestPunch: punchResult,
+          successMessage: msg,
+          errorMessage: null,
+        );
+      }
 
       return punchResult;
     } catch (e) {
@@ -211,6 +221,86 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         errorMessage: msg,
       );
       return null;
+    }
+  }
+
+  /// Gửi lượt chấm công thật kèm ảnh (§3 & §4)
+  /// Chỉ lưu vào lịch sử khi gửi lượt chấm công thật thành công
+  Future<bool> submitPunchWithPhotos({
+    required Position position,
+    File? frontPhoto,
+    File? backPhoto,
+  }) async {
+    state = state.copyWith(
+      isPunching: true,
+      errorMessage: null,
+      successMessage: null,
+    );
+
+    try {
+      // 1. Gửi lượt chấm công lên server (§3) - không lưu vào lịch sử trước
+      final clickUuid = const Uuid().v4();
+      final punchResult = await punchUseCase(
+        lat: position.latitude,
+        lng: position.longitude,
+        accuracyM: position.accuracy,
+        isMockLocation: position.isMocked,
+        clientUuid: clickUuid,
+      );
+
+      // 2. Tải lần lượt từng ảnh lên (§4.1)
+      if (frontPhoto != null) {
+        try {
+          await uploadPhotoUseCase(
+            punchId: punchResult.id,
+            file: frontPhoto,
+            photoType: 'front',
+            lat: position.latitude,
+            lng: position.longitude,
+          );
+        } catch (photoErr) {
+          debugPrint('[AttendanceViewModel] Lỗi tải ảnh trước: $photoErr');
+        }
+      }
+
+      if (backPhoto != null) {
+        try {
+          await uploadPhotoUseCase(
+            punchId: punchResult.id,
+            file: backPhoto,
+            photoType: 'back',
+            lat: position.latitude,
+            lng: position.longitude,
+          );
+        } catch (photoErr) {
+          debugPrint('[AttendanceViewModel] Lỗi tải ảnh sau: $photoErr');
+        }
+      }
+
+      // 3. Làm mới lịch sử từ server (§5) - Chỉ khi gửi thật thành công mới có trong lịch sử
+      final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
+
+      final msg = punchResult.duplicate
+          ? 'Lượt chấm này đã có trên hệ thống trước đó.'
+          : 'Đã ghi nhận chấm công lúc ${punchResult.timeFormatted}.';
+
+      state = state.copyWith(
+        isPunching: false,
+        latestPunch: punchResult,
+        history: refreshedHistory,
+        successMessage: msg,
+        errorMessage: null,
+      );
+
+      return true;
+    } catch (e) {
+      final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
+      debugPrint('[AttendanceViewModel] Lỗi gửi lượt chấm thật: $msg');
+      state = state.copyWith(
+        isPunching: false,
+        errorMessage: msg,
+      );
+      return false;
     }
   }
 

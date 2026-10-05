@@ -60,18 +60,73 @@ void main() {
         );
 
         // 5. Verify layout: Báo cáo is below Chấm công (higher Y position)
-        final chamCongOffset = tester.getTopLeft(find.text('Chấm công'));
-        final baoCaoOffset = tester.getTopLeft(find.text('Báo cáo'));
-        final khaiBaoViTriOffset = tester.getTopLeft(find.text('Khai báo vị trí'));
+        final chamCongCard = find.ancestor(of: find.text('Chấm công'), matching: find.byType(InkWell));
+        final baoCaoCard = find.ancestor(of: find.text('Báo cáo'), matching: find.byType(InkWell));
+        final khaiBaoViTriCard = find.ancestor(of: find.text('Khai báo vị trí'), matching: find.byType(InkWell));
+        final dongBoCard = find.ancestor(of: find.text('Đồng bộ'), matching: find.byType(InkWell));
+
+        final chamCongOffset = tester.getTopLeft(chamCongCard);
+        final baoCaoOffset = tester.getTopLeft(baoCaoCard);
+        final khaiBaoViTriOffset = tester.getTopLeft(khaiBaoViTriCard);
+        final dongBoOffset = tester.getTopLeft(dongBoCard);
 
         expect(baoCaoOffset.dy > chamCongOffset.dy, isTrue,
             reason: 'Báo cáo must be positioned vertically below Chấm công');
-        expect((baoCaoOffset.dx - chamCongOffset.dx).abs() < 50, isTrue,
+        expect((baoCaoOffset.dx - chamCongOffset.dx).abs() < 5, isTrue,
             reason: 'Báo cáo and Chấm công must be in the same left column');
         expect(khaiBaoViTriOffset.dx > chamCongOffset.dx, isTrue,
             reason: 'Khai báo vị trí must be on the right column');
+
+        // 6. Verify "Đồng bộ" card layout
+        expect(find.text('Đồng bộ'), findsOneWidget);
+        expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
+
+        expect(dongBoOffset.dy > khaiBaoViTriOffset.dy, isTrue,
+            reason: 'Đồng bộ must be positioned vertically below Khai báo vị trí');
+        expect((dongBoOffset.dx - khaiBaoViTriOffset.dx).abs() < 5, isTrue,
+            reason: 'Đồng bộ and Khai báo vị trí must be in the same right column');
       },
     );
+
+    testWidgets('Tapping Đồng bộ card triggers onSync callback', (tester) async {
+      var syncTriggered = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: HomeQuickActions(
+              onSync: () => syncTriggered = true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Đồng bộ'));
+      await tester.pump();
+
+      expect(syncTriggered, isTrue);
+    });
+
+    testWidgets('Shows loading indicator and disabled tap when isSyncing is true', (tester) async {
+      var syncTriggered = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: HomeQuickActions(
+              isSyncing: true,
+              onSync: () => syncTriggered = true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Đang đồng bộ...'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.tap(find.text('Đang đồng bộ...'));
+      await tester.pump();
+
+      expect(syncTriggered, isFalse);
+    });
 
     testWidgets(
       'Tapping Báo cáo card opens modal bottom sheet with 4 report items',

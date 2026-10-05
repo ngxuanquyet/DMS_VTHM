@@ -285,13 +285,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SizedBox(height: AppSpacing.stackLg),
 
                         // Card trạng thái chấm công
-                        if (homeState.dashboard?.attendance != null) ...[
-                          AttendanceSummaryCard(attendance: homeState.dashboard!.attendance),
-                          const SizedBox(height: AppSpacing.stackMd),
-                        ],
+                        AttendanceSummaryCard(attendance: homeState.dashboard?.attendance),
+                        const SizedBox(height: AppSpacing.stackMd),
 
-                        // Thao tác nhanh dạng card màu (Chấm công & Khai báo vị trí & Báo cáo)
-                        const HomeQuickActions(),
+                        // Thao tác nhanh dạng card màu (Chấm công & Báo cáo & Khai báo vị trí & Đồng bộ)
+                        HomeQuickActions(
+                          isSyncing: _isSyncing,
+                          onSync: _handleSyncAll,
+                        ),
                         const SizedBox(height: AppSpacing.stackLg),
 
                         // Dòng thời gian hoạt động trong ngày (Daily Activity Timeline)
@@ -328,39 +329,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ],
 
-                        const SizedBox(height: 160), // Padding cho FAB & nav bar
+                        const SizedBox(height: 32),
                       ],
                     ),
                   ),
                 ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
-          heroTag: 'home_sync_fab',
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          onPressed: _isSyncing ? null : _handleSyncAll,
-          icon: _isSyncing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : const Icon(Icons.sync_rounded, size: 24),
-          label: Text(
-            _isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ',
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

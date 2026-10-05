@@ -7,7 +7,9 @@ import 'package:vthm_dms/features/attendance/data/models/attendance_model.dart';
 import 'package:vthm_dms/features/attendance/data/repositories/attendance_repository_impl.dart';
 import 'package:vthm_dms/features/attendance/data/services/attendance_api_service.dart';
 import 'package:vthm_dms/features/attendance/domain/entities/attendance_entity.dart';
-
+import 'package:vthm_dms/features/attendance/domain/usecases/attendance_usecases.dart';
+import 'package:vthm_dms/features/attendance/presentation/viewmodels/attendance_view_model.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:dio/dio.dart';
 
 class MockAttendanceApiClient extends ApiClient {
@@ -330,6 +332,88 @@ void main() {
       final history = await repository.getHistory(days: 7);
       expect(history.first.geofenceName, isNull);
       expect(history.first.timeFormatted, '08:15');
+    });
+
+    test('8. AttendanceViewModel.submitPunchWithPhotos — chỉ lưu lịch sử khi gửi lượt chấm công thật thành công', () async {
+      final vm = AttendanceViewModel(
+        getConfigUseCase: GetAttendanceConfigUseCase(repository),
+        punchUseCase: PunchAttendanceUseCase(repository),
+        uploadPhotoUseCase: UploadPunchPhotoUseCase(repository),
+        getHistoryUseCase: GetAttendanceHistoryUseCase(repository),
+        getAttendanceDetailUseCase: GetAttendanceDetailUseCase(repository),
+        toggleAttendanceUseCase: ToggleAttendanceUseCase(repository),
+      );
+
+      // Ban đầu chưa có lượt nào trong lịch sử
+      expect(vm.state.history, isEmpty);
+
+      // Khi server từ chối (ví dụ 422 ngoài vùng), lịch sử KHÔNG ĐƯỢC thêm lượt nào
+      mockClient.errorToThrow = const ServerException('Bạn đang cách địa điểm 5000m.', 422);
+      final dummyPos = Position(
+        latitude: 21.028,
+        longitude: 105.8345,
+        timestamp: DateTime.now(),
+        accuracy: 10.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+      final failed = await vm.submitPunchWithPhotos(position: dummyPos);
+      expect(failed, isFalse);
+      expect(vm.state.history, isEmpty);
+      expect(vm.state.errorMessage, contains('Bạn đang cách địa điểm 5000m.'));
+
+      // Khi server trả thành công
+      mockClient.errorToThrow = null;
+      mockClient.nextHistoryResponse = {
+        'success': true,
+        'message': 'Thành công',
+        'data': [
+          {
+            'id': 8725,
+            'punch_at': '2026-10-05 16:30:00+07',
+            'client_uuid': 'uuid-new-real',
+            'lat': 21.028,
+            'lng': 105.8345,
+            'geofence_id': 6,
+            'geofence_name': '[TEST-CC] Văn phòng tài liệu mobile',
+            'is_outside_geofence': false,
+            'is_mock_location': false,
+            'is_time_tampered': false,
+            'photos': [
+              {
+                'id': 1,
+                'file_id': 100,
+                'token': 'tok1',
+                'url': '/url1',
+                'photo_type': 'front',
+                'photo_type_label': 'Ảnh chân dung',
+                'photo_type_color': 'primary',
+                'taken_at': '2026-10-05 16:30:10+07',
+                'sort_order': 0,
+              }
+            ],
+            'requirements': {
+              'photo_count': 1,
+              'min_photos': 2,
+              'max_photos': 10,
+              'need_front': false,
+              'need_back': true,
+              'require_both': true,
+              'satisfied': false,
+            },
+          }
+        ],
+      };
+
+      final success = await vm.submitPunchWithPhotos(position: dummyPos);
+      expect(success, isTrue);
+      expect(vm.state.history.length, 1);
+      expect(vm.state.history.first.id, 8725);
     });
   });
 }
