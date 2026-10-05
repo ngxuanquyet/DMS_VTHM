@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/app_language.dart';
 import '../../../../core/localization/language_provider.dart';
@@ -48,7 +49,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🚀 Đã mở khóa Tùy chọn Nhà phát triển (Developer Options)'),
+          content: Text(
+            '🚀 Đã mở khóa Tùy chọn Nhà phát triển (Developer Options)',
+          ),
           backgroundColor: AppColors.primary,
           duration: Duration(seconds: 3),
         ),
@@ -56,7 +59,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } else if (_devTapCount >= 2) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Bấm thêm ${5 - _devTapCount} lần nữa để mở Tùy chọn Nhà phát triển'),
+          content: Text(
+            'Bấm thêm ${5 - _devTapCount} lần nữa để mở Tùy chọn Nhà phát triển',
+          ),
           duration: const Duration(milliseconds: 800),
         ),
       );
@@ -106,13 +111,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Text(
                       strings.selectLanguage,
                       style: AppTypography.titleMedium(
-                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                        color: isDark
+                            ? AppColors.darkOnSurface
+                            : AppColors.onSurface,
                       ).copyWith(fontWeight: FontWeight.w700),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, size: 20),
                       onPressed: () => Navigator.pop(ctx),
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.outline,
                     ),
                   ],
                 ),
@@ -157,9 +166,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             color: isSelected
                 ? (isDark
-                    ? AppColors.primaryContainer.withValues(alpha: 0.2)
-                    : AppColors.primaryContainer.withValues(alpha: 0.12))
-                : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLow),
+                      ? AppColors.primaryContainer.withValues(alpha: 0.2)
+                      : AppColors.primaryContainer.withValues(alpha: 0.12))
+                : (isDark
+                      ? AppColors.darkSurfaceContainer
+                      : AppColors.surfaceContainerLow),
             borderRadius: AppRadius.roundedMd,
             border: Border.all(
               color: isSelected ? AppColors.primary : Colors.transparent,
@@ -168,21 +179,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           child: Row(
             children: [
-              Text(
-                language.flag,
-                style: const TextStyle(fontSize: 22),
-              ),
+              Text(language.flag, style: const TextStyle(fontSize: 22)),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   language.title,
-                  style: AppTypography.bodyLarge(
-                    color: isSelected
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                  ).copyWith(
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                  style:
+                      AppTypography.bodyLarge(
+                        color: isSelected
+                            ? AppColors.primary
+                            : (isDark
+                                  ? AppColors.darkOnSurface
+                                  : AppColors.onSurface),
+                      ).copyWith(
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
                 ),
               ),
               if (isSelected)
@@ -220,444 +233,467 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           child: Column(
             children: [
-            // Profile Header
-            Center(
-              child: Column(
-                children: [
-                  Stack(
-                    children: [
-                      Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-                            width: 3,
-                          ),
-                          boxShadow: AppShadows.level2,
+              // Profile Header
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark
+                              ? AppColors.darkSurfaceContainer
+                              : Colors.white,
+                          width: 3,
                         ),
-                        child: ClipOval(
-                          child: Image.network(
-                            profileState.profile?.avatarUrl ?? AppConstants.userAvatarUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.person,
-                              size: 48,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
+                        boxShadow: AppShadows.level2,
                       ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
+                      child: ClipOval(
+                        child: Image.network(
+                          profileState.profile?.avatarUrl ??
+                              AppConstants.userAvatarUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person,
+                            size: 48,
                             color: AppColors.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isDark ? AppColors.darkSurface : Colors.white,
-                              width: 2,
-                            ),
-                            boxShadow: AppShadows.level1,
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.edit, size: 16, color: Colors.white),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    profileState.profile?.name ?? strings.unknown,
-                    style: AppTypography.headlineSmall(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ).copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.darkSurfaceContainer
-                          : AppColors.surfaceContainerHigh,
-                      borderRadius: AppRadius.roundedSm,
                     ),
-                    child: Text(
-                      '${strings.employeeCodePrefix}${profileState.profile?.employeeId ?? strings.unknown}',
-                      style: AppTypography.labelSmall(
+                    const SizedBox(height: 12),
+                    Text(
+                      profileState.profile?.name ?? strings.unknown,
+                      style: AppTypography.headlineSmall(
                         color: isDark
-                            ? AppColors.darkOnSurfaceVariant
-                            : AppColors.onSurfaceVariant,
-                      ).copyWith(fontWeight: FontWeight.w600),
+                            ? AppColors.darkOnSurface
+                            : AppColors.onSurface,
+                      ).copyWith(fontWeight: FontWeight.w700),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Role & Department Cards
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer.withValues(alpha: 0.12),
-                            borderRadius: AppRadius.roundedMd,
-                            border: Border.all(
-                              color: AppColors.primaryContainer.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              Text(
-                                strings.roleLabel,
-                                style: AppTypography.labelSmall(
-                                  color: isDark
-                                      ? AppColors.darkOnSurfaceVariant
-                                      : AppColors.onSurfaceVariant,
-                                ).copyWith(letterSpacing: 0.8, fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                profileState.profile?.role ?? strings.unknown,
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelLarge(
-                                  color: isDark
-                                      ? AppColors.primaryFixedDim
-                                      : AppColors.onPrimaryContainer,
-                                ).copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 3,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.secondaryContainer.withValues(alpha: 0.15),
-                            borderRadius: AppRadius.roundedMd,
-                            border: Border.all(
-                              color: AppColors.secondaryContainer.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              Text(
-                                strings.departmentLabel,
-                                style: AppTypography.labelSmall(
-                                  color: isDark
-                                      ? AppColors.darkOnSurfaceVariant
-                                      : AppColors.onSurfaceVariant,
-                                ).copyWith(letterSpacing: 0.8, fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                profileState.profile?.department ?? strings.unknown,
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelLarge(
-                                  color: isDark ? AppColors.secondaryFixed : AppColors.secondary,
-                                ).copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.stackLg),
-
-            // Section 1: Tài khoản
-            _buildSectionTitle(strings.accountSection, isDark),
-            const SizedBox(height: 6),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _buildMenuItem(
-                    icon: Icons.person_outline,
-                    title: strings.personalInfo,
-                    onTap: () {
-                      context.push('/profile/personal-info');
-                    },
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.lock_outline,
-                    title: strings.changePassword,
-                    onTap: () {
-                      _showInfoDialog(
-                        strings.changePassword,
-                        'Để đổi mật khẩu tài khoản hệ thống VTHM, vui lòng liên hệ bộ phận Quản trị hệ thống hoặc gửi yêu cầu tới IT Helpdesk.',
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.stackLg),
-
-            // Section 2: Cài đặt ứng dụng
-            _buildSectionTitle(strings.appSettingsSection, isDark),
-            const SizedBox(height: 6),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _buildMenuItem(
-                    icon: Icons.language,
-                    title: strings.languageTitle,
-                    trailing: Text(
-                      currentLang.title,
-                      style: AppTypography.bodyMedium(
+                      decoration: BoxDecoration(
                         color: isDark
-                            ? AppColors.primaryFixedDim
-                            : AppColors.primary,
-                      ).copyWith(fontWeight: FontWeight.w600),
+                            ? AppColors.darkSurfaceContainer
+                            : AppColors.surfaceContainerHigh,
+                        borderRadius: AppRadius.roundedSm,
+                      ),
+                      child: Text(
+                        '${strings.employeeCodePrefix}${profileState.profile?.employeeId ?? strings.unknown}',
+                        style: AppTypography.labelSmall(
+                          color: isDark
+                              ? AppColors.darkOnSurfaceVariant
+                              : AppColors.onSurfaceVariant,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                      ),
                     ),
-                    onTap: () => _showLanguageSelector(context),
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
+                    const SizedBox(height: 12),
+                    // Role & Department Cards
+                    Row(
                       children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.darkSurfaceContainerLowest
-                                : AppColors.surfaceContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.dark_mode_outlined,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
                         Expanded(
-                          child: Text(
-                            strings.darkMode,
-                            style: AppTypography.bodyLarge(
-                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                              horizontal: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderRadius: AppRadius.roundedMd,
+                              border: Border.all(
+                                color: AppColors.primaryContainer.withValues(
+                                  alpha: 0.25,
+                                ),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  strings.roleLabel,
+                                  style:
+                                      AppTypography.labelSmall(
+                                        color: isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.onSurfaceVariant,
+                                      ).copyWith(
+                                        letterSpacing: 0.8,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  profileState.profile?.role ?? strings.unknown,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.labelLarge(
+                                    color: isDark
+                                        ? AppColors.primaryFixedDim
+                                        : AppColors.onPrimaryContainer,
+                                  ).copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        Switch(
-                          value: profileState.isDarkMode,
-                          activeTrackColor: AppColors.primaryContainer,
-                          onChanged: (val) {
-                            profileVM.toggleDarkMode(val);
-                          },
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                              horizontal: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.secondaryContainer.withValues(
+                                alpha: 0.15,
+                              ),
+                              borderRadius: AppRadius.roundedMd,
+                              border: Border.all(
+                                color: AppColors.secondaryContainer.withValues(
+                                  alpha: 0.25,
+                                ),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  strings.departmentLabel,
+                                  style:
+                                      AppTypography.labelSmall(
+                                        color: isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.onSurfaceVariant,
+                                      ).copyWith(
+                                        letterSpacing: 0.8,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  profileState.profile?.department ??
+                                      strings.unknown,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.labelLarge(
+                                    color: isDark
+                                        ? AppColors.secondaryFixed
+                                        : AppColors.secondary,
+                                  ).copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.mic_none_rounded,
-                    title: strings.voiceToTextMenu,
-                    onTap: () => context.push('/voice-to-text'),
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.shield_outlined,
-                    title: strings.privacyPolicy,
-                    onTap: () {
-                      _showInfoDialog(
-                        strings.privacyPolicy,
-                        'Ứng dụng VTHM DMS tuân thủ nghiêm ngặt các quy định bảo mật dữ liệu doanh nghiệp và định vị GPS trong thời gian làm việc. Mọi dữ liệu tuyến đường và hình ảnh điểm bán được lưu trữ an toàn trên hệ thống máy chủ nội bộ VTHM Group.',
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.stackLg),
-
-            // Section 3: Hỗ trợ
-            _buildSectionTitle(strings.supportFeedback.toUpperCase(), isDark),
-            const SizedBox(height: 6),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _buildMenuItem(
-                    icon: Icons.help_outline,
-                    title: strings.helpGuide,
-                    onTap: () {
-                      _showInfoDialog(
-                        strings.helpGuide,
-                        'Hướng dẫn sử dụng nhanh VTHM DMS:\n\n1. Chấm công: Bấm vào thẻ Chấm công để Check-in/Check-out khi đến văn phòng/chi nhánh.\n2. Tuyến bán hàng: Xem danh sách đại lý cần ghé thăm trong ngày và lộ trình bản đồ.\n3. Điểm bán: Check-in tại đại lý để chụp ảnh trưng bày và điền biểu mẫu.\n4. Liên hệ IT hỗ trợ qua hotline nội bộ hoặc tổng đài VTHM.',
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildMenuItem(
-                    icon: Icons.article_outlined,
-                    title: strings.termsOfService,
-                    onTap: () {
-                      _showInfoDialog(
-                        strings.termsOfService,
-                        'Điều khoản sử dụng phần mềm VTHM DMS:\n\n- Ứng dụng dành riêng cho CBNV VTHM Group phục vụ công tác quản lý thị trường.\n- Nghiêm cấm chia sẻ thông tin khách hàng và lộ trình ra bên ngoài doanh nghiệp.\n- Vui lòng duy trì GPS và kết nối Internet trong suốt ca làm việc để dữ liệu đồng bộ chính xác.',
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                ],
-              ),
-            ),
-
-            // Section 4: Developer Options (Chỉ hiển thị khi mở khóa)
-            if (_isDevMode) ...[
               const SizedBox(height: AppSpacing.stackLg),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSectionTitle('TÙY CHỌN NHÀ PHÁT TRIỂN (DEV TOOLS)', isDark),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _isDevMode = false;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Đã tắt Chế độ nhà phát triển')),
-                      );
-                    },
-                    child: Text(
-                      'Tắt Dev Mode',
-                      style: AppTypography.labelSmall(color: AppColors.error).copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
+
+              // Section 1: Tài khoản
+              _buildSectionTitle(strings.accountSection, isDark),
               const SizedBox(height: 6),
               AppCard(
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
                     _buildMenuItem(
-                      icon: Icons.dynamic_form_rounded,
-                      title: '🧪 Demo UI Field Động (Dynamic Form)',
-                      onTap: () => context.push('/dev/dynamic-form-demo'),
-                      isDark: isDark,
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.rocket_launch_outlined,
-                      title: strings.previewSplash,
-                      onTap: () => context.push('/splash'),
-                      isDark: isDark,
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.wifi_off_rounded,
-                      title: strings.simulateOffline,
+                      icon: Icons.person_outline,
+                      title: strings.personalInfo,
                       onTap: () {
-                        final notifier = ref.read(connectivityProvider.notifier);
-                        notifier.simulateOffline();
-                        Future.delayed(const Duration(seconds: 3), () {
-                          notifier.simulateOnline();
-                        });
-                      },
-                      isDark: isDark,
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.location_off_rounded,
-                      title: strings.simulateLocationOff,
-                      onTap: () {
-                        ref.read(locationServiceProvider).simulateLocationOff(context);
+                        context.push('/profile/personal-info');
                       },
                       isDark: isDark,
                     ),
                   ],
                 ),
               ),
-            ],
-            const SizedBox(height: AppSpacing.stackLg),
+              const SizedBox(height: AppSpacing.stackLg),
 
-            // Logout Button
-            AppButton(
-              text: strings.logout.toUpperCase(),
-              variant: AppButtonVariant.error,
-              icon: Icons.logout_rounded,
-              width: double.infinity,
-              height: 48,
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text(strings.logoutConfirmTitle),
-                    content: Text(strings.logoutConfirmMessage),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(strings.cancel),
+              // Section 2: Cài đặt ứng dụng
+              _buildSectionTitle(strings.appSettingsSection, isDark),
+              const SizedBox(height: 6),
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _buildMenuItem(
+                      icon: Icons.language,
+                      title: strings.languageTitle,
+                      trailing: Text(
+                        currentLang.title,
+                        style: AppTypography.bodyMedium(
+                          color: isDark
+                              ? AppColors.primaryFixedDim
+                              : AppColors.primary,
+                        ).copyWith(fontWeight: FontWeight.w600),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(strings.logout, style: const TextStyle(color: AppColors.error)),
+                      onTap: () => _showLanguageSelector(context),
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.darkSurfaceContainerLowest
+                                  : AppColors.surfaceContainer,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.dark_mode_outlined,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              strings.darkMode,
+                              style: AppTypography.bodyLarge(
+                                color: isDark
+                                    ? AppColors.darkOnSurface
+                                    : AppColors.onSurface,
+                              ),
+                            ),
+                          ),
+                          Switch(
+                            value: profileState.isDarkMode,
+                            activeTrackColor: AppColors.primaryContainer,
+                            onChanged: (val) {
+                              profileVM.toggleDarkMode(val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.mic_none_rounded,
+                      title: strings.voiceToTextMenu,
+                      onTap: () => context.push('/voice-to-text'),
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.shield_outlined,
+                      title: strings.privacyPolicy,
+                      onTap: () {
+                        _showInfoDialog(
+                          strings.privacyPolicy,
+                          'Ứng dụng VTHM DMS tuân thủ nghiêm ngặt các quy định bảo mật dữ liệu doanh nghiệp và định vị GPS trong thời gian làm việc. Mọi dữ liệu tuyến đường và hình ảnh điểm bán được lưu trữ an toàn trên hệ thống máy chủ nội bộ VTHM Group.',
+                        );
+                      },
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.stackLg),
+
+              // Section 3: Hỗ trợ
+              _buildSectionTitle(strings.supportFeedback.toUpperCase(), isDark),
+              const SizedBox(height: 6),
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _buildMenuItem(
+                      icon: Icons.help_outline,
+                      title: strings.helpGuide,
+                      onTap: () {
+                        _showInfoDialog(
+                          strings.helpGuide,
+                          'Hướng dẫn sử dụng nhanh VTHM DMS:\n\n1. Chấm công: Bấm vào thẻ Chấm công để Check-in/Check-out khi đến văn phòng/chi nhánh.\n2. Tuyến bán hàng: Xem danh sách đại lý cần ghé thăm trong ngày và lộ trình bản đồ.\n3. Điểm bán: Check-in tại đại lý để chụp ảnh trưng bày và điền biểu mẫu.\n4. Liên hệ IT hỗ trợ qua hotline nội bộ hoặc tổng đài VTHM.',
+                        );
+                      },
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.article_outlined,
+                      title: strings.termsOfService,
+                      onTap: () {
+                        _showInfoDialog(
+                          strings.termsOfService,
+                          'Điều khoản sử dụng phần mềm VTHM DMS:\n\n- Ứng dụng dành riêng cho CBNV VTHM Group phục vụ công tác quản lý thị trường.\n- Nghiêm cấm chia sẻ thông tin khách hàng và lộ trình ra bên ngoài doanh nghiệp.\n- Vui lòng duy trì GPS và kết nối Internet trong suốt ca làm việc để dữ liệu đồng bộ chính xác.',
+                        );
+                      },
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Section 4: Developer Options (Chỉ hiển thị khi mở khóa)
+              if (_isDevMode) ...[
+                const SizedBox(height: AppSpacing.stackLg),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSectionTitle(
+                      'TÙY CHỌN NHÀ PHÁT TRIỂN (DEV TOOLS)',
+                      isDark,
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _isDevMode = false;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Đã tắt Chế độ nhà phát triển'),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'Tắt Dev Mode',
+                        style: AppTypography.labelSmall(color: AppColors.error)
+                            .copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      _buildMenuItem(
+                        icon: Icons.dynamic_form_rounded,
+                        title: '🧪 Demo UI Field Động (Dynamic Form)',
+                        onTap: () => context.push('/dev/dynamic-form-demo'),
+                        isDark: isDark,
+                      ),
+                      const Divider(height: 1),
+                      _buildMenuItem(
+                        icon: Icons.rocket_launch_outlined,
+                        title: strings.previewSplash,
+                        onTap: () => context.push('/splash'),
+                        isDark: isDark,
+                      ),
+                      const Divider(height: 1),
+                      _buildMenuItem(
+                        icon: Icons.wifi_off_rounded,
+                        title: strings.simulateOffline,
+                        onTap: () {
+                          final notifier = ref.read(
+                            connectivityProvider.notifier,
+                          );
+                          notifier.simulateOffline();
+                          Future.delayed(const Duration(seconds: 3), () {
+                            notifier.simulateOnline();
+                          });
+                        },
+                        isDark: isDark,
+                      ),
+                      const Divider(height: 1),
+                      _buildMenuItem(
+                        icon: Icons.location_off_rounded,
+                        title: strings.simulateLocationOff,
+                        onTap: () {
+                          ref
+                              .read(locationServiceProvider)
+                              .simulateLocationOff(context);
+                        },
+                        isDark: isDark,
                       ),
                     ],
                   ),
-                );
+                ),
+              ],
+              const SizedBox(height: AppSpacing.stackLg),
 
-                if (confirm == true && context.mounted) {
-                  await ref.read(authViewModelProvider.notifier).logout();
-                  if (context.mounted) {
-                    context.go('/login');
+              // Logout Button
+              AppButton(
+                text: strings.logout.toUpperCase(),
+                variant: AppButtonVariant.error,
+                icon: Icons.logout_rounded,
+                width: double.infinity,
+                height: 48,
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(strings.logoutConfirmTitle),
+                      content: Text(strings.logoutConfirmMessage),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text(strings.cancel),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: Text(
+                            strings.logout,
+                            style: const TextStyle(color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true && context.mounted) {
+                    await ref.read(authViewModelProvider.notifier).logout();
+                    if (context.mounted) {
+                      context.go('/login');
+                    }
                   }
-                }
-              },
-            ),
-            const SizedBox(height: 14),
-            InkWell(
-              onTap: _onVersionTap,
-              borderRadius: AppRadius.roundedSm,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Text(
-                  _isDevMode
-                      ? '${AppConstants.appVersionBuild} (Dev Mode Active)'
-                      : AppConstants.appVersionBuild,
-                  style: AppTypography.labelSmall(
-                    color: _isDevMode
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                  ).copyWith(
-                    fontWeight: _isDevMode ? FontWeight.w700 : FontWeight.normal,
+                },
+              ),
+              const SizedBox(height: 14),
+              InkWell(
+                onTap: _onVersionTap,
+                borderRadius: AppRadius.roundedSm,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Text(
+                    _isDevMode
+                        ? '${AppConstants.appVersionBuild} (Dev Mode Active)'
+                        : AppConstants.appVersionBuild,
+                    style:
+                        AppTypography.labelSmall(
+                          color: _isDevMode
+                              ? AppColors.primary
+                              : (isDark
+                                    ? AppColors.darkOnSurfaceVariant
+                                    : AppColors.outline),
+                        ).copyWith(
+                          fontWeight: _isDevMode
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                        ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 80),
-          ],
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -669,7 +705,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         child: Text(
           title,
           style: AppTypography.labelSmall(
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            color: isDark
+                ? AppColors.darkOnSurfaceVariant
+                : AppColors.onSurfaceVariant,
           ).copyWith(letterSpacing: 1.2, fontWeight: FontWeight.w700),
         ),
       ),
@@ -689,12 +727,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainer,
+          color: isDark
+              ? AppColors.darkSurfaceContainerLowest
+              : AppColors.surfaceContainer,
           shape: BoxShape.circle,
         ),
-        child: Center(
-          child: Icon(icon, color: AppColors.primary, size: 20),
-        ),
+        child: Center(child: Icon(icon, color: AppColors.primary, size: 20)),
       ),
       title: Text(
         title,
@@ -705,10 +743,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (trailing != null) ...[
-            trailing,
-            const SizedBox(width: 6),
-          ],
+          if (trailing != null) ...[trailing, const SizedBox(width: 6)],
           const Icon(Icons.chevron_right, color: AppColors.outline, size: 20),
         ],
       ),

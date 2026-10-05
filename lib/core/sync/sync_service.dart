@@ -16,6 +16,8 @@ import '../utils/system_clock.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 import '../../features/customer/data/utils/customer_payload_helper.dart';
 import '../../features/position_declaration/data/repositories/position_declaration_repository_impl.dart';
+import '../../features/route/presentation/viewmodels/route_view_model.dart';
+import '../../features/visit/data/repositories/visit_repository_impl.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -157,6 +159,14 @@ class SyncService {
       final entries = await _db.getPendingQueueEntries(limit: 50, force: force);
       if (entries.isEmpty) {
         debugPrint('[SyncService] Không có mục nào cần gửi trong hàng đợi.');
+        if (_ref.read(connectivityProvider).isOnline) {
+          try {
+            _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+          } catch (_) {}
+          try {
+            _ref.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+          } catch (_) {}
+        }
         return const SyncResult();
       }
 
@@ -195,6 +205,17 @@ class SyncService {
       );
     } finally {
       _isSyncing = false;
+      if (_ref.read(connectivityProvider).isOnline) {
+        try {
+          _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+        } catch (_) {}
+        try {
+          _ref.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+        } catch (_) {}
+        try {
+          _ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+        } catch (_) {}
+      }
     }
   }
 
@@ -209,10 +230,22 @@ class SyncService {
     try {
       if (entry.entity == 'customer' && entry.op == 'create') {
         await _syncCreateCustomer(entry);
+      } else if (entry.entity == 'visit' && entry.op == 'create') {
+        await _syncCreateVisit(entry);
+      } else if (entry.entity == 'visit_photo' && entry.op == 'upload') {
+        await _syncVisitPhoto(entry);
       } else if (entry.entity == 'form_submission' && entry.op == 'create') {
         await _syncSubmitForm(entry);
+      } else if (entry.entity == 'visit' && entry.op == 'checkout') {
+        await _syncCheckoutVisit(entry);
+      } else if (entry.entity == 'visit' && entry.op == 'cancel') {
+        await _syncCancelVisit(entry);
       } else if (entry.entity == 'declaration' && entry.op == 'create') {
         await _syncPositionDeclaration(entry);
+      } else if (entry.entity == 'attendance_punch' && entry.op == 'create') {
+        await _syncAttendancePunch(entry);
+      } else if (entry.entity == 'attendance_photo' && entry.op == 'upload') {
+        await _syncAttendancePhoto(entry);
       } else {
         // Các loại entity khác nếu có
         await _db.markDone(entry.id);
@@ -237,24 +270,44 @@ class SyncService {
     if (trimmed.length == 32 && !trimmed.contains('/') && !trimmed.contains(r'\')) {
       return trimmed;
     }
+
     // Nếu là tệp cục bộ cần tải lên
-    try {
-      final file = File(trimmed);
-      if (await file.exists()) {
-        final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
-        final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
-        final formData = FormData.fromMap({
-          'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
-        });
-        final res = await _apiClient.postMultipart('/crm/customer-photos', formData: formData);
-        if (res is Map && res['data'] is Map && res['data']['token'] != null) {
-          return res['data']['token'].toString();
-        }
+    String cleanPath = trimmed;
+    if (cleanPath.startsWith('file://')) {
+      try {
+        cleanPath = Uri.parse(cleanPath).toFilePath();
+      } catch (_) {
+        cleanPath = cleanPath.replaceFirst('file://', '');
       }
-    } catch (e) {
-      debugPrint('[SyncService] Lỗi khi upload ảnh điểm bán: $e');
     }
-    return null;
+
+    final file = File(cleanPath);
+    if (!await file.exists()) {
+      debugPrint('[SyncService] Tệp ảnh không tồn tại: $cleanPath');
+      return null;
+    }
+
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
+    });
+
+    // Tuyệt đối không nuốt ngoại lệ mạng (SocketException, DioException) tại đây để SyncService
+    // có thể retry khi mạng ổn định, không gửi payload thiếu ảnh lên server gây lỗi 422!
+    final res = await _apiClient.postMultipart('/crm/customer-photos', formData: formData);
+
+    String? token;
+    if (res is Map) {
+      final d = res['data'];
+      if (d is Map) {
+        token = d['token']?.toString() ?? d['file_token']?.toString() ?? d['photo_token']?.toString();
+      } else if (d is String && d.length == 32) {
+        token = d;
+      }
+      token ??= res['token']?.toString() ?? res['file_token']?.toString() ?? res['photo_token']?.toString();
+    }
+    return token;
   }
 
   /// Đồng bộ tạo mới khách hàng lên server theo hợp đồng 30/09/2026
@@ -263,23 +316,33 @@ class SyncService {
 
     // 1. Phân giải toàn bộ ảnh (tải ảnh cục bộ lên /crm/customer-photos nếu chưa có token 32-hex)
     final resolvedTokens = <String>[];
-    final rawTokens = rawSource['photo_tokens'] ?? rawSource['photo_token'] ?? rawSource['photo_file_id'] ?? rawSource['photo'];
-    if (rawTokens is List) {
-      for (final item in rawTokens) {
-        final itemStr = item.toString().trim();
-        if (itemStr.isEmpty) continue;
-        final token = await _resolvePhotoToken(itemStr);
-        if (token != null && token.isNotEmpty) {
-          resolvedTokens.add(token);
+    final candidatePhotos = <String>[];
+
+    void collectCandidate(dynamic val) {
+      if (val == null) return;
+      if (val is List) {
+        for (final item in val) {
+          collectCandidate(item);
+        }
+      } else if (val is String) {
+        final s = val.trim();
+        if (s.isNotEmpty && !candidatePhotos.contains(s)) {
+          candidatePhotos.add(s);
         }
       }
-    } else if (rawTokens != null) {
-      final itemStr = rawTokens.toString().trim();
-      if (itemStr.isNotEmpty) {
-        final token = await _resolvePhotoToken(itemStr);
-        if (token != null && token.isNotEmpty) {
-          resolvedTokens.add(token);
-        }
+    }
+
+    collectCandidate(rawSource['photo_tokens']);
+    collectCandidate(rawSource['photo_token']);
+    collectCandidate(rawSource['photo_file_id']);
+    collectCandidate(rawSource['photo']);
+    collectCandidate(rawSource['photos']);
+    collectCandidate(rawSource['local_photo_paths']);
+
+    for (final candidate in candidatePhotos) {
+      final token = await _resolvePhotoToken(candidate);
+      if (token != null && token.isNotEmpty && !resolvedTokens.contains(token)) {
+        resolvedTokens.add(token);
       }
     }
 
@@ -305,6 +368,10 @@ class SyncService {
       }
       rawSource['data'] = dataMap;
     }
+
+    // Dọn sạch các trường nội bộ của app khỏi rawSource để tránh lọt vào payload gửi lên server
+    rawSource.remove('local_photo_paths');
+    rawSource.remove('localPhotoPaths');
 
     // 2. Sử dụng CustomerPayloadHelper để xây dựng payload chuẩn 25 khoá gốc
     final payloadMap = CustomerPayloadHelper.buildCustomerApiPayload(
@@ -347,13 +414,284 @@ class SyncService {
 
     // 5. Cập nhật trạng thái 'synced' trong bảng khách hàng cục bộ
     if (serverId != null) {
-      await _db.markCustomerSynced(entry.clientUuid, serverId, code: serverCode, type: serverType);
+      String? updatedDynamicFieldsJson;
+      try {
+        final existingRows = await (_db.select(_db.localCustomers)..where((tbl) => tbl.clientUuid.equals(entry.clientUuid))).get();
+        if (existingRows.isNotEmpty) {
+          final row = existingRows.first;
+          Map<String, dynamic> dyn = {};
+          if (row.dynamicFieldsJson.isNotEmpty) {
+            dyn = jsonDecode(row.dynamicFieldsJson) as Map<String, dynamic>;
+          }
+          if (resolvedTokens.isNotEmpty) {
+            dyn['photo_tokens'] = resolvedTokens;
+            dyn['photo_urls'] = resolvedTokens;
+            dyn['photo_url'] = resolvedTokens.first;
+            dyn['photo_token'] = resolvedTokens.first;
+          }
+          updatedDynamicFieldsJson = jsonEncode(dyn);
+        }
+      } catch (_) {}
+
+      await _db.markCustomerSynced(
+        entry.clientUuid,
+        serverId,
+        code: serverCode,
+        type: serverType,
+        dynamicFieldsJson: updatedDynamicFieldsJson,
+      );
       try {
         _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
       } catch (_) {}
     }
 
+    // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server
+    if (candidatePhotos.isNotEmpty) {
+      for (final p in candidatePhotos) {
+        if (p.contains('offline_customer_photos')) {
+          try {
+            final f = File(p);
+            if (await f.exists()) {
+              await f.delete();
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+  }
+
+  /// Đồng bộ Check-in viếng thăm lên server (§3 & §9)
+  Future<void> _syncCreateVisit(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    payload['is_offline_sync'] = true;
+    payload['client_uuid'] = entry.clientUuid;
+
+    // Tính queued_seconds từ hardware clock (§9.1)
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    if (queuedSec != null) {
+      payload['queued_seconds'] = queuedSec;
+    }
+    payload['client_boot_id'] = entry.bootId;
+
+    final response = await _apiClient.post(
+      '/dms/visits',
+      data: payload,
+    );
+
+    int? serverId;
+    if (response is Map<String, dynamic>) {
+      final data = response['data'];
+      if (data is Map<String, dynamic> && data['id'] != null) {
+        serverId = int.tryParse(data['id'].toString());
+      }
+    }
+
+    await _db.markDone(entry.id, serverId: serverId);
+
+    // Cập nhật serverId cho lượt viếng thăm trong cache cục bộ
+    if (serverId != null) {
+      try {
+        final visitRepo = _ref.read(visitRepositoryProvider);
+        final all = await visitRepo.getAllLocalVisits();
+        final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid || v.id < 0);
+        if (idx >= 0) {
+          final updated = all[idx].copyWith(id: serverId);
+          await visitRepo.saveLocalVisit(updated);
+        }
+        final active = await visitRepo.getActiveVisit();
+        if (active != null && (active.clientUuid == entry.clientUuid || active.id < 0)) {
+          await visitRepo.saveActiveVisit(active.copyWith(id: serverId));
+        }
+      } catch (err) {
+        debugPrint('[SyncService] Cập nhật local visit serverId lỗi: $err');
+      }
+    }
+
+    debugPrint('[SyncService] Đồng bộ Check-in thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+  }
+
+  /// Tải ảnh viếng thăm ngoại tuyến lên server (§4.1 & §9)
+  Future<void> _syncVisitPhoto(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    int? visitId;
+    if (payload['visit_id'] != null) {
+      visitId = int.tryParse(payload['visit_id'].toString());
+    }
+
+    // Nếu visitId là ID âm hoặc chưa có, tìm theo parentUuid
+    if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
+      final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+        visitId = parent.serverId;
+      }
+    }
+
+    if (visitId == null || visitId <= 0) {
+      throw AppException('Chưa có serverId của lượt viếng thăm cha');
+    }
+
+    final localPath = entry.localPath;
+    if (localPath == null || localPath.isEmpty) {
+      await _db.markDone(entry.id);
+      return;
+    }
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      await _db.markDone(entry.id);
+      return;
+    }
+
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+    final bytes = await preparedFile.readAsBytes();
+
+    final formMap = <String, dynamic>{
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      'photo_type': payload['photo_type'] ?? 'other',
+    };
+    if (payload['lat'] != null) formMap['lat'] = payload['lat'];
+    if (payload['lng'] != null) formMap['lng'] = payload['lng'];
+    if (payload['taken_at'] != null) formMap['taken_at'] = payload['taken_at'];
+
+    final formData = FormData.fromMap(formMap);
+    await _apiClient.postMultipart('/dms/visits/$visitId/photos', formData: formData);
+
+    await _db.markDone(entry.id);
+
+    if (localPath.contains('offline_visit_photos')) {
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (err) {
+        debugPrint('[SyncService] Xoá file lỗi: $err');
+      }
+    }
+
+    debugPrint('[SyncService] Tải ảnh viếng thăm lên thành công cho lượt #$visitId');
+  }
+
+  /// Đồng bộ Check-out viếng thăm lên server (§7 & §9)
+  Future<void> _syncCheckoutVisit(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    int? visitId;
+    if (payload['visit_id'] != null) {
+      visitId = int.tryParse(payload['visit_id'].toString());
+    }
+
+    // Nếu visitId là ID âm hoặc chưa có, tìm theo parentUuid
+    if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
+      final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+        visitId = parent.serverId;
+      }
+    }
+
+    if (visitId == null || visitId <= 0) {
+      throw AppException('Chưa có serverId của lượt viếng thăm cha để check-out');
+    }
+
+    payload['is_offline_sync'] = true;
+
+    // Tính queued_seconds từ hardware clock (§9.1)
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    if (queuedSec != null) {
+      payload['queued_seconds'] = queuedSec;
+    }
+    payload['client_boot_id'] = entry.bootId;
+
+    try {
+      await _apiClient.post(
+        '/dms/visits/$visitId/checkout',
+        data: payload,
+      );
+      await _db.markDone(entry.id);
+      debugPrint('[SyncService] Đồng bộ Check-out thành công cho lượt #$visitId');
+    } catch (e) {
+      final raw = e.toString();
+      // Nếu server trả về 422 "đã check-out rồi" / "đã đóng", coi là thành công theo §9
+      if (raw.contains('đã check-out rồi') || raw.contains('đã đóng')) {
+        await _db.markDone(entry.id);
+        debugPrint('[SyncService] Lượt #$visitId đã được đóng trước đó, đánh dấu hoàn tất.');
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// Đồng bộ Huỷ lượt viếng thăm ngoại tuyến lên server (§3.4 HUY-LUOT-VIENG-THAM-2026-09-30)
+  Future<void> _syncCancelVisit(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    int? visitId;
+    if (payload['visit_id'] != null) {
+      visitId = int.tryParse(payload['visit_id'].toString());
+    }
+
+    // Nếu visitId là ID âm hoặc chưa có, tìm theo parentUuid
+    if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
+      final parent = await _db.findVisitQueueEntry(entry.parentUuid!);
+      if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+        visitId = parent.serverId;
+      }
+    }
+
+    if (visitId == null || visitId <= 0) {
+      debugPrint('[SyncService] Hủy lượt không có serverId hợp lệ: $visitId, đánh dấu hoàn tất.');
+      await _db.markDone(entry.id);
+      return;
+    }
+
+    try {
+      await _apiClient.post('/dms/visits/$visitId/cancel');
+      await _db.markDone(entry.id);
+
+      // Cập nhật trạng thái đã huỷ trong cache cục bộ
+      try {
+        final visitRepo = _ref.read(visitRepositoryProvider);
+        await visitRepo.clearActiveVisit();
+        final all = await visitRepo.getAllLocalVisits();
+        final idx = all.indexWhere((v) =>
+            v.id == visitId || (entry.parentUuid != null && v.clientUuid == entry.parentUuid));
+        if (idx >= 0) {
+          final updated = all[idx].copyWith(
+            cancelledAt: DateTime.now(),
+            cancelledAtRaw: DateTime.now().toIso8601String(),
+          );
+          await visitRepo.saveLocalVisit(updated);
+        }
+      } catch (err) {
+        debugPrint('[SyncService] Lỗi cập nhật local visit sau khi huỷ: $err');
+      }
+
+      try {
+        _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+      } catch (_) {}
+
+      debugPrint('[SyncService] Đồng bộ Huỷ lượt thành công cho lượt #$visitId');
+    } catch (e) {
+      final raw = e.toString();
+      // Server idempotent (§3.4): Nếu server báo "đã bị huỷ" / "đã huỷ", coi là thành công
+      if (raw.contains('đã bị huỷ') || raw.contains('đã huỷ') || raw.contains('already cancelled') || raw.contains('404')) {
+        await _db.markDone(entry.id);
+        try {
+          final visitRepo = _ref.read(visitRepositoryProvider);
+          await visitRepo.clearActiveVisit();
+        } catch (_) {}
+        try {
+          _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+        } catch (_) {}
+        debugPrint('[SyncService] Lượt #$visitId đã được huỷ trước đó, đánh dấu hoàn tất.');
+        return;
+      }
+      rethrow;
+    }
   }
 
   /// Đồng bộ phiếu biểu mẫu thị trường (survey / collect) lên server
@@ -361,6 +699,17 @@ class SyncService {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
+
+    // Nếu phiếu gắn với một lượt viếng thăm offline, giải quyết visit_id từ parent
+    if (payload['visit_id'] != null) {
+      final vId = int.tryParse(payload['visit_id'].toString()) ?? 0;
+      if (vId <= 0 && entry.parentUuid != null) {
+        final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+        if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+          payload['visit_id'] = parent.serverId;
+        }
+      }
+    }
 
     // §9.1: Bổ sung queued_seconds và client_boot_id cho phiếu offline
     final queuedSec = SystemClock.calculateQueuedSeconds(
@@ -516,6 +865,77 @@ class SyncService {
       );
     } catch (_) {}
   }
+
+  /// Đồng bộ lượt chấm công lên máy chủ (§3 API-CHAM-CONG-MOBILE-2026-10-05.md)
+  Future<void> _syncAttendancePunch(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    final res = await _apiClient.post(
+      '/attendance/mobile/punch',
+      data: payload,
+    );
+
+    int? serverId;
+    if (res is Map<String, dynamic>) {
+      final data = res['data'] is Map<String, dynamic>
+          ? res['data'] as Map<String, dynamic>
+          : res;
+      if (data['id'] != null) {
+        serverId = int.tryParse(data['id'].toString());
+      }
+    }
+    await _db.markDone(entry.id, serverId: serverId);
+    debugPrint('[SyncService] Đồng bộ lượt chấm công thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+  }
+
+  /// Đồng bộ ảnh của lượt chấm công lên máy chủ (§4 API-CHAM-CONG-MOBILE-2026-10-05.md)
+  Future<void> _syncAttendancePhoto(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    int? punchId = payload['punch_id'] as int?;
+
+    // Nếu punchId âm (tạo offline), cố gắng tìm serverId của lượt chấm cha qua parentUuid
+    if ((punchId == null || punchId <= 0) && entry.parentUuid != null) {
+      final parentRows = await (_db.select(_db.syncQueueEntries)
+            ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!)))
+          .get();
+      if (parentRows.isNotEmpty && parentRows.first.serverId != null && parentRows.first.serverId! > 0) {
+        punchId = parentRows.first.serverId;
+      }
+    }
+
+    if (punchId == null || punchId <= 0) {
+      debugPrint('[SyncService] Chưa tìm thấy serverId của lượt chấm cho ảnh, giữ lại để retry sau');
+      throw const ServerException('Lượt chấm công chưa được đồng bộ lên máy chủ', 400);
+    }
+
+    final localPath = entry.localPath ?? payload['local_path']?.toString();
+    if (localPath == null) {
+      await _db.markDead(entry.id, 'Tệp ảnh không tồn tại');
+      return;
+    }
+
+    final file = File(localPath);
+    if (!await file.exists()) {
+      await _db.markDead(entry.id, 'Tệp ảnh cục bộ không tồn tại: $localPath');
+      return;
+    }
+
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+
+    final formMap = <String, dynamic>{
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
+      'photo_type': payload['photo_type'] ?? 'front',
+    };
+    if (payload['taken_at'] != null) formMap['taken_at'] = payload['taken_at'];
+    if (payload['lat'] != null) formMap['lat'] = payload['lat'];
+    if (payload['lng'] != null) formMap['lng'] = payload['lng'];
+
+    final formData = FormData.fromMap(formMap);
+    await _apiClient.postMultipart('/attendance/mobile/punches/$punchId/photos', formData: formData);
+    await _db.markDone(entry.id);
+    debugPrint('[SyncService] Đồng bộ ảnh chấm công thành công cho lượt #$punchId!');
+  }
+
 
 
   String _extractDioErrorMessage(DioException dioErr) {

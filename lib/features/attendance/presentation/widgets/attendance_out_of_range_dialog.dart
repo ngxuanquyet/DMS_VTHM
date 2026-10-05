@@ -6,17 +6,20 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../domain/entities/attendance_entity.dart';
 import '../../domain/entities/workplace_location.dart';
 
 class AttendanceOutOfRangeDialog extends StatelessWidget {
-  final WorkplaceLocation workplace;
+  final String workplaceName;
+  final GoongLatLng workplacePoint;
   final GoongLatLng userPoint;
   final double distanceMeters;
   final double maxAllowedMeters;
 
   const AttendanceOutOfRangeDialog({
     super.key,
-    required this.workplace,
+    required this.workplaceName,
+    required this.workplacePoint,
     required this.userPoint,
     required this.distanceMeters,
     this.maxAllowedMeters = 100.0,
@@ -24,17 +27,31 @@ class AttendanceOutOfRangeDialog extends StatelessWidget {
 
   static Future<void> show(
     BuildContext context, {
-    required WorkplaceLocation workplace,
+    dynamic workplace,
+    String? workplaceName,
+    GoongLatLng? workplacePoint,
     required GoongLatLng userPoint,
     required double distanceMeters,
     double maxAllowedMeters = 100.0,
   }) {
+    String name = workplaceName ?? 'Địa điểm chấm công';
+    GoongLatLng point = workplacePoint ?? userPoint;
+
+    if (workplace is AttendanceLocationItemEntity) {
+      name = workplace.name;
+      point = GoongLatLng(workplace.lat, workplace.lng);
+    } else if (workplace is WorkplaceLocation) {
+      name = workplace.name;
+      point = workplace.toGoongLatLng;
+    }
+
     return showDialog(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.5),
       builder: (ctx) => AttendanceOutOfRangeDialog(
-        workplace: workplace,
+        workplaceName: name,
+        workplacePoint: point,
         userPoint: userPoint,
         distanceMeters: distanceMeters,
         maxAllowedMeters: maxAllowedMeters,
@@ -120,7 +137,7 @@ class AttendanceOutOfRangeDialog extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      workplace.name,
+                      workplaceName,
                       style: AppTypography.labelLarge(
                         color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                       ).copyWith(fontWeight: FontWeight.w600),
@@ -149,7 +166,7 @@ class AttendanceOutOfRangeDialog extends StatelessWidget {
                   children: [
                     GoongStaticMap(
                       center: userPoint,
-                      destination: workplace.toGoongLatLng,
+                      destination: workplacePoint,
                       width: 500,
                       height: 300,
                       fit: BoxFit.cover,
@@ -206,7 +223,7 @@ class AttendanceOutOfRangeDialog extends StatelessWidget {
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
-                                workplace.name,
+                                workplaceName,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,

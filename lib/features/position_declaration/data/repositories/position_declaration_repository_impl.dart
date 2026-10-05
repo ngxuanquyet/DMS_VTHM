@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/utils/system_clock.dart';
@@ -178,9 +179,20 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
 
         await saveLocalDeclaration(syncedEntity);
         return syncedEntity;
+      } on ServerException catch (serverErr) {
+        final status = serverErr.statusCode;
+        if (status != null && status >= 400 && status < 500) {
+          await updateLocalDeclarationStatus(
+            declaration.clientUuid,
+            syncStatus: 'error',
+            error: serverErr.message,
+          );
+          rethrow;
+        }
+        debugPrint('[PositionDeclarationRepo] Lỗi server 5xx -> Đưa vào hàng đợi offline: $serverErr');
       } on DioException catch (dioErr) {
         final status = dioErr.response?.statusCode;
-        // Nếu lỗi 422: người dùng làm thiếu hoặc sai điều kiện -> cập nhật lỗi và ném ra
+        // Nếu lỗi 422/4xx: người dùng làm thiếu hoặc sai điều kiện -> cập nhật lỗi và ném ra
         if (status != null && status >= 400 && status < 500) {
           final msg = _extractErrorMessage(dioErr);
           await updateLocalDeclarationStatus(
@@ -193,6 +205,14 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
         // Nếu lỗi 5xx hoặc mất mạng giữa chừng -> chuyển sang hàng đợi offline
         debugPrint('[PositionDeclarationRepo] Lỗi mạng/5xx khi gửi -> Đưa vào hàng đợi offline: $dioErr');
       } catch (e) {
+        if (e is ServerException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+          await updateLocalDeclarationStatus(
+            declaration.clientUuid,
+            syncStatus: 'error',
+            error: e.message,
+          );
+          rethrow;
+        }
         debugPrint('[PositionDeclarationRepo] Lỗi ngoại lệ -> Đưa vào hàng đợi offline: $e');
       }
     }

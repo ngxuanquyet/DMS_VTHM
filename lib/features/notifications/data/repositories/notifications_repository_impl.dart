@@ -10,9 +10,15 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
 
   @override
   Future<NotificationDataEntity> getNotifications() async {
-    final model = await _apiService.getNotifications();
-    _cachedData = model.toEntity();
-    return _cachedData!;
+    try {
+      final model = await _apiService.getNotifications();
+      _cachedData = model.toEntity();
+      return _cachedData!;
+    } catch (_) {
+      // Backend chưa có endpoint /notifications hoặc đang ngoại tuyến
+      _cachedData ??= const NotificationDataEntity(today: [], earlier: []);
+      return _cachedData!;
+    }
   }
 
   @override

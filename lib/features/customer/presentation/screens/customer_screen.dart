@@ -19,8 +19,11 @@ import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
 import '../widgets/customer_circular_menu.dart';
-import '../widgets/edit_customer_dialog.dart';
+import 'add_customer_screen.dart';
+import 'edit_customer_screen.dart';
+import '../../data/repositories/customer_repository_impl.dart';
 import '../widgets/pending_sync_dismissible.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 import '../widgets/customer_filter_drawer.dart';
 
 class CustomerScreen extends ConsumerStatefulWidget {
@@ -70,7 +73,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
   void _onEditCustomer(CustomerEntity customer) {
     final state = ref.read(customerViewModelProvider);
     final vm = ref.read(customerViewModelProvider.notifier);
-    EditCustomerDialog.show(
+    EditCustomerScreen.open(
       context,
       customer: customer,
       meta: state.meta,
@@ -78,6 +81,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       onSave: (changes) => vm.updateCustomer(
         customer.id,
         changes,
+        clientUuid: customer.clientUuid,
       ),
     );
   }
@@ -95,7 +99,24 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
   Future<void> _handleAddCustomer() async {
     final result = await context.push<bool>('/customers/add');
     if (result == true && mounted) {
-      ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+      final vm = ref.read(customerViewModelProvider.notifier);
+      final currentTab = ref.read(customerViewModelProvider).selectedTab;
+      if (currentTab == CustomerFilterTab.visited) {
+        vm.selectTab(CustomerFilterTab.all);
+      }
+      if (_searchController.text.isNotEmpty) {
+        _debounceTimer?.cancel();
+        _searchController.clear();
+        vm.setSearchQuery('');
+      }
+      await vm.loadCustomers(isRefresh: true);
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     }
   }
 
@@ -341,11 +362,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                isOnline
-                    ? (initialPending > 0
-                        ? 'Đang gửi $initialPending mục ngoại tuyến và cập nhật danh sách...'
-                        : 'Đang đồng bộ dữ liệu điểm bán từ máy chủ...')
-                    : 'Đang tải lại dữ liệu từ bộ nhớ thiết bị...',
+                isOnline ? 'Đang đồng bộ...' : 'Đang tải lại dữ liệu từ bộ nhớ máy...',
               ),
             ),
           ],
@@ -369,10 +386,22 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
         }
       }
       await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+      if (isOnline) {
+        try {
+          final customerRepo = ref.read(customerRepositoryProvider);
+          await Future.wait([
+            customerRepo.getCustomerFormSchema(forceRefresh: true),
+            customerRepo.getCustomerMeta(forceRefresh: true),
+          ]);
+        } catch (e) {
+          debugPrint('[CustomerSync] Lỗi làm mới schema form: $e');
+        }
+      }
+      ref.invalidate(customerFormSchemaProvider);
+      ref.invalidate(customerMetaProvider);
+      ref.invalidate(userAssignedRoutesProvider);
 
-      final remaining = await db.countPendingSync();
       final deadCount = await db.countDeadSync();
-      final totalCustomers = ref.read(customerViewModelProvider).totalCount;
 
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -393,13 +422,11 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                   child: Text(
                     isOnline
                         ? (deadCount > 0
-                            ? 'Đã đồng bộ xong! Có $deadCount mục lỗi dữ liệu vĩnh viễn (4xx).'
-                            : (initialPending > 0 && remaining == 0
-                                ? 'Đã gửi $initialPending mục ngoại tuyến và cập nhật $totalCustomers điểm bán!'
-                                : 'Đã đồng bộ $totalCustomers điểm bán từ máy chủ thành công!'))
+                            ? 'Có $deadCount mục lỗi dữ liệu vĩnh viễn (4xx).'
+                            : 'Đồng bộ thành công!')
                         : (initialPending > 0
-                            ? 'Đang offline. Có $initialPending mục chờ gửi, đã làm mới $totalCustomers điểm bán trên máy.'
-                            : 'Đã tải lại $totalCustomers điểm bán từ bộ nhớ máy.'),
+                            ? 'Đang offline, có $initialPending mục chờ gửi.'
+                            : 'Đã tải lại dữ liệu từ bộ nhớ máy.'),
                   ),
                 ),
               ],
@@ -407,7 +434,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
             backgroundColor: isOnline
                 ? (deadCount > 0 ? const Color(0xFFDC2626) : const Color(0xFF10B981))
                 : const Color(0xFFD97706),
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -780,6 +807,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                           onRefresh: () async {
                             await Future.wait([
                               vm.loadCustomers(isRefresh: true),
+                              ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
                               _requestLocationPermission(),
                             ]);
                           },
@@ -830,7 +858,8 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                                   itemBuilder: (context, index) {
                                     final item = customerList[index];
-                                    final isPending = item.customer.syncStatus == 'pending';
+                                    final isPending = item.customer.syncStatus == 'pending' ||
+                                        item.customer.syncStatus == 'error';
                                     final clientUuid = item.customer.clientUuid;
                                     final itemKey = clientUuid ?? 'customer_${item.customer.id}_$index';
 

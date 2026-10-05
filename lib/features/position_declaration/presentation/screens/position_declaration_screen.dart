@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/map/app_map_location_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../states/position_declaration_state.dart';
 import '../viewmodels/position_declaration_view_model.dart';
 
@@ -83,6 +85,19 @@ class _PositionDeclarationScreenState
               style: const TextStyle(fontSize: 14, height: 1.4),
             ),
             actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  context.push('/position-declaration/history');
+                },
+                child: const Text(
+                  'XEM LỊCH SỬ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(dialogCtx);
@@ -115,6 +130,15 @@ class _PositionDeclarationScreenState
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         foregroundColor: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
         elevation: 0.5,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Lịch sử khai báo',
+            onPressed: () {
+              context.push('/position-declaration/history');
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(
@@ -155,12 +179,14 @@ class _PositionDeclarationScreenState
             ),
             const SizedBox(height: 10),
 
-            // 3. ẢNH CHỤP HIỆN TRƯỜNG (§3)
+            // 3. ẢNH CHỤP CHỨNG MINH (§3)
             _buildSectionHeader(
-              '3. Ảnh chụp hiện trường (${state.photos.length}/10)',
+              '3. Ảnh chụp chứng minh',
               isDark,
-              isRequired: false,
-              badge: 'Chỉ chụp từ camera',
+              isRequired: true,
+              badge: state.photos.isNotEmpty
+                  ? 'Chỉ chụp từ camera (${state.photos.length}/10)'
+                  : 'Chỉ chụp từ camera',
             ),
             const SizedBox(height: 8),
             _buildPhotoSection(context, state, vm, isDark),
@@ -463,6 +489,37 @@ class _PositionDeclarationScreenState
             ),
           ),
 
+          // Hiển thị gợi ý nếu chưa có ảnh nào
+          if (state.photos.isEmpty) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppColors.darkSurfaceContainer
+                    : AppColors.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark
+                      ? AppColors.darkOutlineVariant
+                      : AppColors.outlineVariant,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  'Bắt buộc chụp ít nhất 1 ảnh\nchứng minh tại địa điểm',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? AppColors.darkOnSurfaceVariant
+                        : AppColors.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
           // Danh sách ảnh đã chụp
           for (int i = 0; i < state.photos.length; i++) ...[
             const SizedBox(width: 10),
@@ -520,11 +577,21 @@ class _PositionDeclarationScreenState
           TextField(
             controller: _titleController,
             maxLength: 500,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Tiêu đề / Mục đích (tùy chọn)',
               hintText: 'vd: Đi họp tại chi nhánh Cần Thơ',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              suffixIcon: VoiceInputMicButton(
+                fieldName: 'Tiêu đề',
+                currentText: _titleController.text,
+                onTextRecognized: (text) {
+                  _titleController.text = text;
+                  _titleController.selection = TextSelection.fromPosition(
+                    TextPosition(offset: text.length),
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -532,11 +599,21 @@ class _PositionDeclarationScreenState
             controller: _noteController,
             maxLength: 1000,
             maxLines: 3,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Ghi chú thêm (tùy chọn)',
               hintText: 'Nhập nội dung chi tiết công việc nếu có...',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              suffixIcon: VoiceInputMicButton(
+                fieldName: 'Ghi chú',
+                currentText: _noteController.text,
+                onTextRecognized: (text) {
+                  _noteController.text = text;
+                  _noteController.selection = TextSelection.fromPosition(
+                    TextPosition(offset: text.length),
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -556,14 +633,57 @@ class _PositionDeclarationScreenState
       width: double.infinity,
       height: 50,
       child: ElevatedButton.icon(
-        onPressed: state.canSubmit
-            ? () {
+        onPressed: isSubmitting
+            ? null
+            : () {
+                if (state.selectedReason == null) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Vui lòng chọn một lý do khai báo trước khi gửi.'),
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (state.lat == null || state.lng == null) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Vui lòng xác định vị trí GPS trước khi gửi khai báo.'),
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (state.photos.isEmpty) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(Icons.camera_alt_outlined, color: Colors.white, size: 20),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text('Vui lòng chụp ít nhất 1 ảnh chứng minh trước khi gửi khai báo.'),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                  vm.setPhotoRequiredError();
+                  return;
+                }
                 vm.submitDeclaration(
                   title: _titleController.text,
                   note: _noteController.text,
                 );
-              }
-            : null,
+              },
         icon: isSubmitting
             ? const SizedBox(
                 width: 20,

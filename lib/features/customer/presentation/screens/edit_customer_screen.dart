@@ -1,0 +1,1289 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../../core/constants/app_constants.dart';
+import '../../../../core/map/app_map_location_card.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/voice_input_mic_button.dart';
+import '../../data/repositories/customer_repository_impl.dart';
+import '../../domain/entities/customer_dynamic_column.dart';
+import '../../domain/entities/customer_entity.dart';
+import '../../domain/entities/customer_meta_entity.dart';
+import '../viewmodels/customer_view_model.dart';
+
+/// Màn hình riêng biệt: Chỉnh sửa thông tin khách hàng / Điểm bán
+class EditCustomerScreen extends ConsumerStatefulWidget {
+  final CustomerEntity customer;
+  final CustomerMetaData meta;
+  final List<CustomerDynamicColumn> dynamicColumns;
+  final Future<void> Function(Map<String, dynamic> changes)? onSave;
+
+  const EditCustomerScreen({
+    super.key,
+    required this.customer,
+    this.meta = const CustomerMetaData(),
+    this.dynamicColumns = const [],
+    this.onSave,
+  });
+
+  /// Phương thức điều hướng mở màn hình EditCustomerScreen
+  static Future<bool?> open(
+    BuildContext context, {
+    required CustomerEntity customer,
+    CustomerMetaData meta = const CustomerMetaData(),
+    List<CustomerDynamicColumn> dynamicColumns = const [],
+    Future<void> Function(Map<String, dynamic> changes)? onSave,
+  }) {
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditCustomerScreen(
+          customer: customer,
+          meta: meta,
+          dynamicColumns: dynamicColumns,
+          onSave: onSave,
+        ),
+      ),
+    );
+  }
+
+  @override
+  ConsumerState<EditCustomerScreen> createState() => _EditCustomerScreenState();
+}
+
+class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
+  // 1. Identification & Classification controllers / state
+  late final TextEditingController _nameController;
+  late final TextEditingController _provinceNameController;
+  late final TextEditingController _wardNameController;
+  int? _selectedCustomerTypeId;
+  int? _selectedChannelId;
+  int? _selectedRegionId;
+
+  // 2. Contact & Address controllers
+  late final TextEditingController _contactNameController;
+  late final TextEditingController _contactTitleController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _emailController;
+  late final TextEditingController _addressController;
+
+  // 3. GPS Location State (Được quản lý qua bản đồ tương tác AppMapLocationCard)
+  // GHI CHÚ: Bán kính Geofence đã được loại bỏ hoàn toàn theo yêu cầu nghiệp vụ
+  // Nhân viên không được phép can thiệp / chỉnh sửa giá trị này
+  double? _currentLat;
+  double? _currentLng;
+
+  // 4. Dynamic fields controllers
+  final Map<String, TextEditingController> _dynamicControllers = {};
+
+  // 5. Photos state (Spec 23/09/2026: photo_tokens array, max 10 photos)
+  late List<String> _photos;
+  bool _photosChanged = false;
+
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.customer;
+
+    _nameController = TextEditingController(text: c.name);
+    _provinceNameController = TextEditingController(text: c.provinceName ?? '');
+    _wardNameController = TextEditingController(text: c.wardName ?? '');
+    _selectedCustomerTypeId = c.customerTypeId;
+    _selectedChannelId = c.channelId;
+    _selectedRegionId = c.regionId;
+
+    _contactNameController = TextEditingController(
+      text: c.contactPerson == 'Chưa cập nhật' ? '' : c.contactPerson,
+    );
+    _contactTitleController = TextEditingController(text: c.contactTitle ?? '');
+    _phoneController = TextEditingController(
+      text: c.phone == 'Chưa có SĐT' ? '' : c.phone,
+    );
+    _emailController = TextEditingController(text: c.email ?? '');
+    _addressController = TextEditingController(text: c.address);
+
+    _currentLat = c.lat;
+    _currentLng = c.lng;
+
+    // Initialize photo list from existing customer entity
+    _photos = List<String>.from(c.photoUrls);
+    if (_photos.isEmpty && c.photoUrl != null && c.photoUrl!.isNotEmpty) {
+      _photos.add(c.photoUrl!);
+    }
+    if (_photos.isEmpty && c.dynamicFields['photo_urls'] is List) {
+      _photos = (c.dynamicFields['photo_urls'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (_photos.isEmpty && c.dynamicFields['photo_url'] != null) {
+      final p = c.dynamicFields['photo_url'].toString().trim();
+      if (p.isNotEmpty) _photos.add(p);
+    }
+
+    // Initialize dynamic controllers from active schema and customer data
+    final effectiveColumns = widget.dynamicColumns.isNotEmpty
+        ? widget.dynamicColumns
+        : widget.meta.dynamicColumns;
+
+    final allDynamicKeys = <String>{
+      ...effectiveColumns.map((col) => col.code),
+      ...widget.customer.dynamicFields.keys,
+    };
+
+    for (final key in allDynamicKeys) {
+      final val = widget.customer.dynamicFields[key];
+      _dynamicControllers[key] =
+          TextEditingController(text: val != null ? val.toString() : '');
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _provinceNameController.dispose();
+    _wardNameController.dispose();
+
+    _contactNameController.dispose();
+    _contactTitleController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _addressController.dispose();
+
+    for (final c in _dynamicControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _handleSave() async {
+    if (_isSaving) return;
+
+    final changes = <String, dynamic>{};
+    final c = widget.customer;
+
+    // 1. Tên điểm bán (Mã code do hệ thống tự sinh, không thể sửa)
+    final newName = _nameController.text.trim();
+    if (newName.isNotEmpty && newName != c.name) {
+      changes['name'] = newName;
+    }
+
+    // 2. Phân loại (Loại khách hàng, Kênh, Khu vực, Tỉnh, Phường)
+    if (_selectedCustomerTypeId != c.customerTypeId) {
+      changes['customer_type_id'] = _selectedCustomerTypeId;
+    }
+
+    if (_selectedChannelId != c.channelId) {
+      changes['channel_id'] = _selectedChannelId;
+    }
+
+    if (_selectedRegionId != c.regionId) {
+      changes['region_id'] = _selectedRegionId;
+    }
+
+    final newProvince = _provinceNameController.text.trim();
+    if (newProvince != (c.provinceName ?? '')) {
+      changes['province_name'] = newProvince.isNotEmpty ? newProvince : null;
+    }
+
+    final newWard = _wardNameController.text.trim();
+    if (newWard != (c.wardName ?? '')) {
+      changes['ward_name'] = newWard.isNotEmpty ? newWard : null;
+    }
+
+    // 3. Thông tin liên hệ & Địa chỉ
+    final newContactName = _contactNameController.text.trim();
+    final oldContact =
+        c.contactPerson == 'Chưa cập nhật' ? '' : c.contactPerson;
+    if (newContactName != oldContact) {
+      changes['contact_name'] =
+          newContactName.isNotEmpty ? newContactName : null;
+    }
+
+    final newContactTitle = _contactTitleController.text.trim();
+    if (newContactTitle != (c.contactTitle ?? '')) {
+      changes['contact_title'] =
+          newContactTitle.isNotEmpty ? newContactTitle : null;
+    }
+
+    final newPhone = _phoneController.text.trim();
+    final oldPhone = c.phone == 'Chưa có SĐT' ? '' : c.phone;
+    if (newPhone != oldPhone) {
+      changes['phone'] = newPhone.isNotEmpty ? newPhone : null;
+    }
+
+    final newEmail = _emailController.text.trim();
+    if (newEmail != (c.email ?? '')) {
+      changes['email'] = newEmail.isNotEmpty ? newEmail : null;
+    }
+
+    final newAddress = _addressController.text.trim();
+    if (newAddress.isNotEmpty && newAddress != c.address) {
+      changes['address'] = newAddress;
+    }
+
+    // 4. GPS Coordinates: Gửi theo cặp lat/lng khi có thay đổi
+    // TUYỆT ĐỐI KHÔNG gửi geofence_radius_m: nhân viên không có quyền thay đổi thông số này
+    if (_currentLat != c.lat || _currentLng != c.lng) {
+      changes['lat'] = _currentLat;
+      changes['lng'] = _currentLng;
+    }
+
+    // 5. Dynamic Editable Fields (Chỉ cho phép sửa field source == 'own' & read_only == false)
+    final effectiveColumns = widget.dynamicColumns.isNotEmpty
+        ? widget.dynamicColumns
+        : widget.meta.dynamicColumns;
+
+    final dynamicChanges = <String, dynamic>{};
+    for (final entry in _dynamicControllers.entries) {
+      final key = entry.key;
+      final newVal = entry.value.text.trim();
+      final oldVal = c.dynamicFields[key]?.toString() ?? '';
+
+      final colDef = effectiveColumns
+          .cast<CustomerDynamicColumn?>()
+          .firstWhere((col) => col?.code == key, orElse: () => null);
+
+      final isReadOnly =
+          colDef?.readOnly == true || colDef?.source == 'mobiwork';
+      if (!isReadOnly && newVal != oldVal) {
+        dynamicChanges[key] = newVal.isNotEmpty ? newVal : null;
+      }
+    }
+
+    if (dynamicChanges.isNotEmpty) {
+      changes['data'] = dynamicChanges;
+    }
+
+    // 6. Xử lý ảnh điểm bán (photo_tokens) theo spec 23/09/2026:
+    // TUYỆT ĐỐI không gửi photo_tokens nếu người dùng không chạm vào ảnh
+    if (_photosChanged) {
+      final repo = ref.read(customerRepositoryProvider);
+      final tokens = <String>[];
+      for (final p in _photos) {
+        final pTrim = p.trim();
+        if (pTrim.isEmpty) continue;
+        if (pTrim.length == 32 && !pTrim.contains('/') && !pTrim.contains(r'\')) {
+          tokens.add(pTrim);
+        } else if (pTrim.startsWith('/crm/customer-photos/public/')) {
+          final extracted = pTrim.replaceFirst('/crm/customer-photos/public/', '');
+          tokens.add(extracted);
+        } else if (pTrim.contains('/crm/customer-photos/public/')) {
+          final idx = pTrim.indexOf('/crm/customer-photos/public/');
+          final extracted = pTrim.substring(idx + '/crm/customer-photos/public/'.length);
+          tokens.add(extracted);
+        } else {
+          // Local file path -> upload lên server để lấy token
+          try {
+            final uploadRes = await repo.uploadCustomerPhoto(pTrim);
+            if (uploadRes['token'] != null) {
+              tokens.add(uploadRes['token'].toString());
+            } else {
+              tokens.add(pTrim);
+            }
+          } catch (e) {
+            debugPrint('[EditCustomerScreen] Lỗi upload ảnh: $e');
+            // Nếu là bản ghi offline hoặc chưa có mạng, giữ nguyên đường dẫn ảnh cục bộ
+            tokens.add(pTrim);
+          }
+        }
+      }
+      changes['photo_tokens'] = tokens;
+    }
+
+    if (changes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không có thay đổi nào được thực hiện.')),
+      );
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      if (widget.onSave != null) {
+        await widget.onSave!(changes);
+      } else {
+        await ref
+            .read(customerViewModelProvider.notifier)
+            .updateCustomer(c.id, changes, clientUuid: c.clientUuid);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('Đã cập nhật ${changes.length} trường thông tin thành công!'),
+              ],
+            ),
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi cập nhật: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = widget.customer;
+
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sửa thông tin điểm bán',
+              style: AppTypography.titleMedium(
+                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+              ).copyWith(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              '${c.code} • ${c.name}',
+              style: AppTypography.bodySmall(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+              ).copyWith(fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        actions: [
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: AppLoading(size: 20),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton.icon(
+                onPressed: _handleSave,
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Lưu'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  // 1. Phân loại & Định danh
+                  _buildSectionHeader(
+                    icon: Icons.storefront_rounded,
+                    title: '1. Định danh & Phân loại điểm bán',
+                    badge: 'Có thể sửa',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  // Mã điểm bán (Cố định, nhân viên không được sửa)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
+                      borderRadius: AppRadius.roundedMd,
+                      border: Border.all(
+                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Mã điểm bán (Mã khách hàng)',
+                              style: AppTypography.labelSmall(
+                                color: isDark
+                                    ? AppColors.darkOnSurfaceVariant
+                                    : AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.darkSurfaceContainerLowest
+                                    : AppColors.surfaceDim,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Không thể sửa',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? AppColors.darkOnSurfaceVariant
+                                      : AppColors.outline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          c.code,
+                          style: AppTypography.titleMedium(
+                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          ).copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Tên điểm bán (Có thể sửa)
+                  AppTextField(
+                    label: 'Tên điểm bán *',
+                    hintText: 'Nhập tên điểm bán',
+                    controller: _nameController,
+                    enableVoiceInput: true,
+                    prefixIcon: const Icon(Icons.store_outlined, size: 18),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildClassificationDropdowns(isDark),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildProvinceSelector(isDark),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Phường / Xã',
+                          hintText: 'Nhập phường/xã...',
+                          controller: _wardNameController,
+                          enableVoiceInput: true,
+                          prefixIcon: const Icon(Icons.signpost_outlined, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 2. Thông tin liên hệ & Địa chỉ
+                  _buildSectionHeader(
+                    icon: Icons.contact_phone_outlined,
+                    title: '2. Thông tin liên hệ & Địa chỉ',
+                    badge: 'Có thể sửa',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Người liên hệ',
+                          hintText: 'Họ và tên',
+                          controller: _contactNameController,
+                          enableVoiceInput: true,
+                          prefixIcon: const Icon(Icons.person_outline, size: 18),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Chức vụ / Vai trò',
+                          hintText: 'Chủ cửa hàng...',
+                          controller: _contactTitleController,
+                          enableVoiceInput: true,
+                          prefixIcon: const Icon(Icons.badge_outlined, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Số điện thoại',
+                          hintText: '09xxxxxxxx',
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AppTextField(
+                          label: 'Email',
+                          hintText: 'email@domain.com',
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          prefixIcon: const Icon(Icons.email_outlined, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  AppTextField(
+                    label: 'Địa chỉ giao dịch',
+                    hintText: 'Số nhà, tên đường, khu vực...',
+                    controller: _addressController,
+                    enableVoiceInput: true,
+                    maxLines: 2,
+                    prefixIcon: const Icon(Icons.place_outlined, size: 18),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 3. Bản đồ vị trí điểm bán (Bản đồ tương tác, bỏ bán kính geofence, không hiện chữ lat/lng)
+                  _buildSectionHeader(
+                    icon: Icons.map_rounded,
+                    title: '3. Vị trí trên bản đồ',
+                    badge: 'Bản đồ tương tác',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  AppMapLocationCard(
+                    title: 'Vị trí điểm bán trên bản đồ',
+                    lat: _currentLat,
+                    lng: _currentLng,
+                    initialAddress: _addressController.text.trim().isNotEmpty
+                        ? _addressController.text.trim()
+                        : null,
+                    showCoordinates: false, // Ẩn thông số kinh / vĩ độ dạng chữ text
+                    showStyleSwitcher: true, // Cho phép chuyển đổi xem Vệ tinh / Đường phố
+                    mapHeight: 250,
+                    zoom: 16.5,
+                    locateButtonText: 'LẤY VỊ TRÍ HIỆN TẠI',
+                    updateButtonText: 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
+                    onLocationChanged: (lat, lng, address) {
+                      setState(() {
+                        _currentLat = lat;
+                        _currentLng = lng;
+                        if ((_addressController.text.trim().isEmpty ||
+                                _addressController.text.trim() == 'Chưa cập nhật') &&
+                            address != null &&
+                            address.isNotEmpty) {
+                          _addressController.text = address;
+                        }
+                      });
+                    },
+                    onCleared: () {
+                      setState(() {
+                        _currentLat = null;
+                        _currentLng = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 4. Trường mở rộng động (Dynamic Fields)
+                  _buildSectionHeader(
+                    icon: Icons.dynamic_feed_rounded,
+                    title: '4. Trường thông tin mở rộng',
+                    badge: '${_dynamicControllers.length} trường',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildDynamicFieldsCard(isDark),
+                  const SizedBox(height: 24),
+
+                  // 5. Hình ảnh điểm bán (photo_tokens)
+                  _buildSectionHeader(
+                    icon: Icons.photo_library_outlined,
+                    title: '5. Hình ảnh điểm bán',
+                    badge: '${_photos.length}/10 ảnh',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPhotosSection(isDark),
+                ],
+              ),
+            ),
+
+            // Bottom Sticky Action Button
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    width: 0.8,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    offset: const Offset(0, -2),
+                    blurRadius: 6,
+                  ),
+                ],
+              ),
+              child: AppButton(
+                text: 'CẬP NHẬT THÔNG TIN ĐIỂM BÁN',
+                isLoading: _isSaving,
+                icon: Icons.check_circle_rounded,
+                onPressed: _isSaving ? null : _handleSave,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    required String badge,
+    required bool isDark,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 18,
+          color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: AppTypography.titleMedium(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: isDark
+                ? AppColors.darkSurfaceContainer
+                : AppColors.surfaceContainerHigh,
+            borderRadius: AppRadius.roundedFull,
+          ),
+          child: Text(
+            badge,
+            style: AppTypography.labelSmall(
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant
+                  : AppColors.onSurfaceVariant,
+            ).copyWith(fontSize: 11),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClassificationDropdowns(bool isDark) {
+    final customerTypes = widget.meta.customerTypes;
+    final channels = widget.meta.channels;
+    final regions = widget.meta.regions;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Loại khách hàng',
+                    style: AppTypography.labelSmall(
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<int?>(
+                    initialValue: _selectedCustomerTypeId,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      prefixIcon: Icon(Icons.category_outlined, size: 18),
+                    ),
+                    hint: const Text('Chọn loại KH'),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('(Chưa phân loại)', style: TextStyle(color: AppColors.outline)),
+                      ),
+                      ...customerTypes.map(
+                        (t) => DropdownMenuItem<int?>(
+                          value: t.id,
+                          child: Text(t.name.isNotEmpty ? t.name : t.code, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedCustomerTypeId = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Kênh bán hàng',
+                    style: AppTypography.labelSmall(
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<int?>(
+                    initialValue: _selectedChannelId,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      prefixIcon: Icon(Icons.hub_outlined, size: 18),
+                    ),
+                    hint: const Text('Chọn kênh'),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('(Chưa chọn kênh)', style: TextStyle(color: AppColors.outline)),
+                      ),
+                      ...channels.map(
+                        (ch) => DropdownMenuItem<int?>(
+                          value: ch.id,
+                          child: Text(ch.name.isNotEmpty ? ch.name : ch.code, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedChannelId = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Khu vực quản lý',
+              style: AppTypography.labelSmall(
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant
+                    : AppColors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<int?>(
+              initialValue: _selectedRegionId,
+              isDense: true,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                prefixIcon: Icon(Icons.map_outlined, size: 18),
+              ),
+              hint: const Text('Chọn khu vực quản lý'),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('(Chưa chọn khu vực)', style: TextStyle(color: AppColors.outline)),
+                ),
+                ...regions.map(
+                  (reg) => DropdownMenuItem<int?>(
+                    value: reg.id,
+                    child: Text(reg.name.isNotEmpty ? reg.name : reg.code, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ],
+              onChanged: (val) {
+                setState(() => _selectedRegionId = val);
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProvinceSelector(bool isDark) {
+    final provinces = widget.meta.provinces;
+
+    if (provinces.isNotEmpty) {
+      final currentProvince = _provinceNameController.text.trim();
+      final hasCurrentInList = provinces.any((p) => p.provinceName == currentProvince);
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tỉnh / Thành',
+            style: AppTypography.labelSmall(
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant
+                  : AppColors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String?>(
+            initialValue: hasCurrentInList ? currentProvince : (currentProvince.isNotEmpty ? currentProvince : null),
+            isDense: true,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              prefixIcon: Icon(Icons.location_city_outlined, size: 18),
+            ),
+            hint: const Text('Chọn Tỉnh/Thành'),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('(Chưa chọn)', style: TextStyle(color: AppColors.outline)),
+              ),
+              if (!hasCurrentInList && currentProvince.isNotEmpty)
+                DropdownMenuItem<String?>(
+                  value: currentProvince,
+                  child: Text(currentProvince, overflow: TextOverflow.ellipsis),
+                ),
+              ...provinces.map(
+                (p) => DropdownMenuItem<String?>(
+                  value: p.provinceName,
+                  child: Text(p.provinceName, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _provinceNameController.text = val ?? '';
+              });
+            },
+          ),
+        ],
+      );
+    }
+
+    return AppTextField(
+      label: 'Tỉnh / Thành',
+      hintText: 'Hà Nội, Phú Thọ...',
+      controller: _provinceNameController,
+      prefixIcon: const Icon(Icons.location_city_outlined, size: 18),
+    );
+  }
+
+  Widget _buildDynamicFieldsCard(bool isDark) {
+    final effectiveColumns = widget.dynamicColumns.isNotEmpty
+        ? widget.dynamicColumns
+        : widget.meta.dynamicColumns;
+
+    if (_dynamicControllers.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.darkSurfaceContainerLowest
+              : AppColors.surfaceContainerLowest,
+          borderRadius: AppRadius.roundedMd,
+          border: Border.all(
+            color: isDark
+                ? AppColors.darkOutlineVariant
+                : AppColors.outlineVariant,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            'Không có trường thông tin mở rộng.',
+            style: AppTypography.bodySmall(
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant
+                  : AppColors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.darkSurfaceContainerLowest
+            : AppColors.surfaceContainerLowest,
+        borderRadius: AppRadius.roundedMd,
+        border: Border.all(
+          color: isDark
+              ? AppColors.darkOutlineVariant
+              : AppColors.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _dynamicControllers.entries.map((entry) {
+          final key = entry.key;
+          final controller = entry.value;
+
+          final colDef = effectiveColumns
+              .cast<CustomerDynamicColumn?>()
+              .firstWhere((col) => col?.code == key, orElse: () => null);
+
+          final label = colDef?.label.isNotEmpty == true ? colDef!.label : key;
+          final isReadOnly =
+              colDef?.readOnly == true || colDef?.source == 'mobiwork';
+          final source = colDef?.source ?? 'own';
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      label,
+                      style: AppTypography.labelLarge(
+                        color: isDark
+                            ? AppColors.darkOnSurfaceVariant
+                            : AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: isReadOnly
+                            ? AppColors.tertiary.withValues(alpha: 0.12)
+                            : AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: AppRadius.roundedSm,
+                      ),
+                      child: Text(
+                        isReadOnly ? 'Hệ cũ (Chỉ đọc)' : 'Tự tạo ($source)',
+                        style: AppTypography.labelSmall(
+                          color: isReadOnly
+                              ? AppColors.tertiary
+                              : AppColors.primary,
+                        ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (isReadOnly)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.darkSurfaceContainer
+                          : AppColors.surfaceContainerHigh,
+                      borderRadius: AppRadius.roundedMd,
+                      border: Border.all(
+                        color: isDark
+                            ? AppColors.darkOutlineVariant
+                            : AppColors.outlineVariant,
+                      ),
+                    ),
+                    child: Text(
+                      controller.text.isNotEmpty
+                          ? controller.text
+                          : '(Trống)',
+                      style: AppTypography.bodyMedium(
+                        color: controller.text.isNotEmpty
+                            ? (isDark
+                                ? AppColors.darkOnSurface
+                                : AppColors.onSurface)
+                            : (isDark
+                                ? AppColors.darkOutline
+                                : AppColors.outline),
+                      ),
+                    ),
+                  )
+                else
+                  TextField(
+                    controller: controller,
+                    style: AppTypography.bodyMedium(
+                      color: isDark
+                          ? AppColors.darkOnSurface
+                          : AppColors.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Nhập $label...',
+                      isDense: true,
+                      suffixIcon: VoiceInputMicButton(
+                        currentText: controller.text,
+                        fieldName: label,
+                        onTextRecognized: (t) => controller.text = t,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPhotosSection(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Tối đa 10 ảnh. Ảnh đầu tiên làm ảnh đại diện điểm bán.',
+                  style: AppTypography.bodySmall(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (_photos.length < 10)
+                TextButton.icon(
+                  onPressed: _showPhotoPickerOptions,
+                  icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                  label: const Text('Thêm ảnh'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_photos.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: InkWell(
+                onTap: _showPhotoPickerOptions,
+                child: Column(
+                  children: [
+                    const Icon(Icons.add_photo_alternate_outlined, size: 36, color: AppColors.outline),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Chưa có ảnh điểm bán. Bấm để thêm ảnh.',
+                      style: AppTypography.bodySmall(color: AppColors.outline),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ..._photos.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final path = entry.value;
+                  return Stack(
+                    children: [
+                      Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: idx == 0
+                                ? AppColors.primary
+                                : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+                            width: idx == 0 ? 2 : 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _buildPhotoWidget(path),
+                        ),
+                      ),
+                      if (idx == 0)
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            color: AppColors.primary.withValues(alpha: 0.85),
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: const Text(
+                              'Đại diện',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _photos.removeAt(idx);
+                              _photosChanged = true;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoWidget(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    if (path.startsWith('/')) {
+      return Image.network(
+        '${AppConstants.baseUrl}$path',
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    final file = File(path);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+      );
+    }
+    return const Icon(Icons.image_outlined, size: 24);
+  }
+
+  Future<void> _showPhotoPickerOptions() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primary),
+                  title: const Text('Chụp ảnh mới'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined, color: AppColors.primary),
+                  title: const Text('Chọn từ thư viện'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+    );
+    if (picked != null) {
+      setState(() {
+        if (_photos.length < 10) {
+          _photos.add(picked.path);
+          _photosChanged = true;
+        }
+      });
+    }
+  }
+}

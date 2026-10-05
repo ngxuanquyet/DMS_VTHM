@@ -228,6 +228,35 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
+  /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
+  Future<List<SyncQueueEntry>> getAllPendingQueueEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.state.equals('pending') | tbl.state.equals('sending'))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
+        .get();
+  }
+
+  /// Stream theo dõi danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
+  Stream<List<SyncQueueEntry>> watchAllPendingQueueEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.state.equals('pending') | tbl.state.equals('sending'))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
+        .watch();
+  }
+
+  /// Stream theo dõi các mục hỏng vĩnh viễn (dead / 4xx)
+  Stream<List<SyncQueueEntry>> watchDeadQueueEntries() {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.state.equals('dead'))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
+        .watch();
+  }
+
+  /// Tìm mục trong hàng đợi theo clientUuid (phục vụ liên kết cha-con: visit -> photos/checkout)
+  Future<SyncQueueEntry?> getEntryByClientUuid(String clientUuid) {
+    return (select(syncQueueEntries)..where((tbl) => tbl.clientUuid.equals(clientUuid))).getSingleOrNull();
+  }
+
   // ===========================================================================
   // LOCAL CUSTOMER OPERATIONS (§7 SPEC-DONG-BO-OFFLINE)
   // ===========================================================================
@@ -237,9 +266,17 @@ class AppDatabase extends _$AppDatabase {
     return into(localCustomers).insertOnConflictUpdate(customer);
   }
 
-  /// Lấy toàn bộ danh sách khách hàng cục bộ
+  /// Lấy toàn bộ danh sách khách hàng cục bộ (ưu tiên bản ghi pending/error lên đầu, sau đó theo thời gian tạo mới nhất)
   Future<List<LocalCustomer>> getAllLocalCustomers() {
-    return select(localCustomers).get();
+    return (select(localCustomers)
+          ..orderBy([
+            (tbl) => OrderingTerm(
+                  expression: tbl.syncStatus.equals('synced'),
+                  mode: OrderingMode.asc,
+                ),
+            (tbl) => OrderingTerm.desc(tbl.createdAt),
+          ]))
+        .get();
   }
 
   /// Tìm kiếm điểm bán offline không dấu (§7.4)
@@ -253,17 +290,31 @@ class AppDatabase extends _$AppDatabase {
               tbl.nameUnaccent.like(q) |
               tbl.code.like(q) |
               tbl.phone.like(q) |
-              tbl.address.like(q)))
+              tbl.address.like(q))
+          ..orderBy([
+            (tbl) => OrderingTerm(
+                  expression: tbl.syncStatus.equals('synced'),
+                  mode: OrderingMode.asc,
+                ),
+            (tbl) => OrderingTerm.desc(tbl.createdAt),
+          ]))
         .get();
   }
 
   /// Cập nhật trạng thái đồng bộ và server ID sau khi push thành công
-  Future<void> markCustomerSynced(String clientUuid, int serverId, {String? code, String? type}) async {
+  Future<void> markCustomerSynced(
+    String clientUuid,
+    int serverId, {
+    String? code,
+    String? type,
+    String? dynamicFieldsJson,
+  }) async {
     await (update(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).write(
       LocalCustomersCompanion(
         id: Value(serverId),
         code: code != null ? Value(code) : const Value.absent(),
         type: type != null && type.isNotEmpty ? Value(type) : const Value.absent(),
+        dynamicFieldsJson: dynamicFieldsJson != null ? Value(dynamicFieldsJson) : const Value.absent(),
         syncStatus: const Value('synced'),
         approvalStatus: const Value('approved'),
       ),
@@ -292,6 +343,34 @@ class AppDatabase extends _$AppDatabase {
     await (delete(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).go();
     await (delete(syncQueueEntries)
           ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+        .go();
+  }
+
+  /// Tìm entry visit trong sync_queue theo clientUuid
+  Future<SyncQueueEntry?> findVisitQueueEntry(String clientUuid) async {
+    final entries = await (select(syncQueueEntries)
+          ..where((tbl) => tbl.clientUuid.equals(clientUuid) & tbl.entity.equals('visit')))
+        .get();
+    return entries.isNotEmpty ? entries.first : null;
+  }
+
+  /// Lấy danh sách đường dẫn ảnh cục bộ của lượt viếng thăm trước khi xoá queue
+  Future<List<String>> getPendingVisitPhotoPaths(String clientUuid) async {
+    final entries = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              tbl.parentUuid.equals(clientUuid) &
+              tbl.entity.equals('visit_photo') &
+              tbl.localPath.isNotNull()))
+        .get();
+    return entries.map((e) => e.localPath!).toList();
+  }
+
+  /// Xoá các mục pending/sending của lượt viếng thăm (create, upload ảnh, checkout)
+  Future<int> deletePendingVisitQueue(String clientUuid) async {
+    return await (delete(syncQueueEntries)
+          ..where((tbl) =>
+              (tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)) &
+              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
         .go();
   }
 }

@@ -5,6 +5,7 @@ import '../../data/services/auth_api_service.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
+import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../states/auth_state.dart';
 
 final authApiServiceProvider = Provider<AuthApiService>((ref) {
@@ -75,6 +76,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
         );
         // Tải luật thị trường khi khởi động phiên đăng nhập (§1.3)
         ref?.read(mobileRulesProvider.notifier).fetchRules();
+        try {
+          ref?.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+        } catch (_) {}
         return true;
       } else {
         state = state.copyWith(status: AuthStatus.unauthenticated);
@@ -118,6 +122,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
       );
       // Gọi GET /dms/mobile-rules lúc đăng nhập, lưu bản sao trong máy (§1.3)
       ref?.read(mobileRulesProvider.notifier).fetchRules();
+      try {
+        ref?.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+      } catch (_) {}
       return true;
     } catch (e) {
       state = state.copyWith(

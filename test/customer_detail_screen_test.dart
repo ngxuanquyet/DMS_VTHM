@@ -13,7 +13,7 @@ import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model
 
 class FakeRouteApiService extends Fake implements RouteApiService {
   @override
-  Future<List<UserRouteEntity>> getMyRoutes() async => [];
+  Future<List<UserRouteEntity>> getMyRoutes({bool forceRefresh = false}) async => [];
 }
 
 class MockCustomerRepository implements CustomerRepository {
@@ -56,6 +56,7 @@ class MockCustomerRepository implements CustomerRepository {
   Future<CustomerEntity> updateCustomer({
     required int id,
     required Map<String, dynamic> changes,
+    String? clientUuid,
   }) async => mockCustomer;
 
   @override
@@ -161,8 +162,11 @@ void main() {
     expect(find.text('Mã số thuế doanh nghiệp'), findsOneWidget);
     expect(find.text('Biển bạt Hiflex'), findsOneWidget);
 
-    // Verify Action buttons in Bottom Bar
+    // Verify Action buttons in Bottom Bar (Calls and Directions only, edit buttons removed)
     expect(find.text('Gọi điện'), findsOneWidget);
     expect(find.text('Chỉ đường'), findsOneWidget);
+    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(find.byTooltip('Chỉnh sửa điểm bán'), findsNothing);
+    expect(find.byTooltip('Sửa thông tin'), findsNothing);
   });
 }

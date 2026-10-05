@@ -20,7 +20,7 @@ class FakeRouteApiService extends Fake implements RouteApiService {
   FakeRouteApiService(this.mockRoutes);
 
   @override
-  Future<List<UserRouteEntity>> getMyRoutes() async => mockRoutes;
+  Future<List<UserRouteEntity>> getMyRoutes({bool forceRefresh = false}) async => mockRoutes;
 }
 
 class FakeCustomerRepository implements CustomerRepository {
@@ -46,6 +46,7 @@ class FakeCustomerRepository implements CustomerRepository {
   Future<CustomerEntity> updateCustomer({
     required int id,
     required Map<String, dynamic> changes,
+    String? clientUuid,
   }) async =>
       customers.first;
 

@@ -42,6 +42,8 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
   Timer? _heartbeatTimer;
   bool _isChecking = false;
   bool _isInBackground = false;
+  bool _isSplashFinished = false;
+  bool _hasShownOfflineDialogInCurrentOfflinePeriod = false;
 
   ConnectivityNotifier() : super(const ConnectivityState()) {
     _initConnectivityListener();
@@ -170,6 +172,39 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
     }
   }
 
+  bool _isOnSplashScreen() {
+    if (!_isSplashFinished) return true;
+    try {
+      final context = rootNavigatorKey.currentContext;
+      if (context != null) {
+        final modalRoute = ModalRoute.of(context);
+        if (modalRoute?.settings.name == '/splash') return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  void notifySplashStarted() {
+    _isSplashFinished = false;
+  }
+
+  void notifySplashFinished() {
+    _isSplashFinished = true;
+    // Khi thoát khỏi màn Splash vào hẳn app (màn Login hoặc Home):
+    // Nếu lúc này đang mất mạng và người dùng chưa từng xem popup mất mạng trong đợt offline này
+    if (!state.isOnline && !_hasShownOfflineDialogInCurrentOfflinePeriod) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !state.isOnline && !_hasShownOfflineDialogInCurrentOfflinePeriod) {
+          showOfflineDialog();
+        }
+      });
+    }
+  }
+
+  void resetOfflineDialogFlag() {
+    _hasShownOfflineDialogInCurrentOfflinePeriod = false;
+  }
+
   void _handleStatusChange(bool hasConnection) {
     if (!mounted) return;
 
@@ -179,12 +214,13 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
       state = state.copyWith(isOnline: hasConnection);
 
       if (!hasConnection) {
-        // MẤT MẠNG -> Tự động hiện popup modal mất mạng (chỉ khi app ở foreground)
+        // MẤT MẠNG -> Hiện dialog nếu đã vào hẳn app và chưa từng xem trong đợt offline này
         if (!_isInBackground) {
           showOfflineDialog();
         }
       } else {
-        // CÓ MẠNG LẠI -> Tự động ẩn popup (nếu đang mở) và hiện thanh thông báo màu xanh trong 3s
+        // CÓ MẠNG LẠI -> Reset cờ để nếu sau này mất mạng tiếp thì sẽ thông báo 1 lần
+        _hasShownOfflineDialogInCurrentOfflinePeriod = false;
         hideOfflineDialog();
         showReconnectedToast();
       }
@@ -194,17 +230,33 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
   /// Triggered automatically on network loss or from ApiClient on Dio network errors
   void handleNetworkDisconnection() {
     if (!mounted || _isInBackground) return;
-    state = state.copyWith(isOnline: false);
-    showOfflineDialog();
+    if (!state.isOnline) {
+      // Đã ghi nhận mất mạng từ trước, không hiển thị lại dialog khi user di chuyển giữa các màn hình
+      return;
+    }
+    _handleStatusChange(false);
   }
 
   /// Manually or automatically open the offline disconnect dialog
-  void showOfflineDialog() {
+  void showOfflineDialog({bool force = false}) {
     if (!mounted || _isInBackground) return;
+
+    // 1. Không chèn vào màn hình Splash, để vào hẳn app rồi mới hiện
+    if (_isOnSplashScreen()) {
+      debugPrint('[Connectivity] Đang ở màn hình Splash, hoãn hiển thị dialog mất mạng');
+      return;
+    }
+
+    // 2. Chỉ cho phép user xem popup này 1 LẦN trong suốt khoảng thời gian mất mạng hiện tại
+    if (_hasShownOfflineDialogInCurrentOfflinePeriod && !force) {
+      debugPrint('[Connectivity] Người dùng đã xem popup mất mạng, không hiển thị lặp lại khi chuyển màn');
+      return;
+    }
 
     try {
       final context = rootNavigatorKey.currentContext;
       if (context != null && context.mounted) {
+        _hasShownOfflineDialogInCurrentOfflinePeriod = true;
         state = state.copyWith(isDialogVisible: true);
         OfflineDisconnectDialog.show(
           context,

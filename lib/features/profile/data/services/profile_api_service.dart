@@ -9,8 +9,17 @@ class ProfileApiService {
   ProfileApiService(this._apiClient);
 
   Future<UserProfileModel> getProfile() async {
-    final response = await _apiClient.get('/profile');
-    return UserProfileModel.fromJson(response as Map<String, dynamic>);
+    final detail = await getUserProfileDetail();
+    return UserProfileModel(
+      id: detail.id.toString(),
+      name: detail.fullName.isNotEmpty ? detail.fullName : detail.username,
+      employeeId: detail.employeeCode,
+      role: detail.jobName,
+      department: detail.deptName,
+      avatarUrl: detail.avatarUrl,
+      email: detail.email,
+      phone: detail.phone,
+    );
   }
 
   Future<UserProfileDetailModel> getUserProfileDetail() async {

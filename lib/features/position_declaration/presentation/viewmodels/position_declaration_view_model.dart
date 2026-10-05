@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/map/goong_api_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../domain/entities/position_declaration_entity.dart';
 import '../../domain/entities/position_reason_entity.dart';
 import '../../domain/repositories/position_declaration_repository.dart';
@@ -95,6 +96,7 @@ class PositionDeclarationViewModel
           lat: pos.latitude,
           lng: pos.longitude,
           accuracyM: pos.accuracy,
+          isMockLocation: pos.isMocked,
           isFetchingLocation: false,
         );
 
@@ -172,7 +174,17 @@ class PositionDeclarationViewModel
 
       if (picked != null) {
         final file = File(picked.path);
-        final updatedPhotos = List<File>.from(state.photos)..add(file);
+        final watermarked = await PhotoWatermarkHelper.addWatermark(
+          imageFile: file,
+          timestamp: DateTime.now(),
+          latitude: state.lat,
+          longitude: state.lng,
+          accuracy: state.accuracyM,
+          locationName: (state.address != null && state.address!.isNotEmpty)
+              ? state.address!
+              : 'Khai báo vị trí',
+        );
+        final updatedPhotos = List<File>.from(state.photos)..add(watermarked);
         state = state.copyWith(
           photos: updatedPhotos,
           errorMessage: null,
@@ -200,6 +212,13 @@ class PositionDeclarationViewModel
     state = state.copyWith(address: address);
   }
 
+  /// Báo lỗi khi người dùng chưa chụp ảnh chứng minh
+  void setPhotoRequiredError() {
+    state = state.copyWith(
+      errorMessage: 'Vui lòng chụp ít nhất 1 ảnh chứng minh trước khi gửi khai báo.',
+    );
+  }
+
   /// Gửi khai báo vị trí (§4)
   Future<(bool success, String? message)> submitDeclaration({
     String? title,
@@ -213,6 +232,12 @@ class PositionDeclarationViewModel
 
     if (state.lat == null || state.lng == null) {
       const msg = 'Vui lòng xác định vị trí GPS trước khi gửi khai báo.';
+      state = state.copyWith(errorMessage: msg);
+      return (false, msg);
+    }
+
+    if (state.photos.isEmpty) {
+      const msg = 'Vui lòng chụp ít nhất 1 ảnh chứng minh trước khi gửi khai báo.';
       state = state.copyWith(errorMessage: msg);
       return (false, msg);
     }
@@ -238,6 +263,7 @@ class PositionDeclarationViewModel
       lng: state.lng!,
       accuracyM: state.accuracyM,
       address: state.address,
+      isMockLocation: state.isMockLocation,
       title: title?.trim().isNotEmpty == true ? title!.trim() : null,
       note: note?.trim().isNotEmpty == true ? note!.trim() : null,
       localPhotoPaths: state.photos.map((f) => f.path).toList(),

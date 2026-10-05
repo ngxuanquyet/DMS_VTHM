@@ -12,6 +12,9 @@ import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
 import 'package:vthm_dms/features/customer/data/services/customer_api_service.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vthm_dms/features/route/data/services/route_api_service.dart';
+
 class MockSyncDioAdapter implements HttpClientAdapter {
   RequestOptions? lastOptions;
   dynamic lastData;
@@ -50,6 +53,20 @@ class MockSyncDioAdapter implements HttpClientAdapter {
             'route': 'Tuyến 1',
             'status': 'active',
           }
+        ],
+      };
+      return ResponseBody.fromString(
+        jsonEncode(res),
+        200,
+        headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+      );
+    }
+    if (options.path == '/dms/routes/mine') {
+      final res = {
+        'success': true,
+        'data': [
+          {'id': 1, 'name': 'Tuyến Hà Nội - Đông Anh', 'code': 'ROUTE_01'},
+          {'id': 2, 'name': 'Tuyến Sóc Sơn', 'code': 'ROUTE_02'},
         ],
       };
       return ResponseBody.fromString(
@@ -178,4 +195,67 @@ void main() {
     expect(localList.first.code, '08190163');
     expect(localList.first.syncStatus, 'synced');
   });
+
+  test('getCustomers offline seamlessly returns cached SQLite data without errors', () async {
+    final localDataSource = CustomerLocalDataSource(db);
+    final apiService = CustomerApiService(ApiClient(Dio()));
+
+    // 1. First, populate SQLite with 1 cached customer (as if synced earlier)
+    await repo.getCustomers(forceRefresh: true);
+    final countBefore = (await db.getAllLocalCustomers()).length;
+    expect(countBefore, 1);
+
+    // 2. Create an offline repository instance (_isOnlineChecker returns false)
+    final offlineRepo = CustomerRepositoryImpl(
+      apiService,
+      localDataSource,
+      syncService,
+      null,
+      () => false,
+    );
+
+    // 3. getCustomers() offline must return the cached customers without throwing
+    final offlineCustomers = await offlineRepo.getCustomers();
+    expect(offlineCustomers.isNotEmpty, isTrue);
+    expect(offlineCustomers.first.name, 'Cửa hàng Test');
+    expect(offlineCustomers.first.route, 'Tuyến 1');
+  });
+
+  test('RouteApiService caches getMyRoutes into SharedPreferences and returns them offline', () async {
+    SharedPreferences.setMockInitialValues({});
+    final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = adapter;
+    final apiClient = ApiClient(dio);
+    final routeApiService = RouteApiService(apiClient);
+
+    // 1. Online: fetch from server
+    final routes = await routeApiService.getMyRoutes(forceRefresh: true);
+    expect(routes.length, 2);
+    expect(routes.first.name, 'Tuyến Hà Nội - Đông Anh');
+    expect(routes.last.name, 'Tuyến Sóc Sơn');
+
+    // 2. Offline simulation: RouteApiService with a failing Dio client
+    final failingDio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))
+      ..httpClientAdapter = MockFailingDioAdapter();
+    final offlineRouteApiService = RouteApiService(ApiClient(failingDio));
+
+    // Must return the cached routes from SharedPreferences!
+    final cachedRoutes = await offlineRouteApiService.getMyRoutes();
+    expect(cachedRoutes.length, 2);
+    expect(cachedRoutes.first.name, 'Tuyến Hà Nội - Đông Anh');
+    expect(cachedRoutes.last.name, 'Tuyến Sóc Sơn');
+  });
+}
+
+class MockFailingDioAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
+    throw DioException(
+      requestOptions: options,
+      type: DioExceptionType.connectionError,
+      error: 'No internet connection',
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

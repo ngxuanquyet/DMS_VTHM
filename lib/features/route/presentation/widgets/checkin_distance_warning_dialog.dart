@@ -7,7 +7,7 @@ Future<void> showCheckinDistanceWarningDialog(
   BuildContext context, {
   required String dealerName,
   required double distanceMeters,
-  int allowedRadiusMeters = 100,
+  required int allowedRadiusMeters,
   double? lat,
   double? lng,
   String? address,
@@ -41,7 +41,7 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
     super.key,
     required this.dealerName,
     required this.distanceMeters,
-    this.allowedRadiusMeters = 100,
+    required this.allowedRadiusMeters,
     this.lat,
     this.lng,
     this.address,

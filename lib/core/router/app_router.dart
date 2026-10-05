@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../features/attendance/presentation/screens/attendance_detail_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
@@ -8,10 +9,13 @@ import '../../features/customer/domain/entities/customer_entity.dart';
 import '../../features/customer/presentation/screens/add_customer_screen.dart';
 import '../../features/customer/presentation/screens/customer_detail_screen.dart';
 import '../../features/customer/presentation/screens/customer_screen.dart';
+import '../../features/customer/presentation/screens/edit_customer_screen.dart';
+import '../../features/daily_report/presentation/screens/daily_report_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/forms/presentation/screens/market_form_fill_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
+import '../../features/position_declaration/presentation/screens/position_declaration_history_screen.dart';
 import '../../features/position_declaration/presentation/screens/position_declaration_screen.dart';
 import '../../features/profile/presentation/screens/dynamic_form_demo_screen.dart';
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
@@ -30,10 +34,7 @@ final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 class MainShellScaffold extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
-  const MainShellScaffold({
-    super.key,
-    required this.navigationShell,
-  });
+  const MainShellScaffold({super.key, required this.navigationShell});
 
   @override
   Widget build(BuildContext context) {
@@ -61,23 +62,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/splash',
         parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: SplashScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: SplashScreen()),
       ),
       GoRoute(
         path: '/login',
         parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: LoginScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: LoginScreen()),
       ),
       StatefulShellRoute(
         navigatorContainerBuilder: (context, navigationShell, children) =>
             BranchAnimatedSlideContainer(
-          navigationShell: navigationShell,
-          children: children,
-        ),
+              navigationShell: navigationShell,
+              children: children,
+            ),
         builder: (context, state, navigationShell) =>
             MainShellScaffold(navigationShell: navigationShell),
         branches: [
@@ -85,9 +84,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/home',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: HomeScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: HomeScreen()),
               ),
             ],
           ),
@@ -95,9 +93,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/customers',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: CustomerScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: CustomerScreen()),
               ),
             ],
           ),
@@ -105,9 +102,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/routes',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: RouteScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: RouteScreen()),
               ),
             ],
           ),
@@ -115,9 +111,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/forms',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: FormsScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: FormsScreen()),
               ),
             ],
           ),
@@ -125,9 +120,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/profile',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: ProfileScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: ProfileScreen()),
               ),
             ],
           ),
@@ -147,8 +141,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => ZoomPageTransition(
           key: state.pageKey,
           child: CheckInScreen(
-            dealer: state.extra is DealerEntity ? state.extra as DealerEntity : null,
+            dealer: state.extra is DealerEntity
+                ? state.extra as DealerEntity
+                : null,
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/daily-report',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const DailyReportScreen(),
         ),
       ),
       GoRoute(
@@ -157,6 +161,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => ZoomPageTransition(
           key: state.pageKey,
           child: const PositionDeclarationScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/position-declaration/history',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const PositionDeclarationHistoryScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/position-declaration-history',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const PositionDeclarationHistoryScreen(),
         ),
       ),
       GoRoute(
@@ -188,6 +208,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return ZoomPageTransition(
             key: state.pageKey,
             child: CustomerDetailScreen(customer: customer),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/customers/edit',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final customer = state.extra is CustomerEntity
+              ? state.extra as CustomerEntity
+              : null;
+          if (customer == null) {
+            return ZoomPageTransition(
+              key: state.pageKey,
+              child: Scaffold(
+                appBar: AppBar(title: const Text('Sửa điểm bán')),
+                body: const Center(
+                  child: Text('Không tìm thấy thông tin điểm bán'),
+                ),
+              ),
+            );
+          }
+          return ZoomPageTransition(
+            key: state.pageKey,
+            child: EditCustomerScreen(customer: customer),
           );
         },
       ),
@@ -249,9 +293,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Không tìm thấy trang: ${state.uri}'),
-      ),
+      body: Center(child: Text('Không tìm thấy trang: ${state.uri}')),
     ),
   );
 });

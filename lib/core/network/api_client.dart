@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,7 +6,6 @@ import '../constants/app_constants.dart';
 import '../errors/app_exceptions.dart';
 import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
-import 'mock_backend.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(
@@ -22,7 +22,6 @@ final dioProvider = Provider<Dio>((ref) {
 
   dio.interceptors.addAll([
     AuthInterceptor(dio),
-    MockBackendInterceptor(),
     AppApiLoggerInterceptor(),
   ]);
 
@@ -262,7 +261,9 @@ class ApiClient {
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.connectionError) {
+        error.type == DioExceptionType.connectionError ||
+        error.error is SocketException ||
+        error.error is HttpException) {
       connectivityNotifier?.handleNetworkDisconnection();
       return const NetworkException();
     }

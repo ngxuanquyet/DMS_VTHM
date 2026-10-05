@@ -9,6 +9,7 @@ import '../constants/app_constants.dart';
 import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
+import 'offline_sync_badge.dart';
 
 class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -145,14 +146,20 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
         if (trailing != null)
           trailing!
         else
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
-              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-              tooltip: strings.notificationsTitle,
-              onPressed: onNotificationPressed ?? () => context.push('/notifications'),
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const OfflineSyncBadge(),
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: IconButton(
+                  icon: const Icon(Icons.notifications_none_rounded),
+                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  tooltip: strings.notificationsTitle,
+                  onPressed: onNotificationPressed ?? () => context.push('/notifications'),
+                ),
+              ),
+            ],
           ),
       ],
     );

@@ -25,3 +25,15 @@ final formSubmissionEntriesProvider =
   return db.watchFormSubmissionEntries();
 });
 
+final allPendingQueueEntriesProvider =
+    StreamProvider.autoDispose<List<SyncQueueEntry>>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchAllPendingQueueEntries();
+});
+
+final deadQueueEntriesProvider =
+    StreamProvider.autoDispose<List<SyncQueueEntry>>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchDeadQueueEntries();
+});
+

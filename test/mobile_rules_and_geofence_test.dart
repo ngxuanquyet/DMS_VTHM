@@ -1,10 +1,17 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/rules/mobile_rules_model.dart';
+import 'package:vthm_dms/core/rules/mobile_rules_service.dart';
 import 'package:vthm_dms/core/utils/image_upload_helper.dart';
 import 'package:vthm_dms/features/forms/data/models/route_customer_model.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('MobileRules Specification Tests (GET /dms/mobile-rules - §1)', () {
     test('Parses backend response correctly with all thresholds and units', () {
       final json = {
@@ -222,4 +229,77 @@ void main() {
       expect(ImageUploadHelper.maxFileSizeBytes, 10 * 1024 * 1024);
     });
   });
+
+  group('MobileRulesNotifier Cache & Auto-Sync Tests', () {
+    test('Loads cached rules from SharedPreferences on initialization', () async {
+      SharedPreferences.setMockInitialValues({
+        MobileRulesNotifier.cacheKey: jsonEncode({
+          'visit': {'default_radius_m': 350, 'require_geofence': true}
+        }),
+      });
+
+      final client = FakeRulesApiClient((_) => throw Exception('offline'));
+      final notifier = MobileRulesNotifier(client);
+
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(notifier.state.visit.defaultRadiusM, 350);
+      expect(notifier.state.visit.requireGeofence, isTrue);
+    });
+
+    test('Fetches latest rules from server and updates SharedPreferences cache', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      final client = FakeRulesApiClient((path) {
+        if (path == '/dms/mobile-rules') {
+          return {
+            'data': {
+              'visit': {'default_radius_m': 500, 'require_geofence': false},
+            }
+          };
+        }
+        throw Exception('Not found');
+      });
+
+      final notifier = MobileRulesNotifier(client);
+      await notifier.fetchRules(forceRefresh: true);
+
+      expect(notifier.state.visit.defaultRadiusM, 500);
+      expect(notifier.state.visit.requireGeofence, isFalse);
+
+      final prefs = await SharedPreferences.getInstance();
+      final cachedStr = prefs.getString(MobileRulesNotifier.cacheKey);
+      expect(cachedStr, isNotNull);
+      final json = jsonDecode(cachedStr!) as Map<String, dynamic>;
+      expect(json['visit']['default_radius_m'], 500);
+      expect(json['visit']['require_geofence'], isFalse);
+    });
+
+    test('Preserves cached rules when network fails during sync', () async {
+      SharedPreferences.setMockInitialValues({
+        MobileRulesNotifier.cacheKey: jsonEncode({
+          'visit': {'default_radius_m': 200, 'require_geofence': true}
+        }),
+      });
+
+      final client = FakeRulesApiClient((_) => throw Exception('Network timeout'));
+      final notifier = MobileRulesNotifier(client);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Thử fetchRules khi mất mạng -> Vẫn giữ nguyên 200m từ cache
+      await notifier.fetchRules(forceRefresh: true);
+
+      expect(notifier.state.visit.defaultRadiusM, 200);
+    });
+  });
+}
+
+class FakeRulesApiClient extends ApiClient {
+  final dynamic Function(String path) onGet;
+  FakeRulesApiClient(this.onGet) : super(Dio());
+
+  @override
+  Future<dynamic> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) async {
+    return onGet(path);
+  }
 }

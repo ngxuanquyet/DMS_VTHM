@@ -26,7 +26,9 @@ class VisitRules {
       requireGeofence: json['require_geofence'] as bool? ?? true,
       defaultRadiusM: (json['default_radius_m'] as num?)?.toInt() ?? 100,
       blockOnMockLocation: json['block_on_mock_location'] as bool? ?? false,
-      minDurationMinutes: (json['min_duration_minutes'] as num?)?.toInt() ?? 5,
+      minDurationMinutes: (json['min_duration_minutes'] as num?)?.toInt() ??
+          (json['min_duration'] as num?)?.toInt() ??
+          5,
       minPhotos: (json['min_photos'] as num?)?.toInt() ?? 2,
       closedMinPhotos: (json['closed_min_photos'] as num?)?.toInt() ?? 1,
       routeScope: json['route_scope']?.toString() ?? 'assigned',

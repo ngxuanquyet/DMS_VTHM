@@ -60,6 +60,8 @@ const Set<String> kForbiddenCustomerKeys = {
   'photos',
   'photo_url',
   'photo_urls',
+  'local_photo_paths',
+  'localPhotoPaths',
   'dynamic_fields',
   'sync_status',
   'syncStatus',
@@ -220,7 +222,10 @@ class CustomerPayloadHelper {
     } else {
       final rawTokens = sourceData['photo_tokens'] ??
           sourceData['photo_token'] ??
-          sourceData['photo_file_id'];
+          sourceData['photo_file_id'] ??
+          sourceData['photo'] ??
+          sourceData['photos'] ??
+          sourceData['local_photo_paths'];
       if (rawTokens is List) {
         tokens = rawTokens
             .map((e) => e.toString().trim())
@@ -257,7 +262,7 @@ class CustomerPayloadHelper {
       });
     }
 
-    // Thu thập tất cả các trường không thuộc kCustomerFixedKeys và không thuộc kForbiddenCustomerKeys
+    // Thu thập các trường động còn lại từ gốc sourceData (nếu không nằm trong fixed keys và không nằm trong forbidden keys)
     sourceData.forEach((key, val) {
       if (kCustomerFixedKeys.contains(key) ||
           kForbiddenCustomerKeys.contains(key) ||
@@ -265,10 +270,11 @@ class CustomerPayloadHelper {
           val == null) {
         return;
       }
-      // Các trường động (bao gồm mw_ma_erp, mw_khach_hang_vthm, mw_nhan_1, mw_huyen, mw_hinh_anh, mw_nhan_3, mw_nhan_2)
-      // đưa vào dynamicMap!
       dynamicMap[key] = val;
     });
+
+    // Tuyệt đối loại bỏ bất kỳ khoá cấm/khoá nội bộ nào lọt vào dynamicMap
+    dynamicMap.removeWhere((k, _) => kForbiddenCustomerKeys.contains(k) || kCustomerFixedKeys.contains(k));
 
     if (dynamicMap.isNotEmpty) {
       payload['data'] = dynamicMap;

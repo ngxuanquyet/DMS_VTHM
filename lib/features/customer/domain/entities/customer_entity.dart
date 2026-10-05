@@ -113,11 +113,36 @@ class CustomerEntity {
     this.photoUrls = const [],
   });
 
+  /// Kiểm tra xem đường dẫn ảnh có phải là tệp cục bộ trên máy không
+  static bool isLocalFilePath(String path) {
+    final p = path.trim();
+    if (p.isEmpty) return false;
+    if (p.startsWith('file://')) return true;
+    if (p.contains(r':\') || p.contains(r':/')) return true; // Windows
+    if (p.startsWith('/data/') ||
+        p.startsWith('/var/') ||
+        p.startsWith('/private/') ||
+        p.startsWith('/storage/emulated/')) {
+      return true;
+    }
+    if (p.contains('offline_customer_photos') ||
+        p.contains('image_picker') ||
+        p.contains('cache') ||
+        p.contains('tmp')) {
+      return true;
+    }
+    return false;
+  }
+
   /// URL đầy đủ của ảnh đại diện (đã ghép host API nếu đường dẫn tương đối theo spec 23/09/2026)
   String? get fullPhotoUrl {
     final raw = (photoUrls.isNotEmpty ? photoUrls.first : photoUrl)?.trim();
     if (raw == null || raw.isEmpty) return null;
     if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (isLocalFilePath(raw)) return raw;
+    if (raw.length == 32 && !raw.contains('/') && !raw.contains(r'\')) {
+      return '${AppConstants.baseUrl}/crm/customer-photos/public/$raw';
+    }
     if (raw.startsWith('/')) return '${AppConstants.baseUrl}$raw';
     return '${AppConstants.baseUrl}/$raw';
   }
@@ -132,6 +157,10 @@ class CustomerEntity {
     return urls.map((raw) {
       final u = raw.trim();
       if (u.startsWith('http://') || u.startsWith('https://')) return u;
+      if (isLocalFilePath(u)) return u;
+      if (u.length == 32 && !u.contains('/') && !u.contains(r'\')) {
+        return '${AppConstants.baseUrl}/crm/customer-photos/public/$u';
+      }
       if (u.startsWith('/')) return '${AppConstants.baseUrl}$u';
       return '${AppConstants.baseUrl}/$u';
     }).toList();

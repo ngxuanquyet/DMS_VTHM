@@ -70,6 +70,11 @@ class AppTextField extends StatelessWidget {
       }
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveTextColor = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
+    final effectiveLabelColor = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
+    final effectiveHintColor = isDark ? AppColors.darkOutline : AppColors.outline;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -77,7 +82,7 @@ class AppTextField extends StatelessWidget {
         if (label != null) ...[
           Text(
             label!,
-            style: AppTypography.labelLarge(color: AppColors.onSurfaceVariant),
+            style: AppTypography.labelLarge(color: effectiveLabelColor),
           ),
           const SizedBox(height: AppSpacing.stackSm),
         ],
@@ -92,11 +97,24 @@ class AppTextField extends StatelessWidget {
           textInputAction: textInputAction,
           autofocus: autofocus,
           focusNode: focusNode,
-          style: AppTypography.bodyLarge(color: AppColors.onSurface),
+          style: AppTypography.bodyLarge(color: effectiveTextColor),
           decoration: InputDecoration(
             hintText: hintText,
+            hintStyle: TextStyle(
+              color: effectiveHintColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+            ),
             errorText: errorText,
-            prefixIcon: prefixIcon,
+            prefixIcon: prefixIcon != null
+                ? IconTheme.merge(
+                    data: IconThemeData(
+                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                      size: 18,
+                    ),
+                    child: prefixIcon!,
+                  )
+                : null,
             suffixIcon: effectiveSuffix,
           ),
         ),

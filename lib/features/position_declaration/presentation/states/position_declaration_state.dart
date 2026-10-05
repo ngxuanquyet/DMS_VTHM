@@ -19,6 +19,7 @@ class PositionDeclarationState {
   final double? lng;
   final double? accuracyM;
   final String? address;
+  final bool isMockLocation;
   final bool isFetchingLocation;
   final String? errorMessage;
   final String? successMessage;
@@ -35,6 +36,7 @@ class PositionDeclarationState {
     this.lng,
     this.accuracyM,
     this.address,
+    this.isMockLocation = false,
     this.isFetchingLocation = false,
     this.errorMessage,
     this.successMessage,
@@ -59,6 +61,7 @@ class PositionDeclarationState {
     double? lng,
     double? accuracyM,
     String? address,
+    bool? isMockLocation,
     bool? isFetchingLocation,
     String? errorMessage,
     String? successMessage,
@@ -76,6 +79,7 @@ class PositionDeclarationState {
       lng: lng ?? this.lng,
       accuracyM: accuracyM ?? this.accuracyM,
       address: address ?? this.address,
+      isMockLocation: isMockLocation ?? this.isMockLocation,
       isFetchingLocation: isFetchingLocation ?? this.isFetchingLocation,
       errorMessage: errorMessage,
       successMessage: successMessage,

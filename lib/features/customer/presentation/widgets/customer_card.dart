@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -30,6 +31,7 @@ class CustomerCard extends StatelessWidget {
   final String? syncStatus;
   final String? photoUrl;
   final List<String> photoUrls;
+  final int? geofenceRadiusM;
 
   /// Tham số button duy nhất của template:
   /// - Màn tuyến: nút Check-in
@@ -72,6 +74,7 @@ class CustomerCard extends StatelessWidget {
     this.syncStatus,
     this.photoUrl,
     this.photoUrls = const [],
+    this.geofenceRadiusM,
     this.actionButton,
     this.showBorder = true,
     this.isCheckInDisabled = false,
@@ -131,6 +134,11 @@ class CustomerCard extends StatelessWidget {
         ? (dealer.customer as CustomerEntity).fullPhotoUrls
         : const <String>[];
 
+    final resolvedGeofenceRadius = dealer.geofenceRadiusM ??
+        (dealer.customer is CustomerEntity
+            ? (dealer.customer as CustomerEntity).geofenceRadiusM
+            : null);
+
     return CustomerCard(
       key: key,
       code: dealer.code?.isNotEmpty == true ? dealer.code! : 'KH${dealer.order}',
@@ -149,6 +157,7 @@ class CustomerCard extends StatelessWidget {
       syncStatus: resolvedSyncStatus,
       photoUrl: resolvedPhotoUrl,
       photoUrls: resolvedPhotoUrls,
+      geofenceRadiusM: resolvedGeofenceRadius,
       actionButton: resolvedButton,
       showBorder: showBorder,
       isCheckInDisabled: isCheckInDisabled,
@@ -194,6 +203,7 @@ class CustomerCard extends StatelessWidget {
       syncStatus: item.customer.syncStatus,
       photoUrl: item.customer.fullPhotoUrl,
       photoUrls: item.customer.fullPhotoUrls,
+      geofenceRadiusM: item.customer.geofenceRadiusM,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -243,6 +253,7 @@ class CustomerCard extends StatelessWidget {
       syncStatus: customer.syncStatus,
       photoUrl: customer.fullPhotoUrl,
       photoUrls: customer.fullPhotoUrls,
+      geofenceRadiusM: customer.geofenceRadiusM,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -459,7 +470,11 @@ class CustomerCard extends StatelessWidget {
             (effectivePhotoUrl != null ? [effectivePhotoUrl] : const <String>[]));
 
     final hasCoordinates = effectiveLat != null && effectiveLng != null;
-    final isValidDistance = effectiveDistance != null && effectiveDistance <= 100;
+    final maxRadius = (geofenceRadiusM ??
+            effectiveCustomer?.geofenceRadiusM ??
+            100)
+        .toDouble();
+    final isValidDistance = effectiveDistance != null && effectiveDistance <= maxRadius;
     final distText = distanceText ?? (item != null ? item!.formattedDistance : formatDistance(effectiveDistance));
 
     return Container(
@@ -716,7 +731,7 @@ class CustomerCard extends StatelessWidget {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(7),
-                            child: Image.network(
+                            child: _buildImageWidget(
                               effectivePhotoUrl,
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => Container(
@@ -1025,7 +1040,7 @@ class CustomerCard extends StatelessWidget {
                     padding: const EdgeInsets.all(8.0),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
+                      child: _buildImageWidget(
                         url,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => const Center(
@@ -1048,6 +1063,33 @@ class CustomerCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  static Widget _buildImageWidget(
+    String path, {
+    BoxFit fit = BoxFit.cover,
+    Widget Function(BuildContext, Object, StackTrace?)? errorBuilder,
+  }) {
+    String cleanPath = path.trim();
+    if (cleanPath.startsWith('file://')) {
+      try {
+        cleanPath = Uri.parse(cleanPath).toFilePath();
+      } catch (_) {
+        cleanPath = cleanPath.replaceFirst('file://', '');
+      }
+    }
+    if (CustomerEntity.isLocalFilePath(cleanPath)) {
+      return Image.file(
+        File(cleanPath),
+        fit: fit,
+        errorBuilder: errorBuilder,
+      );
+    }
+    return Image.network(
+      path,
+      fit: fit,
+      errorBuilder: errorBuilder,
     );
   }
 }

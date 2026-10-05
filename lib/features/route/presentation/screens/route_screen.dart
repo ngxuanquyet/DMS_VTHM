@@ -20,6 +20,9 @@ import '../widgets/route_circular_menu.dart';
 import '../widgets/route_dealer_timeline.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../domain/entities/route_entity.dart';
+import '../../../customer/data/repositories/customer_repository_impl.dart';
+import '../../../customer/presentation/screens/add_customer_screen.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
@@ -125,6 +128,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   Future<void> _handleSync() async {
     final vm = ref.read(routeViewModelProvider.notifier);
     final isOnline = ref.read(connectivityProvider).isOnline;
+    final customerRepo = ref.read(customerRepositoryProvider);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -132,7 +136,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           children: [
             const AppLoading(size: 32),
             const SizedBox(width: 10),
-            Text(isOnline ? 'Đang đồng bộ dữ liệu tuyến từ máy chủ...' : 'Đang tải lại dữ liệu từ bộ nhớ máy...'),
+            Text(isOnline
+                ? 'Đang đồng bộ...'
+                : 'Đang tải lại dữ liệu từ bộ nhớ máy...'),
           ],
         ),
         duration: const Duration(seconds: 2),
@@ -140,7 +146,35 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       ),
     );
 
-    await vm.loadRouteDetail(isRefresh: true);
+    try {
+      if (isOnline) {
+        // Đồng bộ các tác vụ ngoại tuyến (như huỷ lượt, upload ảnh) trước khi tải lại từ server
+        try {
+          await ref.read(syncServiceProvider).syncQueue();
+        } catch (_) {}
+        await Future.wait([
+          vm.loadRouteDetail(isRefresh: true),
+          ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
+          customerRepo.getCustomerFormSchema(forceRefresh: true).catchError((e) {
+            debugPrint('[RouteSync] Lỗi làm mới schema form: $e');
+            return <String, dynamic>{};
+          }),
+          customerRepo.getCustomerMeta(forceRefresh: true).catchError((e) {
+            debugPrint('[RouteSync] Lỗi làm mới meta khách hàng: $e');
+            return kDefaultCustomerMeta;
+          }),
+        ]);
+      } else {
+        await vm.loadRouteDetail(isRefresh: true);
+      }
+    } catch (e) {
+      debugPrint('[RouteScreenSync] Lỗi đồng bộ: $e');
+    }
+
+    // Làm mới provider của form nhập khách hàng
+    ref.invalidate(customerFormSchemaProvider);
+    ref.invalidate(customerMetaProvider);
+    ref.invalidate(userAssignedRoutesProvider);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -150,7 +184,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               Icon(isOnline ? Icons.check_circle_rounded : Icons.offline_pin_rounded, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(isOnline ? 'Đồng bộ dữ liệu tuyến thành công!' : 'Đã làm mới dữ liệu ngoại tuyến.'),
+                child: Text(isOnline
+                    ? 'Đồng bộ thành công!'
+                    : 'Đã làm mới dữ liệu ngoại tuyến.'),
               ),
             ],
           ),
@@ -556,8 +592,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                           : RefreshIndicator(
                               color: AppColors.primaryContainer,
                               onRefresh: () async {
+                                try {
+                                  await ref.read(syncServiceProvider).syncQueue();
+                                } catch (_) {}
                                 await Future.wait([
                                   vm.loadRouteDetail(isRefresh: true),
+                                  ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
                                   _requestLocationPermission(),
                                 ]);
                               },

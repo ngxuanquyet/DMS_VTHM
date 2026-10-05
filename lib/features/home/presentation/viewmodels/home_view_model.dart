@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/database/database_provider.dart';
 import '../../../../core/network/api_client.dart';
 import '../../data/repositories/home_repository_impl.dart';
 import '../../data/services/home_api_service.dart';
@@ -11,7 +12,10 @@ final homeApiServiceProvider = Provider<HomeApiService>((ref) {
 });
 
 final homeRepositoryProvider = Provider<HomeRepository>((ref) {
-  return HomeRepositoryImpl(ref.read(homeApiServiceProvider));
+  return HomeRepositoryImpl(
+    ref.read(homeApiServiceProvider),
+    ref.read(appDatabaseProvider),
+  );
 });
 
 final getDashboardUseCaseProvider = Provider<GetDashboardUseCase>((ref) {

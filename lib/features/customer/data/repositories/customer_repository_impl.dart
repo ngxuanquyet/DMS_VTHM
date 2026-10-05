@@ -64,27 +64,34 @@ class CustomerRepositoryImpl implements CustomerRepository {
     String? query,
     bool forceRefresh = false,
   }) async {
-    // 1. Thử tải từ database SQLite cục bộ trước (§1 BB-1)
-    bool hasStaleMockRoutes = false;
-    try {
+    // 1. Khi thiết bị ngoại tuyến (không có mạng) -> tải trực tiếp từ SQLite cục bộ
+    if (!_isOnline) {
       final localList = await _localDataSource.getLocalCustomers(query: query);
-      hasStaleMockRoutes = localList.any((c) =>
-          CustomerEntity.isInvalidOrProvinceRoute(c.route, provinceName: c.provinceName) ||
-          c.routes.any((r) => CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName)) ||
-          const {'08880149', '08880415', '08880382'}.contains(c.code));
-
-      if (hasStaleMockRoutes) {
-        // Tự động xóa sạch các bản ghi cache cũ bị dính tên tỉnh/mock data khỏi SQLite
-        await _localDataSource.clearSyncedCustomers();
-      } else if (localList.isNotEmpty && !forceRefresh) {
+      if (localList.isNotEmpty) {
         _cachedCustomers = localList;
-        // Kích hoạt đồng bộ ngầm khi có mạng
-        unawaited(_fetchRemoteAndCache(page, perPage, query));
         return localList;
       }
-    } catch (_) {}
+      if (_cachedCustomers.isNotEmpty) {
+        return _cachedCustomers;
+      }
+      throw AppException('Không có kết nối mạng và chưa có dữ liệu điểm bán lưu trên máy');
+    }
 
-    // 2. Tải từ API server khi có mạng
+    // 2. Khi thiết bị trực tuyến (Online):
+    // Nếu không bắt buộc tải mới (forceRefresh = false) và đã có sẵn dữ liệu cục bộ -> trả về ngay và đồng bộ ngầm
+    if (!forceRefresh) {
+      try {
+        final localList = await _localDataSource.getLocalCustomers(query: query);
+        if (localList.isNotEmpty) {
+          _cachedCustomers = localList;
+          // Kích hoạt làm mới và ghi đè cache ngầm từ máy chủ
+          unawaited(_fetchRemoteAndCache(page, perPage, query));
+          return localList;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Tải từ API server khi forceRefresh = true hoặc khi SQLite chưa có dữ liệu
     try {
       final response = await _apiService.getMineCustomers(
         page: page,
@@ -95,7 +102,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
       _cachedColumns = response.dynamicColumns;
 
-      // Lưu cache vào SQLite cục bộ và dọn dẹp các khách hàng đã bị xóa trên server
+      // Lưu cache vào SQLite cục bộ (tự động ghi đè và dọn dẹp các khách hàng đã bị xóa trên server)
       await _localDataSource.cacheRemoteCustomers(
         response.data,
         reconcile: query == null || query.isEmpty,
@@ -106,13 +113,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
       _cachedCustomers = mergedList;
       return _cachedCustomers;
     } catch (_) {
-      // Offline hoặc API không khả dụng -> Sử dụng SQLite cục bộ nếu không chứa mock cũ
+      // Khi API lỗi hoặc rớt mạng giữa chừng -> Sử dụng SQLite cục bộ đã lưu trước đó
       final localList = await _localDataSource.getLocalCustomers(query: query);
-      if (localList.isNotEmpty && !hasStaleMockRoutes) {
+      if (localList.isNotEmpty) {
         _cachedCustomers = localList;
         return localList;
       }
-      // Khi không có dữ liệu offline và API lỗi, ném ngoại lệ để ViewModel kích hoạt popup báo lỗi
+      if (_cachedCustomers.isNotEmpty) {
+        return _cachedCustomers;
+      }
       rethrow;
     }
   }
@@ -125,10 +134,13 @@ class CustomerRepositoryImpl implements CustomerRepository {
         q: query,
         context: 'mobile',
       );
+      _cachedColumns = response.dynamicColumns;
       await _localDataSource.cacheRemoteCustomers(
         response.data,
         reconcile: query == null || query.isEmpty,
       );
+      final mergedList = await _localDataSource.getLocalCustomers(query: query);
+      _cachedCustomers = mergedList;
     } catch (_) {}
   }
 
@@ -206,7 +218,32 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<CustomerEntity> updateCustomer({
     required int id,
     required Map<String, dynamic> changes,
+    String? clientUuid,
   }) async {
+    // Nếu là bản ghi tạo offline (id <= 0 hoặc có clientUuid không bắt đầu bằng server_)
+    final isLocalRecord = id <= 0 || (clientUuid != null && !clientUuid.startsWith('server_'));
+    if (isLocalRecord) {
+      String? targetUuid = clientUuid;
+      if (targetUuid == null && id <= 0) {
+        final found = _cachedCustomers.where((c) => c.id == id && c.clientUuid != null).firstOrNull;
+        targetUuid = found?.clientUuid;
+      }
+
+      if (targetUuid != null) {
+        final updated = await _localDataSource.updateCustomerOffline(targetUuid, changes);
+        final index = _cachedCustomers.indexWhere((c) => c.clientUuid == targetUuid);
+        if (index != -1) {
+          _cachedCustomers[index] = updated;
+        } else {
+          _cachedCustomers.add(updated);
+        }
+
+        // Tự động kích hoạt đồng bộ lại ngay nếu thiết bị có kết nối mạng
+        unawaited(_syncService.syncQueue());
+        return updated;
+      }
+    }
+
     await _apiService.updateCustomer(id, changes);
 
     // Update in cached list
@@ -231,7 +268,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
         wardName: changes.containsKey('ward_name')
             ? changes['ward_name']?.toString()
             : current.wardName,
-        contactPerson: changes['contact_name']?.toString() ?? current.contactPerson,
+        contactPerson: changes['contact_name']?.toString() ??
+            changes['contact_person']?.toString() ??
+            current.contactPerson,
         contactTitle: changes.containsKey('contact_title')
             ? changes['contact_title']?.toString()
             : current.contactTitle,

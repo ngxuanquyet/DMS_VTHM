@@ -10,6 +10,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/custom_donut_chart.dart';
 import '../../../../core/widgets/top_app_bar.dart';
+import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
@@ -18,6 +19,8 @@ import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
+import '../../../../core/rules/geofence_rule_helper.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../widgets/active_visit_blocking_dialog.dart';
 import '../widgets/checkin_distance_warning_dialog.dart';
 import '../widgets/checkout_success_dialog.dart';
@@ -62,7 +65,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     // Kiểm tra xem có phiên viếng thăm khác đang mở không (§3 Luật 3)
     // Áp dụng cả khi online lẫn offline
     final currentState = ref.read(checkInViewModelProvider);
-    VisitEntity? activeVisit = currentState.visitId > 0 && currentState.visitEntity?.isOpen == true
+    VisitEntity? activeVisit = currentState.visitId != 0 && currentState.visitEntity?.isOpen == true
         ? currentState.visitEntity
         : null;
 
@@ -105,10 +108,13 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     } else {
       final restored = await vm.restoreActiveVisitIfAvailable();
       if (!restored) {
-        final state = ref.read(checkInViewModelProvider);
-        if (state.checkinData == null) {
-          await vm.loadCheckinData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Vui lòng chọn một điểm bán từ danh sách tuyến để thực hiện viếng thăm.')),
+          );
+          _safePop();
         }
+        return;
       }
     }
     await _checkinIfNeeded();
@@ -116,18 +122,18 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<void> _checkinIfNeeded() async {
     var state = ref.read(checkInViewModelProvider);
-    if (state.visitId > 0) return; // Đã có phiên hợp lệ
+    if (state.visitId != 0) return; // Đã có phiên hợp lệ (cả online lẫn offline)
 
     if (state.checkinData == null) {
       await ref.read(checkInViewModelProvider.notifier).loadCheckinData();
       state = ref.read(checkInViewModelProvider);
     }
 
-    if (state.visitId > 0) return;
+    if (state.visitId != 0) return;
 
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
-        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 8338);
+        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0);
 
     // Kiểm tra bản ghi active visit lưu trữ cục bộ để chặn offline (§3 Luật 3)
     try {
@@ -150,6 +156,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       lat: pos?.latitude,
       lng: pos?.longitude,
       accuracyM: pos?.accuracy,
+      isMockLocation: pos?.isMocked,
       address: customer?.address ?? state.checkinData?.dealer.address,
       note: _noteController.text.trim().isNotEmpty ? _noteController.text.trim() : null,
     );
@@ -363,8 +370,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     final state = ref.read(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
 
-    // Nếu chưa check-in thành công trên server
-    if (state.visitId <= 0) {
+    // Nếu chưa check-in (chưa có phiên viếng thăm nào đang mở)
+    final isOpenVisit = state.visitId != 0 && (state.visitEntity == null || state.visitEntity!.isOpen);
+    if (!isOpenVisit) {
       if (_hasUnsavedData()) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final leave = await showDialog<bool>(
@@ -389,7 +397,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       return;
     }
 
-    // Nếu lượt đang mở (visitId > 0): Cho người dùng chọn Tạm rời phiên hay Hủy hẳn lượt
+    // Nếu lượt đang mở (cả online lẫn offline): Cho người dùng chọn Tạm rời phiên hay Hủy hẳn lượt
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final choice = await showDialog<String>(
       context: context,
@@ -494,6 +502,16 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           decoration: InputDecoration(
             hintText: 'Nhập ý kiến phản hồi hoặc ghi chú từ điểm bán...',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            suffixIcon: VoiceInputMicButton(
+              fieldName: 'Ghi chú viếng thăm',
+              currentText: tempController.text,
+              onTextRecognized: (text) {
+                tempController.text = text;
+                tempController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: text.length),
+                );
+              },
+            ),
           ),
         ),
         actions: [
@@ -521,7 +539,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<void> _handleTakePhoto(CheckInViewModel vm) async {
     final state = ref.read(checkInViewModelProvider);
-    if (state.visitId <= 0) {
+    if (state.visitId == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đợi check-in thành công trước khi chụp ảnh.')),
       );
@@ -544,8 +562,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
       final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
 
+      final watermarkedFile = await PhotoWatermarkHelper.addWatermark(
+        imageFile: File(image.path),
+        timestamp: DateTime.now(),
+        latitude: pos?.latitude,
+        longitude: pos?.longitude,
+        accuracy: pos?.accuracy,
+        locationName: widget.dealer?.name,
+      );
+
       final (success, message) = await vm.uploadPhoto(
-        File(image.path),
+        watermarkedFile,
         photoType: photoType,
         lat: pos?.latitude,
         lng: pos?.longitude,
@@ -611,8 +638,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       final vm = ref.read(checkInViewModelProvider.notifier);
       final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
 
+      final watermarkedFile = await PhotoWatermarkHelper.addWatermark(
+        imageFile: lostFile,
+        timestamp: DateTime.now(),
+        latitude: pos?.latitude,
+        longitude: pos?.longitude,
+        accuracy: pos?.accuracy,
+        locationName: widget.dealer?.name,
+      );
+
       final (success, message) = await vm.uploadPhoto(
-        lostFile,
+        watermarkedFile,
         photoType: photoType,
         lat: pos?.latitude,
         lng: pos?.longitude,
@@ -765,7 +801,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     final surveys = state.surveyForms;
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
-        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 8338);
+        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0);
     final dealerName = customer?.name ?? state.checkinData?.dealer.name ?? 'Điểm bán';
 
     final customerContext = MarketFormFillArgs.buildCustomerContext(
@@ -1337,23 +1373,32 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                         ).copyWith(fontWeight: FontWeight.w600),
                                       ),
                                     ),
-                                    if (state.visitId > 0)
+                                    if (state.visitId != 0)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                          color: (state.visitId > 0 ? const Color(0xFF10B981) : Colors.amber).withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
-                                            color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                                            color: (state.visitId > 0 ? const Color(0xFF10B981) : Colors.amber).withValues(alpha: 0.3),
                                           ),
                                         ),
-                                        child: Text(
-                                          'Lượt #${state.visitId}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF10B981),
-                                          ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (state.visitId < 0) ...[
+                                              const Icon(Icons.cloud_off_rounded, size: 12, color: Colors.amber),
+                                              const SizedBox(width: 4),
+                                            ],
+                                            Text(
+                                              state.visitId > 0 ? 'Lượt #${state.visitId}' : 'Ngoại tuyến',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: state.visitId > 0 ? const Color(0xFF10B981) : Colors.amber,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                   ],
@@ -1631,6 +1676,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       hintText: 'Nhập lý do điểm bán đóng cửa (nghỉ lễ, sửa chữa...)...',
                                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      suffixIcon: VoiceInputMicButton(
+                                        fieldName: 'Lý do đóng cửa',
+                                        currentText: _closedNoteController.text,
+                                        onTextRecognized: (text) {
+                                          _closedNoteController.text = text;
+                                          _closedNoteController.selection = TextSelection.fromPosition(
+                                            TextPosition(offset: text.length),
+                                          );
+                                          vm.setClosedNote(text);
+                                        },
+                                      ),
                                     ),
                                     onChanged: (val) => vm.setClosedNote(val),
                                   ),
@@ -1970,7 +2026,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     dealerName = state.visitEntity?.customerName ?? 'Điểm bán';
                                   }
 
-                                  if (dealerLat != null && dealerLng != null) {
+                                  final mobileRules = ref.read(mobileRulesProvider);
+                                  final allowedRadius = GeofenceRuleHelper.resolveAllowedRadius(
+                                    dealer: widget.dealer ?? state.checkinData?.dealer,
+                                    customer: state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null,
+                                    rules: mobileRules,
+                                  );
+
+                                  if (dealerLat != null && dealerLng != null && mobileRules.visit.requireGeofence) {
                                     if (pos == null) {
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1990,15 +2053,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       dealerLng,
                                     );
 
-                                    final mobileRules = ref.read(mobileRulesProvider);
-                                    final allowedRadius = widget.dealer?.geofenceRadiusM ??
-                                        (state.customer is CustomerEntity
-                                            ? (state.customer as CustomerEntity).geofenceRadiusM
-                                            : null) ??
-                                        state.checkinData?.dealer.geofenceRadiusM ??
-                                        mobileRules.visit.defaultRadiusM;
-
-                                    if (mobileRules.visit.requireGeofence && distanceM > allowedRadius) {
+                                    if (distanceM > allowedRadius) {
                                       if (context.mounted) {
                                         showCheckinDistanceWarningDialog(
                                           context,
@@ -2019,6 +2074,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     lat: pos?.latitude,
                                     lng: pos?.longitude,
                                     accuracyM: pos?.accuracy,
+                                    allowedRadiusMeters: allowedRadius,
+                                    requireGeofence: mobileRules.visit.requireGeofence,
                                   );
 
                                   if (success && context.mounted) {
@@ -2057,11 +2114,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                           label: Text(
                             state.status == CheckInStatus.checkingOut
                                 ? 'ĐANG CHECK-OUT...'
-                                : !isTimeSatisfied && req != null && req.secondsRemaining > 0
-                                    ? (req.secondsRemaining >= 60
-                                        ? 'CHECK-OUT (CÒN ${req.secondsRemaining ~/ 60}P ${(req.secondsRemaining % 60).toString().padLeft(2, '0')}S)'
-                                        : 'CHECK-OUT (CÒN ${req.secondsRemaining}S)')
-                                    : 'CHECK-OUT',
+                                : 'CHECK-OUT',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,

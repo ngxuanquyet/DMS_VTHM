@@ -53,6 +53,9 @@ class AppMapLocationCard extends StatefulWidget {
   /// Hiển thị bộ chuyển đổi chế độ bản đồ (Đường phố / Vệ tinh / Giao thông)
   final bool showStyleSwitcher;
 
+  /// Hiển thị thông số kinh/vĩ độ (lat/lng text)
+  final bool showCoordinates;
+
   /// Text nút lấy vị trí ban đầu
   final String locateButtonText;
 
@@ -80,6 +83,7 @@ class AppMapLocationCard extends StatefulWidget {
     this.markers = const [],
     this.geofenceRadiusMeters,
     this.showStyleSwitcher = true,
+    this.showCoordinates = true,
     this.locateButtonText = 'LẤY VỊ TRÍ HIỆN TẠI',
     this.updateButtonText = 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
     this.onLocationChanged,
@@ -347,6 +351,14 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                             showZoomControls: true,
                             interactive: true,
                             onMyLocationTap: _isLocating ? null : _getCurrentLocation,
+                            onTap: widget.isReadOnly
+                                ? null
+                                : (point) {
+                                    final lat = double.parse(point.latitude.toStringAsFixed(6));
+                                    final lng = double.parse(point.longitude.toStringAsFixed(6));
+                                    widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+                                    _fetchAddress(lat, lng);
+                                  },
                           ),
                         ),
                       ),
@@ -415,7 +427,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                                 ).copyWith(fontWeight: FontWeight.w600, height: 1.3),
                               ),
-                              if (widget.lat != null && widget.lng != null) ...[
+                              if (widget.showCoordinates && widget.lat != null && widget.lng != null) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   'Tọa độ: ${widget.lat!.toStringAsFixed(6)}, ${widget.lng!.toStringAsFixed(6)}${widget.accuracyM != null ? ' (±${widget.accuracyM!.toStringAsFixed(1)}m)' : ''}',

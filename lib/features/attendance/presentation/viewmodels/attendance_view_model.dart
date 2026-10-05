@@ -1,19 +1,30 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
-import '../../../../core/network/api_client.dart';
+import 'package:uuid/uuid.dart';
+
 import '../../data/repositories/attendance_repository_impl.dart';
-import '../../data/services/attendance_api_service.dart';
-import '../../domain/repositories/attendance_repository.dart';
+import '../../domain/entities/attendance_entity.dart';
 import '../../domain/usecases/attendance_usecases.dart';
 import '../states/attendance_state.dart';
 
-final attendanceApiServiceProvider = Provider<AttendanceApiService>((ref) {
-  return AttendanceApiService(ref.read(apiClientProvider));
+final getAttendanceConfigUseCaseProvider = Provider<GetAttendanceConfigUseCase>((ref) {
+  return GetAttendanceConfigUseCase(ref.read(attendanceRepositoryProvider));
 });
 
-final attendanceRepositoryProvider = Provider<AttendanceRepository>((ref) {
-  return AttendanceRepositoryImpl(ref.read(attendanceApiServiceProvider));
+final punchAttendanceUseCaseProvider = Provider<PunchAttendanceUseCase>((ref) {
+  return PunchAttendanceUseCase(ref.read(attendanceRepositoryProvider));
+});
+
+final uploadPunchPhotoUseCaseProvider = Provider<UploadPunchPhotoUseCase>((ref) {
+  return UploadPunchPhotoUseCase(ref.read(attendanceRepositoryProvider));
+});
+
+final getAttendanceHistoryUseCaseProvider = Provider<GetAttendanceHistoryUseCase>((ref) {
+  return GetAttendanceHistoryUseCase(ref.read(attendanceRepositoryProvider));
 });
 
 final getAttendanceDetailUseCaseProvider = Provider<GetAttendanceDetailUseCase>((ref) {
@@ -27,33 +38,46 @@ final toggleAttendanceUseCaseProvider = Provider<ToggleAttendanceUseCase>((ref) 
 final attendanceViewModelProvider =
     StateNotifierProvider.autoDispose<AttendanceViewModel, AttendanceState>((ref) {
   return AttendanceViewModel(
+    getConfigUseCase: ref.read(getAttendanceConfigUseCaseProvider),
+    punchUseCase: ref.read(punchAttendanceUseCaseProvider),
+    uploadPhotoUseCase: ref.read(uploadPunchPhotoUseCaseProvider),
+    getHistoryUseCase: ref.read(getAttendanceHistoryUseCaseProvider),
     getAttendanceDetailUseCase: ref.read(getAttendanceDetailUseCaseProvider),
     toggleAttendanceUseCase: ref.read(toggleAttendanceUseCaseProvider),
   );
 });
 
 class AttendanceViewModel extends StateNotifier<AttendanceState> {
+  final GetAttendanceConfigUseCase getConfigUseCase;
+  final PunchAttendanceUseCase punchUseCase;
+  final UploadPunchPhotoUseCase uploadPhotoUseCase;
+  final GetAttendanceHistoryUseCase getHistoryUseCase;
   final GetAttendanceDetailUseCase getAttendanceDetailUseCase;
   final ToggleAttendanceUseCase toggleAttendanceUseCase;
-  Timer? _timer;
+
+  Timer? _clockTimer;
 
   AttendanceViewModel({
+    required this.getConfigUseCase,
+    required this.punchUseCase,
+    required this.uploadPhotoUseCase,
+    required this.getHistoryUseCase,
     required this.getAttendanceDetailUseCase,
     required this.toggleAttendanceUseCase,
   }) : super(const AttendanceState()) {
-    loadAttendance();
-    _startTimer();
+    _startClockTimer();
+    loadInitialData();
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+  void _startClockTimer() {
+    _clockTimer?.cancel();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       final timeStr = DateFormat('HH:mm:ss').format(now);
 
-      final nextDuration = state.detail?.isWorking == true
+      final nextDuration = state.liveWorkDurationSeconds > 0
           ? state.liveWorkDurationSeconds + 1
-          : state.liveWorkDurationSeconds;
+          : 0;
 
       state = state.copyWith(
         liveCurrentTime: timeStr,
@@ -62,17 +86,50 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     });
   }
 
-  Future<void> loadAttendance() async {
-    state = state.copyWith(status: AttendanceStatus.loading);
+  /// Tải dữ liệu ban đầu khi mở màn hình (§2 & §5)
+  Future<void> loadInitialData({double? lat, double? lng}) async {
+    state = state.copyWith(
+      status: AttendanceStatus.loading,
+      errorMessage: null,
+    );
+
     try {
-      final detail = await getAttendanceDetailUseCase();
+      // 1. Tải cấu hình và danh sách địa điểm
+      final config = await getConfigUseCase(lat: lat, lng: lng);
+
+      // 2. Tải lịch sử chấm công của chính mình
+      final history = await getHistoryUseCase(days: state.selectedDays);
+
+      // 3. Tính toán thời gian làm việc hôm nay
+      final now = DateTime.now();
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final todayPunches = history.where((p) => p.punchAt.startsWith(todayStr)).toList();
+
+      int workDuration = 0;
+      AttendancePunchEntity? latest;
+      if (todayPunches.isNotEmpty) {
+        todayPunches.sort((a, b) => a.punchAt.compareTo(b.punchAt));
+        final firstPunchTime = todayPunches.first.punchAtDateTime;
+        if (firstPunchTime != null) {
+          workDuration = now.difference(firstPunchTime).inSeconds;
+          if (workDuration < 0) workDuration = 0;
+        }
+        latest = todayPunches.last;
+      }
+
+      final legacyDetail = await getAttendanceDetailUseCase();
+
       state = state.copyWith(
         status: AttendanceStatus.loaded,
-        detail: detail,
-        liveWorkDurationSeconds: detail.workDurationSeconds,
+        config: config,
+        history: history,
+        latestPunch: latest,
+        liveWorkDurationSeconds: workDuration,
+        detail: legacyDetail,
         errorMessage: null,
       );
     } catch (e) {
+      debugPrint('[AttendanceViewModel] Lỗi load dữ liệu: $e');
       state = state.copyWith(
         status: AttendanceStatus.error,
         errorMessage: e.toString().replaceAll('AppException: ', ''),
@@ -80,23 +137,179 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     }
   }
 
-  Future<void> toggleAttendance() async {
+  /// Cập nhật toạ độ GPS của người dùng và gọi lại config để tính khoảng cách (§2)
+  Future<void> updateUserLocation(Position position) async {
+    state = state.copyWith(currentPosition: position);
     try {
-      final updated = await toggleAttendanceUseCase();
-      state = state.copyWith(
-        detail: updated,
-        liveWorkDurationSeconds: updated.workDurationSeconds,
+      final updatedConfig = await getConfigUseCase(
+        lat: position.latitude,
+        lng: position.longitude,
       );
+      state = state.copyWith(config: updatedConfig);
     } catch (e) {
-      state = state.copyWith(
-        errorMessage: e.toString().replaceAll('AppException: ', ''),
-      );
+      debugPrint('[AttendanceViewModel] Lỗi refresh config theo vị trí: $e');
     }
+  }
+
+  /// Đổi khoảng thời gian xem lịch sử (§5)
+  Future<void> setHistoryDays(int days) async {
+    state = state.copyWith(selectedDays: days);
+    try {
+      final history = await getHistoryUseCase(days: days);
+      state = state.copyWith(history: history);
+    } catch (e) {
+      debugPrint('[AttendanceViewModel] Lỗi tải lịch sử $days ngày: $e');
+    }
+  }
+
+  /// Thực hiện một lượt chấm công (§3)
+  /// Trả về đối tượng lượt chấm thành công hoặc null nếu thất bại
+  Future<AttendancePunchEntity?> punch({
+    required Position position,
+  }) async {
+    // 🔴 QUY TẮC §3: client_uuid SINH LÚC BẤM NÚT
+    final clickUuid = const Uuid().v4();
+
+    state = state.copyWith(
+      isPunching: true,
+      errorMessage: null,
+      successMessage: null,
+    );
+
+    try {
+      final punchResult = await punchUseCase(
+        lat: position.latitude,
+        lng: position.longitude,
+        accuracyM: position.accuracy,
+        isMockLocation: position.isMocked,
+        clientUuid: clickUuid,
+      );
+
+      // Cập nhật danh sách lịch sử
+      final updatedHistory = List<AttendancePunchEntity>.from(state.history);
+      updatedHistory.removeWhere((p) => p.clientUuid == punchResult.clientUuid);
+      updatedHistory.insert(0, punchResult);
+
+      final msg = punchResult.duplicate
+          ? 'Lượt chấm này đã có trên hệ thống trước đó.'
+          : 'Đã ghi nhận chấm công lúc ${punchResult.timeFormatted}.';
+
+      state = state.copyWith(
+        isPunching: false,
+        latestPunch: punchResult,
+        history: updatedHistory,
+        successMessage: msg,
+        errorMessage: null,
+      );
+
+      return punchResult;
+    } catch (e) {
+      final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
+      debugPrint('[AttendanceViewModel] Lỗi chấm công: $msg');
+      state = state.copyWith(
+        isPunching: false,
+        errorMessage: msg,
+      );
+      return null;
+    }
+  }
+
+  /// Tải ảnh camera cho lượt chấm (§4)
+  Future<AttendancePunchPhotoEntity?> uploadPunchPhoto({
+    required int punchId,
+    required File file,
+    required String photoType,
+    double? lat,
+    double? lng,
+  }) async {
+    state = state.copyWith(isUploadingPhoto: true, errorMessage: null);
+
+    try {
+      final photo = await uploadPhotoUseCase(
+        punchId: punchId,
+        file: file,
+        photoType: photoType,
+        takenAt: DateTime.now(),
+        lat: lat,
+        lng: lng,
+      );
+
+      // Cập nhật lượt chấm hiện tại
+      if (state.latestPunch != null && state.latestPunch!.id == punchId) {
+        final currentPhotos = List<AttendancePunchPhotoEntity>.from(state.latestPunch!.photos);
+        currentPhotos.removeWhere((p) => p.photoType == photoType);
+        currentPhotos.add(photo);
+
+        final hasFront = currentPhotos.any((p) => p.photoType == 'front');
+        final hasBack = currentPhotos.any((p) => p.photoType == 'back');
+
+        final updatedRequirements = AttendanceRequirementsEntity(
+          photoCount: currentPhotos.length,
+          minPhotos: state.config?.photo.minPhotos ?? 2,
+          maxPhotos: state.config?.photo.maxPhotos ?? 10,
+          needFront: !hasFront,
+          needBack: !hasBack,
+          requireBoth: true,
+          satisfied: hasFront && hasBack,
+        );
+
+        final updatedPunch = AttendancePunchEntity(
+          id: state.latestPunch!.id,
+          punchAt: state.latestPunch!.punchAt,
+          clientUuid: state.latestPunch!.clientUuid,
+          lat: state.latestPunch!.lat,
+          lng: state.latestPunch!.lng,
+          accuracyM: state.latestPunch!.accuracyM,
+          geofenceId: state.latestPunch!.geofenceId,
+          geofenceName: state.latestPunch!.geofenceName,
+          isOutsideGeofence: state.latestPunch!.isOutsideGeofence,
+          isMockLocation: state.latestPunch!.isMockLocation,
+          isTimeTampered: state.latestPunch!.isTimeTampered,
+          duplicate: state.latestPunch!.duplicate,
+          photos: currentPhotos,
+          requirements: updatedRequirements,
+        );
+
+        state = state.copyWith(latestPunch: updatedPunch);
+      }
+
+      // Làm mới lịch sử
+      final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
+      state = state.copyWith(
+        isUploadingPhoto: false,
+        history: refreshedHistory,
+      );
+
+      return photo;
+    } catch (e) {
+      final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
+      debugPrint('[AttendanceViewModel] Lỗi tải ảnh: $msg');
+      state = state.copyWith(
+        isUploadingPhoto: false,
+        errorMessage: msg,
+      );
+      return null;
+    }
+  }
+
+  /// Tương thích ngược
+  Future<void> loadAttendance() async {
+    await loadInitialData();
+  }
+
+  Future<void> toggleAttendance() async {
+    if (state.currentPosition != null) {
+      await punch(position: state.currentPosition!);
+    }
+  }
+
+  void clearMessages() {
+    state = state.copyWith(errorMessage: null, successMessage: null);
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _clockTimer?.cancel();
     super.dispose();
   }
 }

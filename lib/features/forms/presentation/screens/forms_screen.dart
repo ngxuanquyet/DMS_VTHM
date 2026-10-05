@@ -46,8 +46,8 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
             const AppLoading(size: 32),
             const SizedBox(width: 10),
             Text(isOnline
-                ? 'Đang đồng bộ biểu mẫu từ máy chủ...'
-                : 'Đang tải lại dữ liệu biểu mẫu ngoại tuyến...'),
+                ? 'Đang đồng bộ...'
+                : 'Đang tải lại dữ liệu từ bộ nhớ máy...'),
           ],
         ),
         duration: const Duration(seconds: 2),
@@ -69,8 +69,8 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(isOnline
-                    ? 'Đồng bộ biểu mẫu thành công!'
-                    : 'Đã làm mới dữ liệu biểu mẫu ngoại tuyến.'),
+                    ? 'Đồng bộ thành công!'
+                    : 'Đã làm mới dữ liệu ngoại tuyến.'),
               ),
             ],
           ),

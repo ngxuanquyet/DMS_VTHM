@@ -17,6 +17,7 @@ abstract class CustomerRepository {
   Future<CustomerEntity> updateCustomer({
     required int id,
     required Map<String, dynamic> changes,
+    String? clientUuid,
   });
 
   Future<CustomerEntity> createCustomer(Map<String, dynamic> data);

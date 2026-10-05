@@ -173,73 +173,46 @@ class PersonalInfoScreen extends ConsumerWidget {
   ) {
     return Column(
       children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-                  width: 4,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.18),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+        Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+              width: 4,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.18),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
-              child: ClipOval(
-                child: Image.network(
-                  profile.avatarUrl.isNotEmpty
-                      ? profile.avatarUrl
-                      : AppConstants.userAvatarUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: AppColors.primaryContainer.withValues(alpha: 0.3),
-                    child: Center(
-                      child: Text(
-                        profile.fullName.isNotEmpty
-                            ? profile.fullName.trim().split(' ').last.substring(0, 1)
-                            : 'V',
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
+            ],
+          ),
+          child: ClipOval(
+            child: Image.network(
+              profile.avatarUrl.isNotEmpty
+                  ? profile.avatarUrl
+                  : AppConstants.userAvatarUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.primaryContainer.withValues(alpha: 0.3),
+                child: Center(
+                  child: Text(
+                    profile.fullName.isNotEmpty
+                        ? profile.fullName.trim().split(' ').last.substring(0, 1)
+                        : 'V',
+                    style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
               ),
             ),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isDark ? AppColors.darkSurface : Colors.white,
-                    width: 2,
-                  ),
-                  boxShadow: AppShadows.level1,
-                ),
-                child: const Icon(
-                  Icons.photo_camera,
-                  size: 16,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
         const SizedBox(height: 14),
         Text(

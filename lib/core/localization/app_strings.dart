@@ -281,6 +281,22 @@ class AppStrings {
   String get micPermissionRequired => isVietnamese
       ? 'Vui lòng cấp quyền micro để sử dụng tính năng giọng nói.'
       : 'Please grant microphone permission to use voice recognition.';
+  String get micPermissionDeniedTitle =>
+      isVietnamese ? 'Quyền Microphone bị từ chối' : 'Microphone Access Denied';
+  String get micPermissionDeniedForeverTitle =>
+      isVietnamese ? 'Quyền Microphone bị vô hiệu hóa' : 'Microphone Access Disabled';
+  String get micPermissionDeniedDesc => isVietnamese
+      ? 'Quyền truy cập Microphone đã bị từ chối. Để sử dụng tính năng nhập liệu bằng giọng nói, bạn có thể đi đến Cài đặt ứng dụng để cấp quyền sử dụng Micro.'
+      : 'Microphone permission was denied. To use voice input, please go to App Settings and grant microphone access.';
+  String get micPermissionDeniedForeverDesc => isVietnamese
+      ? 'Tính năng nhập liệu bằng giọng nói cần quyền truy cập Micro để nhận diện tiếng nói và điền văn bản tự động. Vui lòng mở Cài đặt ứng dụng để bật lại quyền này.'
+      : 'Voice input requires microphone access to transcribe speech into text. Please open App Settings and enable Microphone permission.';
+  String get goToSettingsAction =>
+      isVietnamese ? 'ĐI ĐẾN CÀI ĐẶT' : 'GO TO SETTINGS';
+  String get retryPermissionAction =>
+      isVietnamese ? 'Thử yêu cầu lại' : 'Request Again';
+  String get laterAction =>
+      isVietnamese ? 'Để sau' : 'Later';
   String get speechNotAvailable => isVietnamese
       ? 'Thiết bị không hỗ trợ hoặc nhận diện giọng nói chưa sẵn sàng'
       : 'Speech recognition engine is not available on this device';

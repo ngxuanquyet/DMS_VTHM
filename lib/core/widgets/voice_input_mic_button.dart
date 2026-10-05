@@ -9,6 +9,7 @@ import '../localization/app_language.dart';
 import '../localization/app_strings.dart';
 import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
+import 'microphone_permission_dialog.dart';
 
 /// Nút micro nhận diện giọng nói dùng trong các form nhập liệu:
 /// - Khi chạm nhanh: Hiển thị SnackBar hướng dẫn kèm nút "Nói ngay" cho phép ghi âm rảnh tay (Tap-to-talk).
@@ -70,7 +71,7 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
     _waveController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    );
 
     _initSpeech();
   }
@@ -199,6 +200,16 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
   Future<void> _startListening({bool isTapMode = false}) async {
     if (_isListening || _isFinalizing) return;
 
+    if (!kIsWeb && !WidgetsBinding.instance.runtimeType.toString().contains('Test')) {
+      final hasPermission = await MicrophonePermissionDialog.checkAndRequestPermission(
+        context,
+        strings: _resolveStrings(),
+      );
+      if (!hasPermission || !mounted) {
+        return;
+      }
+    }
+
     HapticFeedback.heavyImpact();
     setState(() {
       _isListening = true;
@@ -209,6 +220,7 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
     });
 
     _pulseController.repeat(reverse: true);
+    _waveController.repeat();
     _showOverlay();
 
     if (kIsWeb) {
@@ -300,6 +312,8 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
 
     _pulseController.stop();
     _pulseController.reset();
+    _waveController.stop();
+    _waveController.reset();
 
     // 1. Đệm thêm một khoảnh khắc ngắn (150ms) để không bị đứt âm tiết cuối cùng khi thả ngón tay
     await Future.delayed(const Duration(milliseconds: 150));
@@ -366,6 +380,8 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
     HapticFeedback.selectionClick();
     _pulseController.stop();
     _pulseController.reset();
+    _waveController.stop();
+    _waveController.reset();
     _removeOverlay();
 
     if (!kIsWeb) {

@@ -19,6 +19,23 @@ class PendingSyncDismissible extends StatelessWidget {
     required this.child,
   });
 
+  /// Hiển thị popup xác nhận xóa bản ghi chưa đồng bộ
+  static Future<bool> showConfirmDialog(
+    BuildContext context, {
+    required String title,
+    bool isDark = false,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => DeleteConfirmationDialog(
+            title: title,
+            isDark: isDark,
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!isPending) {
@@ -41,13 +58,10 @@ class PendingSyncDismissible extends StatelessWidget {
         iconPadding: const EdgeInsets.only(right: 20),
       ),
       confirmDismiss: (direction) async {
-        return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => _DeleteConfirmationDialog(
-            title: title,
-            isDark: isDark,
-          ),
+        return await showConfirmDialog(
+          context,
+          title: title,
+          isDark: isDark,
         );
       },
       onDismissed: (direction) async {
@@ -62,7 +76,7 @@ class PendingSyncDismissible extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Đã xóa bản ghi chờ "$title"',
+                      'Đã xóa bản ghi "$title"',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -103,7 +117,7 @@ class PendingSyncDismissible extends StatelessWidget {
           ),
           SizedBox(width: 8),
           Text(
-            'Xóa bản ghi chờ',
+            'Xóa bản ghi',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -116,11 +130,12 @@ class PendingSyncDismissible extends StatelessWidget {
   }
 }
 
-class _DeleteConfirmationDialog extends StatelessWidget {
+class DeleteConfirmationDialog extends StatelessWidget {
   final String title;
   final bool isDark;
 
-  const _DeleteConfirmationDialog({
+  const DeleteConfirmationDialog({
+    super.key,
     required this.title,
     required this.isDark,
   });
@@ -154,7 +169,7 @@ class _DeleteConfirmationDialog extends StatelessWidget {
 
             // Tiêu đề
             Text(
-              'Xóa bản ghi chờ đồng bộ?',
+              'Xóa bản ghi chưa đồng bộ?',
               style: AppTypography.titleMedium(
                 color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
               ).copyWith(fontWeight: FontWeight.bold),
@@ -180,7 +195,7 @@ class _DeleteConfirmationDialog extends StatelessWidget {
                   ),
                   const TextSpan(
                     text:
-                        ' chưa được gửi lên máy chủ.\nThao tác này sẽ xóa vĩnh viễn dữ liệu khỏi thiết bị và không thể hoàn tác.',
+                        ' chưa được đồng bộ thành công lên máy chủ.\nThao tác này sẽ xóa vĩnh viễn dữ liệu khỏi thiết bị và không thể hoàn tác.',
                   ),
                 ],
               ),

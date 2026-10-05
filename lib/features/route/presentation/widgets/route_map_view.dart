@@ -374,7 +374,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     // Hoạt động cả khi Online lẫn Offline
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
-    VisitEntity? activeVisit = checkInState.visitId > 0 && checkInState.visitEntity?.isOpen == true
+    VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
         ? checkInState.visitEntity
         : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
 

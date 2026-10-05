@@ -14,7 +14,7 @@ import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
-import '../widgets/edit_customer_dialog.dart';
+import '../widgets/pending_sync_dismissible.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -99,37 +99,42 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     }
   }
 
-  Future<void> _handleEdit() async {
-    final state = ref.read(customerViewModelProvider);
-    final vm = ref.read(customerViewModelProvider.notifier);
-
-    await EditCustomerDialog.show(
+  Future<void> _handleDeletePendingCustomer() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final confirmed = await PendingSyncDismissible.showConfirmDialog(
       context,
-      customer: _customer,
-      meta: state.meta,
-      dynamicColumns: state.dynamicColumns,
-      onSave: (changes) async {
-        await vm.updateCustomer(_customer.id, changes);
-        if (_customer.id > 0) {
-          await _loadDetailSilently();
-        } else {
-          // If offline pending customer, merge changes into _customer
-          setState(() {
-            _customer = _customer.copyWith(
-              name: changes['name']?.toString() ?? _customer.name,
-              code: changes['code']?.toString() ?? _customer.code,
-              address: changes['address']?.toString() ?? _customer.address,
-              phone: changes['phone']?.toString() ?? _customer.phone,
-              contactPerson: changes['contact_name']?.toString() ?? _customer.contactPerson,
-              contactTitle: changes['contact_title']?.toString() ?? _customer.contactTitle,
-              email: changes['email']?.toString() ?? _customer.email,
-              provinceName: changes['province_name']?.toString() ?? _customer.provinceName,
-              wardName: changes['ward_name']?.toString() ?? _customer.wardName,
-            );
-          });
-        }
-      },
+      title: _customer.name,
+      isDark: isDark,
     );
+    if (confirmed && mounted && _customer.clientUuid != null) {
+      final success = await ref
+          .read(customerViewModelProvider.notifier)
+          .deletePendingCustomer(_customer.clientUuid!);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Đã xóa bản ghi "${_customer.name}"',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFDC2626),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        context.pop();
+      }
+    }
   }
 
   void _copyToClipboard(String text, String label) {
@@ -196,14 +201,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     ),
               onPressed: _isLoading ? null : _handleRefresh,
             ),
-            IconButton(
-              tooltip: 'Chỉnh sửa điểm bán',
-              icon: const Icon(
-                Icons.edit_outlined,
-                color: AppColors.primary,
+            if (_customer.syncStatus == 'pending' || _customer.syncStatus == 'error')
+              IconButton(
+                tooltip: 'Xóa bản ghi',
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Color(0xFFDC2626),
+                ),
+                onPressed: _handleDeletePendingCustomer,
               ),
-              onPressed: _handleEdit,
-            ),
             const SizedBox(width: 4),
           ],
         ),
@@ -235,34 +241,57 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: const Color(0xFFFCA5A5)),
                         ),
-                        child: const Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 20),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Lỗi đồng bộ dữ liệu vĩnh viễn (4xx)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                      color: Color(0xFF991B1B),
-                                    ),
+                            const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 20),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Lỗi đồng bộ dữ liệu vĩnh viễn (4xx)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13,
+                                          color: Color(0xFF991B1B),
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Dữ liệu điểm bán này bị máy chủ từ chối tiếp nhận (lỗi 4xx). Hệ thống đã dừng tự động gửi lại. Bạn có thể Xóa bản ghi này.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFB91C1C),
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Dữ liệu điểm bán này bị máy chủ từ chối tiếp nhận (lỗi 4xx). Hệ thống đã dừng tự động gửi lại để tránh lỗi lặp lại. Vui lòng bấm Sửa để chỉnh lại thông tin điểm bán.',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFB91C1C),
-                                      height: 1.3,
-                                    ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _handleDeletePendingCustomer,
+                                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                                  label: const Text('Xóa bản ghi'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFFDC2626),
+                                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    visualDensity: VisualDensity.compact,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -333,16 +362,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 color: isDark
                     ? AppColors.darkOnSurfaceVariant
                     : AppColors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _handleEdit,
-              icon: const Icon(Icons.add_a_photo_outlined, size: 16),
-              label: const Text('Thêm ảnh ngay'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                visualDensity: VisualDensity.compact,
               ),
             ),
           ],
@@ -516,6 +535,19 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         },
       );
     }
+    // Ưu tiên kiểm tra file cục bộ trước khi coi là đường dẫn tương đối server
+    try {
+      final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+      final file = File(cleanPath);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+        );
+      }
+    } catch (_) {}
     if (path.startsWith('/')) {
       return Image.network(
         '${AppConstants.baseUrl}$path',
@@ -528,17 +560,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         },
       );
     }
-    try {
-      final file = File(path);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
-        );
-      }
-    } catch (_) {}
     return _buildImagePlaceholder();
   }
 
@@ -1053,8 +1074,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       children: [
         _buildInfoRow(
           label: 'Trạng thái đồng bộ',
-          value: _customer.syncStatus == 'synced' ? 'Đã đồng bộ lên máy chủ' : 'Chờ gửi lên máy chủ (Offline)',
-          icon: _customer.syncStatus == 'synced' ? Icons.cloud_done_rounded : Icons.cloud_queue_rounded,
+          value: _customer.syncStatus == 'synced'
+              ? 'Đã đồng bộ lên máy chủ'
+              : (_customer.syncStatus == 'error'
+                  ? 'Lỗi đồng bộ (4xx) - Cần sửa thông tin'
+                  : 'Chờ gửi lên máy chủ (Offline)'),
+          icon: _customer.syncStatus == 'synced'
+              ? Icons.cloud_done_rounded
+              : (_customer.syncStatus == 'error'
+                  ? Icons.error_outline_rounded
+                  : Icons.cloud_queue_rounded),
           isDark: isDark,
         ),
         if (_customer.createdAt != null) ...[
@@ -1255,24 +1284,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 10),
-
-          // Edit Button
-          IconButton.filled(
-            tooltip: 'Sửa thông tin',
-            onPressed: _handleEdit,
-            icon: const Icon(Icons.edit_outlined, size: 20),
-            style: IconButton.styleFrom(
-              backgroundColor: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF1F5F9),
-              foregroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: AppRadius.roundedMd,
-                side: BorderSide(
-                  color: isDark ? AppColors.darkOutline : AppColors.outlineVariant,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1325,6 +1336,13 @@ class _FullScreenGalleryViewerState extends State<_FullScreenGalleryViewer> {
         ),
       );
     }
+    try {
+      final cleanPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+      final file = File(cleanPath);
+      if (file.existsSync()) {
+        return Image.file(file, fit: BoxFit.contain);
+      }
+    } catch (_) {}
     if (path.startsWith('/')) {
       return Image.network(
         '${AppConstants.baseUrl}$path',
@@ -1334,12 +1352,6 @@ class _FullScreenGalleryViewerState extends State<_FullScreenGalleryViewer> {
         ),
       );
     }
-    try {
-      final file = File(path);
-      if (file.existsSync()) {
-        return Image.file(file, fit: BoxFit.contain);
-      }
-    } catch (_) {}
     return const Center(
       child: Icon(Icons.broken_image_rounded, size: 50, color: Colors.white54),
     );

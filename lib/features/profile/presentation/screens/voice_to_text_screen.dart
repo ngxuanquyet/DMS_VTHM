@@ -11,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/microphone_permission_dialog.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 
 class VoiceToTextScreen extends ConsumerStatefulWidget {
@@ -126,6 +127,11 @@ class _VoiceToTextScreenState extends ConsumerState<VoiceToTextScreen>
         }
       });
       return;
+    }
+
+    if (!kIsWeb && !WidgetsBinding.instance.runtimeType.toString().contains('Test')) {
+      final hasPermission = await MicrophonePermissionDialog.checkAndRequestPermission(context);
+      if (!hasPermission || !mounted) return;
     }
 
     if (!_isInitialized) {

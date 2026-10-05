@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -24,6 +25,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(connectivityProvider.notifier).notifySplashStarted();
+      }
+    });
 
     // Progress bar animates strictly from 0.0 to 1.0
     _progressController = AnimationController(
@@ -68,6 +75,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
   void _navigateWhenReady() {
     if (!mounted) return;
     if (!_authCheckFinished) return;
+
+    ref.read(connectivityProvider.notifier).notifySplashFinished();
 
     if (_isAuthenticated) {
       context.go('/home');

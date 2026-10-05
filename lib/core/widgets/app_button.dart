@@ -90,10 +90,14 @@ class AppButton extends StatelessWidget {
                           Icon(icon, size: 20, color: fgColor),
                           const SizedBox(width: 8),
                         ],
-                        Text(
-                          text,
-                          style: AppTypography.titleMedium(color: fgColor).copyWith(
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            text,
+                            style: AppTypography.titleMedium(color: fgColor).copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (trailingIcon != null) ...[

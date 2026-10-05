@@ -13,15 +13,20 @@ class VisitEntity {
   final int? durationSeconds;
   final int customerId;
   final String customerName;
+  final String? customerCode;
+  final String? customerAddress;
   final int? routeId;
+  final String? routeName;
   final bool isOnRoute;
   final String? visitResult; // 'visited' | 'closed'
+  final String? closedNote;
   final int photoCount;
   final int formCount;
   final List<String> photoUrls;
   final VisitRequirementsEntity? requirements;
   final double? checkoutLat;
   final double? checkoutLng;
+  final String? clientUuid;
 
   const VisitEntity({
     required this.id,
@@ -35,15 +40,20 @@ class VisitEntity {
     this.durationSeconds,
     required this.customerId,
     this.customerName = '',
+    this.customerCode,
+    this.customerAddress,
     this.routeId,
+    this.routeName,
     this.isOnRoute = true,
     this.visitResult,
+    this.closedNote,
     this.photoCount = 0,
     this.formCount = 0,
     this.photoUrls = const [],
     this.requirements,
     this.checkoutLat,
     this.checkoutLng,
+    this.clientUuid,
   });
 
   /// Phiên viếng thăm đang mở (chưa hoàn thành check-out và chưa huỷ)
@@ -111,11 +121,15 @@ class VisitEntity {
           ? (json['customer_id'] as num).toInt()
           : (int.tryParse(json['customer_id']?.toString() ?? '') ?? 0),
       customerName: json['customer_name']?.toString() ?? '',
+      customerCode: json['customer_code']?.toString() ?? json['code']?.toString(),
+      customerAddress: json['customer_address']?.toString() ?? json['address']?.toString(),
       routeId: json['route_id'] is num
           ? (json['route_id'] as num).toInt()
           : int.tryParse(json['route_id']?.toString() ?? ''),
+      routeName: json['route_name']?.toString() ?? json['route']?.toString(),
       isOnRoute: json['is_on_route'] == null ? true : json['is_on_route'] == true,
       visitResult: json['visit_result']?.toString(),
+      closedNote: json['closed_note']?.toString(),
       photoCount: json['photo_count'] is num
           ? (json['photo_count'] as num).toInt()
           : (int.tryParse(json['photo_count']?.toString() ?? '') ?? 0),
@@ -130,6 +144,7 @@ class VisitEntity {
       checkoutLng: json['checkout_lng'] != null
           ? double.tryParse(json['checkout_lng'].toString())
           : null,
+      clientUuid: json['client_uuid']?.toString(),
     );
   }
 
@@ -142,15 +157,20 @@ class VisitEntity {
         'duration_seconds': durationSeconds,
         'customer_id': customerId,
         'customer_name': customerName,
+        'customer_code': customerCode,
+        'customer_address': customerAddress,
         'route_id': routeId,
+        'route_name': routeName,
         'is_on_route': isOnRoute,
         'visit_result': visitResult,
+        'closed_note': closedNote,
         'photo_count': photoCount,
         'form_count': formCount,
         'photo_urls': photoUrls,
         'requirements': requirements?.toJson(),
         'checkout_lat': checkoutLat,
         'checkout_lng': checkoutLng,
+        'client_uuid': clientUuid,
       };
 
   VisitEntity copyWith({
@@ -165,15 +185,20 @@ class VisitEntity {
     int? durationSeconds,
     int? customerId,
     String? customerName,
+    String? customerCode,
+    String? customerAddress,
     int? routeId,
+    String? routeName,
     bool? isOnRoute,
     String? visitResult,
+    String? closedNote,
     int? photoCount,
     int? formCount,
     List<String>? photoUrls,
     VisitRequirementsEntity? requirements,
     double? checkoutLat,
     double? checkoutLng,
+    String? clientUuid,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -187,15 +212,20 @@ class VisitEntity {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       customerId: customerId ?? this.customerId,
       customerName: customerName ?? this.customerName,
+      customerCode: customerCode ?? this.customerCode,
+      customerAddress: customerAddress ?? this.customerAddress,
       routeId: routeId ?? this.routeId,
+      routeName: routeName ?? this.routeName,
       isOnRoute: isOnRoute ?? this.isOnRoute,
       visitResult: visitResult ?? this.visitResult,
+      closedNote: closedNote ?? this.closedNote,
       photoCount: photoCount ?? this.photoCount,
       formCount: formCount ?? this.formCount,
       photoUrls: photoUrls ?? this.photoUrls,
       requirements: requirements ?? this.requirements,
       checkoutLat: checkoutLat ?? this.checkoutLat,
       checkoutLng: checkoutLng ?? this.checkoutLng,
+      clientUuid: clientUuid ?? this.clientUuid,
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
+import '../../../../../core/widgets/voice_input_mic_button.dart';
 
 class MarketFormRenderer extends StatefulWidget {
   final List<MarketFormBlockEntity> blocks;
@@ -35,7 +36,23 @@ class MarketFormRenderer extends StatefulWidget {
 class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, dynamic> _answers = {};
   final Map<String, String> _errors = {};
+  final Map<String, TextEditingController> _textControllers = {};
   Map<String, bool> _visibilityMap = {};
+
+  TextEditingController _getController(String code, String initial) {
+    if (!_textControllers.containsKey(code)) {
+      _textControllers[code] = TextEditingController(text: initial);
+    }
+    return _textControllers[code]!;
+  }
+
+  @override
+  void dispose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -325,6 +342,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }) {
     final code = block.resolved.code;
     final initial = _answers[code]?.toString() ?? '';
+    final controller = _getController(code, initial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +350,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _buildLabel(block, isDark),
         const SizedBox(height: 8),
         TextFormField(
-          initialValue: initial,
+          controller: controller,
           maxLines: isMultiline ? 4 : 1,
           minLines: isMultiline ? 3 : 1,
           keyboardType: isMultiline ? TextInputType.multiline : TextInputType.text,
@@ -343,6 +361,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             hintText: 'Nhập ${block.resolved.label.toLowerCase()}...',
             isDark: isDark,
             errorText: _errors[code],
+            suffixIcon: VoiceInputMicButton(
+              fieldName: block.resolved.label.isNotEmpty ? block.resolved.label : code,
+              currentText: controller.text,
+              onTextRecognized: (text) {
+                controller.text = text;
+                controller.selection = TextSelection.fromPosition(
+                  TextPosition(offset: text.length),
+                );
+                _updateValue(code, text);
+              },
+            ),
           ),
           onChanged: (val) => _updateValue(code, val),
         ),

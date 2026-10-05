@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../data/repositories/customer_repository_impl.dart';
+import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../../../route/domain/entities/route_entity.dart';
@@ -41,14 +42,28 @@ final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEnti
   final customers = await customerRepo.getCustomers();
   final routeNames = <String>{};
   for (final c in customers) {
-    if (c.route.trim().isNotEmpty && c.route.trim() != 'Tất cả tuyến') {
-      routeNames.add(c.route.trim());
+    if (c.route.trim().isNotEmpty &&
+        c.route.trim() != 'Tất cả tuyến' &&
+        !CustomerEntity.isInvalidOrProvinceRoute(c.route, provinceName: c.provinceName)) {
+      final parts = c.route.split(',').map((e) => e.trim());
+      for (final p in parts) {
+        if (!CustomerEntity.isInvalidOrProvinceRoute(p, provinceName: c.provinceName)) {
+          routeNames.add(p);
+        }
+      }
+    }
+    for (final r in c.routes) {
+      if (r.trim().isNotEmpty &&
+          r.trim() != 'Tất cả tuyến' &&
+          !CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName)) {
+        routeNames.add(r.trim());
+      }
     }
   }
 
   if (routeNames.isNotEmpty) {
     int idCounter = 1;
-    return routeNames.map((name) => UserRouteEntity(id: idCounter++, name: name)).toList();
+    return routeNames.map((name) => UserRouteEntity(id: idCounter++, name: name, code: name)).toList();
   }
 
   return [];
@@ -350,6 +365,28 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             }
           }
         }
+      } else {
+        // 🔴 Khi offline: Gom toàn bộ ảnh vào photo_tokens và photo_token để chuẩn bị lưu SQLite & sync_queue
+        final List<String> offlinePhotos = [];
+        for (final key in payload.keys.toList()) {
+          if (!_isCustomerPhotoKey(key)) continue;
+          final val = payload[key];
+          if (val is List) {
+            for (final item in val) {
+              final s = item.toString().trim();
+              if (s.isNotEmpty && !offlinePhotos.contains(s)) offlinePhotos.add(s);
+            }
+          } else if (val is String && val.trim().isNotEmpty) {
+            final s = val.trim();
+            if (!offlinePhotos.contains(s)) offlinePhotos.add(s);
+          }
+        }
+        if (offlinePhotos.isNotEmpty) {
+          payload['photo_tokens'] = offlinePhotos;
+          payload['photo_token'] = offlinePhotos.first;
+          payload['photo_file_id'] = offlinePhotos;
+          payload['photo'] = offlinePhotos.first;
+        }
       }
 
       // 🔴 Bổ sung tên loại khách hàng, kênh, khu vực để SQLite hiển thị ngay lập tức kể cả khi offline
@@ -396,7 +433,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      await repo.createCustomer(payload);
+      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -515,7 +552,48 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Tải lại cấu hình form',
-            onPressed: () => ref.invalidate(customerFormSchemaProvider),
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      AppLoading(size: 24),
+                      SizedBox(width: 8),
+                      Text('Đang đồng bộ...'),
+                    ],
+                  ),
+                  duration: Duration(seconds: 1),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              try {
+                final repo = ref.read(customerRepositoryProvider);
+                await Future.wait([
+                  repo.getCustomerFormSchema(forceRefresh: true),
+                  repo.getCustomerMeta(forceRefresh: true),
+                ]);
+              } catch (_) {}
+              ref.invalidate(customerFormSchemaProvider);
+              ref.invalidate(customerMetaProvider);
+              ref.invalidate(userAssignedRoutesProvider);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text('Đồng bộ thành công!'),
+                      ],
+                    ),
+                    backgroundColor: Color(0xFF10B981),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
           ),
         ],
         bottom: PreferredSize(
@@ -563,7 +641,18 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 AppButton(
                   text: 'Thử lại',
                   icon: Icons.refresh_rounded,
-                  onPressed: () => ref.invalidate(customerFormSchemaProvider),
+                  onPressed: () async {
+                    try {
+                      final repo = ref.read(customerRepositoryProvider);
+                      await Future.wait([
+                        repo.getCustomerFormSchema(forceRefresh: true),
+                        repo.getCustomerMeta(forceRefresh: true),
+                      ]);
+                    } catch (_) {}
+                    ref.invalidate(customerFormSchemaProvider);
+                    ref.invalidate(customerMetaProvider);
+                    ref.invalidate(userAssignedRoutesProvider);
+                  },
                 ),
               ],
             ),
@@ -590,16 +679,24 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
           final currentRouteState = ref.watch(routeViewModelProvider);
 
-          // Tạo options cho tuyến bán hàng từ tuyến thực tế của nhân viên (GET /dms/routes/mine)
-          final List<DynamicFormOption> dynamicRouteOptions = userRoutes.isNotEmpty
-              ? userRoutes.map((r) => DynamicFormOption(
-                  label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'),
-                  value: r.id,
-                )).toList()
-              : [
-                  const DynamicFormOption(label: 'Vũ Tùng Dương - T2', value: 5),
-                  const DynamicFormOption(label: 'Vũ Tùng Dương - T3', value: 7),
-                ];
+          // Tạo options cho tuyến bán hàng từ tuyến thực tế của nhân viên (GET /dms/routes/mine hoặc SQLite)
+          final List<DynamicFormOption> dynamicRouteOptions;
+          if (userRoutes.isNotEmpty) {
+            dynamicRouteOptions = userRoutes.map((r) => DynamicFormOption(
+              label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'),
+              value: r.id,
+            )).toList();
+          } else {
+            final validRoutes = currentRouteState.availableRoutes
+                .where((r) => r != 'Tất cả tuyến' && !CustomerEntity.isInvalidOrProvinceRoute(r))
+                .toList();
+            if (validRoutes.isNotEmpty) {
+              int tempId = 1;
+              dynamicRouteOptions = validRoutes.map((r) => DynamicFormOption(label: r, value: tempId++)).toList();
+            } else {
+              dynamicRouteOptions = [const DynamicFormOption(label: 'Chưa phân tuyến', value: 0)];
+            }
+          }
 
           // Xác định tuyến mặc định: ưu tiên tuyến đang chọn ở màn Tuyến bán hàng
           int? defaultRouteId;
@@ -613,7 +710,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               defaultRouteId = matched.id;
             }
           }
-          defaultRouteId ??= userRoutes.firstOrNull?.id ?? (dynamicRouteOptions.firstOrNull?.value as int? ?? 5);
+          defaultRouteId ??= userRoutes.firstOrNull?.id ?? (dynamicRouteOptions.firstOrNull?.value as int? ?? 0);
 
           // Cập nhật options cho các trường phân loại nếu schema chưa có options.
           // Để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.

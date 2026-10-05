@@ -14,6 +14,7 @@ import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
+import '../screens/edit_customer_screen.dart';
 
 class EditCustomerDialog extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -36,50 +37,12 @@ class EditCustomerDialog extends ConsumerStatefulWidget {
     List<CustomerDynamicColumn> dynamicColumns = const [],
     required Future<void> Function(Map<String, dynamic> changes) onSave,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'EditCustomerDialog',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (ctx, anim1, anim2) {
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurface : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: EditCustomerDialog(
-                customer: customer,
-                meta: meta,
-                dynamicColumns: dynamicColumns.isNotEmpty
-                    ? dynamicColumns
-                    : meta.dynamicColumns,
-                onSave: onSave,
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (ctx, anim, secAnim, child) {
-        final curved = CurvedAnimation(
-          parent: anim,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return ScaleTransition(
-          alignment: Alignment.bottomCenter,
-          scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
-          child: FadeTransition(
-            opacity: anim,
-            child: child,
-          ),
-        );
-      },
+    return EditCustomerScreen.open(
+      context,
+      customer: customer,
+      meta: meta,
+      dynamicColumns: dynamicColumns,
+      onSave: onSave,
     );
   }
 

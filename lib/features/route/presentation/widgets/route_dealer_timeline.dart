@@ -88,18 +88,9 @@ class RouteDealerTimeline extends ConsumerWidget {
           }
         }
 
-        // Tự đo khoảng cách theo §2 API-THAY-DOI-CHO-MOBILE-2026-10-01.md
-        final bool hasCoords = dealer.lat != null && dealer.lng != null;
-        final bool isOutOfGeofence = hasCoords &&
-            mobileRules.visit.requireGeofence &&
-            distance != null &&
-            distance > allowedRadius;
-        final String? disabledReason = isOutOfGeofence
-            ? 'Bạn đang cách cửa hàng ${distance.round()} m, cần vào trong $allowedRadius m'
-            : null;
-
         final isPending = dealer.customer is CustomerEntity &&
-            (dealer.customer as CustomerEntity).syncStatus == 'pending';
+            ((dealer.customer as CustomerEntity).syncStatus == 'pending' ||
+             (dealer.customer as CustomerEntity).syncStatus == 'error');
         final clientUuid = (dealer.customer is CustomerEntity)
             ? (dealer.customer as CustomerEntity).clientUuid
             : null;
@@ -121,8 +112,6 @@ class RouteDealerTimeline extends ConsumerWidget {
             dealer: dealer,
             distance: distance,
             showBorder: index != 0,
-            isCheckInDisabled: isOutOfGeofence,
-            checkInDisabledReason: disabledReason,
             onCheckIn: () => _handleCheckin(
               context,
               ref,
@@ -171,7 +160,7 @@ class RouteDealerTimeline extends ConsumerWidget {
     // Hoạt động cả khi Online lẫn Offline
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
-    VisitEntity? activeVisit = checkInState.visitId > 0 && checkInState.visitEntity?.isOpen == true
+    VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
         ? checkInState.visitEntity
         : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
 

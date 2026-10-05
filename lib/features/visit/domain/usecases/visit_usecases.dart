@@ -12,6 +12,10 @@ final getTodayVisitsUseCaseProvider = Provider<GetTodayVisitsUseCase>((ref) {
   return GetTodayVisitsUseCase(ref.watch(visitRepositoryProvider));
 });
 
+final getVisitsByDateUseCaseProvider = Provider<GetVisitsByDateUseCase>((ref) {
+  return GetVisitsByDateUseCase(ref.watch(visitRepositoryProvider));
+});
+
 final checkinUseCaseProvider = Provider<CheckinUseCase>((ref) {
   return CheckinUseCase(ref.watch(visitRepositoryProvider));
 });
@@ -44,6 +48,14 @@ class GetTodayVisitsUseCase {
   GetTodayVisitsUseCase(this._repository);
 
   Future<List<VisitEntity>> call() => _repository.getTodayVisits();
+}
+
+class GetVisitsByDateUseCase {
+  final VisitRepository _repository;
+  GetVisitsByDateUseCase(this._repository);
+
+  Future<List<VisitEntity>> call(DateTime date, {bool forceRefresh = false}) =>
+      _repository.getVisitsByDate(date, forceRefresh: forceRefresh);
 }
 
 class CheckinUseCase {
@@ -110,7 +122,7 @@ class CancelVisitUseCase {
   final VisitRepository _repository;
   CancelVisitUseCase(this._repository);
 
-  Future<void> call(int visitId) =>
-      _repository.cancelVisit(visitId);
+  Future<void> call(int visitId, {String? clientUuid}) =>
+      _repository.cancelVisit(visitId, clientUuid: clientUuid);
 }
 

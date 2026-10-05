@@ -81,7 +81,7 @@ class CustomerState {
   }
 
   int get totalCount => allCustomers.length;
-  int get pendingSyncCount => allCustomers.where((c) => c.syncStatus == 'pending').length;
+  int get pendingSyncCount => allCustomers.where((c) => c.syncStatus == 'pending' || c.syncStatus == 'error').length;
   int get todayCount => allCustomers.where((c) => c.isToday).length;
   int get visitedCount => allCustomers.where((c) => c.visitStatus == CustomerVisitStatus.visited).length;
   int get pendingCount => allCustomers.where((c) => c.visitStatus == CustomerVisitStatus.pending).length;
@@ -267,11 +267,28 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
     );
   }
 
-  Future<void> updateCustomer(int id, Map<String, dynamic> changes) async {
+  Future<CustomerEntity> createCustomer(Map<String, dynamic> data) async {
+    final entity = await _repository.createCustomer(data);
+    final list = List<CustomerEntity>.from(state.allCustomers)
+      ..removeWhere((c) =>
+          (entity.clientUuid != null && c.clientUuid == entity.clientUuid) ||
+          (entity.id > 0 && c.id == entity.id))
+      ..insert(0, entity);
+    state = state.copyWith(allCustomers: list);
+    return entity;
+  }
+
+  Future<void> updateCustomer(int id, Map<String, dynamic> changes, {String? clientUuid}) async {
     try {
-      final updated = await _repository.updateCustomer(id: id, changes: changes);
+      final updated = await _repository.updateCustomer(
+        id: id,
+        changes: changes,
+        clientUuid: clientUuid,
+      );
       final list = List<CustomerEntity>.from(state.allCustomers);
-      final index = list.indexWhere((c) => c.id == id);
+      final index = list.indexWhere((c) =>
+          (clientUuid != null && c.clientUuid == clientUuid) ||
+          (id > 0 && c.id == id));
       if (index != -1) {
         list[index] = updated;
         state = state.copyWith(allCustomers: list);
@@ -307,7 +324,7 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
       case CustomerFilterTab.all:
         return true;
       case CustomerFilterTab.pendingSync:
-        return c.syncStatus == 'pending';
+        return c.syncStatus == 'pending' || c.syncStatus == 'error';
       case CustomerFilterTab.today:
         return c.isToday;
       case CustomerFilterTab.visited:
