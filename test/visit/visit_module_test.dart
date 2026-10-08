@@ -103,8 +103,12 @@ class FakeVisitRepository implements VisitRepository {
     activeVisit = null;
     return v;
   }
+
+  Exception? throwOnCancel;
+
   @override
   Future<void> cancelVisit(int visitId, {String? clientUuid}) async {
+    if (throwOnCancel != null) throw throwOnCancel!;
     activeVisit = null;
   }
   @override
@@ -782,6 +786,115 @@ void main() {
       expect(success, isTrue);
       expect(errorMsg, isNull);
       expect(vm.state.status, CheckInStatus.checkedOut);
+    });
+
+    test('CheckInViewModel.initCheckinWithDealer retains existing active visit and does not reset visitId', () async {
+      final activeVisit = VisitEntity(
+        id: 777,
+        customerId: 104,
+        customerName: 'Đại lý 104',
+        checkinAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+      final visitRepo = FakeVisitRepository([], activeVisit: activeVisit);
+      final vm = createCheckInViewModel(visitRepo);
+
+      final dealer = DealerEntity(
+        id: '104',
+        order: '04',
+        name: 'Đại lý 104',
+        address: 'Quận 1',
+        status: DealerVisitStatus.inProgress,
+        statusLabel: 'Đang ghé',
+        isVip: false,
+        visit: activeVisit,
+      );
+
+      // 1. Khởi tạo phiên với dealer đang có lượt
+      vm.initCheckinWithDealer(dealer);
+      expect(vm.state.visitId, 777);
+      expect(vm.state.visitEntity?.customerId, 104);
+
+      // 2. Giả lập tạm rời và quay lại: gọi lại initCheckinWithDealer với dealer từ danh sách tuyến
+      const dealerWithoutVisit = DealerEntity(
+        id: '104',
+        order: '04',
+        name: 'Đại lý 104',
+        address: 'Quận 1',
+        status: DealerVisitStatus.inProgress,
+        statusLabel: 'Đang ghé',
+        isVip: false,
+      );
+      vm.initCheckinWithDealer(dealerWithoutVisit);
+
+      // Phiên không bị reset về 0
+      expect(vm.state.visitId, 777);
+      expect(vm.state.visitEntity?.id, 777);
+
+      // 3. Gọi performCheckin không tạo duplicate visit
+      final error = await vm.performCheckin(customerId: 104);
+      expect(error, isNull);
+      expect(vm.state.visitId, 777);
+    });
+
+    test('CheckInViewModel.performCheckin restores active visit from storage without creating duplicate', () async {
+      final savedVisit = VisitEntity(
+        id: 888,
+        customerId: 105,
+        customerName: 'Đại lý 105',
+        checkinAt: DateTime.now().subtract(const Duration(minutes: 10)),
+      );
+      final visitRepo = FakeVisitRepository([], activeVisit: savedVisit);
+      final vm = createCheckInViewModel(visitRepo);
+
+      const dealer = DealerEntity(
+        id: '105',
+        order: '05',
+        name: 'Đại lý 105',
+        address: 'Quận 1',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+      );
+
+      // Khởi tạo phiên mới khi state chưa có
+      vm.initCheckinWithDealer(dealer);
+      // Gọi performCheckin cho customerId 105: tự động phát hiện storage có active visit và phục hồi
+      final error = await vm.performCheckin(customerId: 105);
+      expect(error, isNull);
+      expect(vm.state.visitId, 888);
+      expect(vm.state.visitEntity?.customerId, 105);
+    });
+
+    test('CheckInViewModel.cancelVisit handles 422 "lượt viếng thăm này đã check out rồi, không hủy được nữa" gracefully', () async {
+      final activeVisit = VisitEntity(
+        id: 999,
+        customerId: 106,
+        customerName: 'Đại lý 106',
+        checkinAt: DateTime.now().subtract(const Duration(minutes: 15)),
+      );
+      final visitRepo = FakeVisitRepository([], activeVisit: activeVisit);
+      visitRepo.throwOnCancel = Exception('AppException: lượt viếng thăm này đã check out rồi, không hủy được nữa (code: 422)');
+      final vm = createCheckInViewModel(visitRepo);
+
+      final dealer = DealerEntity(
+        id: '106',
+        order: '06',
+        name: 'Đại lý 106',
+        address: 'Quận 1',
+        status: DealerVisitStatus.inProgress,
+        statusLabel: 'Đang ghé',
+        isVip: false,
+        visit: activeVisit,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      expect(vm.state.visitId, 999);
+
+      final (success, infoMsg) = await vm.cancelVisit();
+      expect(success, isTrue);
+      expect(infoMsg, contains('đã check-out trước đó trên hệ thống'));
+      expect(vm.state.visitId, 0);
+      expect(visitRepo.activeVisit, isNull);
     });
   });
 }

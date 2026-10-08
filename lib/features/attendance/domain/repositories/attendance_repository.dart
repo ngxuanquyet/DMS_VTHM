@@ -22,6 +22,7 @@ abstract class AttendanceRepository {
     DateTime? takenAt,
     double? lat,
     double? lng,
+    String? parentUuid,
   });
 
   /// Lấy lịch sử chấm công của chính mình (§5)

@@ -7,6 +7,8 @@ import '../errors/app_exceptions.dart';
 import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
 
+import '../services/anti_fraud_service.dart';
+
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(
     BaseOptions(
@@ -22,11 +24,39 @@ final dioProvider = Provider<Dio>((ref) {
 
   dio.interceptors.addAll([
     AuthInterceptor(dio),
+    ServerTimeInterceptor(),
     AppApiLoggerInterceptor(),
   ]);
 
   return dio;
 });
+
+/// Interceptor ghi nhận mốc thời gian máy chủ từ HTTP Header Date
+class ServerTimeInterceptor extends Interceptor {
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    _captureServerDate(response.headers);
+    handler.next(response);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response != null) {
+      _captureServerDate(err.response!.headers);
+    }
+    handler.next(err);
+  }
+
+  void _captureServerDate(Headers headers) {
+    final dateStr = headers.value('date') ?? headers.value('Date');
+    if (dateStr != null && dateStr.isNotEmpty) {
+      try {
+        final serverDate = HttpDate.parse(dateStr);
+        AntiFraudService.recordServerTime(serverDate);
+      } catch (_) {}
+    }
+  }
+}
 
 class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;

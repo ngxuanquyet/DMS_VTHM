@@ -68,33 +68,87 @@ class AttendancePhotoConfigModel {
       );
 }
 
+class AttendanceTodayModel {
+  final String? workDate;
+  final int punchCount;
+  final String? firstInAt;
+  final String? lastOutAt;
+  final String nextAction;
+  final String nextActionLabel;
+
+  const AttendanceTodayModel({
+    this.workDate,
+    this.punchCount = 0,
+    this.firstInAt,
+    this.lastOutAt,
+    this.nextAction = 'in',
+    this.nextActionLabel = 'Vào',
+  });
+
+  factory AttendanceTodayModel.fromJson(Map<String, dynamic> json) {
+    return AttendanceTodayModel(
+      workDate: json['work_date'] as String?,
+      punchCount: (json['punch_count'] as num?)?.toInt() ?? 0,
+      firstInAt: json['first_in_at'] as String?,
+      lastOutAt: json['last_out_at'] as String?,
+      nextAction: json['next_action'] as String? ?? 'in',
+      nextActionLabel: json['next_action_label'] as String? ?? 'Vào',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'work_date': workDate,
+        'punch_count': punchCount,
+        'first_in_at': firstInAt,
+        'last_out_at': lastOutAt,
+        'next_action': nextAction,
+        'next_action_label': nextActionLabel,
+      };
+
+  AttendanceTodayEntity toEntity() => AttendanceTodayEntity(
+        workDate: workDate,
+        punchCount: punchCount,
+        firstInAt: firstInAt,
+        lastOutAt: lastOutAt,
+        nextAction: nextAction,
+        nextActionLabel: nextActionLabel,
+      );
+}
+
 class AttendanceLocationItemModel {
   final int id;
   final String code;
   final String name;
-  final double lat;
-  final double lng;
-  final int radiusM;
+  final String kind;
+  final String kindLabel;
+  final double? lat;
+  final double? lng;
+  final int? radiusM;
   final int? distanceM;
 
   const AttendanceLocationItemModel({
     required this.id,
     required this.code,
     required this.name,
-    required this.lat,
-    required this.lng,
-    required this.radiusM,
+    this.kind = 'radius',
+    this.kindLabel = 'Bán kính',
+    this.lat,
+    this.lng,
+    this.radiusM,
     this.distanceM,
   });
 
   factory AttendanceLocationItemModel.fromJson(Map<String, dynamic> json) {
+    final kindStr = json['kind'] as String? ?? 'radius';
     return AttendanceLocationItemModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
       code: json['code'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
-      lng: (json['lng'] as num?)?.toDouble() ?? 0.0,
-      radiusM: (json['radius_m'] as num?)?.toInt() ?? 200,
+      kind: kindStr,
+      kindLabel: json['kind_label'] as String? ?? (kindStr == 'everywhere' ? 'Mọi nơi' : 'Bán kính'),
+      lat: (json['lat'] as num?)?.toDouble(),
+      lng: (json['lng'] as num?)?.toDouble(),
+      radiusM: (json['radius_m'] as num?)?.toInt(),
       distanceM: (json['distance_m'] as num?)?.toInt(),
     );
   }
@@ -103,6 +157,8 @@ class AttendanceLocationItemModel {
         'id': id,
         'code': code,
         'name': name,
+        'kind': kind,
+        'kind_label': kindLabel,
         'lat': lat,
         'lng': lng,
         'radius_m': radiusM,
@@ -113,6 +169,8 @@ class AttendanceLocationItemModel {
         id: id,
         code: code,
         name: name,
+        kind: kind,
+        kindLabel: kindLabel,
         lat: lat,
         lng: lng,
         radiusM: radiusM,
@@ -126,6 +184,7 @@ class AttendanceConfigModel {
   final AttendanceGroupModel group;
   final AttendancePhotoConfigModel photo;
   final List<AttendanceLocationItemModel> locations;
+  final AttendanceTodayModel? today;
 
   const AttendanceConfigModel({
     required this.canPunch,
@@ -133,6 +192,7 @@ class AttendanceConfigModel {
     required this.group,
     required this.photo,
     required this.locations,
+    this.today,
   });
 
   factory AttendanceConfigModel.fromJson(Map<String, dynamic> json) {
@@ -148,6 +208,9 @@ class AttendanceConfigModel {
       locations: (json['locations'] as List<dynamic>? ?? [])
           .map((e) => AttendanceLocationItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
+      today: json['today'] != null && json['today'] is Map<String, dynamic>
+          ? AttendanceTodayModel.fromJson(json['today'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -157,6 +220,7 @@ class AttendanceConfigModel {
         'group': group.toJson(),
         'photo': photo.toJson(),
         'locations': locations.map((e) => e.toJson()).toList(),
+        if (today != null) 'today': today!.toJson(),
       };
 
   AttendanceConfigEntity toEntity() => AttendanceConfigEntity(
@@ -165,6 +229,7 @@ class AttendanceConfigModel {
         group: group.toEntity(),
         photo: photo.toEntity(),
         locations: locations.map((e) => e.toEntity()).toList(),
+        today: today?.toEntity(),
       );
 }
 
@@ -300,6 +365,8 @@ class AttendancePunchModel {
   final bool isMockLocation;
   final bool isTimeTampered;
   final bool duplicate;
+  final String? direction;
+  final String? directionLabel;
   final List<AttendancePhotoItemModel> photos;
   final AttendanceRequirementsModel requirements;
 
@@ -316,6 +383,8 @@ class AttendancePunchModel {
     this.isMockLocation = false,
     this.isTimeTampered = false,
     this.duplicate = false,
+    this.direction,
+    this.directionLabel,
     this.photos = const [],
     required this.requirements,
   });
@@ -334,6 +403,8 @@ class AttendancePunchModel {
       isMockLocation: json['is_mock_location'] as bool? ?? false,
       isTimeTampered: json['is_time_tampered'] as bool? ?? false,
       duplicate: json['duplicate'] as bool? ?? false,
+      direction: json['direction'] as String?,
+      directionLabel: json['direction_label'] as String?,
       photos: (json['photos'] as List<dynamic>? ?? [])
           .map((e) => AttendancePhotoItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -356,6 +427,8 @@ class AttendancePunchModel {
         'is_mock_location': isMockLocation,
         'is_time_tampered': isTimeTampered,
         'duplicate': duplicate,
+        'direction': direction,
+        'direction_label': directionLabel,
         'photos': photos.map((e) => e.toJson()).toList(),
         'requirements': requirements.toJson(),
       };
@@ -373,6 +446,8 @@ class AttendancePunchModel {
         isMockLocation: isMockLocation,
         isTimeTampered: isTimeTampered,
         duplicate: duplicate,
+        direction: direction,
+        directionLabel: directionLabel,
         photos: photos.map((e) => e.toEntity()).toList(),
         requirements: requirements.toEntity(),
       );

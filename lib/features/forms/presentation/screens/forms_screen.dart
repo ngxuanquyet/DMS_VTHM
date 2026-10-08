@@ -70,7 +70,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
               Expanded(
                 child: Text(isOnline
                     ? 'Đồng bộ thành công!'
-                    : 'Đã làm mới dữ liệu ngoại tuyến.'),
+                    : 'Đã làm mới dữ liệu trên máy.'),
               ),
             ],
           ),
@@ -96,7 +96,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
               children: [
                 Icon(Icons.cloud_done_rounded, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Tất cả dữ liệu đã được gửi lên máy chủ!'),
+                Text('Tất cả dữ liệu đã được cập nhật thành công!'),
               ],
             ),
             backgroundColor: Color(0xFF10B981),
@@ -140,7 +140,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
               const SizedBox(width: 10),
               Expanded(
                   child: Text(
-                      'Đang gửi $pendingCount mục ngoại tuyến lên máy chủ...')),
+                      'Đang gửi $pendingCount biểu mẫu lên hệ thống...')),
             ],
           ),
           duration: const Duration(seconds: 3),
@@ -160,7 +160,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
               children: [
                 Icon(Icons.check_circle_rounded, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Đã gửi toàn bộ dữ liệu ngoại tuyến thành công!'),
+                Text('Đã gửi thành công toàn bộ biểu mẫu!'),
               ],
             ),
             backgroundColor: Color(0xFF10B981),
@@ -420,7 +420,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
                                               icon: Icons.assignment_outlined,
                                               title: 'Chưa có biểu mẫu thị trường',
                                               description:
-                                                  'Hiện tại chưa có biểu mẫu thu thập nào khả dụng trên hệ thống. Kéo xuống để tải lại từ máy chủ.',
+                                                  'Hiện tại chưa có biểu mẫu nào. Kéo xuống để tải lại dữ liệu.',
                                               actionText: 'Làm mới danh sách',
                                               onAction: () => vm.loadForms(),
                                             ),

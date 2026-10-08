@@ -118,6 +118,12 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyAuthToken);
     await prefs.remove(AppConstants.keyRefreshToken);
     await prefs.remove(AppConstants.keyUserData);
+
+    // Xoá cache cấu hình chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
+    final keys = prefs.getKeys().where((k) => k.startsWith('dms_attendance_config_cache')).toList();
+    for (final k in keys) {
+      await prefs.remove(k);
+    }
   }
 
   @override

@@ -11,6 +11,7 @@ class MarketFormSubmissionModel {
   final String? submitAddress;
   final String clientUuid; // UUID v4 sinh bởi app chống trùng lặp
   final String clientTime; // ISO-8601 kèm múi giờ (+07:00)
+  final String? parentUuid; // UUID của lượt viếng thăm cha nếu đi cùng lượt offline
   final bool isOfflineSync;
 
   MarketFormSubmissionModel({
@@ -21,6 +22,7 @@ class MarketFormSubmissionModel {
     this.submitLat,
     this.submitLng,
     this.submitAddress,
+    this.parentUuid,
     String? clientUuid,
     String? clientTime,
     this.isOfflineSync = false,
@@ -74,6 +76,7 @@ class MarketFormSubmissionModel {
       submitLat: (json['submit_lat'] as num?)?.toDouble(),
       submitLng: (json['submit_lng'] as num?)?.toDouble(),
       submitAddress: json['submit_address']?.toString(),
+      parentUuid: json['parent_uuid']?.toString(),
       clientUuid: json['client_uuid']?.toString(),
       clientTime: json['client_time']?.toString(),
       isOfflineSync: json['is_offline_sync'] == true,
@@ -85,6 +88,7 @@ class MarketFormSubmissionModel {
       'config_id': configId,
       if (visitId != null) 'visit_id': visitId,
       if (customerId != null) 'customer_id': customerId,
+      if (parentUuid != null) 'parent_uuid': parentUuid,
       'answers': answers,
       if (submitLat != null) 'submit_lat': submitLat,
       if (submitLng != null) 'submit_lng': submitLng,

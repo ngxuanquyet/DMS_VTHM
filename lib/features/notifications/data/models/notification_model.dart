@@ -8,6 +8,8 @@ class NotificationModel {
   final String timeAgo;
   final bool isRead;
   final String category;
+  final String? routePath;
+  final DateTime? createdAt;
 
   const NotificationModel({
     required this.id,
@@ -17,6 +19,8 @@ class NotificationModel {
     required this.timeAgo,
     this.isRead = false,
     this.category = 'work',
+    this.routePath,
+    this.createdAt,
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
@@ -28,6 +32,10 @@ class NotificationModel {
       timeAgo: json['timeAgo'] as String? ?? '',
       isRead: json['isRead'] as bool? ?? false,
       category: json['category'] as String? ?? 'work',
+      routePath: json['routePath'] as String?,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String)
+          : null,
     );
   }
 
@@ -39,6 +47,8 @@ class NotificationModel {
         'timeAgo': timeAgo,
         'isRead': isRead,
         'category': category,
+        if (routePath != null) 'routePath': routePath,
+        if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       };
 
   NotificationEntity toEntity() => NotificationEntity(
@@ -49,6 +59,8 @@ class NotificationModel {
         timeAgo: timeAgo,
         isRead: isRead,
         category: category,
+        routePath: routePath,
+        createdAt: createdAt,
       );
 }
 

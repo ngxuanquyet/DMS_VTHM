@@ -145,11 +145,19 @@ class AttendanceHistoryCard extends ConsumerWidget {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                '${item.timeFormatted} · ${item.dateFormatted}',
-                                style: AppTypography.titleMedium(
-                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                ).copyWith(fontWeight: FontWeight.w700),
+                              Row(
+                                children: [
+                                  Text(
+                                    '${item.timeFormatted} · ${item.dateFormatted}',
+                                    style: AppTypography.titleMedium(
+                                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                    ).copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  if (item.directionLabel != null && item.directionLabel!.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    _directionBadge(item.direction, item.directionLabel!),
+                                  ],
+                                ],
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -325,6 +333,35 @@ class AttendanceHistoryCard extends ConsumerWidget {
         style: TextStyle(
           color: color,
           fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _directionBadge(String? direction, String label) {
+    // Chuẩn hoá: Thực tế vận hành chỉ có Vào và Ra (không có khái niệm Giữa ca)
+    final effectiveLabel = (label == 'Giữa ca' || direction == 'mid') ? 'Ra' : label;
+    final isOut = effectiveLabel == 'Ra' || direction == 'out';
+
+    final Color badgeBg = isOut
+        ? Colors.orange.withValues(alpha: 0.15)
+        : AppColors.primary.withValues(alpha: 0.12);
+    final Color textColor = isOut
+        ? Colors.orange.shade800
+        : AppColors.primary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: badgeBg,
+        borderRadius: AppRadius.roundedSm,
+      ),
+      child: Text(
+        effectiveLabel,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 10.5,
           fontWeight: FontWeight.w600,
         ),
       ),

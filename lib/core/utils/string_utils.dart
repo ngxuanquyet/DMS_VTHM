@@ -38,4 +38,55 @@ class StringUtils {
     if (text == null || text.trim().isEmpty) return false;
     return toUnaccentedLower(text).contains(toUnaccentedLower(query));
   }
+
+  /// Chuyển đổi các thông báo lỗi kỹ thuật (Dio, HTTP, Exception) thành câu từ thân thiện, dễ hiểu cho người dùng
+  static String formatUserFriendlyError(dynamic error) {
+    if (error == null) return 'Đã xảy ra lỗi không xác định.';
+    final str = error.toString().trim();
+    if (str.isEmpty) return 'Đã xảy ra lỗi không xác định.';
+
+    final lower = str.toLowerCase();
+
+    // Lỗi mạng, mất kết nối, timeout
+    if (lower.contains('socketexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('connection refused') ||
+        lower.contains('connection timed out') ||
+        lower.contains('connection closed') ||
+        lower.contains('connecttimeout') ||
+        lower.contains('receivetimeout') ||
+        lower.contains('sendtimeout') ||
+        lower.contains('handshakeexception')) {
+      return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng.';
+    }
+
+    // Lỗi máy chủ 500, 502, 503, 504
+    if (lower.contains('500') ||
+        lower.contains('502') ||
+        lower.contains('503') ||
+        lower.contains('504') ||
+        lower.contains('internal server error') ||
+        lower.contains('bad gateway') ||
+        lower.contains('service unavailable')) {
+      return 'Hệ thống đang bận hoặc gián đoạn. Vui lòng thử lại sau.';
+    }
+
+    // Lỗi phiên đăng nhập 401
+    if (lower.contains('401') || lower.contains('unauthorized')) {
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    }
+
+    // Lỗi quyền hạn 403
+    if (lower.contains('403') || lower.contains('forbidden')) {
+      return 'Bạn không có quyền thực hiện thao tác này.';
+    }
+
+    // Loại bỏ các tiền tố lập trình
+    var cleaned = str
+        .replaceAll(RegExp(r'^(Exception|AppException|ServerException|DioException.*?:)\s*', caseSensitive: false), '')
+        .trim();
+
+    return cleaned.isNotEmpty ? cleaned : 'Đã xảy ra sự cố. Vui lòng thử lại sau.';
+  }
 }

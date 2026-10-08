@@ -42,7 +42,8 @@ class CheckinRequestModel {
     if (address != null && address!.isNotEmpty) data['address'] = address;
     if (isMockLocation != null) data['is_mock_location'] = isMockLocation;
     if (clientTime != null) data['client_time'] = clientTime;
-    if (kmDeclared != null) data['km_declared'] = kmDeclared;
+    // 🔴 KHÔNG GỬI TRƯỜNG km_declared (§2.3 SPEC-2026-10-08):
+    // Hệ thống tính quãng đường tự động từ toạ độ mốc, km_declared không còn được dùng.
     if (note != null && note!.isNotEmpty) data['note'] = note;
     if (deviceInfo != null) data['device_info'] = deviceInfo;
     if (isOfflineSync != null) data['is_offline_sync'] = isOfflineSync;

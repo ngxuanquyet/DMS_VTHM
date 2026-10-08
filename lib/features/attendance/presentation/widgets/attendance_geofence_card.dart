@@ -270,11 +270,16 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
     required NumberFormat numberFormat,
     required bool isDark,
   }) {
+    final isEverywhere = location.isEverywhere;
     final isValid = location.isWithinRadius;
     final hasDistance = location.distanceM != null;
 
     final String distanceText;
-    if (!hasDistance) {
+    if (isEverywhere) {
+      distanceText = location.kindLabel.isNotEmpty
+          ? location.kindLabel
+          : 'Mọi nơi (Không ràng buộc vị trí)';
+    } else if (!hasDistance) {
       distanceText = 'Đang xác định khoảng cách...';
     } else if (isValid) {
       distanceText = 'Cách ${location.distanceM}m (Trong bán kính ${location.radiusM}m)';
@@ -286,9 +291,9 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
           'Cách ${location.distanceM}m (Ngoài bán kính ${location.radiusM}m)';
     }
 
-    final Color statusColor = !hasDistance
-        ? AppColors.secondary
-        : (isValid ? AppColors.primary : AppColors.error);
+    final Color statusColor = (isEverywhere || isValid)
+        ? AppColors.primary
+        : (!hasDistance ? AppColors.secondary : AppColors.error);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -296,17 +301,19 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
         color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface,
         borderRadius: AppRadius.roundedMd,
         border: Border.all(
-          color: isValid
+          color: (isEverywhere || isValid)
               ? AppColors.primary.withValues(alpha: 0.35)
               : (isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant),
-          width: isValid ? 1.5 : 1,
+          width: (isEverywhere || isValid) ? 1.5 : 1,
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isValid ? Icons.check_circle_rounded : Icons.location_on_rounded,
+            isEverywhere
+                ? Icons.public_rounded
+                : (isValid ? Icons.check_circle_rounded : Icons.location_on_rounded),
             color: statusColor,
             size: 20,
           ),
@@ -325,7 +332,19 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                         ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
                       ),
                     ),
-                    if (isClosest)
+                    if (isEverywhere)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: AppRadius.roundedSm,
+                        ),
+                        child: Text(
+                          location.kindLabel.isNotEmpty ? location.kindLabel : 'Mọi nơi',
+                          style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
+                        ),
+                      )
+                    else if (isClosest)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(

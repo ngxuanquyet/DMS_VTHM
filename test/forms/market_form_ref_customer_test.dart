@@ -432,5 +432,121 @@ void main() {
       expect(find.text('Tạp hóa Gần (Cam Ranh)'), findsOneWidget);
       expect(find.text('78 m'), findsOneWidget);
     });
+
+    testWidgets(
+        'Locked customer in visit survey auto-fills current customer and prevents editing',
+        (tester) async {
+      final key = GlobalKey<MarketFormRendererState>();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            routeCustomersListProvider.overrideWith(
+              (ref) => Future.value(
+                const RouteCustomersData(
+                  items: [sampleCustomer1, sampleCustomer2, sampleCustomer3],
+                  truncated: false,
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: MarketFormRenderer(
+                key: key,
+                blocks: const [testBlock],
+                defaultCustomerId: 5378,
+                defaultCustomerName: 'VLXD Hoàng Hương',
+                defaultCustomerCode: '08120001',
+                defaultCustomerAddress: '123 Đường 2/4, Nha Trang',
+                lockCustomer: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Tự động hiển thị tên điểm bán đang viếng thăm
+      expect(find.text('VLXD Hoàng Hương'), findsOneWidget);
+      // Không hiển thị badge/icon khoá hoặc text cố định
+      expect(find.text('Cố định'), findsNothing);
+      expect(find.byIcon(Icons.lock_rounded), findsNothing);
+      expect(find.text('Điểm bán được cố định theo lượt viếng thăm hiện tại'), findsNothing);
+
+      // Không hiển thị nút xoá (clear) và không hiển thị icon dropdown
+      expect(find.byIcon(Icons.clear), findsNothing);
+      expect(find.byIcon(Icons.arrow_drop_down), findsNothing);
+
+      // Chạm vào ô không mở bottom sheet chọn điểm bán
+      await tester.tap(find.text('VLXD Hoàng Hương'));
+      await tester.pumpAndSettle();
+
+      // Không mở danh sách điểm bán khác (Dịu Khoản không xuất hiện)
+      expect(find.text('Dịu Khoản'), findsNothing);
+
+      // Validate thành công với ID của khách hàng đang viếng thăm
+      final answers = key.currentState?.validateAndGetAnswers();
+      expect(answers, isNotNull);
+      expect(answers!['diem_ban_khao_sat'], 5378);
+    });
+
+    testWidgets(
+        'Locked customer auto-fills text fields for customer name and code and makes them read-only',
+        (tester) async {
+      final key = GlobalKey<MarketFormRendererState>();
+
+      const nameBlock = MarketFormBlockEntity(
+        ref: 'ten_khach_hang',
+        type: 'field',
+        required: true,
+        resolved: MarketFormResolvedEntity(
+          code: 'ten_khach_hang',
+          label: 'Tên khách hàng',
+          inputType: 'text',
+        ),
+      );
+
+      const codeBlock = MarketFormBlockEntity(
+        ref: 'ma_khach_hang',
+        type: 'field',
+        required: true,
+        resolved: MarketFormResolvedEntity(
+          code: 'ma_khach_hang',
+          label: 'Mã khách hàng',
+          inputType: 'text',
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MarketFormRenderer(
+                key: key,
+                blocks: const [nameBlock, codeBlock],
+                defaultCustomerId: 5378,
+                defaultCustomerName: 'VLXD Hoàng Hương',
+                defaultCustomerCode: '08120001',
+                lockCustomer: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Cả 2 ô text được tự động điền giá trị
+      expect(find.text('VLXD Hoàng Hương'), findsOneWidget);
+      expect(find.text('08120001'), findsOneWidget);
+
+      // Validate thành công
+      final answers = key.currentState?.validateAndGetAnswers();
+      expect(answers, isNotNull);
+      expect(answers!['ten_khach_hang'], 'VLXD Hoàng Hương');
+      expect(answers['ma_khach_hang'], '08120001');
+    });
   });
 }

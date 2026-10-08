@@ -17,8 +17,14 @@ import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../forms/data/services/route_customers_service.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
+import 'package:intl/intl.dart';
+import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/app_notification_service.dart';
+import '../../../attendance/presentation/viewmodels/attendance_view_model.dart';
+import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../widgets/attendance_summary_card.dart';
 import '../widgets/greeting_header.dart';
 import '../widgets/home_quick_actions.dart';
@@ -49,6 +55,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Luôn làm mới quy tắc mobile/khoảng cách mới nhất khi vào ứng dụng
     ref.read(mobileRulesProvider.notifier).fetchRules();
 
+    // 🔴 KIỂM TRA GIAN LẬN & TOÀN VẸN THIẾT BỊ KHI NHÂN VIÊN VÀO APP
+    if (mounted) {
+      ref.read(antiFraudServiceProvider).checkAndWarnOnAppEntry(context);
+    }
+
     // Tự động đồng bộ các dữ liệu về form, khách hàng, tuyến,... ngay khi vào máy
     if (_lastAutoSyncTime == null || now.difference(_lastAutoSyncTime!).inMinutes >= 5) {
       _lastAutoSyncTime = now;
@@ -57,6 +68,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _handleSyncAll();
       }
     }
+
+    // 🔔 KIỂM TRA VÀ KÍCH HOẠT CÁC THÔNG BÁO NHẮC NHỞ THEO KHUNG GIỜ
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final pendingCount = await db.countPendingSync();
+      final attState = ref.read(attendanceViewModelProvider);
+      final routeState = ref.read(routeViewModelProvider);
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+
+      final hasIn = attState.history.any((p) => p.punchAt.startsWith(todayStr));
+      final hasOut = attState.history.where((p) => p.punchAt.startsWith(todayStr)).length >= 2;
+
+      await ref.read(appNotificationServiceProvider).checkDailyReminders(
+            hasCheckedInToday: hasIn,
+            hasCheckedOutToday: hasOut,
+            totalDealers: routeState.routeDetail?.totalDealers,
+            completedDealers: routeState.routeDetail?.completedDealers,
+            routeName: routeState.selectedRoute,
+            pendingSyncCount: pendingCount,
+          );
+      ref.invalidate(unreadNotificationCountProvider);
+    } catch (_) {}
   }
 
   /// Gọi tất cả các API để đồng bộ dữ liệu mới nhất:
@@ -216,6 +249,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final homeVM = ref.read(homeViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final attState = ref.watch(attendanceViewModelProvider);
 
     ref.listen<HomeState>(homeViewModelProvider, (prev, next) {
       if (next.status == HomeStatus.error &&
@@ -292,28 +326,101 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         HomeQuickActions(
                           isSyncing: _isSyncing,
                           onSync: _handleSyncAll,
+                          onAttendanceReturn: () => homeVM.loadDashboard(isRefresh: true),
                         ),
                         const SizedBox(height: AppSpacing.stackLg),
 
                         // Dòng thời gian hoạt động trong ngày (Daily Activity Timeline)
                         if (homeState.dashboard != null) ...[
-                          DailyActivityTimelineCard(
-                            title: 'Dòng thời gian hôm nay',
-                            activities: homeState.dashboard!.recentActivities.map((e) {
-                              return DailyActivityEntity(
-                                id: e.id,
-                                time: e.time,
-                                title: e.title,
-                                subtitle: '${e.highlight} ${e.suffix}'.trim(),
-                                type: e.title.contains('Chấm công')
-                                    ? DailyActivityType.attendanceIn
-                                    : (e.title.contains('Check-in')
-                                        ? DailyActivityType.checkIn
-                                        : (e.title.contains('vị trí')
-                                            ? DailyActivityType.positionDeclaration
-                                            : DailyActivityType.formSubmission)),
+                          Builder(
+                            builder: (context) {
+                              final now = DateTime.now();
+                              final todayStr = DateFormat('yyyy-MM-dd').format(now);
+
+                              final activityItems = homeState.dashboard!.recentActivities.map((e) {
+                                final isAttOut = e.title.contains('Ra') || e.title.toLowerCase().contains('ra');
+                                final isVisitIn = e.title.contains('Check-in');
+                                final isVisitOut = e.title.contains('Hoàn thành');
+                                final isPosDecl = e.title.contains('vị trí');
+
+                                final DailyActivityType type;
+                                if (e.title.contains('Chấm công')) {
+                                  type = isAttOut ? DailyActivityType.attendanceOut : DailyActivityType.attendanceIn;
+                                } else if (isVisitIn) {
+                                  type = DailyActivityType.checkIn;
+                                } else if (isVisitOut) {
+                                  type = DailyActivityType.checkOut;
+                                } else if (isPosDecl) {
+                                  type = DailyActivityType.positionDeclaration;
+                                } else {
+                                  type = DailyActivityType.formSubmission;
+                                }
+
+                                return DailyActivityEntity(
+                                  id: e.id,
+                                  time: e.time,
+                                  title: e.title,
+                                  subtitle: '${e.highlight} ${e.suffix}'.trim(),
+                                  type: type,
+                                  customerName: e.highlight,
+                                  photos: e.photos,
+                                  lat: e.lat,
+                                  lng: e.lng,
+                                  isHighlight: e.isPrimary,
+                                );
+                              }).toList();
+
+                              // Hợp nhất tức thời lượt chấm mới từ attendanceState nếu chưa có trong timeline
+                              for (int i = 0; i < attState.history.length; i++) {
+                                final p = attState.history[i];
+                                final punchAt = p.punchAt;
+                                final isToday = p.punchAtDateTime != null
+                                    ? DateFormat('yyyy-MM-dd').format(p.punchAtDateTime!) == todayStr
+                                    : punchAt.startsWith(todayStr);
+
+                                if (isToday) {
+                                  final punchId = 'att_${p.id > 0 ? p.id : (p.clientUuid ?? i)}';
+                                  final alreadyExists = activityItems.any((a) =>
+                                      a.id == punchId ||
+                                      (a.type == DailyActivityType.attendanceIn && a.time == p.timeFormatted) ||
+                                      (a.type == DailyActivityType.attendanceOut && a.time == p.timeFormatted));
+
+                                  if (!alreadyExists) {
+                                    String directionLabel = p.directionLabel ?? '';
+                                    // Quy trình thực tế chỉ có chấm công Vào và Ra (không có khái niệm Giữa ca)
+                                    if (directionLabel == 'Giữa ca' || p.direction == 'mid') {
+                                      directionLabel = 'Ra';
+                                    } else if (directionLabel.isEmpty) {
+                                      directionLabel = (p.direction == 'in' || p.directionLabel == 'Vào') ? 'Vào' : 'Ra';
+                                    }
+                                    final isOut = directionLabel == 'Ra' || p.direction == 'out';
+                                    final photoUrls = p.photos.map((ph) => ph.url).whereType<String>().toList();
+
+                                    activityItems.add(
+                                      DailyActivityEntity(
+                                        id: punchId,
+                                        time: p.timeFormatted,
+                                        title: 'Chấm công $directionLabel',
+                                        subtitle: '${p.geofenceName ?? 'Địa bàn làm việc'} ${p.isOutsideGeofence ? '(Ngoài vùng)' : '(Trong vùng)'}'.trim(),
+                                        type: isOut ? DailyActivityType.attendanceOut : DailyActivityType.attendanceIn,
+                                        customerName: p.geofenceName ?? 'Địa bàn làm việc',
+                                        photos: photoUrls,
+                                        lat: p.lat,
+                                        lng: p.lng,
+                                        isHighlight: !isOut,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+
+                              activityItems.sort((a, b) => b.time.compareTo(a.time));
+
+                              return DailyActivityTimelineCard(
+                                title: 'Dòng thời gian hôm nay',
+                                activities: activityItems,
                               );
-                            }).toList(),
+                            },
                           ),
                           const SizedBox(height: AppSpacing.stackLg),
                         ],
@@ -323,7 +430,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           AppEmptyState(
                             icon: Icons.dashboard_outlined,
                             title: 'Chưa có dữ liệu trang chủ',
-                            description: 'Bấm nút Đồng bộ bên dưới để tải dữ liệu mới nhất từ máy chủ.',
+                            description: 'Bấm nút Tải lại bên dưới để cập nhật dữ liệu mới nhất.',
                             actionText: 'Tải lại dữ liệu',
                             onAction: () => homeVM.loadDashboard(isRefresh: true),
                           ),

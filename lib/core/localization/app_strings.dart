@@ -343,8 +343,8 @@ class AppStrings {
   String get offlineTitle =>
       isVietnamese ? 'Đang ngoại tuyến' : 'Offline';
   String get offlineDesc => isVietnamese
-      ? 'Bạn vẫn có thể tiếp tục làm việc. Dữ liệu sẽ tự động đồng bộ khi có kết nối mạng trở lại.'
-      : 'You can continue working. Data will be synchronized automatically when network connection is restored.';
+      ? 'Bạn vẫn có thể tiếp tục làm việc bình thường. Dữ liệu sẽ lưu trên máy và tự động gửi khi có kết nối mạng.'
+      : 'You can continue working normally. Data will be saved locally and sent automatically when online.';
 
   // Exit Confirmation Dialogs
   String get leaveScreenTitle =>
@@ -407,11 +407,11 @@ class AppStrings {
   String get menuGpsLocate =>
       isVietnamese ? 'Định vị GPS' : 'GPS Locate';
   String get allDataUploaded =>
-      isVietnamese ? 'Tất cả dữ liệu đã được gửi lên máy chủ!' : 'All data has been uploaded to the server!';
+      isVietnamese ? 'Tất cả dữ liệu đã được cập nhật thành công!' : 'All data has been updated successfully!';
   String get uploadingOfflineItems =>
-      isVietnamese ? 'Đang tải lên dữ liệu ngoại tuyến...' : 'Uploading offline items...';
+      isVietnamese ? 'Đang gửi dữ liệu lên hệ thống...' : 'Sending data to system...';
   String get allDataUploadedSuccess =>
-      isVietnamese ? 'Đã tải lên thành công toàn bộ dữ liệu!' : 'Successfully uploaded all data!';
+      isVietnamese ? 'Đã gửi thành công toàn bộ dữ liệu!' : 'Successfully uploaded all data!';
   String get canceledSortByDistance =>
       isVietnamese ? 'Đã hủy sắp xếp theo khoảng cách.' : 'Distance sorting cancelled.';
   String get sortedByDistanceSuccess =>
@@ -459,9 +459,9 @@ class AppStrings {
   String get storeNameRequired =>
       isVietnamese ? 'Tên điểm bán là bắt buộc.' : 'Store name is required.';
   String get storeSavedOnline =>
-      isVietnamese ? 'Đã lưu điểm bán! Đang đồng bộ lên hệ thống...' : 'Store saved! Syncing to server...';
+      isVietnamese ? 'Đã lưu điểm bán! Đang gửi lên hệ thống...' : 'Store saved! Sending to system...';
   String get storeSavedOffline =>
-      isVietnamese ? 'Đã lưu trên máy! Điểm bán sẽ tự động đồng bộ khi có mạng.' : 'Saved locally! Will automatically sync when online.';
+      isVietnamese ? 'Đã lưu trên máy! Điểm bán sẽ tự động gửi khi có mạng.' : 'Saved locally! Will automatically sync when online.';
 
   // Customer Card
   String get editAction =>
@@ -471,7 +471,7 @@ class AppStrings {
   String get notSynced =>
       isVietnamese ? 'Chưa đồng bộ' : 'Not synced';
   String get savingOffline =>
-      isVietnamese ? 'Đang lưu offline' : 'Saving offline';
+      isVietnamese ? 'Đang lưu trên máy' : 'Saving locally';
 
   // Form Card Item
   String get questionsUnit =>

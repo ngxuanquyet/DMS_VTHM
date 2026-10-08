@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/map/goong_providers.dart';
@@ -18,6 +19,7 @@ import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/route_circular_menu.dart';
 import '../widgets/route_dealer_timeline.dart';
+import '../widgets/route_filter_drawer.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../domain/entities/route_entity.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
@@ -32,6 +34,7 @@ class RouteScreen extends ConsumerStatefulWidget {
 }
 
 class _RouteScreenState extends ConsumerState<RouteScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -44,13 +47,14 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   }
 
   Future<void> _requestLocationPermission() async {
-    final position = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+    final position = await ref
+        .read(locationServiceProvider)
+        .checkAndGetLocation(context);
     if (position != null && mounted) {
       ref.invalidate(currentPointProvider);
-      ref.read(routeViewModelProvider.notifier).updateUserLocation(
-        lat: position.latitude,
-        lng: position.longitude,
-      );
+      ref
+          .read(routeViewModelProvider.notifier)
+          .updateUserLocation(lat: position.latitude, lng: position.longitude);
     }
   }
 
@@ -85,7 +89,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     double? lng = livePoint?.lng;
 
     if (lat == null || lng == null) {
-      final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+      final pos = await ref
+          .read(locationServiceProvider)
+          .checkAndGetLocation(context);
       if (pos != null) {
         lat = pos.latitude;
         lng = pos.longitude;
@@ -102,7 +108,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               children: [
                 Icon(Icons.check_circle_rounded, color: Colors.white),
                 SizedBox(width: 8),
-                Expanded(child: Text('Đã sắp xếp điểm bán theo khoảng cách gần nhất!')),
+                Expanded(
+                  child: Text('Đã sắp xếp điểm bán theo khoảng cách gần nhất!'),
+                ),
               ],
             ),
             backgroundColor: Color(0xFF0284C7),
@@ -136,9 +144,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           children: [
             const AppLoading(size: 32),
             const SizedBox(width: 10),
-            Text(isOnline
-                ? 'Đang đồng bộ...'
-                : 'Đang tải lại dữ liệu từ bộ nhớ máy...'),
+            Text(
+              isOnline
+                  ? 'Đang đồng bộ...'
+                  : 'Đang tải lại dữ liệu từ bộ nhớ máy...',
+            ),
           ],
         ),
         duration: const Duration(seconds: 2),
@@ -155,7 +165,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
         await Future.wait([
           vm.loadRouteDetail(isRefresh: true),
           ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
-          customerRepo.getCustomerFormSchema(forceRefresh: true).catchError((e) {
+          customerRepo.getCustomerFormSchema(forceRefresh: true).catchError((
+            e,
+          ) {
             debugPrint('[RouteSync] Lỗi làm mới schema form: $e');
             return <String, dynamic>{};
           }),
@@ -181,16 +193,25 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
         SnackBar(
           content: Row(
             children: [
-              Icon(isOnline ? Icons.check_circle_rounded : Icons.offline_pin_rounded, color: Colors.white),
+              Icon(
+                isOnline
+                    ? Icons.check_circle_rounded
+                    : Icons.offline_pin_rounded,
+                color: Colors.white,
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(isOnline
-                    ? 'Đồng bộ thành công!'
-                    : 'Đã làm mới dữ liệu ngoại tuyến.'),
+                child: Text(
+                  isOnline
+                      ? 'Đồng bộ thành công!'
+                      : 'Đã làm mới dữ liệu trên máy.',
+                ),
               ),
             ],
           ),
-          backgroundColor: isOnline ? AppColors.primary : const Color(0xFFD97706),
+          backgroundColor: isOnline
+              ? AppColors.primary
+              : const Color(0xFFD97706),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
@@ -211,7 +232,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               children: [
                 Icon(Icons.cloud_done_rounded, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Tất cả dữ liệu đã được gửi lên máy chủ!'),
+                Text('Tất cả dữ liệu đã được cập nhật thành công!'),
               ],
             ),
             backgroundColor: Color(0xFF10B981),
@@ -232,7 +253,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 const Icon(Icons.cloud_off_rounded, color: Colors.white),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Hiện không có mạng. Có $pendingCount mục sẽ tự động gửi khi có kết nối.'),
+                  child: Text(
+                    'Hiện chưa có mạng. Có $pendingCount mục đã lưu và sẽ tự động gửi khi có mạng lại.',
+                  ),
                 ),
               ],
             ),
@@ -252,7 +275,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             children: [
               const AppLoading(size: 32),
               const SizedBox(width: 10),
-              Expanded(child: Text('Đang gửi $pendingCount mục ngoại tuyến lên máy chủ...')),
+              Expanded(
+                child: Text('Đang gửi $pendingCount mục lên hệ thống...'),
+              ),
             ],
           ),
           duration: const Duration(seconds: 3),
@@ -272,7 +297,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               children: [
                 Icon(Icons.check_circle_rounded, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Đã gửi toàn bộ dữ liệu ngoại tuyến thành công!'),
+                Text('Đã gửi thành công toàn bộ dữ liệu!'),
               ],
             ),
             backgroundColor: Color(0xFF10B981),
@@ -280,7 +305,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+        ref
+            .read(routeViewModelProvider.notifier)
+            .loadRouteDetail(isRefresh: true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -288,7 +315,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               children: [
                 const Icon(Icons.info_outline_rounded, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Đã gửi thành công. Còn $remaining mục đang xử lý.')),
+                Expanded(
+                  child: Text(
+                    'Đã gửi thành công. Còn $remaining mục đang xử lý.',
+                  ),
+                ),
               ],
             ),
             backgroundColor: const Color(0xFF0284C7),
@@ -303,18 +334,21 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   Future<void> _handleAddCustomer() async {
     final result = await context.push<bool>('/customers/add');
     if (result == true && mounted) {
-      ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+      ref
+          .read(routeViewModelProvider.notifier)
+          .loadRouteDetail(isRefresh: true);
     }
   }
 
   Future<void> _handleRefreshGps() async {
-    final position = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+    final position = await ref
+        .read(locationServiceProvider)
+        .checkAndGetLocation(context);
     if (position == null) return;
     ref.invalidate(currentPointProvider);
-    ref.read(routeViewModelProvider.notifier).updateUserLocation(
-      lat: position.latitude,
-      lng: position.longitude,
-    );
+    ref
+        .read(routeViewModelProvider.notifier)
+        .updateUserLocation(lat: position.latitude, lng: position.longitude);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -335,7 +369,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final vm = ref.read(routeViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pendingOfflineCount = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    final pendingOfflineCount =
+        ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
 
     ref.listen<RouteState>(routeViewModelProvider, (prev, next) {
       if (next.status == RouteStatus.error &&
@@ -351,8 +386,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     });
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
       appBar: const VthmTopAppBar(),
+      endDrawer: RouteFilterDrawer(state: state, vm: vm),
       body: Stack(
         children: [
           SafeArea(
@@ -363,7 +400,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 AnimatedBuilder(
                   animation: _scrollController,
                   builder: (context, _) {
-                    final offset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+                    final offset = _scrollController.hasClients
+                        ? _scrollController.offset
+                        : 0.0;
                     final progress = (offset / 60.0).clamp(0.0, 1.0);
 
                     return Container(
@@ -406,11 +445,14 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                       children: [
                                         Text(
                                           'Tuyến',
-                                          style: AppTypography.titleLarge(
-                                            color: isDark
-                                                ? AppColors.darkOnSurface
-                                                : AppColors.onSurface,
-                                          ).copyWith(fontWeight: FontWeight.w700),
+                                          style:
+                                              AppTypography.titleLarge(
+                                                color: isDark
+                                                    ? AppColors.darkOnSurface
+                                                    : AppColors.onSurface,
+                                              ).copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
                                         ),
                                         const SizedBox(width: 8),
                                         Container(
@@ -419,19 +461,37 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: AppColors.primary.withValues(alpha: 0.1),
+                                            color: state.hasActiveFilter
+                                                ? AppColors.primary.withValues(
+                                                    alpha: isDark ? 0.25 : 0.15,
+                                                  )
+                                                : AppColors.primary.withValues(
+                                                    alpha: 0.1,
+                                                  ),
                                             borderRadius: AppRadius.roundedFull,
                                             border: Border.all(
-                                              color: AppColors.primary.withValues(alpha: 0.2),
+                                              color: state.hasActiveFilter
+                                                  ? AppColors.primary.withValues(
+                                                      alpha: 0.4,
+                                                    )
+                                                  : AppColors.primary.withValues(
+                                                      alpha: 0.2,
+                                                    ),
                                             ),
                                           ),
                                           child: Text(
-                                            '${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}',
-                                            style: AppTypography.labelSmall(
-                                              color: isDark
-                                                  ? AppColors.primaryFixedDim
-                                                  : AppColors.primary,
-                                            ).copyWith(fontWeight: FontWeight.w700),
+                                            state.hasActiveFilter
+                                                ? '${state.routeDetail?.dealers.length ?? 0}/${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}'
+                                                : '${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}',
+                                            style:
+                                                AppTypography.labelSmall(
+                                                  color: isDark
+                                                      ? AppColors
+                                                            .primaryFixedDim
+                                                      : AppColors.primary,
+                                                ).copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
                                           ),
                                         ),
                                         if (state.isSortedByDistance) ...[
@@ -444,7 +504,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                             decoration: BoxDecoration(
                                               color: const Color(0xFF0284C7)
                                                   .withValues(alpha: 0.12),
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               border: Border.all(
                                                 color: const Color(0xFF0284C7)
                                                     .withValues(alpha: 0.3),
@@ -471,13 +532,17 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                             ),
                                           ),
                                         ],
+                                        const Spacer(),
+                                        _buildFilterButton(context, state, isDark),
                                       ],
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      strings.isVietnamese
-                                          ? 'Danh sách điểm bán theo tuyến được giao'
-                                          : 'Assigned route store visit plan',
+                                      state.hasActiveFilter
+                                          ? 'Đang lọc ${state.routeDetail?.dealers.length ?? 0} trên tổng ${state.routeDetail?.totalDealers ?? 0} điểm bán'
+                                          : (strings.isVietnamese
+                                              ? 'Danh sách điểm bán theo tuyến được giao'
+                                              : 'Assigned route store visit plan'),
                                       style: AppTypography.bodySmall(
                                         color: isDark
                                             ? AppColors.darkOnSurfaceVariant
@@ -497,7 +562,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                             decoration: BoxDecoration(
                               color: isDark
                                   ? AppColors.darkSurfaceContainerLowest
-                                  : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
+                                  : AppColors.surfaceContainerHigh.withValues(
+                                      alpha: 0.5,
+                                    ),
                               borderRadius: AppRadius.roundedMd,
                               border: Border.all(
                                 color: isDark
@@ -509,10 +576,13 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                               controller: _searchController,
                               onChanged: (val) => vm.setSearchQuery(val),
                               style: AppTypography.bodyMedium(
-                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                color: isDark
+                                    ? AppColors.darkOnSurface
+                                    : AppColors.onSurface,
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Tìm điểm bán, mã KH, SĐT trên tuyến...',
+                                hintText:
+                                    'Tìm điểm bán, mã KH, SĐT trên tuyến...',
                                 hintStyle: AppTypography.bodySmall(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant
@@ -527,7 +597,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                 ),
                                 suffixIcon: _searchController.text.isNotEmpty
                                     ? IconButton(
-                                        icon: const Icon(Icons.clear_rounded, size: 16),
+                                        icon: const Icon(
+                                          Icons.clear_rounded,
+                                          size: 16,
+                                        ),
                                         onPressed: () {
                                           _searchController.clear();
                                           vm.setSearchQuery('');
@@ -535,7 +608,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                       )
                                     : null,
                                 border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                               ),
                             ),
                           ),
@@ -547,108 +622,144 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
 
                 // Active Hanging Visit Banner (§3 Luật 3)
                 if (state.activeVisit != null) ...[
-                  _buildActiveVisitBanner(context, state.activeVisit!, state.routeDetail?.dealers),
+                  _buildActiveVisitBanner(
+                    context,
+                    state.activeVisit!,
+                    state.routeDetail?.dealers,
+                  ),
                 ],
 
                 // Main Content List
                 Expanded(
-                  child: state.status == RouteStatus.loading && state.routeDetail == null
-                      ? const Center(
-                          child: AppLoading(size: 220),
-                        )
-                      : state.status == RouteStatus.error && state.routeDetail == null
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24.0),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.error_outline_rounded,
-                                        size: 48, color: AppColors.error),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      state.errorMessage ?? strings.error,
-                                      textAlign: TextAlign.center,
-                                      style: AppTypography.bodyMedium(
-                                        color: isDark
-                                            ? AppColors.darkOnSurface
-                                            : AppColors.onSurface,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    ElevatedButton.icon(
-                                      onPressed: () => vm.loadRouteDetail(isRefresh: true),
-                                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                                      label: Text(strings.retry),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.primary,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                    ),
-                                  ],
+                  child:
+                      state.status == RouteStatus.loading &&
+                          state.routeDetail == null
+                      ? const Center(child: AppLoading(size: 220))
+                      : state.status == RouteStatus.error &&
+                            state.routeDetail == null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 48,
+                                  color: AppColors.error,
                                 ),
-                              ),
-                            )
-                          : RefreshIndicator(
-                              color: AppColors.primaryContainer,
-                              onRefresh: () async {
-                                try {
-                                  await ref.read(syncServiceProvider).syncQueue();
-                                } catch (_) {}
-                                await Future.wait([
-                                  vm.loadRouteDetail(isRefresh: true),
-                                  ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
-                                  _requestLocationPermission(),
-                                ]);
-                              },
-                              child: state.routeDetail == null || state.routeDetail!.dealers.isEmpty
-                                  ? ListView(
-                                      controller: _scrollController,
-                                      physics: const AlwaysScrollableScrollPhysics(),
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 40.0),
-                                          child: state.searchQuery.trim().isNotEmpty
+                                const SizedBox(height: 12),
+                                Text(
+                                  state.errorMessage ?? strings.error,
+                                  textAlign: TextAlign.center,
+                                  style: AppTypography.bodyMedium(
+                                    color: isDark
+                                        ? AppColors.darkOnSurface
+                                        : AppColors.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: () =>
+                                      vm.loadRouteDetail(isRefresh: true),
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 18,
+                                  ),
+                                  label: Text(strings.retry),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: AppColors.primaryContainer,
+                          onRefresh: () async {
+                            try {
+                              await ref.read(syncServiceProvider).syncQueue();
+                            } catch (_) {}
+                            await Future.wait([
+                              vm.loadRouteDetail(isRefresh: true),
+                              ref
+                                  .read(mobileRulesProvider.notifier)
+                                  .fetchRules(forceRefresh: true),
+                              _requestLocationPermission(),
+                            ]);
+                          },
+                          child:
+                              state.routeDetail == null ||
+                                  state.routeDetail!.dealers.isEmpty
+                              ? ListView(
+                                  controller: _scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 40.0),
+                                      child: state.searchQuery.trim().isNotEmpty
+                                          ? AppEmptyState(
+                                              icon: Icons.search_off_rounded,
+                                              title: 'Không tìm thấy điểm bán',
+                                              description:
+                                                  'Không có điểm bán nào trên tuyến khớp với từ khóa "${state.searchQuery}".',
+                                              actionText: 'Xóa tìm kiếm',
+                                              onAction: () {
+                                                _searchController.clear();
+                                                vm.setSearchQuery('');
+                                              },
+                                            )
+                                          : state.hasActiveFilter
                                               ? AppEmptyState(
-                                                  icon: Icons.search_off_rounded,
-                                                  title: 'Không tìm thấy điểm bán',
+                                                  icon: Icons.filter_alt_off_rounded,
+                                                  title: 'Không có điểm bán phù hợp',
                                                   description:
-                                                      'Không có điểm bán nào trên tuyến khớp với từ khóa "${state.searchQuery}".',
-                                                  actionText: 'Xóa tìm kiếm',
-                                                  onAction: () {
-                                                    _searchController.clear();
-                                                    vm.setSearchQuery('');
-                                                  },
+                                                      'Không tìm thấy điểm bán nào thỏa mãn các tiêu chí lọc đã chọn.',
+                                                  actionText: 'Đặt lại bộ lọc',
+                                                  onAction: () =>
+                                                      vm.resetFilters(),
                                                 )
                                               : AppEmptyState(
                                                   icon: Icons.alt_route_rounded,
-                                                  title: 'Chưa có lộ trình điểm bán',
-                                                  description:
-                                                      'Hiện tại chưa có điểm bán nào trên tuyến được giao trong ngày hôm nay. Hãy bấm làm mới để đồng bộ dữ liệu tuyến.',
-                                                  actionText: 'Làm mới lộ trình',
-                                                  onAction: () => vm.loadRouteDetail(isRefresh: true),
-                                                  secondaryActionText: 'Thêm điểm bán',
-                                                  onSecondaryAction: _handleAddCustomer,
-                                                ),
-                                        ),
-                                      ],
-                                    )
-                                  : SingleChildScrollView(
-                                      controller: _scrollController,
-                                      physics: const AlwaysScrollableScrollPhysics(),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.marginMobile,
-                                        vertical: AppSpacing.stackMd,
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          RouteDealerTimeline(dealers: state.routeDetail!.dealers),
-                                          const SizedBox(height: 160),
-                                        ],
-                                      ),
+                                              title:
+                                                  'Chưa có lộ trình điểm bán',
+                                              description: 'Hiện tại chưa có điểm bán nào trên tuyến được giao trong ngày hôm nay. Hãy bấm làm mới để đồng bộ dữ liệu tuyến.',
+                                              actionText: 'Làm mới lộ trình',
+                                              onAction: () =>
+                                                  vm.loadRouteDetail(
+                                                    isRefresh: true,
+                                                  ),
+                                              secondaryActionText:
+                                                  'Thêm điểm bán',
+                                              onSecondaryAction:
+                                                  _handleAddCustomer,
+                                            ),
                                     ),
-                            ),
+                                  ],
+                                )
+                              : SingleChildScrollView(
+                                  controller: _scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.marginMobile,
+                                    vertical: AppSpacing.stackMd,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      RouteDealerTimeline(
+                                        dealers: state.routeDetail!.dealers,
+                                      ),
+                                      const SizedBox(height: 160),
+                                    ],
+                                  ),
+                                ),
+                        ),
                 ),
               ],
             ),
@@ -678,7 +789,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     List<DealerEntity>? dealers,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dealer = dealers?.where((d) => d.id == visit.customerId.toString() || d.visit?.id == visit.id).firstOrNull;
+    final dealer = dealers
+        ?.where(
+          (d) => d.id == visit.customerId.toString() || d.visit?.id == visit.id,
+        )
+        .firstOrNull;
     final customerName = visit.customerName.isNotEmpty
         ? visit.customerName
         : (dealer?.name ?? 'Điểm bán');
@@ -689,7 +804,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF0284C7).withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+        border: Border.all(
+          color: const Color(0xFF0284C7).withValues(alpha: 0.3),
+        ),
       ),
       child: Row(
         children: [
@@ -699,7 +816,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               color: Color(0xFF0284C7),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.storefront_rounded, size: 16, color: Colors.white),
+            child: const Icon(
+              Icons.storefront_rounded,
+              size: 16,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -722,7 +843,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                    color: isDark
+                        ? AppColors.darkOnSurface
+                        : AppColors.onSurface,
                   ),
                 ),
               ],
@@ -734,12 +857,22 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: const Size(0, 32),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
             ),
             onPressed: () {
               if (dealer != null) {
-                ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
-                context.push('/check-in', extra: dealer);
+                final dealerToInit = dealer.visit != null
+                    ? dealer
+                    : dealer.copyWith(
+                        visit: visit,
+                        status: DealerVisitStatus.inProgress,
+                      );
+                ref
+                    .read(checkInViewModelProvider.notifier)
+                    .initCheckinWithDealer(dealerToInit);
+                context.push('/check-in', extra: dealerToInit);
               } else {
                 final fallbackDealer = DealerEntity(
                   id: visit.customerId.toString(),
@@ -751,13 +884,99 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                   isVip: false,
                   visit: visit,
                 );
-                ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(fallbackDealer);
+                ref
+                    .read(checkInViewModelProvider.notifier)
+                    .initCheckinWithDealer(fallbackDealer);
                 context.push('/check-in', extra: fallbackDealer);
               }
             },
-            child: const Text('Vào lượt', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Vào lượt',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterButton(
+    BuildContext context,
+    RouteState state,
+    bool isDark,
+  ) {
+    final count = state.activeFiltersCount;
+    final hasFilters = state.hasActiveFilter;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _scaffoldKey.currentState?.openEndDrawer();
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: hasFilters
+                ? AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.12)
+                : (isDark
+                    ? AppColors.darkSurfaceContainer
+                    : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: hasFilters
+                  ? AppColors.primary
+                  : (isDark
+                      ? AppColors.darkOutlineVariant
+                      : AppColors.outlineVariant),
+              width: hasFilters ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                size: 16,
+                color: hasFilters
+                    ? AppColors.primary
+                    : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Lọc',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w600,
+                  color: hasFilters
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                ),
+              ),
+              if (hasFilters) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

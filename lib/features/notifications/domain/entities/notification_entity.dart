@@ -7,6 +7,9 @@ class NotificationEntity {
   final bool isRead;
   final String category; // work | system
 
+  final String? routePath;
+  final DateTime? createdAt;
+
   const NotificationEntity({
     required this.id,
     required this.type,
@@ -15,6 +18,8 @@ class NotificationEntity {
     required this.timeAgo,
     required this.isRead,
     required this.category,
+    this.routePath,
+    this.createdAt,
   });
 
   NotificationEntity copyWith({
@@ -25,6 +30,8 @@ class NotificationEntity {
     String? timeAgo,
     bool? isRead,
     String? category,
+    String? routePath,
+    DateTime? createdAt,
   }) {
     return NotificationEntity(
       id: id ?? this.id,
@@ -34,6 +41,8 @@ class NotificationEntity {
       timeAgo: timeAgo ?? this.timeAgo,
       isRead: isRead ?? this.isRead,
       category: category ?? this.category,
+      routePath: routePath ?? this.routePath,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }

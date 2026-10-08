@@ -6,6 +6,7 @@ import '../database/database_provider.dart';
 import '../network/connectivity_provider.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/string_utils.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 
 /// Huy hiệu hiển thị trạng thái dữ liệu ngoại tuyến và số lượng bản ghi đang chờ đồng bộ
@@ -233,7 +234,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Chi tiết hàng đợi gửi:',
+                      'Danh sách dữ liệu chờ gửi:',
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                     Text(
@@ -267,7 +268,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  '$pendingCount bản ghi đang chờ máy chủ xử lý...',
+                                  '$pendingCount mục đang chờ gửi lên hệ thống...',
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                                 ),
                               ),
@@ -284,7 +285,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                       const Icon(Icons.check_circle_outline_rounded, size: 40, color: Color(0xFF10B981)),
                       const SizedBox(height: 8),
                       Text(
-                        'Toàn bộ dữ liệu đã được đồng bộ lên máy chủ!',
+                        'Toàn bộ dữ liệu đã được cập nhật thành công!',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -296,14 +297,14 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                 ),
               ],
 
-              // Danh sách bản ghi lỗi nếu có
+              // Danh sách mục lỗi nếu có
               if (deadEntries.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Bản ghi lỗi cần xử lý:',
+                      'Mục cần kiểm tra lại:',
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFE11D48)),
                     ),
                     TextButton(
@@ -320,7 +321,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                         padding: EdgeInsets.zero,
                         visualDensity: VisualDensity.compact,
                       ),
-                      child: const Text('Xoá tất cả lỗi', style: TextStyle(fontSize: 12, color: Color(0xFFE11D48))),
+                      child: const Text('Xoá tất cả', style: TextStyle(fontSize: 12, color: Color(0xFFE11D48))),
                     ),
                   ],
                 ),
@@ -336,7 +337,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
 
               const SizedBox(height: 14),
 
-              // Nút bấm đồng bộ ngay
+              // Nút bấm gửi dữ liệu ngay
               SizedBox(
                 width: double.infinity,
                 height: 46,
@@ -349,7 +350,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Đang tiến hành đồng bộ dữ liệu ngoại tuyến...'),
+                                  content: Text('Đang tiến hành gửi dữ liệu lên hệ thống...'),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );
@@ -358,7 +359,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Lỗi đồng bộ: $e'),
+                                  content: Text('Chưa thể gửi dữ liệu: ${StringUtils.formatUserFriendlyError(e)}'),
                                   backgroundColor: AppColors.error,
                                   behavior: SnackBarBehavior.floating,
                                 ),
@@ -374,7 +375,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                   ),
                   icon: const Icon(Icons.sync_rounded, size: 20),
                   label: Text(
-                    isOnline ? 'Đồng bộ ngay bây giờ' : 'Không có mạng để đồng bộ',
+                    isOnline ? 'Gửi dữ liệu ngay' : 'Không có kết nối mạng',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -500,7 +501,7 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
         }
       } catch (_) {}
       title = 'Khai báo vị trí: $reason';
-      subtitle = addr != null ? '$addr (Chờ gửi)' : 'Chờ máy chủ xác nhận';
+      subtitle = addr != null ? '$addr (Chờ gửi)' : 'Chờ gửi lên hệ thống';
       break;
 
     case 'form_submission':
@@ -517,7 +518,7 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
         }
       } catch (_) {}
       title = formTitle;
-      subtitle = 'Đã lưu nội bộ, sẽ tự động gửi khi có mạng';
+      subtitle = 'Đã lưu trên máy, sẽ tự động gửi khi có mạng';
       break;
 
     case 'visit':
@@ -531,24 +532,41 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
           dealerName = payload['dealer_name'].toString().trim();
         }
       } catch (_) {}
-      title = 'Lượt check-in: $dealerName';
-      subtitle = 'Đang chờ máy chủ xác nhận';
+      title = 'Lượt ghé thăm: $dealerName';
+      subtitle = 'Đang chờ gửi lên hệ thống';
       break;
 
     case 'photo':
+    case 'visit_photo':
       icon = Icons.photo_camera_rounded;
       color = const Color(0xFFF59E0B); // Amber
       bgColor = const Color(0xFFFFFBEB);
       title = 'Ảnh thực địa điểm bán';
-      subtitle = 'Chờ tải lên máy chủ';
+      subtitle = 'Chờ tải lên hệ thống';
+      break;
+
+    case 'attendance_punch':
+      icon = Icons.access_time_filled_rounded;
+      color = const Color(0xFF10B981);
+      bgColor = const Color(0xFFECFDF5);
+      title = 'Lượt chấm công';
+      subtitle = 'Đã lưu trên máy, chờ gửi';
+      break;
+
+    case 'attendance_photo':
+      icon = Icons.camera_alt_rounded;
+      color = const Color(0xFFF59E0B);
+      bgColor = const Color(0xFFFFFBEB);
+      title = 'Ảnh chấm công';
+      subtitle = 'Chờ tải lên hệ thống';
       break;
 
     default:
       icon = Icons.cloud_upload_outlined;
       color = const Color(0xFF6366F1); // Indigo
       bgColor = const Color(0xFFEEF2FF);
-      title = 'Dữ liệu: ${entry.entity}';
-      subtitle = 'Đã lưu an toàn, chờ gửi';
+      title = 'Dữ liệu lưu trên máy';
+      subtitle = 'Sẽ tự động gửi khi có mạng';
       break;
   }
 
@@ -623,14 +641,22 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
 }
 
 Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntry entry, bool isDark) {
-  final lastError = entry.lastError ?? 'Lỗi không xác định';
-  String title = 'Mục #${entry.id}: ${entry.entity}';
+  final lastError = StringUtils.formatUserFriendlyError(entry.lastError);
+  String title = 'Dữ liệu cần kiểm tra lại';
   if (entry.entity == 'customer') {
-    title = 'Khách hàng mới không hợp lệ';
+    title = 'Thông tin khách hàng mới';
   } else if (entry.entity == 'form_submission') {
-    title = 'Phiếu khảo sát lỗi';
+    title = 'Phiếu khảo sát thị trường';
   } else if (entry.entity == 'declaration') {
-    title = 'Khai báo vị trí lỗi';
+    title = 'Khai báo vị trí';
+  } else if (entry.entity == 'attendance_punch') {
+    title = 'Lượt chấm công';
+  } else if (entry.entity == 'attendance_photo') {
+    title = 'Ảnh chấm công';
+  } else if (entry.entity == 'visit') {
+    title = 'Lượt ghé thăm điểm bán';
+  } else if (entry.entity == 'photo' || entry.entity == 'visit_photo') {
+    title = 'Ảnh thực địa điểm bán';
   }
 
   return Container(
@@ -674,7 +700,7 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
         const SizedBox(width: 4),
         IconButton(
           icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE11D48)),
-          tooltip: 'Xóa bản ghi lỗi',
+          tooltip: 'Xóa mục này',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           visualDensity: VisualDensity.compact,

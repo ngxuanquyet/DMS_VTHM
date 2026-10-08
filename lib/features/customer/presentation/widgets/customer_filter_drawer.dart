@@ -466,6 +466,7 @@ class _CustomerFilterDrawerState extends State<CustomerFilterDrawer> {
         child: DropdownButton<String>(
           value: currentValue,
           isExpanded: true,
+          menuMaxHeight: 300,
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,
             color: (value != null && value != hint)

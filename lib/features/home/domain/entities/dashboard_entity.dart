@@ -59,6 +59,9 @@ class ActivityTimelineEntity {
   final String highlight;
   final String suffix;
   final bool isPrimary;
+  final List<String> photos;
+  final double? lat;
+  final double? lng;
 
   const ActivityTimelineEntity({
     required this.id,
@@ -67,6 +70,9 @@ class ActivityTimelineEntity {
     required this.highlight,
     required this.suffix,
     required this.isPrimary,
+    this.photos = const [],
+    this.lat,
+    this.lng,
   });
 }
 

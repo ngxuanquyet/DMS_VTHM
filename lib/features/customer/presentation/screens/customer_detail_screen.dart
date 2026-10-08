@@ -80,7 +80,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Đã cập nhật dữ liệu mới nhất từ máy chủ!'),
+            content: Text('Đã cập nhật dữ liệu mới nhất!'),
             duration: Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
           ),
@@ -254,7 +254,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Lỗi đồng bộ dữ liệu vĩnh viễn (4xx)',
+                                        'Thông tin chưa hợp lệ',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w700,
                                           fontSize: 13,
@@ -263,7 +263,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                                       ),
                                       SizedBox(height: 4),
                                       Text(
-                                        'Dữ liệu điểm bán này bị máy chủ từ chối tiếp nhận (lỗi 4xx). Hệ thống đã dừng tự động gửi lại. Bạn có thể Xóa bản ghi này.',
+                                        'Thông tin điểm bán chưa đáp ứng quy định hệ thống. Vui lòng kiểm tra chỉnh sửa hoặc xóa điểm bán này.',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Color(0xFFB91C1C),
@@ -282,7 +282,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                                 OutlinedButton.icon(
                                   onPressed: _handleDeletePendingCustomer,
                                   icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                                  label: const Text('Xóa bản ghi'),
+                                  label: const Text('Xóa điểm bán'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: const Color(0xFFDC2626),
                                     side: const BorderSide(color: Color(0xFFFCA5A5)),
@@ -665,7 +665,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       Icon(Icons.error_outline_rounded, size: 13, color: Color(0xFFDC2626)),
                       SizedBox(width: 4),
                       Text(
-                        'Lỗi đồng bộ (4xx)',
+                        'Cần sửa lại',
                         style: TextStyle(
                           color: Color(0xFFB91C1C),
                           fontSize: 11,
@@ -1068,17 +1068,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   Widget _buildSyncStatusCard(bool isDark) {
     return _buildSectionCard(
-      title: 'Thông tin hệ thống & Đồng bộ',
+      title: 'Trạng thái dữ liệu',
       icon: Icons.cloud_done_outlined,
       isDark: isDark,
       children: [
         _buildInfoRow(
-          label: 'Trạng thái đồng bộ',
+          label: 'Trạng thái',
           value: _customer.syncStatus == 'synced'
-              ? 'Đã đồng bộ lên máy chủ'
+              ? 'Đã gửi thành công'
               : (_customer.syncStatus == 'error'
-                  ? 'Lỗi đồng bộ (4xx) - Cần sửa thông tin'
-                  : 'Chờ gửi lên máy chủ (Offline)'),
+                  ? 'Thông tin chưa hợp lệ - Cần chỉnh sửa'
+                  : 'Lưu trên máy (Chờ gửi)'),
           icon: _customer.syncStatus == 'synced'
               ? Icons.cloud_done_rounded
               : (_customer.syncStatus == 'error'
@@ -1107,7 +1107,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         if (_customer.clientUuid != null) ...[
           const SizedBox(height: 10),
           _buildInfoRow(
-            label: 'Client UUID',
+            label: 'Mã lưu trên máy',
             value: _customer.clientUuid!,
             icon: Icons.fingerprint_rounded,
             isDark: isDark,

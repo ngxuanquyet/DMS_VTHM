@@ -600,7 +600,7 @@ class CustomerCard extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    'Lỗi đồng bộ (4xx)',
+                                    'Cần sửa lại',
                                     style: AppTypography.labelSmall(
                                       color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
                                     ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),

@@ -39,7 +39,9 @@ class AttendanceOutOfRangeDialog extends StatelessWidget {
 
     if (workplace is AttendanceLocationItemEntity) {
       name = workplace.name;
-      point = GoongLatLng(workplace.lat, workplace.lng);
+      if (workplace.lat != null && workplace.lng != null) {
+        point = GoongLatLng(workplace.lat!, workplace.lng!);
+      }
     } else if (workplace is WorkplaceLocation) {
       name = workplace.name;
       point = workplace.toGoongLatLng;

@@ -80,25 +80,39 @@ class HomeRepositoryImpl implements HomeRepository {
     String workDuration = '00:00';
     String statusLabel = 'Chưa vào ca';
 
-    // 2a. Ưu tiên đọc từ cache lịch sử chấm công thật của mobile (att_mobile_history_cache)
-    final attHistoryJson = prefs.getString('att_mobile_history_cache');
+    // 2a. Ưu tiên đọc từ cache lịch sử chấm công thật của mobile (dms_attendance_history_cache_v2)
+    final userId = prefs.getString('auth_user_id') ?? prefs.getString('user_id');
+    final attHistoryKey = (userId != null && userId.isNotEmpty)
+        ? 'dms_attendance_history_cache_v2_$userId'
+        : 'dms_attendance_history_cache_v2';
+    final attHistoryJson = prefs.getString(attHistoryKey) ??
+        prefs.getString('dms_attendance_history_cache_v2') ??
+        prefs.getString('att_mobile_history_cache');
+    final todayAttendancePunches = <Map<String, dynamic>>[];
     if (attHistoryJson != null && attHistoryJson.isNotEmpty) {
       try {
         final list = jsonDecode(attHistoryJson) as List<dynamic>;
-        final todayPunches = <Map<String, dynamic>>[];
         for (final item in list) {
           if (item is Map) {
             final punchAt = item['punch_at']?.toString() ?? '';
-            if (punchAt.startsWith(todayStr)) {
-              todayPunches.add(Map<String, dynamic>.from(item));
+            DateTime? punchDt;
+            try {
+              final cleanIso = punchAt.replaceAll('+07', '+0700');
+              punchDt = DateTime.parse(cleanIso).toLocal();
+            } catch (_) {}
+            final isToday = punchDt != null
+                ? DateFormat('yyyy-MM-dd').format(punchDt) == todayStr
+                : punchAt.startsWith(todayStr);
+            if (isToday) {
+              todayAttendancePunches.add(Map<String, dynamic>.from(item));
             }
           }
         }
 
-        if (todayPunches.isNotEmpty) {
-          todayPunches.sort((a, b) => (a['punch_at']?.toString() ?? '').compareTo(b['punch_at']?.toString() ?? ''));
+        if (todayAttendancePunches.isNotEmpty) {
+          todayAttendancePunches.sort((a, b) => (a['punch_at']?.toString() ?? '').compareTo(b['punch_at']?.toString() ?? ''));
           isCheckedIn = true;
-          final firstPunchAt = todayPunches.first['punch_at']?.toString() ?? '';
+          final firstPunchAt = todayAttendancePunches.first['punch_at']?.toString() ?? '';
           try {
             final cleanIso = firstPunchAt.replaceAll('+07', '+0700');
             final dt = DateTime.parse(cleanIso);
@@ -112,7 +126,7 @@ class HomeRepositoryImpl implements HomeRepository {
               checkInTime = firstPunchAt.substring(11, 16);
             }
           }
-          statusLabel = todayPunches.length > 1 ? 'Đã chấm (${todayPunches.length} lượt)' : 'Đang làm việc';
+          statusLabel = todayAttendancePunches.length > 1 ? 'Đã chấm (${todayAttendancePunches.length} lượt)' : 'Đang làm việc';
         }
       } catch (_) {}
     }
@@ -227,6 +241,86 @@ class HomeRepositoryImpl implements HomeRepository {
 
     // 5. Dòng thời gian hoạt động thực tế trong ngày hôm nay
     final activities = <ActivityTimelineEntity>[];
+
+    // Hoạt động chấm công thực tế
+    for (int i = 0; i < todayAttendancePunches.length; i++) {
+      final punch = todayAttendancePunches[i];
+      final punchAt = punch['punch_at']?.toString() ?? '';
+      String timeFormatted = '--:--';
+      try {
+        final cleanIso = punchAt.replaceAll('+07', '+0700');
+        final dt = DateTime.parse(cleanIso);
+        timeFormatted = DateFormat('HH:mm').format(dt.toLocal());
+      } catch (_) {
+        if (punchAt.length >= 16) {
+          timeFormatted = punchAt.substring(11, 16);
+        }
+      }
+
+      final direction = punch['direction']?.toString();
+      String directionLabel = punch['direction_label']?.toString() ?? '';
+      // Quy trình thực tế chỉ có chấm công Vào và Ra (không có khái niệm Giữa ca)
+      if (directionLabel == 'Giữa ca' || direction == 'mid') {
+        directionLabel = 'Ra';
+      } else if (directionLabel.isEmpty) {
+        directionLabel = (i == 0 || direction == 'in') ? 'Vào' : 'Ra';
+      }
+
+      final isOut = directionLabel == 'Ra' || direction == 'out';
+      final geofenceName = punch['geofence_name']?.toString() ?? 'Địa bàn làm việc';
+      final isOutside = punch['is_outside_geofence'] == true;
+      final suffix = isOutside ? '(Ngoài vùng)' : '(Trong vùng)';
+
+      final photoUrls = <String>[];
+      final rawPhotos = punch['photos'];
+      if (rawPhotos is List) {
+        for (final p in rawPhotos) {
+          if (p is Map && p['url'] != null) {
+            photoUrls.add(p['url'].toString());
+          }
+        }
+      }
+
+      final lat = (punch['lat'] is num) ? (punch['lat'] as num).toDouble() : null;
+      final lng = (punch['lng'] is num) ? (punch['lng'] as num).toDouble() : null;
+
+      activities.add(
+        ActivityTimelineEntity(
+          id: 'att_${punch['id'] ?? punch['client_uuid'] ?? i}',
+          time: timeFormatted,
+          title: 'Chấm công $directionLabel',
+          highlight: geofenceName,
+          suffix: suffix,
+          isPrimary: !isOut,
+          photos: photoUrls,
+          lat: lat,
+          lng: lng,
+        ),
+      );
+    }
+
+    if (todayAttendancePunches.isEmpty) {
+      final sessionJson = prefs.getString('dms_local_attendance_session_v1');
+      if (sessionJson != null && sessionJson.isNotEmpty) {
+        try {
+          final s = jsonDecode(sessionJson) as Map<String, dynamic>;
+          final checkInIso = s['check_in_iso']?.toString();
+          if (checkInIso != null && checkInIso.startsWith(todayStr)) {
+            final t = s['check_in_time']?.toString() ?? '--:--';
+            activities.add(
+              ActivityTimelineEntity(
+                id: 'att_session_in',
+                time: t,
+                title: 'Chấm công Vào',
+                highlight: 'Đang làm việc',
+                suffix: '(Trong ca)',
+                isPrimary: true,
+              ),
+            );
+          }
+        } catch (_) {}
+      }
+    }
 
     // Hoạt động viếng thăm
     for (final v in todayVisits) {

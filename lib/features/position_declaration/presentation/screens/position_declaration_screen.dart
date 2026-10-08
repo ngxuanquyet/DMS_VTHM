@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/map/app_map_location_card.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -635,7 +637,7 @@ class _PositionDeclarationScreenState
       child: ElevatedButton.icon(
         onPressed: isSubmitting
             ? null
-            : () {
+            : () async {
                 if (state.selectedReason == null) {
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -679,6 +681,30 @@ class _PositionDeclarationScreenState
                   vm.setPhotoRequiredError();
                   return;
                 }
+
+                // 🔴 KIỂM TRA CHỐNG GIAN LẬN TRƯỚC KHI GỬI KHAI BÁO VỊ TRÍ
+                final pos = Position(
+                  latitude: state.lat!,
+                  longitude: state.lng!,
+                  timestamp: DateTime.now(),
+                  accuracy: state.accuracyM ?? 0,
+                  altitude: 0,
+                  altitudeAccuracy: 0,
+                  heading: 0,
+                  headingAccuracy: 0,
+                  speed: 0,
+                  speedAccuracy: 0,
+                  isMocked: state.isMockLocation ?? false,
+                );
+
+                final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(
+                  context,
+                  position: pos,
+                  actionType: AntiFraudActionType.positionDeclaration,
+                  actionTitle: 'Khai báo vị trí',
+                );
+                if (!fraudCheck.isAllowed) return;
+
                 vm.submitDeclaration(
                   title: _titleController.text,
                   note: _noteController.text,

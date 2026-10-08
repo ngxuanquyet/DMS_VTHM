@@ -63,7 +63,12 @@ class VisitApiService {
     if (response is Map<String, dynamic>) {
       final data = response['data'];
       if (data is Map<String, dynamic>) {
-        return VisitEntity.fromJson(data);
+        final visit = VisitEntity.fromJson(data);
+        return visit.copyWith(
+          customerId: visit.customerId > 0 ? visit.customerId : request.customerId,
+          clientUuid: visit.clientUuid ?? request.clientUuid,
+          customerAddress: visit.customerAddress ?? request.address,
+        );
       }
     }
 

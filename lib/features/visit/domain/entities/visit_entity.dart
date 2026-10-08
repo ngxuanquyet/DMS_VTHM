@@ -28,6 +28,10 @@ class VisitEntity {
   final double? checkoutLng;
   final String? clientUuid;
 
+  /// Quãng đường đi ĐẾN điểm bán của lượt đó (tính bằng mét).
+  /// 0 = thiếu mốc · null = chưa tính · số = đã tính (§4.4 SPEC-2026-10-08)
+  final num? travelM;
+
   const VisitEntity({
     required this.id,
     this.visitDate,
@@ -54,7 +58,24 @@ class VisitEntity {
     this.checkoutLat,
     this.checkoutLng,
     this.clientUuid,
+    this.travelM,
   });
+
+  /// Chuỗi hiển thị km tuân thủ 3 trạng thái (§3 SPEC-2026-10-08):
+  /// - null: "—" (chưa tính)
+  /// - 0: "0 km" (thiếu mốc để đo)
+  /// - số > 0: "X.X km" (đã tính xong)
+  String get travelKmFormatted {
+    if (travelM == null) return '—';
+    if (travelM == 0) return '0 km';
+    final km = travelM! / 1000.0;
+    return '${km.toStringAsFixed(1)} km';
+  }
+
+  /// Trạng thái quãng đường: null = pending/chưa tính, 0 = thiếu mốc, > 0 = đã tính
+  bool get hasTravelCalculated => travelM != null && travelM! > 0;
+  bool get isTravelMissingAnchor => travelM == 0;
+  bool get isTravelPending => travelM == null;
 
   /// Phiên viếng thăm đang mở (chưa hoàn thành check-out và chưa huỷ)
   bool get isOpen => checkoutAt == null && cancelledAt == null;
@@ -145,6 +166,9 @@ class VisitEntity {
           ? double.tryParse(json['checkout_lng'].toString())
           : null,
       clientUuid: json['client_uuid']?.toString(),
+      travelM: json['travel_m'] is num
+          ? (json['travel_m'] as num)
+          : (json['travel_m'] != null ? num.tryParse(json['travel_m'].toString()) : null),
     );
   }
 
@@ -171,6 +195,7 @@ class VisitEntity {
         'checkout_lat': checkoutLat,
         'checkout_lng': checkoutLng,
         'client_uuid': clientUuid,
+        'travel_m': travelM,
       };
 
   VisitEntity copyWith({
@@ -199,6 +224,7 @@ class VisitEntity {
     double? checkoutLat,
     double? checkoutLng,
     String? clientUuid,
+    num? travelM,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -226,6 +252,7 @@ class VisitEntity {
       checkoutLat: checkoutLat ?? this.checkoutLat,
       checkoutLng: checkoutLng ?? this.checkoutLng,
       clientUuid: clientUuid ?? this.clientUuid,
+      travelM: travelM ?? this.travelM,
     );
   }
 }

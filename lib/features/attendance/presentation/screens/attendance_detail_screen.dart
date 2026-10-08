@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/map/goong_models.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -77,14 +78,15 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
       }
     });
 
-    // Tính toán ca làm việc hôm nay từ history (§3.4)
+    // Tính toán ca làm việc hôm nay: ưu tiên config.today (§2 SPEC-2026-10-06), fallback sang history
+    final today = state.config?.today;
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
     final todayPunches = state.history.where((p) => p.punchAt.startsWith(todayStr)).toList();
 
-    String firstCheckIn = '--:--';
-    String lastCheckOut = '--:--';
-    if (todayPunches.isNotEmpty) {
+    String firstCheckIn = today?.firstInTimeFormatted ?? '--:--';
+    String lastCheckOut = today?.lastOutTimeFormatted ?? '--:--';
+    if (firstCheckIn == '--:--' && todayPunches.isNotEmpty) {
       todayPunches.sort((a, b) => a.punchAt.compareTo(b.punchAt));
       firstCheckIn = todayPunches.first.timeFormatted;
       if (todayPunches.length > 1) {
@@ -92,7 +94,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
       }
     }
 
-    final isWorking = todayPunches.isNotEmpty;
+    final isWorking = (today != null && today.punchCount > 0) || todayPunches.isNotEmpty;
 
     // Tính thống kê tháng từ history
     final currentMonthPrefix = '${now.month.toString().padLeft(2, '0')}/${now.year}';
@@ -355,11 +357,20 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
       );
     }
 
+    // Nhãn nút lấy từ today.next_action_label ("Vào" hoặc "Ra" §2 SPEC-2026-10-06)
+    final punchActionLabel = state.config?.today?.nextActionLabel;
+    final punchText = isPunching
+        ? 'Đang gửi lượt chấm...'
+        : (punchActionLabel != null ? 'Chấm $punchActionLabel' : 'Chấm công');
+    final punchIcon = state.config?.today?.nextAction == 'out'
+        ? Icons.logout_rounded
+        : (state.config?.today?.nextAction == 'in' ? Icons.login_rounded : Icons.fingerprint_rounded);
+
     return AppButton(
-      text: isPunching ? 'Đang gửi lượt chấm...' : 'Chấm công',
+      text: punchText,
       height: 52,
       isLoading: isPunching,
-      icon: Icons.fingerprint_rounded,
+      icon: punchIcon,
       onPressed: isPunching
           ? null
           : () async {
@@ -372,6 +383,17 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               // Cập nhật toạ độ vào state
               await vm.updateUserLocation(position);
 
+              // 🔴 KIỂM TRA CHỐNG GIAN LẬN (MOCK LOCATION & CLOCK SKEW) TRƯỚC KHI CHẤM CÔNG
+              if (context.mounted) {
+                final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(
+                  context,
+                  position: position,
+                  actionType: AntiFraudActionType.attendance,
+                  actionTitle: 'Chấm công',
+                );
+                if (!fraudCheck.isAllowed) return;
+              }
+
               // 2. Nếu ngoài vùng và nhóm enforce_geofence: hiển thị cảnh báo
               if (isBlockedByGeofence) {
                 final closest = state.closestLocation;
@@ -381,7 +403,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
                     workplace: closest,
                     userPoint: GoongLatLng(position.latitude, position.longitude),
                     distanceMeters: (closest.distanceM ?? 9999).toDouble(),
-                    maxAllowedMeters: closest.radiusM.toDouble(),
+                    maxAllowedMeters: (closest.radiusM ?? 200).toDouble(),
                   );
                 }
                 return;

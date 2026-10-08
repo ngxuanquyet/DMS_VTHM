@@ -128,7 +128,7 @@ class PersonalInfoScreen extends ConsumerWidget {
           icon: Icons.person_off_outlined,
           title: 'Chưa có thông tin nhân viên',
           description:
-              'Không tìm thấy hồ sơ cá nhân hoặc dữ liệu chưa được cập nhật từ máy chủ.',
+              'Không tìm thấy hồ sơ cá nhân hoặc dữ liệu chưa được cập nhật.',
           actionText: 'Tải lại dữ liệu',
           onAction: () => viewModel.loadData(isRefresh: true),
         ),

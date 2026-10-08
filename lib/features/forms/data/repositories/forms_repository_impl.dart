@@ -90,6 +90,7 @@ class FormsRepositoryImpl implements FormsRepository {
         entity: const Value('form_submission'),
         op: const Value('create'),
         clientUuid: Value(submission.clientUuid),
+        parentUuid: submission.parentUuid != null ? Value(submission.parentUuid) : const Value.absent(),
         payload: Value(jsonEncode(offlinePayload)),
         state: const Value('pending'),
         createdAt: Value(nowMs),
@@ -101,7 +102,7 @@ class FormsRepositoryImpl implements FormsRepository {
 
     return const MarketFormSubmitResult(
       success: true,
-      message: 'Đã lưu phiếu ngoại tuyến. Hệ thống sẽ tự động đồng bộ khi có kết nối mạng.',
+      message: 'Đã lưu phiếu trên máy. Dữ liệu sẽ tự động gửi khi có mạng trở lại.',
     );
   }
 }

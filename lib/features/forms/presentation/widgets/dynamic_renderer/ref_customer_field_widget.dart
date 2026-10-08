@@ -16,6 +16,9 @@ class RefCustomerFieldWidget extends ConsumerStatefulWidget {
   final String? errorText;
   final ValueChanged<int?> onChanged;
   final String? defaultCustomerName;
+  final String? defaultCustomerCode;
+  final String? defaultCustomerAddress;
+  final bool isReadOnly;
 
   const RefCustomerFieldWidget({
     super.key,
@@ -24,6 +27,9 @@ class RefCustomerFieldWidget extends ConsumerStatefulWidget {
     required this.onChanged,
     this.errorText,
     this.defaultCustomerName,
+    this.defaultCustomerCode,
+    this.defaultCustomerAddress,
+    this.isReadOnly = false,
   });
 
   @override
@@ -39,6 +45,7 @@ class _RefCustomerFieldWidgetState
     bool isDark,
     GoongLatLng? livePoint,
   ) {
+    if (widget.isReadOnly) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -71,7 +78,20 @@ class _RefCustomerFieldWidgetState
 
     return customersAsync.when(
       data: (data) => _buildField(context, data, isDark, label, description, livePoint),
-      loading: () => _buildLoadingField(isDark, label, description),
+      loading: () {
+        if (widget.selectedId != null &&
+            (widget.defaultCustomerName != null || widget.isReadOnly)) {
+          return _buildField(
+            context,
+            const RouteCustomersData(items: []),
+            isDark,
+            label,
+            description,
+            livePoint,
+          );
+        }
+        return _buildLoadingField(isDark, label, description);
+      },
       error: (_, __) => _buildField(
         context,
         const RouteCustomersData(items: []),
@@ -150,6 +170,7 @@ class _RefCustomerFieldWidgetState
     }
 
     final hasError = widget.errorText != null;
+    final isLocked = widget.isReadOnly;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,14 +178,18 @@ class _RefCustomerFieldWidgetState
         _buildLabel(label, description, isDark),
         const SizedBox(height: 6),
         InkWell(
-          onTap: () => _openPicker(context, data, isDark, livePoint),
+          onTap: isLocked ? null : () => _openPicker(context, data, isDark, livePoint),
           borderRadius: BorderRadius.circular(10),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppColors.darkSurfaceContainerLowest
-                  : AppColors.surfaceContainerLowest,
+              color: isLocked
+                  ? (isDark
+                      ? AppColors.darkSurfaceContainer
+                      : AppColors.surfaceContainerLow)
+                  : (isDark
+                      ? AppColors.darkSurfaceContainerLowest
+                      : AppColors.surfaceContainerLowest),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: hasError
@@ -269,12 +294,13 @@ class _RefCustomerFieldWidgetState
                           ],
                         )
                       : (widget.selectedId != null &&
-                              widget.defaultCustomerName != null)
+                              (widget.defaultCustomerName != null || isLocked))
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  widget.defaultCustomerName!,
+                                  widget.defaultCustomerName ??
+                                      'Điểm bán #${widget.selectedId}',
                                   style: AppTypography.titleMedium(
                                     color: isDark
                                         ? AppColors.darkOnSurface
@@ -282,13 +308,46 @@ class _RefCustomerFieldWidgetState
                                   ).copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  'Mã ID: ${widget.selectedId}',
-                                  style: AppTypography.bodySmall(
-                                    color: isDark
-                                        ? AppColors.darkOnSurfaceVariant
-                                        : AppColors.onSurfaceVariant,
-                                  ),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? AppColors.darkSurfaceContainer
+                                            : AppColors.surfaceContainer,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        widget.defaultCustomerCode ??
+                                            'Mã ID: ${widget.selectedId}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: isDark
+                                              ? AppColors.darkOnSurfaceVariant
+                                              : AppColors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                    if (widget.defaultCustomerAddress != null &&
+                                        widget.defaultCustomerAddress!.isNotEmpty) ...[
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          widget.defaultCustomerAddress!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.bodySmall(
+                                            color: isDark
+                                                ? AppColors.darkOnSurfaceVariant
+                                                : AppColors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ],
                             )
@@ -303,24 +362,26 @@ class _RefCustomerFieldWidgetState
                               ),
                             ),
                 ),
-                if (selectedItem != null || widget.selectedId != null) ...[
-                  IconButton(
-                    icon: const Icon(Icons.clear, size: 18),
+                if (!isLocked) ...[
+                  if (selectedItem != null || widget.selectedId != null) ...[
+                    IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.onSurfaceVariant,
+                      onPressed: () => widget.onChanged(null),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Icon(
+                    Icons.arrow_drop_down,
                     color: isDark
                         ? AppColors.darkOnSurfaceVariant
                         : AppColors.onSurfaceVariant,
-                    onPressed: () => widget.onChanged(null),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
                   ),
-                  const SizedBox(width: 8),
                 ],
-                Icon(
-                  Icons.arrow_drop_down,
-                  color: isDark
-                      ? AppColors.darkOnSurfaceVariant
-                      : AppColors.onSurfaceVariant,
-                ),
               ],
             ),
           ),

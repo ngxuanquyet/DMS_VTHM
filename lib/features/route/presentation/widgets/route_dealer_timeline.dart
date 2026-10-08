@@ -147,17 +147,7 @@ class RouteDealerTimeline extends ConsumerWidget {
       return;
     }
 
-    // Nếu điểm bán đang có phiên viếng thăm mở (§3 Luật 3) -> Vào tiếp tục ngay
-    if (dealer.status == DealerVisitStatus.inProgress) {
-      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
-      if (context.mounted) {
-        context.push('/check-in', extra: dealer);
-      }
-      return;
-    }
-
-    // 0.1. Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
-    // Hoạt động cả khi Online lẫn Offline
+    // 0.1. Kiểm tra phiên viếng thăm đang mở (§3 Luật 3)
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
     VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
@@ -177,6 +167,31 @@ class RouteDealerTimeline extends ConsumerWidget {
         ? (dealer.customer as CustomerEntity).id
         : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
 
+    // Nếu chính là điểm bán đang có phiên viếng thăm mở -> Vào tiếp tục ngay (§3 Luật 3)
+    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId == targetCustomerId) {
+      final dealerWithVisit = dealer.visit != null
+          ? dealer
+          : dealer.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
+      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
+      if (context.mounted) {
+        context.push('/check-in', extra: dealerWithVisit);
+      }
+      return;
+    }
+
+    // Nếu điểm bán đang có phiên viếng thăm mở (§3 Luật 3) -> Vào tiếp tục ngay
+    if (dealer.status == DealerVisitStatus.inProgress) {
+      final dealerWithVisit = dealer.visit != null
+          ? dealer
+          : (activeVisit != null ? dealer.copyWith(visit: activeVisit) : dealer);
+      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
+      if (context.mounted) {
+        context.push('/check-in', extra: dealerWithVisit);
+      }
+      return;
+    }
+
+    // Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
     if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
       final activeDealerName = activeVisit.customerName.isNotEmpty
           ? activeVisit.customerName

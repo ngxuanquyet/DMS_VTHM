@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/map/goong_api_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
+import '../../../../core/utils/string_utils.dart';
 import '../../domain/entities/position_declaration_entity.dart';
 import '../../domain/entities/position_reason_entity.dart';
 import '../../domain/repositories/position_declaration_repository.dart';
@@ -287,8 +288,8 @@ class PositionDeclarationViewModel
         );
         return (true, successMsg);
       } else {
-        // Đã lưu hàng đợi ngoại tuyến
-        const offlineMsg = 'Đã lưu khai báo vào hàng đợi ngoại tuyến. Hệ thống sẽ tự động đồng bộ khi có kết nối mạng.';
+        // Đã lưu ngoại tuyến trên máy
+        const offlineMsg = 'Đã lưu khai báo trên máy. Dữ liệu sẽ tự động gửi khi có mạng trở lại.';
         state = state.copyWith(
           status: PositionDeclarationStatus.success,
           successMessage: offlineMsg,
@@ -336,11 +337,11 @@ class PositionDeclarationViewModel
       if (result.isSynced) {
         return (true, 'Đã cập nhật lý do và gửi thành công!');
       } else {
-        return (true, 'Đã đưa vào hàng đợi đồng bộ với lý do mới.');
+        return (true, 'Đã cập nhật lý do và lưu trên máy, sẽ tự động gửi khi có mạng.');
       }
     } catch (e) {
       await loadHistory();
-      return (false, 'Không thể gửi lại: $e');
+      return (false, 'Không thể gửi lại: ${StringUtils.formatUserFriendlyError(e)}');
     }
   }
 

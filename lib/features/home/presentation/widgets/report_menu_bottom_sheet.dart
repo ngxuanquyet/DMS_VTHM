@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 
 /// Hiển thị Modal Bottom Sheet khi bấm vào box "Báo cáo" trên trang chủ
 /// Gồm 4 mục theo yêu cầu:
@@ -149,7 +151,20 @@ void showReportMenuBottomSheet(BuildContext context) {
                   },
                 ),
 
-                // 4. Nghi vấn gian lận
+                // 4. Quãng đường của tôi
+                ReportMenuItem(
+                  title: 'Quãng đường của tôi',
+                  subtitle: 'Theo dõi km di chuyển theo ngày và chi tiết từng chặng',
+                  icon: Icons.two_wheeler_rounded,
+                  iconColor: const Color(0xFF0D9488),
+                  iconBgColor: const Color(0xFFCCFBF1),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    context.push('/travel');
+                  },
+                ),
+
+                // 5. Nghi vấn gian lận
                 ReportMenuItem(
                   title: 'Nghi vấn gian lận',
                   subtitle: 'Kiểm tra cảnh báo vị trí ảo, can thiệp GPS hoặc sai lệch giờ',
@@ -262,7 +277,47 @@ void showFraudSuspicionDialog(BuildContext context) {
 
   showDialog(
     context: context,
-    builder: (dialogCtx) => AlertDialog(
+    builder: (dialogCtx) => _FraudSuspicionDialog(isDark: isDark),
+  );
+}
+
+class _FraudSuspicionDialog extends StatefulWidget {
+  final bool isDark;
+  const _FraudSuspicionDialog({required this.isDark});
+
+  @override
+  State<_FraudSuspicionDialog> createState() => _FraudSuspicionDialogState();
+}
+
+class _FraudSuspicionDialogState extends State<_FraudSuspicionDialog> {
+  ComplianceReport? _report;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadReport());
+  }
+
+  Future<void> _loadReport() async {
+    try {
+      final container = ProviderScope.containerOf(context, listen: false);
+      final report = await container.read(antiFraudServiceProvider).checkDeviceCompliance();
+      if (mounted) {
+        setState(() => _report = report);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    final report = _report;
+    final isCompliant = report?.isCompliant ?? true;
+    final hasMock = report?.hasMockGps ?? false;
+    final hasSkew = report?.hasClockSkew ?? false;
+    final skewMin = report?.clockSkewMinutes ?? 0;
+
+    return AlertDialog(
       backgroundColor: isDark ? const Color(0xFF1E2420) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(
@@ -270,12 +325,13 @@ void showFraudSuspicionDialog(BuildContext context) {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+              color: (isCompliant ? const Color(0xFF10B981) : const Color(0xFFE11D48))
+                  .withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
-              Icons.verified_user_rounded,
-              color: Color(0xFF10B981),
+            child: Icon(
+              isCompliant ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
+              color: isCompliant ? const Color(0xFF10B981) : const Color(0xFFE11D48),
               size: 24,
             ),
           ),
@@ -300,28 +356,34 @@ void showFraudSuspicionDialog(BuildContext context) {
             ),
           ),
           const SizedBox(height: 16),
-          const _FraudCheckStatusRow(
+          _FraudCheckStatusRow(
             label: 'Toạ độ giả lập (Mock GPS)',
-            status: 'Hợp lệ - Không phát hiện phần mềm giả lập',
-            isNormal: true,
+            status: hasMock
+                ? 'PHÁT HIỆN BẤT THƯỜNG - Đang bật ứng dụng giả lập vị trí'
+                : 'Hợp lệ - Không phát hiện phần mềm can thiệp',
+            isNormal: !hasMock,
           ),
           const SizedBox(height: 10),
-          const _FraudCheckStatusRow(
+          _FraudCheckStatusRow(
             label: 'Đồng hồ thiết bị (Clock Skew)',
-            status: 'Chuẩn xác theo máy chủ (lệch < 1 phút)',
-            isNormal: true,
+            status: hasSkew
+                ? 'CẢNH BÁO LỆCH GIỜ - Lệch ${skewMin.abs()} phút so với giờ chuẩn'
+                : (skewMin == 0
+                    ? 'Chuẩn xác - Khớp theo giờ chuẩn hệ thống'
+                    : 'Hợp lệ - Lệch $skewMin phút (trong ngưỡng cho phép)'),
+            isNormal: !hasSkew,
           ),
           const SizedBox(height: 10),
           const _FraudCheckStatusRow(
             label: 'Bán kính viếng thăm (Geofence)',
-            status: 'Tuân thủ đúng ngưỡng khoảng cách',
+            status: 'Tuân thủ đúng phạm vi quy định tại điểm bán',
             isNormal: true,
           ),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(dialogCtx).pop(),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text(
             'Đóng',
             style: TextStyle(
@@ -331,8 +393,8 @@ void showFraudSuspicionDialog(BuildContext context) {
           ),
         ),
       ],
-    ),
-  );
+    );
+  }
 }
 
 class _FraudCheckStatusRow extends StatelessWidget {

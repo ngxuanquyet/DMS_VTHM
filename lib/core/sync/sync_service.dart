@@ -11,8 +11,10 @@ import '../database/database_provider.dart';
 import '../errors/app_exceptions.dart';
 import '../network/api_client.dart';
 import '../network/connectivity_provider.dart';
+import '../services/app_notification_service.dart';
 import '../utils/image_upload_helper.dart';
 import '../utils/system_clock.dart';
+import '../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 import '../../features/customer/data/utils/customer_payload_helper.dart';
 import '../../features/position_declaration/data/repositories/position_declaration_repository_impl.dart';
@@ -115,6 +117,17 @@ class SyncService {
     _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       syncQueue();
     });
+
+    // 4. Cảnh báo tồn đọng hàng đợi ngoại tuyến khi khởi động
+    try {
+      final pendingCount = await _db.countPendingSync();
+      if (pendingCount >= 3) {
+        _ref.read(appNotificationServiceProvider).notifyOfflineQueuePending(
+              pendingCount: pendingCount,
+            );
+        _ref.invalidate(unreadNotificationCountProvider);
+      }
+    } catch (_) {}
   }
 
   void dispose() {
@@ -127,33 +140,28 @@ class SyncService {
   /// Nếu [force] = true: cưỡng chế reset trạng thái stuck, bỏ qua kiểm tra nextAttemptAt (người dùng bấm đồng bộ).
   Future<SyncResult> syncQueue({bool force = false}) async {
     if (_isSyncing) {
-      if (force) {
-        debugPrint('[SyncService] Force syncQueue: reset cờ _isSyncing bị treo.');
-        _isSyncing = false;
-      } else {
-        debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
-        return const SyncResult();
-      }
-    }
-
-    if (force) {
-      // Hồi phục sending mồ côi và reset hoãn retry của pending. TUYỆT ĐỐI không đụng đến dead (4xx vĩnh viễn)
-      await _db.recoverOrphanedSendingEntries(resetPendingBackoff: true);
-    }
-
-    // Kiểm tra kết nối mạng
-    final isOnline = _ref.read(connectivityProvider).isOnline;
-    if (!isOnline && !force) {
-      debugPrint('[SyncService] Không có kết nối mạng, tạm dừng đồng bộ.');
+      debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();
     }
-
     _isSyncing = true;
+
     int successCount = 0;
     int retryableCount = 0;
     final List<SyncDeadError> currentDeadErrors = [];
 
     try {
+      if (force) {
+        // Hồi phục sending mồ côi và reset hoãn retry của pending. TUYỆT ĐỐI không đụng đến dead (4xx vĩnh viễn)
+        await _db.recoverOrphanedSendingEntries(resetPendingBackoff: true);
+      }
+
+      // Kiểm tra kết nối mạng
+      final isOnline = _ref.read(connectivityProvider).isOnline;
+      if (!isOnline && !force) {
+        debugPrint('[SyncService] Không có kết nối mạng, tạm dừng đồng bộ.');
+        return const SyncResult();
+      }
+
       // Lấy danh sách pending theo FIFO, tối đa 50 mục (§3.3 Luật 6)
       // Không bao giờ lấy các mục 'dead' (lỗi 4xx vĩnh viễn không retry)
       final entries = await _db.getPendingQueueEntries(limit: 50, force: force);
@@ -187,6 +195,27 @@ class SyncService {
         } else if (status == _SyncItemStatus.retryable) {
           retryableCount++;
         }
+      }
+
+      if (successCount > 0) {
+        try {
+          _ref.read(appNotificationServiceProvider).notifyOfflineSyncSuccess(
+                successCount: successCount,
+              );
+          _ref.invalidate(unreadNotificationCountProvider);
+        } catch (_) {}
+      }
+
+      if (retryableCount > 0) {
+        try {
+          final pending = await _db.countPendingSync();
+          if (pending > 0) {
+            _ref.read(appNotificationServiceProvider).notifyOfflineQueuePending(
+                  pendingCount: pending,
+                );
+            _ref.invalidate(unreadNotificationCountProvider);
+          }
+        } catch (_) {}
       }
 
       return SyncResult(
@@ -468,6 +497,20 @@ class SyncService {
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
 
+    // Nếu customer_id là ID âm hoặc chưa có, tìm theo parentUuid (§5.3)
+    int? customerId;
+    if (payload['customer_id'] != null) {
+      customerId = int.tryParse(payload['customer_id'].toString());
+    }
+    if ((customerId == null || customerId <= 0) && entry.parentUuid != null) {
+      final parentCustomer = await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
+        payload['customer_id'] = parentCustomer.serverId;
+      } else {
+        throw AppException('Chưa có serverId của khách hàng cha cho lượt viếng thăm');
+      }
+    }
+
     // Tính queued_seconds từ hardware clock (§9.1)
     final queuedSec = SystemClock.calculateQueuedSeconds(
       createdElapsedMs: entry.createdElapsed,
@@ -676,9 +719,23 @@ class SyncService {
 
       debugPrint('[SyncService] Đồng bộ Huỷ lượt thành công cho lượt #$visitId');
     } catch (e) {
-      final raw = e.toString();
-      // Server idempotent (§3.4): Nếu server báo "đã bị huỷ" / "đã huỷ", coi là thành công
-      if (raw.contains('đã bị huỷ') || raw.contains('đã huỷ') || raw.contains('already cancelled') || raw.contains('404')) {
+      final raw = e.toString().toLowerCase();
+      // Server idempotent (§3.4): Nếu server báo "đã bị huỷ" / "đã huỷ" hoặc "đã check out rồi", coi là thành công
+      if (raw.contains('đã bị huỷ') ||
+          raw.contains('đã huỷ') ||
+          raw.contains('đã bị hủy') ||
+          raw.contains('đã hủy') ||
+          raw.contains('already cancelled') ||
+          raw.contains('404') ||
+          raw.contains('đã check out') ||
+          raw.contains('đã checkout') ||
+          raw.contains('đã check-out') ||
+          raw.contains('không hủy được nữa') ||
+          raw.contains('không huỷ được nữa') ||
+          raw.contains('không hủy được') ||
+          raw.contains('không huỷ được') ||
+          raw.contains('already checked out') ||
+          raw.contains('already closed')) {
         await _db.markDone(entry.id);
         try {
           final visitRepo = _ref.read(visitRepositoryProvider);
@@ -687,7 +744,7 @@ class SyncService {
         try {
           _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
         } catch (_) {}
-        debugPrint('[SyncService] Lượt #$visitId đã được huỷ trước đó, đánh dấu hoàn tất.');
+        debugPrint('[SyncService] Lượt #$visitId đã được đóng/huỷ trước đó trên server, đánh dấu hoàn tất.');
         return;
       }
       rethrow;
@@ -707,6 +764,8 @@ class SyncService {
         final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
         if (parent != null && parent.serverId != null && parent.serverId! > 0) {
           payload['visit_id'] = parent.serverId;
+        } else {
+          throw AppException('Chưa có serverId của lượt viếng thăm cha cho biểu mẫu');
         }
       }
     }
@@ -893,18 +952,27 @@ class SyncService {
     int? punchId = payload['punch_id'] as int?;
 
     // Nếu punchId âm (tạo offline), cố gắng tìm serverId của lượt chấm cha qua parentUuid
-    if ((punchId == null || punchId <= 0) && entry.parentUuid != null) {
-      final parentRows = await (_db.select(_db.syncQueueEntries)
-            ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!)))
-          .get();
-      if (parentRows.isNotEmpty && parentRows.first.serverId != null && parentRows.first.serverId! > 0) {
-        punchId = parentRows.first.serverId;
+    if ((punchId == null || punchId <= 0)) {
+      if (entry.parentUuid != null) {
+        final parentRows = await (_db.select(_db.syncQueueEntries)
+              ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!)))
+            .get();
+        if (parentRows.isNotEmpty && parentRows.first.serverId != null && parentRows.first.serverId! > 0) {
+          punchId = parentRows.first.serverId;
+        }
+      }
+      // Dự phòng: Tìm lượt attendance_punch gần nhất đã sync thành công
+      if (punchId == null || punchId <= 0) {
+        final lastPunch = await _db.findLastSyncedPunchEntry();
+        if (lastPunch != null && lastPunch.serverId != null && lastPunch.serverId! > 0) {
+          punchId = lastPunch.serverId;
+        }
       }
     }
 
     if (punchId == null || punchId <= 0) {
       debugPrint('[SyncService] Chưa tìm thấy serverId của lượt chấm cho ảnh, giữ lại để retry sau');
-      throw const ServerException('Lượt chấm công chưa được đồng bộ lên máy chủ', 400);
+      throw AppException('Lượt chấm công chưa được đồng bộ lên máy chủ');
     }
 
     final localPath = entry.localPath ?? payload['local_path']?.toString();

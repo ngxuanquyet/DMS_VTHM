@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import '../../../features/auth/presentation/viewmodels/auth_view_model.dart';
+import '../../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../features/profile/presentation/viewmodels/profile_view_model.dart';
 import '../constants/app_assets.dart';
 import '../constants/app_constants.dart';
@@ -152,11 +153,37 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
               const OfflineSyncBadge(),
               Padding(
                 padding: const EdgeInsets.only(right: 8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.notifications_none_rounded),
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                  tooltip: strings.notificationsTitle,
-                  onPressed: onNotificationPressed ?? () => context.push('/notifications'),
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final unreadCount =
+                        ref.watch(unreadNotificationCountProvider).valueOrNull ?? 0;
+                    return Badge(
+                      isLabelVisible: unreadCount > 0,
+                      label: Text(
+                        unreadCount > 99 ? '99+' : unreadCount.toString(),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      backgroundColor: AppColors.error,
+                      offset: const Offset(-2, 2),
+                      child: IconButton(
+                        icon: const Icon(Icons.notifications_none_rounded),
+                        color: isDark
+                            ? AppColors.darkOnSurfaceVariant
+                            : AppColors.onSurfaceVariant,
+                        tooltip: strings.notificationsTitle,
+                        onPressed: onNotificationPressed ??
+                            () {
+                              context.push('/notifications').then((_) {
+                                ref.invalidate(unreadNotificationCountProvider);
+                              });
+                            },
+                      ),
+                    );
+                  },
                 ),
               ),
             ],

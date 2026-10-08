@@ -10,7 +10,14 @@ class RouteState {
   final RouteStatus status;
   final RouteDetailEntity? routeDetail;
   final List<String> availableRoutes;
+  final List<UserRouteEntity> userRoutes;
   final String selectedRoute;
+  final String? selectedVisitStatus; // 'all' | 'completed' | 'inProgress' | 'pending'
+  final String? selectedCustomerStatus; // 'all' | 'active' | 'inactive' ...
+  final String? selectedCustomerType; // 'all' | 'Tất cả loại' | specific type
+  final List<String> availableCustomerTypes;
+  final List<String> availableCustomerStatuses;
+  final int? selectedDayOfWeek;
   final String searchQuery;
   final int selectedTab; // 0: Danh sách, 1: Bản đồ
   final String? selectedDealerId;
@@ -25,7 +32,14 @@ class RouteState {
     this.status = RouteStatus.initial,
     this.routeDetail,
     this.availableRoutes = const [],
+    this.userRoutes = const [],
     this.selectedRoute = 'Tất cả tuyến',
+    this.selectedVisitStatus,
+    this.selectedCustomerStatus,
+    this.selectedCustomerType,
+    this.availableCustomerTypes = const [],
+    this.availableCustomerStatuses = const [],
+    this.selectedDayOfWeek,
     this.searchQuery = '',
     this.selectedTab = 0,
     this.selectedDealerId,
@@ -37,11 +51,53 @@ class RouteState {
     this.todayVisits = const [],
   });
 
+  /// Số lượng tiêu chí lọc đang được áp dụng
+  int get activeFiltersCount {
+    int count = 0;
+    if (selectedRoute != 'Tất cả tuyến' && selectedRoute.isNotEmpty) {
+      count++;
+    }
+    if (selectedVisitStatus != null &&
+        selectedVisitStatus != 'all' &&
+        selectedVisitStatus != 'Tất cả') {
+      count++;
+    }
+    if (selectedCustomerStatus != null &&
+        selectedCustomerStatus != 'all' &&
+        selectedCustomerStatus != 'Tất cả') {
+      count++;
+    }
+    if (selectedCustomerType != null &&
+        selectedCustomerType != 'all' &&
+        selectedCustomerType != 'Tất cả' &&
+        selectedCustomerType != 'Tất cả loại') {
+      count++;
+    }
+    if (selectedDayOfWeek != null) {
+      count++;
+    }
+    return count;
+  }
+
+  /// Kiểm tra xem có bộ lọc nào đang được kích hoạt hay không
+  bool get hasActiveFilter => activeFiltersCount > 0;
+
   RouteState copyWith({
     RouteStatus? status,
     RouteDetailEntity? routeDetail,
     List<String>? availableRoutes,
+    List<UserRouteEntity>? userRoutes,
     String? selectedRoute,
+    String? selectedVisitStatus,
+    bool clearVisitStatus = false,
+    String? selectedCustomerStatus,
+    bool clearCustomerStatus = false,
+    String? selectedCustomerType,
+    bool clearCustomerType = false,
+    List<String>? availableCustomerTypes,
+    List<String>? availableCustomerStatuses,
+    int? selectedDayOfWeek,
+    bool clearSelectedDayOfWeek = false,
     String? searchQuery,
     int? selectedTab,
     String? selectedDealerId,
@@ -57,7 +113,24 @@ class RouteState {
       status: status ?? this.status,
       routeDetail: routeDetail ?? this.routeDetail,
       availableRoutes: availableRoutes ?? this.availableRoutes,
+      userRoutes: userRoutes ?? this.userRoutes,
       selectedRoute: selectedRoute ?? this.selectedRoute,
+      selectedVisitStatus: clearVisitStatus
+          ? null
+          : (selectedVisitStatus ?? this.selectedVisitStatus),
+      selectedCustomerStatus: clearCustomerStatus
+          ? null
+          : (selectedCustomerStatus ?? this.selectedCustomerStatus),
+      selectedCustomerType: clearCustomerType
+          ? null
+          : (selectedCustomerType ?? this.selectedCustomerType),
+      availableCustomerTypes:
+          availableCustomerTypes ?? this.availableCustomerTypes,
+      availableCustomerStatuses:
+          availableCustomerStatuses ?? this.availableCustomerStatuses,
+      selectedDayOfWeek: clearSelectedDayOfWeek
+          ? null
+          : (selectedDayOfWeek ?? this.selectedDayOfWeek),
       searchQuery: searchQuery ?? this.searchQuery,
       selectedTab: selectedTab ?? this.selectedTab,
       selectedDealerId: selectedDealerId ?? this.selectedDealerId,
@@ -115,11 +188,14 @@ class CheckInState {
   /// Danh sách các biểu mẫu khảo sát bắt buộc chưa hoàn thành
   List<MarketFormConfigEntity> get unsubmittedRequiredSurveys {
     return surveyForms
-        .where((f) => f.isRequired && !submittedSurveyConfigIds.contains(f.configId))
+        .where(
+          (f) => f.isRequired && !submittedSurveyConfigIds.contains(f.configId),
+        )
         .toList();
   }
 
-  bool get hasUnsubmittedRequiredSurveys => unsubmittedRequiredSurveys.isNotEmpty;
+  bool get hasUnsubmittedRequiredSurveys =>
+      unsubmittedRequiredSurveys.isNotEmpty;
 
   /// Đã thỏa mãn tất cả điều kiện theo requirements API (§6)
   bool get canCheckout => requirements?.satisfied == true;
@@ -150,7 +226,8 @@ class CheckInState {
       status: status ?? this.status,
       checkinData: checkinData ?? this.checkinData,
       surveyForms: surveyForms ?? this.surveyForms,
-      submittedSurveyConfigIds: submittedSurveyConfigIds ?? this.submittedSurveyConfigIds,
+      submittedSurveyConfigIds:
+          submittedSurveyConfigIds ?? this.submittedSurveyConfigIds,
       errorMessage: errorMessage,
       liveVisitDuration: liveVisitDuration ?? this.liveVisitDuration,
       checkinTime: checkinTime ?? this.checkinTime,
@@ -161,7 +238,8 @@ class CheckInState {
       photos: photos ?? this.photos,
       isUploadingPhoto: isUploadingPhoto ?? this.isUploadingPhoto,
       isDeletingPhoto: isDeletingPhoto ?? this.isDeletingPhoto,
-      isRefreshingRequirements: isRefreshingRequirements ?? this.isRefreshingRequirements,
+      isRefreshingRequirements:
+          isRefreshingRequirements ?? this.isRefreshingRequirements,
       visitResult: visitResult ?? this.visitResult,
       closedNote: closedNote ?? this.closedNote,
     );

@@ -77,7 +77,13 @@ class VisitRepositoryImpl implements VisitRepository {
 
   @override
   Future<VisitEntity> checkin(CheckinRequestModel request) async {
-    final visit = await _apiService.checkin(request);
+    var visit = await _apiService.checkin(request);
+    if (visit.customerId <= 0) {
+      visit = visit.copyWith(customerId: request.customerId);
+    }
+    if (visit.clientUuid == null || visit.clientUuid!.isEmpty) {
+      visit = visit.copyWith(clientUuid: request.clientUuid);
+    }
     await saveActiveVisit(visit);
     await saveLocalVisit(visit);
     return visit;
@@ -186,7 +192,12 @@ class VisitRepositoryImpl implements VisitRepository {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_activeVisitKey);
       if (raw != null && raw.isNotEmpty) {
-        return VisitEntity.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        final entity = VisitEntity.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        if (entity.id <= 0 && entity.customerId <= 0) {
+          await prefs.remove(_activeVisitKey);
+          return null;
+        }
+        return entity;
       }
     } catch (_) {}
     return null;

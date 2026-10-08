@@ -18,6 +18,9 @@ class MarketFormRenderer extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>>? onChanged;
   final int? defaultCustomerId;
   final String? defaultCustomerName;
+  final String? defaultCustomerCode;
+  final String? defaultCustomerAddress;
+  final bool lockCustomer;
 
   const MarketFormRenderer({
     super.key,
@@ -27,6 +30,9 @@ class MarketFormRenderer extends StatefulWidget {
     this.onChanged,
     this.defaultCustomerId,
     this.defaultCustomerName,
+    this.defaultCustomerCode,
+    this.defaultCustomerAddress,
+    this.lockCustomer = false,
   });
 
   @override
@@ -54,18 +60,57 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     super.dispose();
   }
 
+  bool _isCustomerBlock(MarketFormBlockEntity block) {
+    final type = block.resolved.inputType.toLowerCase();
+    if (type == 'ref_customer') return true;
+    final code = block.resolved.code.toLowerCase();
+    return code == 'customer_id' ||
+        code == 'khach_hang_id' ||
+        code == 'diem_ban_khao_sat';
+  }
+
+  bool _isCustomerNameBlock(MarketFormBlockEntity block) {
+    final code = block.resolved.code.toLowerCase();
+    return code == 'customer_name' ||
+        code == 'ten_khach_hang' ||
+        code == 'ten_diem_ban';
+  }
+
+  bool _isCustomerCodeBlock(MarketFormBlockEntity block) {
+    final code = block.resolved.code.toLowerCase();
+    return code == 'customer_code' ||
+        code == 'ma_khach_hang' ||
+        code == 'ma_diem_ban';
+  }
+
   @override
   void initState() {
     super.initState();
     _answers.addAll(widget.initialAnswers);
 
-    // Tự động gán defaultCustomerId cho các ô ref_customer nếu chưa có câu trả lời
+    // Tự động gán defaultCustomerId cho các ô ref_customer hoặc ô khách hàng
     if (widget.defaultCustomerId != null) {
       for (final block in widget.blocks) {
-        if (block.resolved.inputType.toLowerCase() == 'ref_customer') {
+        if (_isCustomerBlock(block)) {
+          final code = block.resolved.code;
+          if (widget.lockCustomer || !_answers.containsKey(code) || _answers[code] == null) {
+            _answers[code] = widget.defaultCustomerId;
+          }
+        }
+      }
+    }
+
+    if (widget.lockCustomer) {
+      for (final block in widget.blocks) {
+        if (_isCustomerNameBlock(block) && widget.defaultCustomerName != null) {
           final code = block.resolved.code;
           if (!_answers.containsKey(code) || _answers[code] == null) {
-            _answers[code] = widget.defaultCustomerId;
+            _answers[code] = widget.defaultCustomerName;
+          }
+        } else if (_isCustomerCodeBlock(block) && widget.defaultCustomerCode != null) {
+          final code = block.resolved.code;
+          if (!_answers.containsKey(code) || _answers[code] == null) {
+            _answers[code] = widget.defaultCustomerCode;
           }
         }
       }
@@ -112,6 +157,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Validate toàn bộ form và trả về câu trả lời đã làm sạch (hoặc null nếu có lỗi)
   Map<String, dynamic>? validateAndGetAnswers() {
+    if (widget.lockCustomer && widget.defaultCustomerId != null) {
+      for (final block in widget.blocks) {
+        if (_isCustomerBlock(block)) {
+          _answers[block.resolved.code] = widget.defaultCustomerId;
+        }
+      }
+    }
+
     _recomputeVisibility();
     final Map<String, String> newErrors = {};
 
@@ -247,15 +300,22 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return _buildFileField(context, block, isDark);
       case 'ref_customer':
         final currentVal = _answers[block.resolved.code];
-        final int? selectedId = currentVal is int
-            ? currentVal
-            : (currentVal != null ? int.tryParse(currentVal.toString()) : null);
+        final int? selectedId = (widget.lockCustomer && widget.defaultCustomerId != null)
+            ? widget.defaultCustomerId
+            : (currentVal is int
+                ? currentVal
+                : (currentVal != null ? int.tryParse(currentVal.toString()) : null));
         return RefCustomerFieldWidget(
           block: block,
-          selectedId: selectedId,
+          selectedId: selectedId ?? (widget.lockCustomer ? widget.defaultCustomerId : null),
           errorText: _errors[block.resolved.code],
           defaultCustomerName: widget.defaultCustomerName,
-          onChanged: (val) => _updateValue(block.resolved.code, val),
+          defaultCustomerCode: widget.defaultCustomerCode,
+          defaultCustomerAddress: widget.defaultCustomerAddress,
+          isReadOnly: widget.lockCustomer,
+          onChanged: widget.lockCustomer
+              ? (_) {}
+              : (val) => _updateValue(block.resolved.code, val),
         );
       default:
         return _buildTextField(block, isDark, isMultiline: false);
@@ -340,6 +400,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     bool isDark, {
     required bool isMultiline,
   }) {
+    final isCustomerField = _isCustomerBlock(block) ||
+        _isCustomerNameBlock(block) ||
+        _isCustomerCodeBlock(block);
+    final isLocked = widget.lockCustomer && isCustomerField;
+
     final code = block.resolved.code;
     final initial = _answers[code]?.toString() ?? '';
     final controller = _getController(code, initial);
@@ -351,6 +416,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          readOnly: isLocked,
           maxLines: isMultiline ? 4 : 1,
           minLines: isMultiline ? 3 : 1,
           keyboardType: isMultiline ? TextInputType.multiline : TextInputType.text,
@@ -361,19 +427,21 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             hintText: 'Nhập ${block.resolved.label.toLowerCase()}...',
             isDark: isDark,
             errorText: _errors[code],
-            suffixIcon: VoiceInputMicButton(
-              fieldName: block.resolved.label.isNotEmpty ? block.resolved.label : code,
-              currentText: controller.text,
-              onTextRecognized: (text) {
-                controller.text = text;
-                controller.selection = TextSelection.fromPosition(
-                  TextPosition(offset: text.length),
-                );
-                _updateValue(code, text);
-              },
-            ),
+            suffixIcon: isLocked
+                ? null
+                : VoiceInputMicButton(
+                    fieldName: block.resolved.label.isNotEmpty ? block.resolved.label : code,
+                    currentText: controller.text,
+                    onTextRecognized: (text) {
+                      controller.text = text;
+                      controller.selection = TextSelection.fromPosition(
+                        TextPosition(offset: text.length),
+                      );
+                      _updateValue(code, text);
+                    },
+                  ),
           ),
-          onChanged: (val) => _updateValue(code, val),
+          onChanged: isLocked ? null : (val) => _updateValue(code, val),
         ),
       ],
     );
@@ -384,6 +452,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // ==========================================
 
   Widget _buildNumberField(MarketFormBlockEntity block, bool isDark) {
+    final isLocked = widget.lockCustomer && _isCustomerBlock(block);
     final code = block.resolved.code;
     final initial = _answers[code]?.toString() ?? '';
 
@@ -394,6 +463,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 8),
         TextFormField(
           initialValue: initial,
+          readOnly: isLocked,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
@@ -403,10 +473,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             isDark: isDark,
             errorText: _errors[code],
           ),
-          onChanged: (val) {
-            final parsed = num.tryParse(val);
-            _updateValue(code, parsed);
-          },
+          onChanged: isLocked
+              ? null
+              : (val) {
+                  final parsed = num.tryParse(val);
+                  _updateValue(code, parsed);
+                },
         ),
       ],
     );

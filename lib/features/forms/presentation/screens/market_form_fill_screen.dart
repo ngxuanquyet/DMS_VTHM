@@ -19,8 +19,11 @@ class MarketFormFillArgs {
   final int? customerId;
   final int? visitId;
   final String? dealerName;
+  final String? customerCode;
+  final String? customerAddress;
   final Map<String, dynamic>? initialAnswers;
   final Map<String, dynamic>? customerContext;
+  final bool? lockCustomer;
 
   const MarketFormFillArgs({
     required this.config,
@@ -28,9 +31,17 @@ class MarketFormFillArgs {
     this.customerId,
     this.visitId,
     this.dealerName,
+    this.customerCode,
+    this.customerAddress,
     this.initialAnswers,
     this.customerContext,
+    this.lockCustomer,
   });
+
+  /// Kiểm tra xem có cần cố định (khoá) trường khách hàng không
+  /// Tự động khoá nếu là khảo sát trong lượt viếng thăm (kind == 'survey' và có customerId)
+  bool get isCustomerLocked =>
+      lockCustomer ?? (kind == 'survey' && customerId != null);
 
   /// Dựng ngữ cảnh @customer.* từ các thuộc tính điểm bán theo spec 25/09/2026 (§4)
   static Map<String, dynamic> buildCustomerContext({
@@ -465,6 +476,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
               customerContext: widget.args.customerContext ?? const {},
               defaultCustomerId: widget.args.customerId,
               defaultCustomerName: widget.args.dealerName,
+              defaultCustomerCode: widget.args.customerCode,
+              defaultCustomerAddress: widget.args.customerAddress,
+              lockCustomer: widget.args.isCustomerLocked,
             ),
             const SizedBox(height: 80),
           ],

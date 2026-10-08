@@ -100,19 +100,29 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       // 2. Tải lịch sử chấm công của chính mình
       final history = await getHistoryUseCase(days: state.selectedDays);
 
-      // 3. Tính toán thời gian làm việc hôm nay
+      // 3. Tính toán thời gian làm việc hôm nay (ưu tiên today.first_in_at từ server §2)
       final now = DateTime.now();
+      int workDuration = 0;
+      if (config.today?.firstInAt != null) {
+        final dt = DateTime.tryParse(config.today!.firstInAt!.replaceAll(' ', 'T'));
+        if (dt != null) {
+          workDuration = now.difference(dt).inSeconds;
+          if (workDuration < 0) workDuration = 0;
+        }
+      }
+
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
       final todayPunches = history.where((p) => p.punchAt.startsWith(todayStr)).toList();
 
-      int workDuration = 0;
       AttendancePunchEntity? latest;
       if (todayPunches.isNotEmpty) {
         todayPunches.sort((a, b) => a.punchAt.compareTo(b.punchAt));
-        final firstPunchTime = todayPunches.first.punchAtDateTime;
-        if (firstPunchTime != null) {
-          workDuration = now.difference(firstPunchTime).inSeconds;
-          if (workDuration < 0) workDuration = 0;
+        if (workDuration == 0) {
+          final firstPunchTime = todayPunches.first.punchAtDateTime;
+          if (firstPunchTime != null) {
+            workDuration = now.difference(firstPunchTime).inSeconds;
+            if (workDuration < 0) workDuration = 0;
+          }
         }
         latest = todayPunches.last;
       }
@@ -230,6 +240,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     required Position position,
     File? frontPhoto,
     File? backPhoto,
+    void Function(double progress, String status)? onProgress,
   }) async {
     state = state.copyWith(
       isPunching: true,
@@ -238,6 +249,8 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     );
 
     try {
+      onProgress?.call(0.15, 'Đang ghi nhận lượt chấm công...');
+
       // 1. Gửi lượt chấm công lên server (§3) - không lưu vào lịch sử trước
       final clickUuid = const Uuid().v4();
       final punchResult = await punchUseCase(
@@ -250,6 +263,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
       // 2. Tải lần lượt từng ảnh lên (§4.1)
       if (frontPhoto != null) {
+        onProgress?.call(0.45, 'Đang tải lên ảnh chân dung...');
         try {
           await uploadPhotoUseCase(
             punchId: punchResult.id,
@@ -257,6 +271,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
             photoType: 'front',
             lat: position.latitude,
             lng: position.longitude,
+            parentUuid: punchResult.clientUuid,
           );
         } catch (photoErr) {
           debugPrint('[AttendanceViewModel] Lỗi tải ảnh trước: $photoErr');
@@ -264,6 +279,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       }
 
       if (backPhoto != null) {
+        onProgress?.call(0.75, 'Đang tải lên ảnh khung cảnh...');
         try {
           await uploadPhotoUseCase(
             punchId: punchResult.id,
@@ -271,14 +287,26 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
             photoType: 'back',
             lat: position.latitude,
             lng: position.longitude,
+            parentUuid: punchResult.clientUuid,
           );
         } catch (photoErr) {
           debugPrint('[AttendanceViewModel] Lỗi tải ảnh sau: $photoErr');
         }
       }
 
-      // 3. Làm mới lịch sử từ server (§5) - Chỉ khi gửi thật thành công mới có trong lịch sử
+      onProgress?.call(0.90, 'Đang cập nhật lịch sử chấm công...');
+
+      // 3. Làm mới lịch sử từ server (§5) và config để cập nhật today.next_action_label (§2)
       final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
+      AttendanceConfigEntity? refreshedConfig;
+      try {
+        refreshedConfig = await getConfigUseCase(
+          lat: position.latitude,
+          lng: position.longitude,
+        );
+      } catch (_) {}
+
+      onProgress?.call(1.0, 'Đã chấm công thành công!');
 
       final msg = punchResult.duplicate
           ? 'Lượt chấm này đã có trên hệ thống trước đó.'
@@ -286,6 +314,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
       state = state.copyWith(
         isPunching: false,
+        config: refreshedConfig ?? state.config,
         latestPunch: punchResult,
         history: refreshedHistory,
         successMessage: msg,

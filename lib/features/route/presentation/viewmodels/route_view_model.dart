@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../../../core/network/api_client.dart';
 import '../../../../core/rules/mobile_rules_model.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
@@ -12,6 +14,7 @@ import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
+import '../../../customer/domain/entities/customer_meta_entity.dart';
 import '../../../customer/domain/repositories/customer_repository.dart';
 import '../../data/repositories/route_repository_impl.dart';
 import '../../data/services/route_api_service.dart';
@@ -32,12 +35,16 @@ import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/connectivity_provider.dart';
 
 import 'dart:convert';
+
 import 'package:drift/drift.dart' as drift;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/rules/geofence_rule_helper.dart';
+import '../../../../core/services/app_notification_service.dart';
+import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
 
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
@@ -55,7 +62,9 @@ final getRouteDetailUseCaseProvider = Provider<GetRouteDetailUseCase>((ref) {
   return GetRouteDetailUseCase(ref.read(routeRepositoryProvider));
 });
 
-final getDealerCheckinUseCaseProvider = Provider<GetDealerCheckinUseCase>((ref) {
+final getDealerCheckinUseCaseProvider = Provider<GetDealerCheckinUseCase>((
+  ref,
+) {
   return GetDealerCheckinUseCase(ref.read(routeRepositoryProvider));
 });
 
@@ -65,20 +74,20 @@ final checkoutDealerUseCaseProvider = Provider<CheckoutDealerUseCase>((ref) {
 
 final routeViewModelProvider =
     StateNotifierProvider.autoDispose<RouteViewModel, RouteState>((ref) {
-  final customerRepository = ref.read(customerRepositoryProvider);
-  final getRouteDetailUseCase = ref.read(getRouteDetailUseCaseProvider);
-  final getTodayVisitsUseCase = ref.read(getTodayVisitsUseCaseProvider);
-  final visitRepository = ref.read(visitRepositoryProvider);
-  final routeApiService = ref.read(routeApiServiceProvider);
-  return RouteViewModel(
-    customerRepository: customerRepository,
-    getRouteDetailUseCase: getRouteDetailUseCase,
-    getTodayVisitsUseCase: getTodayVisitsUseCase,
-    visitRepository: visitRepository,
-    routeApiService: routeApiService,
-    ref: ref,
-  );
-});
+      final customerRepository = ref.read(customerRepositoryProvider);
+      final getRouteDetailUseCase = ref.read(getRouteDetailUseCaseProvider);
+      final getTodayVisitsUseCase = ref.read(getTodayVisitsUseCaseProvider);
+      final visitRepository = ref.read(visitRepositoryProvider);
+      final routeApiService = ref.read(routeApiServiceProvider);
+      return RouteViewModel(
+        customerRepository: customerRepository,
+        getRouteDetailUseCase: getRouteDetailUseCase,
+        getTodayVisitsUseCase: getTodayVisitsUseCase,
+        visitRepository: visitRepository,
+        routeApiService: routeApiService,
+        ref: ref,
+      );
+    });
 
 String _formatTimeHHmmss(DateTime? dt) {
   if (dt == null) return '--:--:--';
@@ -114,17 +123,15 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
   void setActiveVisit(VisitEntity? visit) {
     if (!mounted) return;
-    state = state.copyWith(
-      activeVisit: visit,
-      clearActiveVisit: visit == null,
-    );
+    state = state.copyWith(activeVisit: visit, clearActiveVisit: visit == null);
     _recomputeRouteDetail();
   }
 
   void markVisitCancelledLocally(int visitId, {String? clientUuid}) {
     if (!mounted) return;
     final updatedVisits = state.todayVisits.map((v) {
-      if (v.id == visitId || (clientUuid != null && v.clientUuid == clientUuid)) {
+      if (v.id == visitId ||
+          (clientUuid != null && v.clientUuid == clientUuid)) {
         return v.copyWith(
           cancelledAt: DateTime.now(),
           cancelledAtRaw: DateTime.now().toIso8601String(),
@@ -133,7 +140,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
       return v;
     }).toList();
 
-    final shouldClearActive = state.activeVisit?.id == visitId ||
+    final shouldClearActive =
+        state.activeVisit?.id == visitId ||
         (clientUuid != null && state.activeVisit?.clientUuid == clientUuid);
 
     state = state.copyWith(
@@ -162,6 +170,70 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
+  void selectVisitStatus(String? status) {
+    state = state.copyWith(
+      selectedVisitStatus: status,
+      clearVisitStatus: status == null || status == 'all' || status == 'Tất cả',
+    );
+    _recomputeRouteDetail();
+  }
+
+  void selectCustomerStatus(String? status) {
+    state = state.copyWith(
+      selectedCustomerStatus: status,
+      clearCustomerStatus: status == null || status == 'all' || status == 'Tất cả',
+    );
+    _recomputeRouteDetail();
+  }
+
+  void selectCustomerType(String? type) {
+    state = state.copyWith(
+      selectedCustomerType: type,
+      clearCustomerType: type == null ||
+          type == 'all' ||
+          type == 'Tất cả' ||
+          type == 'Tất cả loại',
+    );
+    _recomputeRouteDetail();
+  }
+
+  void applyFilters({
+    String? route,
+    String? visitStatus,
+    String? customerStatus,
+    String? customerType,
+  }) {
+    state = state.copyWith(
+      selectedRoute: route ?? 'Tất cả tuyến',
+      selectedVisitStatus: visitStatus,
+      clearVisitStatus: visitStatus == null ||
+          visitStatus == 'all' ||
+          visitStatus == 'Tất cả',
+      selectedCustomerStatus: customerStatus,
+      clearCustomerStatus: customerStatus == null ||
+          customerStatus == 'all' ||
+          customerStatus == 'Tất cả',
+      selectedCustomerType: customerType,
+      clearCustomerType: customerType == null ||
+          customerType == 'all' ||
+          customerType == 'Tất cả' ||
+          customerType == 'Tất cả loại',
+    );
+    _recomputeRouteDetail();
+  }
+
+  void resetFilters() {
+    state = state.copyWith(
+      selectedRoute: 'Tất cả tuyến',
+      clearVisitStatus: true,
+      clearCustomerStatus: true,
+      clearCustomerType: true,
+      clearSelectedDayOfWeek: true,
+      searchQuery: '',
+    );
+    _recomputeRouteDetail();
+  }
+
   void toggleSortByDistance({double? userLat, double? userLng}) {
     if (state.isSortedByDistance) {
       state = state.copyWith(isSortedByDistance: false);
@@ -180,13 +252,53 @@ class RouteViewModel extends StateNotifier<RouteState> {
     if (state.isSortedByDistance) {
       _recomputeRouteDetail();
     }
+    checkProximitySuggestion(userLat: lat, userLng: lng);
+  }
+
+  /// Gợi ý thông minh điểm bán lân cận chưa ghé trong bán kính 500m
+  void checkProximitySuggestion({double? userLat, double? userLng}) {
+    final lat = userLat ?? state.userLat;
+    final lng = userLng ?? state.userLng;
+    if (lat == null || lng == null || state.routeDetail == null) return;
+
+    final pendingDealers = state.routeDetail!.dealers
+        .where((d) =>
+            d.status == DealerVisitStatus.pending &&
+            d.lat != null &&
+            d.lng != null)
+        .toList();
+
+    DealerEntity? closest;
+    double minDistance = double.infinity;
+    for (final d in pendingDealers) {
+      final dist = Geolocator.distanceBetween(lat, lng, d.lat!, d.lng!);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = d;
+      }
+    }
+
+    if (closest != null && minDistance <= 500) {
+      if (ref != null) {
+        try {
+          ref!.read(appNotificationServiceProvider).notifyNearbyDealerSuggestion(
+                dealerName: closest.name,
+                distanceMeters: minDistance.round(),
+                dealerId: closest.id,
+              );
+          ref!.invalidate(unreadNotificationCountProvider);
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> loadRouteDetail({bool isRefresh = false}) async {
     state = state.copyWith(status: RouteStatus.loading);
     try {
       // 1. Fetch user's customers from customer repository
-      final customers = await customerRepository.getCustomers(forceRefresh: isRefresh);
+      final customers = await customerRepository.getCustomers(
+        forceRefresh: isRefresh,
+      );
 
       // 2. Fetch today's visits to detect visited/in-progress dealers (§2.3)
       List<VisitEntity> todayVisits = [];
@@ -200,16 +312,21 @@ class RouteViewModel extends StateNotifier<RouteState> {
       if (ref != null) {
         try {
           final db = ref!.read(appDatabaseProvider);
-          final pendingCancels = await (db.select(db.syncQueueEntries)
-                ..where((tbl) =>
-                    tbl.entity.equals('visit') &
-                    tbl.op.equals('cancel') &
-                    (tbl.state.equals('pending') | tbl.state.equals('sending'))))
-              .get();
+          final pendingCancels =
+              await (db.select(db.syncQueueEntries)..where(
+                    (tbl) =>
+                        tbl.entity.equals('visit') &
+                        tbl.op.equals('cancel') &
+                        (tbl.state.equals('pending') |
+                            tbl.state.equals('sending')),
+                  ))
+                  .get();
           final pendingCancelVisitIds = <int>{};
           final pendingCancelUuids = <String>{};
           for (final entry in pendingCancels) {
-            if (entry.parentUuid != null) pendingCancelUuids.add(entry.parentUuid!);
+            if (entry.parentUuid != null) {
+              pendingCancelUuids.add(entry.parentUuid!);
+            }
             try {
               final payload = jsonDecode(entry.payload);
               if (payload is Map && payload['visit_id'] != null) {
@@ -218,10 +335,12 @@ class RouteViewModel extends StateNotifier<RouteState> {
               }
             } catch (_) {}
           }
-          if (pendingCancelVisitIds.isNotEmpty || pendingCancelUuids.isNotEmpty) {
+          if (pendingCancelVisitIds.isNotEmpty ||
+              pendingCancelUuids.isNotEmpty) {
             todayVisits = todayVisits.map((v) {
               if (pendingCancelVisitIds.contains(v.id) ||
-                  (v.clientUuid != null && pendingCancelUuids.contains(v.clientUuid))) {
+                  (v.clientUuid != null &&
+                      pendingCancelUuids.contains(v.clientUuid))) {
                 return v.copyWith(
                   cancelledAt: DateTime.now(),
                   cancelledAtRaw: DateTime.now().toIso8601String(),
@@ -247,7 +366,23 @@ class RouteViewModel extends StateNotifier<RouteState> {
         try {
           final saved = await visitRepository!.getActiveVisit();
           if (saved != null && saved.isOpen && !saved.isCancelled) {
-            activeVisit = saved;
+            // Kiểm tra xem lượt này trên server (todayVisits) đã có bản ghi và đã đóng/huỷ chưa
+            final matchingServerVisit = todayVisits
+                .where(
+                  (v) =>
+                      (v.id == saved.id && v.id > 0) ||
+                      v.customerId == saved.customerId,
+                )
+                .firstOrNull;
+            if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
+              // Server đã đóng/check-out hoặc huỷ lượt này rồi -> Xoá active visit cục bộ bị lỗi thời!
+              debugPrint(
+                '[RouteViewModel] Lượt viếng thăm id=${saved.id} đã hoàn tất trên server, xoá active visit stale.',
+              );
+              await visitRepository!.clearActiveVisit();
+            } else {
+              activeVisit = saved;
+            }
           }
         } catch (_) {}
       }
@@ -258,10 +393,13 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
       if (routeApiService != null) {
         try {
-          final myRoutes = await routeApiService!.getMyRoutes(forceRefresh: isRefresh);
+          final myRoutes = await routeApiService!.getMyRoutes(
+            forceRefresh: isRefresh,
+          );
           for (final r in myRoutes) {
             final trimmed = r.name.trim();
-            if (trimmed.isNotEmpty && !CustomerEntity.isInvalidOrProvinceRoute(trimmed)) {
+            if (trimmed.isNotEmpty &&
+                !CustomerEntity.isInvalidOrProvinceRoute(trimmed)) {
               routeSet.add(trimmed);
               routeMap[r.id] = trimmed;
             }
@@ -272,7 +410,12 @@ class RouteViewModel extends StateNotifier<RouteState> {
       // Đồng bộ thông tin tuyến cho các khách hàng (giải mã routeIds nếu c.route chưa có)
       final resolvedCustomers = customers.map((c) {
         final cleanRoutes = c.routes
-            .where((r) => !CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: c.provinceName))
+            .where(
+              (r) => !CustomerEntity.isInvalidOrProvinceRoute(
+                r,
+                provinceName: c.provinceName,
+              ),
+            )
             .toList();
         if (cleanRoutes.isNotEmpty) {
           for (final r in cleanRoutes) {
@@ -281,7 +424,10 @@ class RouteViewModel extends StateNotifier<RouteState> {
           return c;
         }
         if (c.routeIds.isNotEmpty && routeMap.isNotEmpty) {
-          final mappedNames = c.routeIds.map((id) => routeMap[id]).whereType<String>().toList();
+          final mappedNames = c.routeIds
+              .map((id) => routeMap[id])
+              .whereType<String>()
+              .toList();
           if (mappedNames.isNotEmpty) {
             for (final r in mappedNames) {
               routeSet.add(r);
@@ -294,10 +440,19 @@ class RouteViewModel extends StateNotifier<RouteState> {
         }
         if (c.route.trim().isNotEmpty &&
             c.route.trim() != 'Tất cả tuyến' &&
-            !CustomerEntity.isInvalidOrProvinceRoute(c.route, provinceName: c.provinceName)) {
-          final parts = c.route.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
+            !CustomerEntity.isInvalidOrProvinceRoute(
+              c.route,
+              provinceName: c.provinceName,
+            )) {
+          final parts = c.route
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty);
           for (final p in parts) {
-            if (!CustomerEntity.isInvalidOrProvinceRoute(p, provinceName: c.provinceName)) {
+            if (!CustomerEntity.isInvalidOrProvinceRoute(
+              p,
+              provinceName: c.provinceName,
+            )) {
               routeSet.add(p);
             }
           }
@@ -308,15 +463,49 @@ class RouteViewModel extends StateNotifier<RouteState> {
       _rawCustomers = resolvedCustomers;
       final availableRoutes = routeSet.toList();
 
+      // Trích xuất danh sách loại khách hàng từ meta hệ thống và khách hàng thực tế
+      CustomerMetaData? meta;
+      try {
+        meta = await customerRepository.getCustomerMeta(forceRefresh: isRefresh);
+      } catch (_) {}
+
+      final typeSet = <String>{};
+      if (meta != null) {
+        for (final ct in meta.customerTypes) {
+          final t = ct.name.trim();
+          if (t.isNotEmpty && t != 'Tất cả' && t != 'Tất cả loại') {
+            typeSet.add(t);
+          }
+        }
+      }
+      for (final c in resolvedCustomers) {
+        final t = c.type.trim();
+        if (t.isNotEmpty && t != 'Tất cả' && t != 'Tất cả loại') {
+          typeSet.add(t);
+        }
+      }
+      final customerTypes = typeSet.toList()..sort();
+
+      final customerStatuses = resolvedCustomers
+          .map((c) => c.status.trim())
+          .where((s) => s.isNotEmpty && s != 'Tất cả')
+          .toSet()
+          .toList();
+      customerStatuses.sort();
+
       // Ensure selectedRoute is valid
       String selectedRoute = state.selectedRoute;
       if (!availableRoutes.contains(selectedRoute)) {
-        selectedRoute = availableRoutes.isNotEmpty ? availableRoutes.first : 'Tất cả tuyến';
+        selectedRoute = availableRoutes.isNotEmpty
+            ? availableRoutes.first
+            : 'Tất cả tuyến';
       }
 
       if (!mounted) return;
       state = state.copyWith(
         availableRoutes: availableRoutes,
+        availableCustomerTypes: customerTypes,
+        availableCustomerStatuses: customerStatuses,
         selectedRoute: selectedRoute,
         todayVisits: todayVisits,
         activeVisit: activeVisit,
@@ -335,14 +524,37 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
   void _recomputeRouteDetail() {
     if (!mounted) return;
-    // Filter customers by selected route
+    // 1. Lọc theo tuyến được chọn
     var filtered = _rawCustomers;
-    if (state.selectedRoute != 'Tất cả tuyến') {
+    if (state.selectedRoute != 'Tất cả tuyến' && state.selectedRoute.isNotEmpty) {
       filtered = filtered.where((c) {
         if (c.route == state.selectedRoute) return true;
         if (c.routes.contains(state.selectedRoute)) return true;
         final parts = c.route.split(',').map((e) => e.trim());
         return parts.contains(state.selectedRoute);
+      }).toList();
+    }
+
+    // 2. Lọc theo trạng thái khách hàng (active, inactive...)
+    if (state.selectedCustomerStatus != null &&
+        state.selectedCustomerStatus != 'all' &&
+        state.selectedCustomerStatus != 'Tất cả' &&
+        state.selectedCustomerStatus!.isNotEmpty) {
+      final targetStatus = state.selectedCustomerStatus!.toLowerCase().trim();
+      filtered = filtered.where((c) {
+        return c.status.toLowerCase().trim() == targetStatus;
+      }).toList();
+    }
+
+    // 3. Lọc theo loại khách hàng (NPP, Đại lý, Tạp hóa...)
+    if (state.selectedCustomerType != null &&
+        state.selectedCustomerType != 'all' &&
+        state.selectedCustomerType != 'Tất cả' &&
+        state.selectedCustomerType != 'Tất cả loại' &&
+        state.selectedCustomerType!.isNotEmpty) {
+      final targetType = state.selectedCustomerType!.toLowerCase().trim();
+      filtered = filtered.where((c) {
+        return c.type.toLowerCase().trim() == targetType;
       }).toList();
     }
 
@@ -356,19 +568,32 @@ class RouteViewModel extends StateNotifier<RouteState> {
             c.phone.replaceAll(' ', '').contains(query) ||
             StringUtils.toUnaccentedLower(c.address).contains(query) ||
             StringUtils.toUnaccentedLower(c.route).contains(query) ||
-            (c.contactTitle != null && StringUtils.toUnaccentedLower(c.contactTitle).contains(query));
+            (c.contactTitle != null &&
+                StringUtils.toUnaccentedLower(c.contactTitle).contains(query));
       }).toList();
     }
 
     // Sort by distance if enabled
-    if (state.isSortedByDistance && state.userLat != null && state.userLng != null) {
+    if (state.isSortedByDistance &&
+        state.userLat != null &&
+        state.userLng != null) {
       filtered = List.from(filtered);
       filtered.sort((a, b) {
         if (!a.hasCoordinates && !b.hasCoordinates) return 0;
         if (!a.hasCoordinates) return 1;
         if (!b.hasCoordinates) return -1;
-        final distA = Geolocator.distanceBetween(state.userLat!, state.userLng!, a.lat!, a.lng!);
-        final distB = Geolocator.distanceBetween(state.userLat!, state.userLng!, b.lat!, b.lng!);
+        final distA = Geolocator.distanceBetween(
+          state.userLat!,
+          state.userLng!,
+          a.lat!,
+          a.lng!,
+        );
+        final distB = Geolocator.distanceBetween(
+          state.userLat!,
+          state.userLng!,
+          b.lat!,
+          b.lng!,
+        );
         return distA.compareTo(distB);
       });
     }
@@ -391,7 +616,9 @@ class RouteViewModel extends StateNotifier<RouteState> {
       }
     }
     // Bổ sung activeVisit vào visitMap nếu chưa có và không bị huỷ (rất quan trọng khi offline)
-    if (state.activeVisit != null && state.activeVisit!.isOpen && !state.activeVisit!.isCancelled) {
+    if (state.activeVisit != null &&
+        state.activeVisit!.isOpen &&
+        !state.activeVisit!.isCancelled) {
       visitMap[state.activeVisit!.customerId] = state.activeVisit!;
     }
 
@@ -429,7 +656,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
             visitedTime = _formatTimeHHmm(inTime);
           }
         }
-      } else if (c.visitStatus == CustomerVisitStatus.visited && !cancelledCustomerIds.contains(c.id)) {
+      } else if (c.visitStatus == CustomerVisitStatus.visited &&
+          !cancelledCustomerIds.contains(c.id)) {
         visitStatus = DealerVisitStatus.completed;
         statusLabel = 'Đã ghé';
         visitedTime = '08:30 - 08:45';
@@ -438,7 +666,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
         statusLabel = 'Chưa ghé';
       }
 
-      final isVip = c.type.toLowerCase().contains('npp') ||
+      final isVip =
+          c.type.toLowerCase().contains('npp') ||
           c.type.toLowerCase().contains('cấp 1') ||
           c.type.toLowerCase().contains('siêu thị');
 
@@ -465,8 +694,30 @@ class RouteViewModel extends StateNotifier<RouteState> {
       );
     }
 
-    final total = dealers.length;
-    final completed = dealers.where((d) => d.status == DealerVisitStatus.completed).length;
+    // 8. Lọc dealers theo trạng thái viếng thăm
+    var finalDealers = dealers;
+    if (state.selectedVisitStatus != null &&
+        state.selectedVisitStatus != 'all' &&
+        state.selectedVisitStatus != 'Tất cả' &&
+        state.selectedVisitStatus!.isNotEmpty) {
+      finalDealers = dealers.where((d) {
+        switch (state.selectedVisitStatus) {
+          case 'completed':
+            return d.status == DealerVisitStatus.completed;
+          case 'inProgress':
+            return d.status == DealerVisitStatus.inProgress;
+          case 'pending':
+            return d.status == DealerVisitStatus.pending;
+          default:
+            return true;
+        }
+      }).toList();
+    }
+
+    final total = finalDealers.length;
+    final completed = finalDealers
+        .where((d) => d.status == DealerVisitStatus.completed)
+        .length;
     final pending = total - completed;
     final progress = total > 0 ? completed / total : 0.0;
 
@@ -477,18 +728,55 @@ class RouteViewModel extends StateNotifier<RouteState> {
       completedDealers: completed,
       pendingDealers: pending,
       progressPercent: progress,
-      dealers: dealers,
+      dealers: finalDealers,
     );
 
-    state = state.copyWith(
-      status: RouteStatus.loaded,
-      routeDetail: detail,
-    );
+    state = state.copyWith(status: RouteStatus.loaded, routeDetail: detail);
+
+    // Tự động kích hoạt nhắc nhở lộ trình đầu ngày và cảnh báo tiến độ tuyến
+    if (ref != null && total > 0) {
+      try {
+        final hour = DateTime.now().hour;
+        final routeName = state.selectedRoute.isNotEmpty && state.selectedRoute != 'Tất cả tuyến'
+            ? state.selectedRoute
+            : 'Tuyến hôm nay';
+
+        // Nhắc lộ trình đầu ngày (07:30 - 10:30)
+        if (hour >= 7 && hour < 11) {
+          ref!.read(appNotificationServiceProvider).notifyRouteBriefing(
+                totalDealers: total,
+                routeName: routeName,
+              );
+          ref!.invalidate(unreadNotificationCountProvider);
+        }
+
+        // Cảnh báo tiến độ tuyến (Khung trưa 11:15 - 13:00 và Chiều 15:00 - 17:00)
+        if (completed < total) {
+          if (hour >= 11 && hour < 13) {
+            ref!.read(appNotificationServiceProvider).notifyRouteProgress(
+                  completed: completed,
+                  total: total,
+                  period: 'Trưa',
+                );
+            ref!.invalidate(unreadNotificationCountProvider);
+          } else if (hour >= 15 && hour < 17) {
+            ref!.read(appNotificationServiceProvider).notifyRouteProgress(
+                  completed: completed,
+                  total: total,
+                  period: 'Chiều',
+                );
+            ref!.invalidate(unreadNotificationCountProvider);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   Future<bool> deletePendingCustomer(String clientUuid) async {
     try {
-      final success = await customerRepository.deletePendingCustomer(clientUuid);
+      final success = await customerRepository.deletePendingCustomer(
+        clientUuid,
+      );
       if (success) {
         _rawCustomers.removeWhere((c) => c.clientUuid == clientUuid);
         _recomputeRouteDetail();
@@ -502,20 +790,22 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
 final checkInViewModelProvider =
     StateNotifierProvider<CheckInViewModel, CheckInState>((ref) {
-  return CheckInViewModel(
-    getDealerCheckinUseCase: ref.read(getDealerCheckinUseCaseProvider),
-    checkoutDealerUseCase: ref.read(checkoutDealerUseCaseProvider),
-    getAvailableFormsUseCase: ref.read(getAvailableFormsUseCaseProvider),
-    checkinUseCase: ref.read(checkinUseCaseProvider),
-    checkoutUseCase: ref.read(checkoutUseCaseProvider),
-    getVisitRequirementsUseCase: ref.read(getVisitRequirementsUseCaseProvider),
-    uploadVisitPhotoUseCase: ref.read(uploadVisitPhotoUseCaseProvider),
-    deleteVisitPhotoUseCase: ref.read(deleteVisitPhotoUseCaseProvider),
-    cancelVisitUseCase: ref.read(cancelVisitUseCaseProvider),
-    visitRepository: ref.read(visitRepositoryProvider),
-    ref: ref,
-  );
-});
+      return CheckInViewModel(
+        getDealerCheckinUseCase: ref.read(getDealerCheckinUseCaseProvider),
+        checkoutDealerUseCase: ref.read(checkoutDealerUseCaseProvider),
+        getAvailableFormsUseCase: ref.read(getAvailableFormsUseCaseProvider),
+        checkinUseCase: ref.read(checkinUseCaseProvider),
+        checkoutUseCase: ref.read(checkoutUseCaseProvider),
+        getVisitRequirementsUseCase: ref.read(
+          getVisitRequirementsUseCaseProvider,
+        ),
+        uploadVisitPhotoUseCase: ref.read(uploadVisitPhotoUseCaseProvider),
+        deleteVisitPhotoUseCase: ref.read(deleteVisitPhotoUseCaseProvider),
+        cancelVisitUseCase: ref.read(cancelVisitUseCaseProvider),
+        visitRepository: ref.read(visitRepositoryProvider),
+        ref: ref,
+      );
+    });
 
 class CheckInViewModel extends StateNotifier<CheckInState> {
   final GetDealerCheckinUseCase getDealerCheckinUseCase;
@@ -564,11 +854,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       state = state.copyWith(
         status: CheckInStatus.loaded,
         checkinData: data,
-        checkinTime: state.visitId > 0 && state.checkinTime != '--:--:--' ? state.checkinTime : localTime,
+        checkinTime: state.visitId > 0 && state.checkinTime != '--:--:--'
+            ? state.checkinTime
+            : localTime,
         liveVisitDuration: state.liveVisitDuration,
       );
 
-      final customerId = int.tryParse(data.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+      final customerId =
+          int.tryParse(data.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
       loadSurveyForms(customerId);
     } catch (e) {
       if (state.checkinData == null) {
@@ -590,27 +883,36 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
   Future<void> loadSurveyForms(int customerId) async {
     try {
-      final forms = await getAvailableFormsUseCase(kind: 'survey', customerId: customerId);
+      final forms = await getAvailableFormsUseCase(
+        kind: 'survey',
+        customerId: customerId,
+      );
       state = state.copyWith(surveyForms: forms);
     } catch (_) {}
   }
 
   void markSurveySubmitted(int configId) {
-    final updated = Set<int>.from(state.submittedSurveyConfigIds)..add(configId);
-    
+    final updated = Set<int>.from(state.submittedSurveyConfigIds)
+      ..add(configId);
+
     var updatedReq = state.requirements;
     if (updatedReq != null) {
-      final remainingForms = updatedReq.missingForms.where((f) => f.formId != configId).toList();
-      final isTimeOk = updatedReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+      final remainingForms = updatedReq.missingForms
+          .where((f) => f.formId != configId)
+          .toList();
+      final isTimeOk =
+          updatedReq.secondsRemaining <= 0 || state.visitResult == 'closed';
       final isFormsOk = remainingForms.isEmpty || state.visitResult == 'closed';
       final isPhotosOk = updatedReq.photosMissing <= 0;
       final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
       List<String> newBlockers = List<String>.from(updatedReq.blockers);
       if (remainingForms.isEmpty) {
-        newBlockers.removeWhere((b) =>
-            b.toLowerCase().contains('khảo sát') ||
-            b.toLowerCase().contains('biểu mẫu'));
+        newBlockers.removeWhere(
+          (b) =>
+              b.toLowerCase().contains('khảo sát') ||
+              b.toLowerCase().contains('biểu mẫu'),
+        );
       }
 
       updatedReq = updatedReq.copyWith(
@@ -632,14 +934,31 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   /// Khởi tạo phiên viếng thăm với Dealer
   /// Nếu dealer đã có lượt mở (inProgress) -> Tự động phục hồi phiên
   void initCheckinWithDealer(DealerEntity dealer) {
+    final newCId = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).id
+        : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+
     // Nếu đang có một lượt viếng thăm khác đang mở, không được ghi đè phiên bằng điểm bán mới
-    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
+    if (state.visitId != 0 &&
+        state.visitEntity != null &&
+        state.visitEntity!.isOpen) {
       final currentCId = state.visitEntity!.customerId;
-      final newCId = dealer.customer is CustomerEntity
-          ? (dealer.customer as CustomerEntity).id
-          : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
-      if (newCId != null && currentCId != newCId) {
-        debugPrint('[CheckInViewModel] Bỏ qua initCheckinWithDealer: Đang có lượt mở id=${state.visitId} tại customer=$currentCId');
+      if (newCId != null && currentCId > 0 && currentCId != newCId) {
+        debugPrint(
+          '[CheckInViewModel] Bỏ qua initCheckinWithDealer: Đang có lượt mở id=${state.visitId} tại customer=$currentCId',
+        );
+        return;
+      }
+      // Nếu là cùng điểm bán đang có phiên mở: Giữ nguyên phiên viếng thăm đang mở, không reset state về 0
+      if (newCId != null && (currentCId == newCId || currentCId <= 0)) {
+        if (currentCId <= 0) {
+          state = state.copyWith(
+            visitEntity: state.visitEntity!.copyWith(customerId: newCId),
+          );
+        }
+        debugPrint(
+          '[CheckInViewModel] Giữ nguyên phiên viếng thăm đang mở id=${state.visitId} cho customer=$newCId',
+        );
         return;
       }
     }
@@ -663,9 +982,22 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     );
 
     // Kiểm tra nếu dealer đã có lượt viếng thăm đang mở (§2.3)
-    if (dealer.visit != null && dealer.visit!.isOpen) {
-      final existingVisit = dealer.visit!;
-      _sessionClientUuid = const Uuid().v4();
+    VisitEntity? existingVisit = (dealer.visit != null && dealer.visit!.isOpen)
+        ? dealer.visit
+        : null;
+    if (existingVisit == null && ref != null && newCId != null) {
+      try {
+        final routeActive = ref!.read(routeViewModelProvider).activeVisit;
+        if (routeActive != null &&
+            routeActive.isOpen &&
+            routeActive.customerId == newCId) {
+          existingVisit = routeActive;
+        }
+      } catch (_) {}
+    }
+
+    if (existingVisit != null) {
+      _sessionClientUuid = existingVisit.clientUuid ?? const Uuid().v4();
       _setupVisitTimer(existingVisit.checkinAt);
 
       state = CheckInState(
@@ -681,9 +1013,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         customer: dealer.customer,
       );
 
-      final customerId = dealer.customer is CustomerEntity
-          ? (dealer.customer as CustomerEntity).id
-          : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0);
+      final customerId =
+          newCId ??
+          (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).id
+              : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ??
+                    0));
       loadSurveyForms(customerId);
       refreshRequirements();
       return;
@@ -701,23 +1036,34 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       customer: dealer.customer,
     );
 
-    final customerId = dealer.customer is CustomerEntity
-        ? (dealer.customer as CustomerEntity).id
-        : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0);
+    final customerId =
+        newCId ??
+        (dealer.customer is CustomerEntity
+            ? (dealer.customer as CustomerEntity).id
+            : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0));
     loadSurveyForms(customerId);
   }
 
-  /// Phục hồi phiên viếng thăm đang mở từ SharedPreferences (hữu ích khi mở app lại offline)
-  Future<bool> restoreActiveVisitIfAvailable() async {
-    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
-      return true;
+  /// Phục hồi phiên viếng thăm đang mở từ SharedPreferences (hữu ích khi mở app lại offline hoặc vào lại điểm bán)
+  Future<bool> restoreActiveVisitIfAvailable([int? forCustomerId]) async {
+    if (state.visitId != 0 &&
+        state.visitEntity != null &&
+        state.visitEntity!.isOpen) {
+      if (forCustomerId == null ||
+          state.visitEntity!.customerId == forCustomerId) {
+        return true;
+      }
     }
     try {
       final saved = await visitRepository.getActiveVisit();
       if (saved != null && saved.isOpen) {
+        if (forCustomerId != null && saved.customerId != forCustomerId) {
+          return false;
+        }
         final localTime = saved.checkinAt != null
             ? _formatTimeHHmmss(saved.checkinAt)
             : _formatTimeHHmmss(DateTime.now());
+        _sessionClientUuid = saved.clientUuid ?? _sessionClientUuid;
         _setupVisitTimer(saved.checkinAt);
         state = state.copyWith(
           status: CheckInStatus.loaded,
@@ -740,7 +1086,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         if (!ref!.read(connectivityProvider).isOnline) return true;
       } catch (_) {}
     }
-    if (e is SocketException || e is HttpException || e is NetworkException) return true;
+    if (e is SocketException || e is HttpException || e is NetworkException) {
+      return true;
+    }
     final str = e.toString().toLowerCase();
     return str.contains('socketexception') ||
         str.contains('networkexception') ||
@@ -778,14 +1126,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final customerCode = state.customer is CustomerEntity
         ? (state.customer as CustomerEntity).code
         : state.checkinData?.dealer.id;
-    final customerAddress = address ??
+    final customerAddress =
+        address ??
         (state.customer is CustomerEntity
             ? (state.customer as CustomerEntity).address
             : state.checkinData?.dealer.address);
 
     return VisitEntity(
       id: tempId,
-      visitDate: '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      visitDate:
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
       checkinAt: now,
       checkinAtRaw: now.toIso8601String(),
       customerId: customerId,
@@ -799,7 +1149,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         photosMissing: minPhotos,
         missingForms: const [],
         blockers: [
-          if (minDurationMinutes > 0) 'Bạn cần ở lại thêm $minDurationMinutes phút nữa mới check-out được.',
+          if (minDurationMinutes > 0)
+            'Bạn cần ở lại thêm $minDurationMinutes phút nữa mới check-out được.',
           if (minPhotos > 0) 'Bạn cần chụp thêm $minPhotos ảnh nữa.',
         ],
       ),
@@ -818,21 +1169,34 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     String? note,
   }) async {
     // Chặn cả online và offline nếu đang có một lượt viếng thăm khác chưa đóng (§3 Luật 3)
-    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) {
+    if (state.visitId != 0 &&
+        state.visitEntity != null &&
+        state.visitEntity!.isOpen) {
       final currentCId = state.visitEntity!.customerId;
       if (currentCId != customerId) {
         return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
       }
+      debugPrint(
+        '[CheckInViewModel] Đã có phiên mở id=${state.visitId} cho customer=$customerId -> Bỏ qua checkin mới',
+      );
+      return null;
     }
     try {
       final savedActive = await visitRepository.getActiveVisit();
-      if (savedActive != null && savedActive.isOpen && savedActive.customerId != customerId) {
-        return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
+      if (savedActive != null && savedActive.isOpen) {
+        if (savedActive.customerId != customerId) {
+          return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
+        }
+        debugPrint(
+          '[CheckInViewModel] Phục hồi phiên mở lưu trữ id=${savedActive.id} cho customer=$customerId -> Bỏ qua checkin mới',
+        );
+        await restoreActiveVisitIfAvailable(customerId);
+        return null;
       }
     } catch (_) {}
 
     // 1. Kiểm tra khoảng cách Geofence động (lấy từ cache luật, không hardcode)
-    MobileRules? mobileRules = ref != null ? ref!.read(mobileRulesProvider) : null;
+    MobileRules? mobileRules = ref?.read(mobileRulesProvider);
     try {
       final cached = await MobileRulesNotifier.getCachedRules();
       if (cached != null) {
@@ -842,10 +1206,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
       }
     } catch (_) {}
-    final isGeofenceRequired = GeofenceRuleHelper.isGeofenceRequired(mobileRules);
+    final isGeofenceRequired = GeofenceRuleHelper.isGeofenceRequired(
+      mobileRules,
+    );
     final allowedRadius = GeofenceRuleHelper.resolveAllowedRadius(
       dealer: state.checkinData?.dealer,
-      customer: state.customer is CustomerEntity ? state.customer as CustomerEntity : null,
+      customer: state.customer is CustomerEntity
+          ? state.customer as CustomerEntity
+          : null,
       rules: mobileRules,
     );
 
@@ -857,17 +1225,31 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       dealerLng = cust.lng;
     }
 
-    if (isGeofenceRequired && dealerLat != null && dealerLng != null && lat != null && lng != null) {
-      final distanceM = Geolocator.distanceBetween(lat, lng, dealerLat, dealerLng);
+    if (isGeofenceRequired &&
+        dealerLat != null &&
+        dealerLng != null &&
+        lat != null &&
+        lng != null) {
+      final distanceM = Geolocator.distanceBetween(
+        lat,
+        lng,
+        dealerLat,
+        dealerLng,
+      );
       if (distanceM > allowedRadius) {
-        final distText = distanceM < 1000 ? '${distanceM.round()}m' : '${(distanceM / 1000).toStringAsFixed(1)}km';
-        final maxRadiusText = allowedRadius < 1000 ? '${allowedRadius}m' : '${(allowedRadius / 1000).toStringAsFixed(1)}km';
+        final distText = distanceM < 1000
+            ? '${distanceM.round()}m'
+            : '${(distanceM / 1000).toStringAsFixed(1)}km';
+        final maxRadiusText = allowedRadius < 1000
+            ? '${allowedRadius}m'
+            : '${(allowedRadius / 1000).toStringAsFixed(1)}km';
         return 'Bạn đang cách điểm bán $distText. Hãy lại gần hơn (tối đa $maxRadiusText) rồi check-in.';
       }
     }
 
     // 2. Kiểm tra cờ giả lập vị trí GPS nếu luật yêu cầu chặn
-    if ((mobileRules?.visit.blockOnMockLocation ?? false) && (isMockLocation == true)) {
+    if ((mobileRules?.visit.blockOnMockLocation ?? false) &&
+        (isMockLocation == true)) {
       return 'Thiết bị đang sử dụng phần mềm giả lập vị trí GPS. Vui lòng tắt ứng dụng giả lập để check-in.';
     }
 
@@ -885,12 +1267,27 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     );
 
     try {
-      final visit = await checkinUseCase(request);
+      var visit = await checkinUseCase(request);
+      if (visit.customerId <= 0) {
+        visit = visit.copyWith(customerId: customerId);
+      }
+      if (visit.clientUuid == null || visit.clientUuid!.isEmpty) {
+        visit = visit.copyWith(clientUuid: _sessionClientUuid);
+      }
+      final custName = state.customer is CustomerEntity
+          ? (state.customer as CustomerEntity).name
+          : (state.checkinData?.dealer.name ?? '');
+      if (visit.customerName.isEmpty && custName.isNotEmpty) {
+        visit = visit.copyWith(customerName: custName);
+      }
+
       _setupVisitTimer(visit.checkinAt);
 
       var req = visit.requirements;
       if (req != null && req.secondsRemaining > 0) {
-        _targetDoneTime = DateTime.now().add(Duration(seconds: req.secondsRemaining));
+        _targetDoneTime = DateTime.now().add(
+          Duration(seconds: req.secondsRemaining),
+        );
       }
 
       final cTime = visit.checkinAt != null
@@ -904,6 +1301,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         checkinTime: cTime,
         status: CheckInStatus.loaded,
       );
+
+      await visitRepository.saveActiveVisit(visit);
+      if (ref != null) {
+        try {
+          ref!.read(routeViewModelProvider.notifier).setActiveVisit(visit);
+        } catch (_) {}
+      }
 
       loadSurveyForms(customerId);
       if (req == null) {
@@ -953,8 +1357,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         await visitRepository.saveLocalVisit(offlineVisit);
 
         _setupVisitTimer(offlineVisit.checkinAt);
-        if (offlineVisit.requirements != null && offlineVisit.requirements!.secondsRemaining > 0) {
-          _targetDoneTime = DateTime.now().add(Duration(seconds: offlineVisit.requirements!.secondsRemaining));
+        if (offlineVisit.requirements != null &&
+            offlineVisit.requirements!.secondsRemaining > 0) {
+          _targetDoneTime = DateTime.now().add(
+            Duration(seconds: offlineVisit.requirements!.secondsRemaining),
+          );
         }
 
         state = state.copyWith(
@@ -969,7 +1376,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         return null;
       }
 
-      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      final msg = e
+          .toString()
+          .replaceAll('ServerException: ', '')
+          .replaceAll('AppException: ', '');
       state = state.copyWith(errorMessage: msg);
       return msg;
     }
@@ -1005,17 +1415,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
 
         final isTimeOk = newSec <= 0 || state.visitResult == 'closed';
-        final isFormsOk = updatedReq.missingForms.isEmpty || state.visitResult == 'closed';
+        final isFormsOk =
+            updatedReq.missingForms.isEmpty || state.visitResult == 'closed';
         final isPhotosOk = updatedReq.photosMissing <= 0;
         final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
         List<String> newBlockers = List<String>.from(updatedReq.blockers);
         if (newSec <= 0) {
-          newBlockers.removeWhere((b) =>
-              b.toLowerCase().contains('thời gian') ||
-              b.toLowerCase().contains('giây') ||
-              b.toLowerCase().contains('phút') ||
-              b.toLowerCase().contains('ở lại thêm'));
+          newBlockers.removeWhere(
+            (b) =>
+                b.toLowerCase().contains('thời gian') ||
+                b.toLowerCase().contains('giây') ||
+                b.toLowerCase().contains('phút') ||
+                b.toLowerCase().contains('ở lại thêm'),
+          );
         }
 
         final hadSecondsLeft = updatedReq.secondsRemaining > 0;
@@ -1034,6 +1447,27 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         liveVisitDuration: '$h:$m:$s',
         requirements: updatedReq,
       );
+
+      // Cảnh báo quên Check-out nếu phiên ghé thăm kéo dài hơn 30, 45 hoặc 60 phút
+      if ((_elapsedSeconds == 1800 ||
+              _elapsedSeconds == 2700 ||
+              _elapsedSeconds == 3600) &&
+          state.visitId != 0 &&
+          (state.visitEntity?.isOpen ?? true)) {
+        if (ref != null) {
+          try {
+            final dealerName = state.customer is CustomerEntity
+                ? (state.customer as CustomerEntity).name
+                : state.checkinData?.dealer.name ?? 'Điểm bán';
+            final minutes = _elapsedSeconds ~/ 60;
+            ref!.read(appNotificationServiceProvider).notifyForgotCheckout(
+                  dealerName: dealerName,
+                  minutes: minutes,
+                );
+            ref!.invalidate(unreadNotificationCountProvider);
+          } catch (_) {}
+        }
+      }
     });
   }
 
@@ -1069,20 +1503,25 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         lng: lng,
       );
 
-      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)..add(photo);
+      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)
+        ..add(photo);
       var currentReq = state.requirements;
       if (currentReq != null && !photo.duplicate) {
         final newPhotosMissing = math.max(0, currentReq.photosMissing - 1);
-        final isTimeOk = currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
-        final isFormsOk = currentReq.missingForms.isEmpty || state.visitResult == 'closed';
+        final isTimeOk =
+            currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+        final isFormsOk =
+            currentReq.missingForms.isEmpty || state.visitResult == 'closed';
         final isPhotosOk = newPhotosMissing <= 0;
         final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
         List<String> newBlockers = List<String>.from(currentReq.blockers);
         if (newPhotosMissing <= 0) {
-          newBlockers.removeWhere((b) =>
-              b.toLowerCase().contains('ảnh') ||
-              b.toLowerCase().contains('chụp'));
+          newBlockers.removeWhere(
+            (b) =>
+                b.toLowerCase().contains('ảnh') ||
+                b.toLowerCase().contains('chụp'),
+          );
         }
 
         currentReq = currentReq.copyWith(
@@ -1101,7 +1540,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       await refreshRequirements();
 
       if (photo.duplicate) {
-        return (true, 'Ảnh này đã có trong lượt viếng thăm, không thêm gì thêm.');
+        return (
+          true,
+          'Ảnh này đã có trong lượt viếng thăm, không thêm gì thêm.',
+        );
       }
       return (true, null);
     } catch (e) {
@@ -1114,7 +1556,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         );
       }
       state = state.copyWith(isUploadingPhoto: false);
-      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      final msg = e
+          .toString()
+          .replaceAll('ServerException: ', '')
+          .replaceAll('AppException: ', '');
       return (false, msg);
     }
   }
@@ -1127,11 +1572,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }) async {
     try {
       final appDocDir = await getApplicationDocumentsDirectory();
-      final offlineDir = Directory(p.join(appDocDir.path, 'offline_visit_photos'));
+      final offlineDir = Directory(
+        p.join(appDocDir.path, 'offline_visit_photos'),
+      );
       if (!await offlineDir.exists()) {
         await offlineDir.create(recursive: true);
       }
-      final fileName = 'visit_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final fileName =
+          'visit_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final persistentFile = await file.copy(p.join(offlineDir.path, fileName));
 
       if (ref != null) {
@@ -1176,20 +1624,25 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         localPath: persistentFile.path,
       );
 
-      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)..add(photo);
+      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)
+        ..add(photo);
       var currentReq = state.requirements;
       if (currentReq != null) {
         final newPhotosMissing = math.max(0, currentReq.photosMissing - 1);
-        final isTimeOk = currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
-        final isFormsOk = currentReq.missingForms.isEmpty || state.visitResult == 'closed';
+        final isTimeOk =
+            currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+        final isFormsOk =
+            currentReq.missingForms.isEmpty || state.visitResult == 'closed';
         final isPhotosOk = newPhotosMissing <= 0;
         final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
         List<String> newBlockers = List<String>.from(currentReq.blockers);
         if (newPhotosMissing <= 0) {
-          newBlockers.removeWhere((b) =>
-              b.toLowerCase().contains('ảnh') ||
-              b.toLowerCase().contains('chụp'));
+          newBlockers.removeWhere(
+            (b) =>
+                b.toLowerCase().contains('ảnh') ||
+                b.toLowerCase().contains('chụp'),
+          );
         }
 
         currentReq = currentReq.copyWith(
@@ -1205,10 +1658,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         isUploadingPhoto: false,
       );
 
-      return (true, 'Đã lưu ảnh ngoại tuyến. Ảnh sẽ tự động tải lên khi có mạng.');
+      return (
+        true,
+        'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.',
+      );
     } catch (err) {
       state = state.copyWith(isUploadingPhoto: false);
-      return (false, 'Lỗi lưu ảnh ngoại tuyến: $err');
+      return (
+        false,
+        'Không thể lưu ảnh trên máy: ${StringUtils.formatUserFriendlyError(err)}',
+      );
     }
   }
 
@@ -1233,7 +1692,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       return (true, null);
     } catch (e) {
       state = state.copyWith(isDeletingPhoto: false);
-      final msg = e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+      final msg = e
+          .toString()
+          .replaceAll('ServerException: ', '')
+          .replaceAll('AppException: ', '');
       return (false, msg);
     }
   }
@@ -1247,7 +1709,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         visitResult: visitResult ?? state.visitResult,
       );
       if (req.secondsRemaining > 0) {
-        _targetDoneTime = DateTime.now().add(Duration(seconds: req.secondsRemaining));
+        _targetDoneTime = DateTime.now().add(
+          Duration(seconds: req.secondsRemaining),
+        );
       } else {
         _targetDoneTime = null;
       }
@@ -1267,10 +1731,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final satisfied = isPhotosOk && isTimeOk && isFormsOk;
         currentReq = currentReq.copyWith(satisfied: satisfied);
       }
-      state = state.copyWith(
-        visitResult: result,
-        requirements: currentReq,
-      );
+      state = state.copyWith(visitResult: result, requirements: currentReq);
       refreshRequirements(visitResult: result);
     }
   }
@@ -1292,17 +1753,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       return (false, 'Chưa có lượt viếng thăm hợp lệ');
     }
 
-    MobileRules? mobileRules = ref != null ? ref!.read(mobileRulesProvider) : null;
+    MobileRules? mobileRules = ref?.read(mobileRulesProvider);
     try {
       final cached = await MobileRulesNotifier.getCachedRules();
       if (cached != null) {
         mobileRules = cached;
       }
     } catch (_) {}
-    final isGeofenceRequired = requireGeofence ?? GeofenceRuleHelper.isGeofenceRequired(mobileRules);
+    final isGeofenceRequired =
+        requireGeofence ?? GeofenceRuleHelper.isGeofenceRequired(mobileRules);
     final allowedRadius = GeofenceRuleHelper.resolveAllowedRadius(
       dealer: state.checkinData?.dealer,
-      customer: state.customer is CustomerEntity ? state.customer as CustomerEntity : null,
+      customer: state.customer is CustomerEntity
+          ? state.customer as CustomerEntity
+          : null,
       explicitRadius: allowedRadiusMeters,
       rules: mobileRules,
     );
@@ -1358,19 +1822,38 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
 
     try {
-      await checkoutUseCase(
-        visitId: state.visitId,
-        request: request,
-      );
+      await checkoutUseCase(visitId: state.visitId, request: request);
 
       _visitTimer?.cancel();
       state = state.copyWith(status: CheckInStatus.checkedOut);
+      if (ref != null) {
+        try {
+          ref!.read(routeViewModelProvider.notifier).checkProximitySuggestion(
+                userLat: lat,
+                userLng: lng,
+              );
+        } catch (_) {}
+      }
       return (true, null);
     } catch (e) {
-      final rawMsg = e.toString();
+      final rawMsg = e.toString().toLowerCase();
       // Nếu server trả về 422 "đã check-out rồi" / "đã đóng" thì coi là thành công (§9)
-      if (rawMsg.contains('đã check-out rồi') || rawMsg.contains('đã đóng')) {
+      if (rawMsg.contains('đã check-out rồi') ||
+          rawMsg.contains('đã check out') ||
+          rawMsg.contains('đã checkout') ||
+          rawMsg.contains('đã đóng') ||
+          rawMsg.contains('already checked out') ||
+          rawMsg.contains('already closed')) {
         _visitTimer?.cancel();
+        await visitRepository.clearActiveVisit();
+        if (ref != null) {
+          try {
+            ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
+            ref!
+                .read(routeViewModelProvider.notifier)
+                .loadRouteDetail(isRefresh: true);
+          } catch (_) {}
+        }
         state = state.copyWith(status: CheckInStatus.checkedOut);
         return (true, null);
       }
@@ -1380,11 +1863,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         return _checkoutOffline(request: request, lat: lat, lng: lng);
       }
 
-      final msg = rawMsg.replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
-      state = state.copyWith(
-        status: CheckInStatus.loaded,
-        errorMessage: msg,
-      );
+      final msg = rawMsg
+          .replaceAll('ServerException: ', '')
+          .replaceAll('AppException: ', '');
+      state = state.copyWith(status: CheckInStatus.loaded, errorMessage: msg);
       return (false, msg);
     }
   }
@@ -1419,11 +1901,18 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
 
       final now = DateTime.now();
-      final currentVisit = state.visitEntity ??
+      final currentVisit =
+          state.visitEntity ??
           VisitEntity(
             id: state.visitId,
             customerId: state.checkinData?.dealer.id != null
-                ? int.tryParse(state.checkinData!.dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ?? 0
+                ? int.tryParse(
+                        state.checkinData!.dealer.id.replaceAll(
+                          RegExp(r'[^\d]'),
+                          '',
+                        ),
+                      ) ??
+                      0
                 : 0,
           );
       final completedVisit = currentVisit.copyWith(
@@ -1443,10 +1932,21 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         status: CheckInStatus.checkedOut,
         visitEntity: completedVisit,
       );
+      if (ref != null) {
+        try {
+          ref!.read(routeViewModelProvider.notifier).checkProximitySuggestion(
+                userLat: lat,
+                userLng: lng,
+              );
+        } catch (_) {}
+      }
       return (true, null);
     } catch (err) {
       state = state.copyWith(status: CheckInStatus.loaded);
-      return (false, 'Lỗi lưu check-out ngoại tuyến: $err');
+      return (
+        false,
+        'Không thể lưu kết thúc ghé thăm: ${StringUtils.formatUserFriendlyError(err)}',
+      );
     }
   }
 
@@ -1462,7 +1962,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final db = ref!.read(appDatabaseProvider);
         visitEntry = await db.findVisitQueueEntry(clientUuid);
         // Nếu entry đã được sync lên server thành công (state == 'done') và có serverId, cập nhật effectiveVisitId
-        if (visitEntry != null && visitEntry.serverId != null && visitEntry.serverId! > 0) {
+        if (visitEntry != null &&
+            visitEntry.serverId != null &&
+            visitEntry.serverId! > 0) {
           effectiveVisitId = visitEntry.serverId!;
         }
       } catch (err) {
@@ -1473,7 +1975,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // 2. Trường hợp A: Lượt chưa tạo trên máy chủ (hoặc mới chỉ nằm trong sync_queue ở trạng thái pending)
     // Theo §5.1 HUY-LUOT-VIENG-THAM-2026-09-30.md:
     // "Lượt chưa kịp đồng bộ thì app xoá thẳng bản ghi cục bộ, đừng gọi check-in rồi gọi huỷ"
-    if (effectiveVisitId <= 0 && (visitEntry == null || visitEntry.state == 'pending')) {
+    if (effectiveVisitId <= 0 &&
+        (visitEntry == null || visitEntry.state == 'pending')) {
       if (ref != null) {
         try {
           final db = ref!.read(appDatabaseProvider);
@@ -1504,7 +2007,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
       // Dọn sạch active visit và local visit
       await visitRepository.clearActiveVisit();
-      await visitRepository.removeLocalVisit(effectiveVisitId, clientUuid: clientUuid);
+      await visitRepository.removeLocalVisit(
+        effectiveVisitId,
+        clientUuid: clientUuid,
+      );
 
       _visitTimer?.cancel();
       resetSession();
@@ -1526,29 +2032,74 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
 
         await visitRepository.clearActiveVisit();
-        await visitRepository.cancelVisit(effectiveVisitId, clientUuid: clientUuid);
+        await visitRepository.cancelVisit(
+          effectiveVisitId,
+          clientUuid: clientUuid,
+        );
 
         _visitTimer?.cancel();
         resetSession();
         return (true, null);
       } catch (e) {
-        final rawMsg = e.toString();
+        final rawMsg = e.toString().toLowerCase();
         // Server idempotent (§3.4): Nếu đã huỷ trước đó thì coi là thành công
-        if (rawMsg.contains('đã bị huỷ') || rawMsg.contains('đã huỷ') || rawMsg.contains('already cancelled') || rawMsg.contains('404')) {
+        final isAlreadyCancelled =
+            rawMsg.contains('đã bị huỷ') ||
+            rawMsg.contains('đã huỷ') ||
+            rawMsg.contains('đã bị hủy') ||
+            rawMsg.contains('đã hủy') ||
+            rawMsg.contains('already cancelled') ||
+            rawMsg.contains('404');
+
+        // Trường hợp lượt đã check-out trên máy chủ (lỗi 422: lượt viếng thăm này đã check out rồi, không hủy được nữa)
+        final isAlreadyCheckedOut =
+            rawMsg.contains('đã check out') ||
+            rawMsg.contains('đã checkout') ||
+            rawMsg.contains('đã check-out') ||
+            rawMsg.contains('không hủy được nữa') ||
+            rawMsg.contains('không huỷ được nữa') ||
+            rawMsg.contains('không hủy được') ||
+            rawMsg.contains('không huỷ được') ||
+            rawMsg.contains('already checked out') ||
+            rawMsg.contains('already closed');
+
+        if (isAlreadyCancelled || isAlreadyCheckedOut) {
           if (ref != null) {
             try {
               final db = ref!.read(appDatabaseProvider);
               await db.deletePendingVisitQueue(clientUuid);
             } catch (_) {}
             try {
-              ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(effectiveVisitId, clientUuid: clientUuid);
+              if (isAlreadyCancelled) {
+                ref!
+                    .read(routeViewModelProvider.notifier)
+                    .markVisitCancelledLocally(
+                      effectiveVisitId,
+                      clientUuid: clientUuid,
+                    );
+              } else {
+                ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
+                ref!
+                    .read(routeViewModelProvider.notifier)
+                    .loadRouteDetail(isRefresh: true);
+              }
             } catch (_) {}
           }
           await visitRepository.clearActiveVisit();
-          await visitRepository.cancelVisit(effectiveVisitId, clientUuid: clientUuid);
+          if (isAlreadyCancelled) {
+            await visitRepository.cancelVisit(
+              effectiveVisitId,
+              clientUuid: clientUuid,
+            );
+          }
           _visitTimer?.cancel();
           resetSession();
-          return (true, null);
+          return (
+            true,
+            isAlreadyCheckedOut
+                ? 'Lượt viếng thăm này đã check-out trước đó trên hệ thống. Đã đóng phiên.'
+                : null,
+          );
         }
 
         // Nếu là lỗi mạng (offline khi huỷ lượt đã tạo trên server):
@@ -1567,7 +2118,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
                   op: const drift.Value('cancel'),
                   clientUuid: drift.Value(const Uuid().v4()),
                   parentUuid: drift.Value(clientUuid),
-                  payload: drift.Value(jsonEncode({'visit_id': effectiveVisitId})),
+                  payload: drift.Value(
+                    jsonEncode({'visit_id': effectiveVisitId}),
+                  ),
                   state: const drift.Value('pending'),
                   createdAt: drift.Value(nowMs),
                   createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
@@ -1580,15 +2133,23 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             }
 
             try {
-              ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(effectiveVisitId, clientUuid: clientUuid);
+              ref!
+                  .read(routeViewModelProvider.notifier)
+                  .markVisitCancelledLocally(
+                    effectiveVisitId,
+                    clientUuid: clientUuid,
+                  );
             } catch (_) {}
           }
 
           await visitRepository.clearActiveVisit();
           try {
             final all = await visitRepository.getAllLocalVisits();
-            final idx = all.indexWhere((v) =>
-                v.id == effectiveVisitId || (v.clientUuid != null && v.clientUuid == clientUuid));
+            final idx = all.indexWhere(
+              (v) =>
+                  v.id == effectiveVisitId ||
+                  (v.clientUuid != null && v.clientUuid == clientUuid),
+            );
             if (idx >= 0) {
               final updated = all[idx].copyWith(
                 cancelledAt: DateTime.now(),
@@ -1603,14 +2164,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           return (true, null);
         }
 
-        final msg = rawMsg.replaceAll('ServerException: ', '').replaceAll('AppException: ', '');
+        final msg = rawMsg
+            .replaceAll('ServerException: ', '')
+            .replaceAll('AppException: ', '');
         return (false, msg);
       }
     }
 
     // Fallback cho trường hợp bất định
     await visitRepository.clearActiveVisit();
-    await visitRepository.removeLocalVisit(effectiveVisitId, clientUuid: clientUuid);
+    await visitRepository.removeLocalVisit(
+      effectiveVisitId,
+      clientUuid: clientUuid,
+    );
     _visitTimer?.cancel();
     resetSession();
     return (true, null);

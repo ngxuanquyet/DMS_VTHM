@@ -12,6 +12,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../../domain/repositories/attendance_repository.dart';
@@ -50,6 +51,20 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
 
   bool get _isOnline => ref?.read(connectivityProvider).isOnline ?? true;
 
+  String _getUserConfigCacheKey(SharedPreferences prefs) {
+    try {
+      final userJson = prefs.getString('vthm_user_data');
+      if (userJson != null) {
+        final map = jsonDecode(userJson) as Map<String, dynamic>;
+        final uid = map['id'] ?? map['username'];
+        if (uid != null) {
+          return '${_configCacheKey}_$uid';
+        }
+      }
+    } catch (_) {}
+    return _configCacheKey;
+  }
+
   // ===========================================================================
   // 1. CẤU HÌNH & ĐỊA ĐIỂM CHẤM CÔNG (GET /attendance/mobile/config)
   // ===========================================================================
@@ -57,11 +72,12 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   @override
   Future<AttendanceConfigEntity> getConfig({double? lat, double? lng}) async {
     final prefs = await SharedPreferences.getInstance();
+    final userCacheKey = _getUserConfigCacheKey(prefs);
 
     if (_isOnline) {
       try {
         final model = await _apiService.getConfig(lat: lat, lng: lng);
-        await prefs.setString(_configCacheKey, jsonEncode(model.toJson()));
+        await prefs.setString(userCacheKey, jsonEncode(model.toJson()));
         return model.toEntity();
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi tải config từ server: $e');
@@ -71,8 +87,8 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       }
     }
 
-    // Đọc từ cache nếu mất mạng hoặc lỗi server 5xx
-    final cachedJson = prefs.getString(_configCacheKey);
+    // Đọc từ cache nếu mất mạng hoặc lỗi server 5xx (tách theo từng tài khoản §3.2 & §5)
+    final cachedJson = prefs.getString(userCacheKey);
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final map = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -179,7 +195,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       geofenceName: 'Lưu ngoại tuyến (chờ gửi)',
       isOutsideGeofence: false,
       isMockLocation: isMockLocation ?? false,
-      isTimeTampered: false,
+      isTimeTampered: AntiFraudService.getEstimatedClockSkewMinutes().abs() > 15,
       duplicate: false,
       photos: const [],
       requirements: const AttendanceRequirementsEntity(
@@ -209,6 +225,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     DateTime? takenAt,
     double? lat,
     double? lng,
+    String? parentUuid,
   }) async {
     final now = takenAt ?? DateTime.now();
 
@@ -254,6 +271,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           entity: 'attendance_photo',
           op: 'upload',
           clientUuid: photoUuid,
+          parentUuid: parentUuid != null ? Value(parentUuid) : const Value.absent(),
           localPath: Value(file.path),
           payload: jsonEncode(payloadMap),
           createdAt: nowMs,
@@ -350,6 +368,8 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       'is_mock_location': punch.isMockLocation,
       'is_time_tampered': punch.isTimeTampered,
       'duplicate': punch.duplicate,
+      'direction': punch.direction,
+      'direction_label': punch.directionLabel,
       'photos': punch.photos.map((p) => {
         'id': p.id,
         'file_id': p.fileId,

@@ -46,6 +46,7 @@ class UploadPunchPhotoUseCase {
     DateTime? takenAt,
     double? lat,
     double? lng,
+    String? parentUuid,
   }) {
     return _repository.uploadPunchPhoto(
       punchId: punchId,
@@ -54,6 +55,7 @@ class UploadPunchPhotoUseCase {
       takenAt: takenAt,
       lat: lat,
       lng: lng,
+      parentUuid: parentUuid,
     );
   }
 }

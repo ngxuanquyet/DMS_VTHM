@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -51,6 +52,8 @@ class _AttendancePhotoCaptureDialogState
   bool _isUploadingFront = false;
   bool _isUploadingBack = false;
   bool _isSubmitting = false;
+  double _submitProgress = 0.0;
+  String _submitStatus = '';
 
   File? _localFrontFile;
   File? _localBackFile;
@@ -248,25 +251,56 @@ class _AttendancePhotoCaptureDialogState
       }
     }
 
-    setState(() => _isSubmitting = true);
+    // 🔴 KIỂM TRA CHỐNG GIAN LẬN TRƯỚC KHI GỬI CHẤM CÔNG THẬT
+    if (widget.position != null) {
+      final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(
+        context,
+        position: widget.position!,
+        actionType: AntiFraudActionType.attendance,
+        actionTitle: 'Chấm công',
+      );
+      if (!fraudCheck.isAllowed) return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _submitProgress = 0.15;
+      _submitStatus = 'Đang gửi lượt chấm công...';
+    });
 
     final vm = ref.read(attendanceViewModelProvider.notifier);
     final success = await vm.submitPunchWithPhotos(
       position: widget.position!,
       frontPhoto: _localFrontFile,
       backPhoto: _localBackFile,
+      onProgress: (progress, status) {
+        if (mounted) {
+          setState(() {
+            _submitProgress = progress;
+            _submitStatus = status;
+          });
+        }
+      },
     );
 
     if (mounted) {
-      setState(() => _isSubmitting = false);
       if (success) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Đã chấm công thành công!'),
-            backgroundColor: AppColors.primary,
-          ),
-        );
+        setState(() {
+          _submitProgress = 1.0;
+          _submitStatus = 'Đã chấm công thành công!';
+        });
+        await Future.delayed(const Duration(milliseconds: 350));
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã chấm công thành công!'),
+              backgroundColor: AppColors.primary,
+            ),
+          );
+        }
+      } else {
+        setState(() => _isSubmitting = false);
       }
     }
   }
@@ -370,13 +404,16 @@ class _AttendancePhotoCaptureDialogState
                       color: isSatisfied ? AppColors.primary : AppColors.outline,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      'Đã chụp: $capturedCount/$minPhotos ảnh bắt buộc',
-                      style: AppTypography.labelLarge(
-                        color: isSatisfied
-                            ? AppColors.primary
-                            : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                      ).copyWith(fontWeight: FontWeight.w600),
+                    Flexible(
+                      child: Text(
+                        'Đã chụp: $capturedCount/$minPhotos ảnh bắt buộc',
+                        style: AppTypography.labelLarge(
+                          color: isSatisfied
+                              ? AppColors.primary
+                              : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                        ).copyWith(fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
@@ -422,35 +459,150 @@ class _AttendancePhotoCaptureDialogState
                   ),
                 ],
               ),
+              if (!isNewPunch && (_isUploadingFront || _isUploadingBack)) ...[
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: const LinearProgressIndicator(
+                    minHeight: 5,
+                    backgroundColor: Color(0xFFDCFCE7),
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006E15)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Đang tải ảnh lên hệ thống...',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
 
               // Actions
               if (isNewPunch) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                if (_isSubmitting) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF1E2420)
+                          : const Color(0xFFF0FDF4),
+                      borderRadius: AppRadius.roundedLg,
+                      border: Border.all(
+                        color: const Color(0xFF006E15).withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006E15)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _submitStatus.isNotEmpty
+                                          ? _submitStatus
+                                          : 'Đang gửi lượt chấm công...',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.white
+                                            : const Color(0xFF166534),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${(_submitProgress * 100).toInt()}%',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF006E15),
+                              ),
+                            ),
+                          ],
                         ),
-                        child: const Text('Hủy bỏ'),
-                      ),
+                        const SizedBox(height: 10),
+                        // Thanh tiến trình loader
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: TweenAnimationBuilder<double>(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                            tween: Tween<double>(
+                              begin: 0.0,
+                              end: _submitProgress.clamp(0.05, 1.0),
+                            ),
+                            builder: (context, value, _) => LinearProgressIndicator(
+                              value: value,
+                              minHeight: 7,
+                              backgroundColor: isDark
+                                  ? Colors.white12
+                                  : const Color(0xFFDCFCE7),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                Color(0xFF006E15),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Hệ thống đang xử lý và đồng bộ, vui lòng không tắt ứng dụng.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: AppButton(
-                        text: _isSubmitting ? 'Đang gửi...' : 'Gửi chấm công',
-                        isLoading: _isSubmitting,
-                        icon: Icons.send_rounded,
-                        height: 48,
-                        onPressed: _isSubmitting ? null : _handleConfirmNewPunch,
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                          ),
+                          child: const Text('Hủy bỏ'),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: AppButton(
+                          text: 'Gửi chấm công',
+                          icon: Icons.send_rounded,
+                          height: 48,
+                          onPressed: _handleConfirmNewPunch,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ] else ...[
                 if (isSatisfied)
                   AppButton(

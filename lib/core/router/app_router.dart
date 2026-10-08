@@ -24,6 +24,9 @@ import '../../features/profile/presentation/screens/voice_to_text_screen.dart';
 import '../../features/route/domain/entities/route_entity.dart';
 import '../../features/route/presentation/screens/check_in_screen.dart';
 import '../../features/route/presentation/screens/route_screen.dart';
+import '../../features/travel/domain/entities/travel_day_entity.dart';
+import '../../features/travel/presentation/screens/my_travel_screen.dart';
+import '../../features/travel/presentation/screens/travel_leg_detail_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'branch_animated_slide_container.dart';
 import 'page_transitions.dart';
@@ -290,6 +293,38 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           key: state.pageKey,
           child: const DynamicFormDemoScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/travel',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const MyTravelScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/travel/legs',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final day = state.extra is TravelDayEntity
+              ? state.extra as TravelDayEntity
+              : null;
+          if (day == null) {
+            return ZoomPageTransition(
+              key: state.pageKey,
+              child: Scaffold(
+                appBar: AppBar(title: const Text('Chi tiết chặng')),
+                body: const Center(
+                  child: Text('Không tìm thấy thông tin ngày công'),
+                ),
+              ),
+            );
+          }
+          return ZoomPageTransition(
+            key: state.pageKey,
+            child: TravelLegDetailScreen(day: day),
+          );
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

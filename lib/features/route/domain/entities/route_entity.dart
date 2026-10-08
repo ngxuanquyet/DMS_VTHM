@@ -40,6 +40,46 @@ class DealerEntity {
     this.customer,
     this.visit,
   });
+
+  DealerEntity copyWith({
+    String? id,
+    String? order,
+    String? name,
+    String? code,
+    String? phone,
+    String? contactPerson,
+    String? type,
+    String? address,
+    DealerVisitStatus? status,
+    String? statusLabel,
+    String? visitedTime,
+    bool? isVip,
+    double? lat,
+    double? lng,
+    int? geofenceRadiusM,
+    dynamic customer,
+    VisitEntity? visit,
+  }) {
+    return DealerEntity(
+      id: id ?? this.id,
+      order: order ?? this.order,
+      name: name ?? this.name,
+      code: code ?? this.code,
+      phone: phone ?? this.phone,
+      contactPerson: contactPerson ?? this.contactPerson,
+      type: type ?? this.type,
+      address: address ?? this.address,
+      status: status ?? this.status,
+      statusLabel: statusLabel ?? this.statusLabel,
+      visitedTime: visitedTime ?? this.visitedTime,
+      isVip: isVip ?? this.isVip,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      geofenceRadiusM: geofenceRadiusM ?? this.geofenceRadiusM,
+      customer: customer ?? this.customer,
+      visit: visit ?? this.visit,
+    );
+  }
 }
 
 class RouteDetailEntity {

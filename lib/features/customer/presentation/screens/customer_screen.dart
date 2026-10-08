@@ -11,6 +11,7 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/string_utils.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
@@ -131,13 +132,13 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
           const SnackBar(
             content: Row(
               children: [
-                Icon(Icons.cloud_done_rounded, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Tất cả dữ liệu đã được gửi lên máy chủ!'),
+                const Icon(Icons.cloud_done_rounded, color: Colors.white),
+                const SizedBox(width: 8),
+                const Text('Tất cả dữ liệu đã được cập nhật thành công!'),
               ],
             ),
-            backgroundColor: Color(0xFF10B981),
-            duration: Duration(seconds: 2),
+            backgroundColor: const Color(0xFF10B981),
+            duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -197,11 +198,11 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       if (syncResult.hasDeadErrors || deadCount > 0) {
         final deadItems = await db.getDeadQueueEntries();
         if (!mounted) return;
-        final msgs = deadItems.map((e) => e.lastError ?? 'Lỗi không xác định (4xx)').take(3).join('\n• ');
+        final msgs = deadItems.map((e) => StringUtils.formatUserFriendlyError(e.lastError)).take(3).join('\n• ');
         AppErrorDialog.show(
           context,
-          title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
-          message: 'Máy chủ từ chối $deadCount mục do lỗi dữ liệu hoặc thông tin không hợp lệ (4xx):\n\n• $msgs\n\nCác mục này sẽ KHÔNG được gửi lại để tránh lỗi lặp lại. Vui lòng kiểm tra hoặc chỉnh sửa lại thông tin điểm bán.',
+          title: 'Thông tin chưa thể gửi',
+          message: 'Có $deadCount mục chưa thể gửi do thông tin chưa hợp lệ:\n\n• $msgs\n\nVui lòng kiểm tra hoặc chỉnh sửa lại thông tin điểm bán để gửi lại.',
           dismissText: 'Đã hiểu',
         );
       } else if (remaining == 0) {
@@ -236,7 +237,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Mất mạng hoặc lỗi máy chủ (500), còn $remaining mục sẽ tự động thử lại khi có kết nối.',
+                    'Kết nối mạng chưa ổn định, còn $remaining mục sẽ tự động gửi khi có mạng trở lại.',
                   ),
                 ),
               ],
@@ -376,11 +377,11 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       if (isOnline && initialPending > 0) {
         final syncResult = await ref.read(syncServiceProvider).syncQueue(force: true);
         if (syncResult.hasDeadErrors && mounted) {
-          final msgs = syncResult.deadErrors.map((e) => e.message).take(3).join('\n• ');
+          final msgs = syncResult.deadErrors.map((e) => StringUtils.formatUserFriendlyError(e.message)).take(3).join('\n• ');
           AppErrorDialog.show(
             context,
-            title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
-            message: 'Máy chủ từ chối ${syncResult.deadErrors.length} mục do dữ liệu không hợp lệ (4xx):\n\n• $msgs\n\nCác mục này sẽ KHÔNG được gửi lại để tránh lỗi lặp lại.',
+            title: 'Thông tin chưa thể gửi',
+            message: 'Có ${syncResult.deadErrors.length} mục chưa thể gửi do thông tin chưa hợp lệ:\n\n• $msgs\n\nVui lòng kiểm tra lại thông tin để gửi lại.',
             dismissText: 'Đã hiểu',
           );
         }
@@ -422,10 +423,10 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                   child: Text(
                     isOnline
                         ? (deadCount > 0
-                            ? 'Có $deadCount mục lỗi dữ liệu vĩnh viễn (4xx).'
+                            ? 'Có $deadCount mục cần kiểm tra lại thông tin.'
                             : 'Đồng bộ thành công!')
                         : (initialPending > 0
-                            ? 'Đang offline, có $initialPending mục chờ gửi.'
+                            ? 'Đang ngắt mạng, có $initialPending mục lưu trên máy.'
                             : 'Đã tải lại dữ liệu từ bộ nhớ máy.'),
                   ),
                 ),
@@ -722,7 +723,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Có $deadCount mục lỗi dữ liệu (4xx) không thể gửi.',
+                        'Có $deadCount mục chưa thể gửi. Vui lòng kiểm tra lại.',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFFB91C1C),
@@ -741,19 +742,19 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                         final deadEntries = await db.getDeadQueueEntries();
                         if (!context.mounted) return;
                         final msgs = deadEntries
-                            .map((e) => e.lastError ?? 'Lỗi không xác định (4xx)')
+                            .map((e) => StringUtils.formatUserFriendlyError(e.lastError))
                             .take(3)
                             .join('\n• ');
                         AppErrorDialog.show(
                           context,
-                          title: 'Lỗi dữ liệu vĩnh viễn (4xx)',
+                          title: 'Thông tin chưa thể gửi',
                           message:
-                              'Máy chủ từ chối các mục này do dữ liệu không hợp lệ (4xx):\n\n• $msgs\n\nHệ thống đã dừng gửi lại các mục này để tránh lỗi lặp lại. Vui lòng bấm Sửa để chỉnh lại thông tin điểm bán.',
+                              'Các mục này chưa thể gửi do thông tin chưa hợp lệ:\n\n• $msgs\n\nVui lòng kiểm tra và chỉnh sửa lại thông tin điểm bán.',
                           dismissText: 'Đã hiểu',
                         );
                       },
                       child: const Text(
-                        'Xem lỗi',
+                        'Xem chi tiết',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -836,7 +837,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                               icon: Icons.storefront_outlined,
                                               title: 'Chưa có dữ liệu điểm bán',
                                               description:
-                                                  'Danh sách điểm bán hiện đang trống hoặc chưa được đồng bộ từ hệ thống máy chủ.',
+                                                  'Danh sách điểm bán hiện đang trống hoặc chưa được tải về máy.',
                                               actionText: 'Làm mới dữ liệu',
                                               onAction: () => vm.loadCustomers(isRefresh: true),
                                               secondaryActionText: 'Thêm điểm bán',

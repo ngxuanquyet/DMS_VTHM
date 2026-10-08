@@ -13,11 +13,13 @@ import 'report_menu_bottom_sheet.dart';
 class HomeQuickActions extends StatelessWidget {
   final bool isSyncing;
   final VoidCallback? onSync;
+  final VoidCallback? onAttendanceReturn;
 
   const HomeQuickActions({
     super.key,
     this.isSyncing = false,
     this.onSync,
+    this.onAttendanceReturn,
   });
 
   @override
@@ -36,7 +38,10 @@ class HomeQuickActions extends StatelessWidget {
                 backgroundColor: const Color(0xFFFEF3C7),
                 foregroundColor: const Color(0xFFD97706),
                 borderColor: const Color(0xFFFDE68A),
-                onTap: () => context.push('/attendance'),
+                onTap: () async {
+                  await context.push('/attendance');
+                  onAttendanceReturn?.call();
+                },
               ),
               const SizedBox(height: 14),
               _QuickActionCard(

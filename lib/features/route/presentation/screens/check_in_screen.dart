@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -78,6 +79,58 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       } catch (_) {}
     }
 
+    if (activeVisit == null) {
+      try {
+        final routeActive = ref.read(routeViewModelProvider).activeVisit;
+        if (routeActive != null && routeActive.isOpen) {
+          activeVisit = routeActive;
+        }
+      } catch (_) {}
+    }
+
+    // Kiểm tra tính hợp lệ của active visit so với danh sách lượt thực tế hôm nay
+    final currentActive = activeVisit;
+    if (currentActive != null) {
+      final todayVisits = ref.read(routeViewModelProvider).todayVisits;
+      final matchingServerVisit = todayVisits.where(
+        (v) => (v.id == currentActive.id && v.id > 0) || v.customerId == currentActive.customerId,
+      ).firstOrNull;
+      if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
+        // Lượt này trên máy chủ đã check-out (hoặc huỷ) rồi!
+        debugPrint('[CheckInScreen] Active visit id=${currentActive.id} đã hoàn tất trên server, giải phóng phiên stale.');
+        await ref.read(visitRepositoryProvider).clearActiveVisit();
+        ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
+        vm.resetSession();
+        activeVisit = null;
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.'),
+              backgroundColor: Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          _safePop();
+          return;
+        }
+      }
+    }
+
+    if (widget.dealer != null && widget.dealer!.status == DealerVisitStatus.completed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _safePop();
+        return;
+      }
+    }
+
     if (activeVisit != null && widget.dealer != null) {
       final targetCustomerId = widget.dealer!.customer is CustomerEntity
           ? (widget.dealer!.customer as CustomerEntity).id
@@ -101,6 +154,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         }
         return;
       }
+
+      // ⚠️ Khi quay lại đúng điểm bán đang có phiên mở dở dang:
+      // Tự động phục hồi phiên và tuyệt đối KHÔNG gọi check-in mới để tránh duplicate
+      if (targetCustomerId != null && targetCustomerId == activeVisit.customerId) {
+        final dealerToInit = widget.dealer!.visit != null
+            ? widget.dealer!
+            : widget.dealer!.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
+        vm.initCheckinWithDealer(dealerToInit);
+        await vm.restoreActiveVisitIfAvailable(targetCustomerId);
+        return;
+      }
     }
 
     if (widget.dealer != null) {
@@ -122,14 +186,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<void> _checkinIfNeeded() async {
     var state = ref.read(checkInViewModelProvider);
-    if (state.visitId != 0) return; // Đã có phiên hợp lệ (cả online lẫn offline)
+    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) return; // Đã có phiên hợp lệ (cả online lẫn offline)
 
     if (state.checkinData == null) {
       await ref.read(checkInViewModelProvider.notifier).loadCheckinData();
       state = ref.read(checkInViewModelProvider);
     }
 
-    if (state.visitId != 0) return;
+    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) return;
 
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
@@ -138,9 +202,15 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     // Kiểm tra bản ghi active visit lưu trữ cục bộ để chặn offline (§3 Luật 3)
     try {
       final savedActive = await ref.read(visitRepositoryProvider).getActiveVisit();
-      if (savedActive != null && savedActive.isOpen && savedActive.customerId != customerId) {
-        _showCheckinErrorDialog('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.');
-        return;
+      if (savedActive != null && savedActive.isOpen) {
+        if (savedActive.customerId != customerId) {
+          _showCheckinErrorDialog('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.');
+          return;
+        } else {
+          // Trùng customerId: Đang có lượt mở cho điểm bán này, phục hồi phiên thay vì check-in mới
+          await ref.read(checkInViewModelProvider.notifier).restoreActiveVisitIfAvailable(customerId);
+          return;
+        }
       }
     } catch (_) {}
 
@@ -150,6 +220,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
     if (!mounted) return;
     final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+
+    // 🔴 KIỂM TRA CHỐNG GIAN LẬN TRƯỚC KHI CHECK-IN VIẾNG THĂM
+    if (mounted) {
+      final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(
+        context,
+        position: pos,
+        actionType: AntiFraudActionType.visitCheckin,
+        actionTitle: 'Check-in viếng thăm',
+      );
+      if (!fraudCheck.isAllowed) {
+        setState(() => _isCheckingIn = false);
+        return;
+      }
+    }
 
     final error = await ref.read(checkInViewModelProvider.notifier).performCheckin(
       customerId: customerId,
@@ -222,7 +306,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Máy chủ không cho phép mở lượt viếng thăm này theo quy định nghiệp vụ.',
+              'Hệ thống không cho phép mở lượt viếng thăm này theo quy định hiện tại.',
               style: AppTypography.bodySmall(
                 color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
               ),
@@ -339,17 +423,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       if (success && mounted) {
         ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
         await ref.read(visitRepositoryProvider).clearActiveVisit();
+        if (!mounted) return;
         ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Đã hủy lượt check-in thành công.'),
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(errorMsg ?? 'Đã hủy lượt check-in thành công.'),
+                ),
               ],
             ),
-            backgroundColor: Color(0xFF10B981),
+            backgroundColor: const Color(0xFF10B981),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -397,82 +484,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       return;
     }
 
-    // Nếu lượt đang mở (cả online lẫn offline): Cho người dùng chọn Tạm rời phiên hay Hủy hẳn lượt
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.info_outline_rounded, color: Color(0xFF0284C7)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Rời phiên viếng thăm',
-                style: AppTypography.titleLarge(
-                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                ).copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Lượt viếng thăm điểm bán đang diễn ra. Bạn muốn tạm rời màn hình (lượt vẫn tiếp tục chạy trong nền) hay muốn hủy hẳn lượt check-in này?',
-          style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('stay'),
-            child: const Text('Ở lại'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(ctx).pop('leave'),
-            child: const Text('Tạm rời màn hình'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(ctx).pop('cancel'),
-            child: const Text('Hủy lượt check-in'),
-          ),
-        ],
-      ),
-    );
-
-    if (choice == 'leave' && mounted) {
-      final currentVisit = state.visitEntity;
-      if (currentVisit != null) {
-        await ref.read(visitRepositoryProvider).saveActiveVisit(currentVisit);
-        ref.read(routeViewModelProvider.notifier).setActiveVisit(currentVisit);
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.info_outline_rounded, color: Colors.white),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Đang tạm rời. Lượt viếng thăm tại "${state.checkinData?.dealer.name ?? 'điểm bán'}" vẫn tiếp tục chạy trong nền.',
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF0284C7),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      _safePop();
-    } else if (choice == 'cancel' && mounted) {
-      await _confirmAndCancelVisit(vm);
-    }
+    // Nếu lượt đang mở (cả online lẫn offline): Rời màn hình là hủy check-in luôn
+    await _confirmAndCancelVisit(vm);
   }
 
   void _openNoteDialog() {
@@ -801,8 +814,19 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     final surveys = state.surveyForms;
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
-        (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0);
-    final dealerName = customer?.name ?? state.checkinData?.dealer.name ?? 'Điểm bán';
+        (state.visitEntity?.customerId != null && state.visitEntity!.customerId > 0
+            ? state.visitEntity!.customerId
+            : (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0));
+    final dealerName = customer?.name ??
+        (state.visitEntity?.customerName.isNotEmpty == true ? state.visitEntity!.customerName : null) ??
+        state.checkinData?.dealer.name ??
+        'Điểm bán';
+    final customerCode = customer?.code ??
+        state.visitEntity?.customerCode ??
+        state.checkinData?.dealer.id;
+    final customerAddress = customer?.address ??
+        state.visitEntity?.customerAddress ??
+        state.checkinData?.dealer.address;
 
     final customerContext = MarketFormFillArgs.buildCustomerContext(
       typeId: customer?.customerTypeId,
@@ -888,7 +912,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                               customerId: customerId,
                               visitId: state.visitId,
                               dealerName: dealerName,
+                              customerCode: customerCode,
+                              customerAddress: customerAddress,
                               customerContext: customerContext,
+                              lockCustomer: true,
                             ),
                           );
                           if (result == true) {
@@ -1391,7 +1418,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                               const SizedBox(width: 4),
                                             ],
                                             Text(
-                                              state.visitId > 0 ? 'Lượt #${state.visitId}' : 'Ngoại tuyến',
+                                              state.visitId > 0 ? 'Lượt #${state.visitId}' : 'Lưu trên máy',
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w700,
@@ -1405,7 +1432,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'ID: ${state.checkinData!.dealer.id} · ${state.checkinData!.dealer.address}',
+                                  'Mã: ${state.checkinData!.dealer.id} · ${state.checkinData!.dealer.address}',
                                   style: AppTypography.labelSmall(
                                     color: isDark
                                         ? AppColors.darkOnSurfaceVariant
@@ -2070,6 +2097,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     }
                                   }
 
+                                  // 🔴 KIỂM TRA CHỐNG GIAN LẬN TRƯỚC KHI CHECK-OUT VIẾNG THĂM
+                                  if (context.mounted) {
+                                    final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(
+                                      context,
+                                      position: pos,
+                                      actionType: AntiFraudActionType.visitCheckout,
+                                      actionTitle: 'Check-out viếng thăm',
+                                    );
+                                    if (!fraudCheck.isAllowed) return;
+                                  }
+
                                   final (success, errorMsg) = await vm.checkout(
                                     lat: pos?.latitude,
                                     lng: pos?.longitude,
@@ -2082,6 +2120,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     // Tải lại danh sách tuyến để cập nhật trạng thái "Đã ghé" (§2.3)
                                     ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
                                     await ref.read(visitRepositoryProvider).clearActiveVisit();
+                                    if (!context.mounted) return;
                                     ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
 
                                     await CheckoutSuccessDialog.show(

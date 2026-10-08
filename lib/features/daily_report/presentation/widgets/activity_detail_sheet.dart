@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../domain/entities/daily_activity_entity.dart';
 
@@ -112,8 +113,14 @@ class ActivityDetailSheet extends StatelessWidget {
               // Thông tin chi tiết
               if (activity.customerName != null) ...[
                 _DetailRow(
-                  icon: Icons.storefront_rounded,
-                  label: 'Điểm bán',
+                  icon: (activity.type == DailyActivityType.attendanceIn ||
+                          activity.type == DailyActivityType.attendanceOut)
+                      ? Icons.location_city_rounded
+                      : Icons.storefront_rounded,
+                  label: (activity.type == DailyActivityType.attendanceIn ||
+                          activity.type == DailyActivityType.attendanceOut)
+                      ? 'Địa điểm chấm'
+                      : 'Điểm bán',
                   value: activity.customerName!,
                 ),
                 const SizedBox(height: 10),
@@ -170,13 +177,21 @@ class ActivityDetailSheet extends StatelessWidget {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              Image.network(
-                                activity.photos[i],
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Center(
-                                  child: Icon(Icons.image_outlined, color: Colors.grey),
-                                ),
-                              ),
+                              activity.photos[i].startsWith('http')
+                                  ? Image.network(
+                                      activity.photos[i],
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Center(
+                                        child: Icon(Icons.image_outlined, color: Colors.grey),
+                                      ),
+                                    )
+                                  : Image.file(
+                                      File(activity.photos[i]),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Center(
+                                        child: Icon(Icons.image_outlined, color: Colors.grey),
+                                      ),
+                                    ),
                               Positioned(
                                 bottom: 4,
                                 left: 4,

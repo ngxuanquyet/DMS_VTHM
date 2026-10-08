@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/app_notification_service.dart';
 import '../../data/repositories/notifications_repository_impl.dart';
 import '../../data/services/notifications_api_service.dart';
 import '../../domain/entities/notification_entity.dart';
@@ -12,7 +13,10 @@ final notificationsApiServiceProvider = Provider<NotificationsApiService>((ref) 
 });
 
 final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
-  return NotificationsRepositoryImpl(ref.read(notificationsApiServiceProvider));
+  return NotificationsRepositoryImpl(
+    ref.read(notificationsApiServiceProvider),
+    ref.read(appNotificationServiceProvider),
+  );
 });
 
 final getNotificationsUseCaseProvider = Provider<GetNotificationsUseCase>((ref) {
@@ -21,6 +25,11 @@ final getNotificationsUseCaseProvider = Provider<GetNotificationsUseCase>((ref) 
 
 final markAllReadUseCaseProvider = Provider<MarkAllReadUseCase>((ref) {
   return MarkAllReadUseCase(ref.read(notificationsRepositoryProvider));
+});
+
+final unreadNotificationCountProvider = FutureProvider.autoDispose<int>((ref) async {
+  final notifService = ref.watch(appNotificationServiceProvider);
+  return notifService.getUnreadCount();
 });
 
 final notificationsViewModelProvider =

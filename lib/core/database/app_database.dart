@@ -354,6 +354,16 @@ class AppDatabase extends _$AppDatabase {
     return entries.isNotEmpty ? entries.first : null;
   }
 
+  /// Tìm lượt chấm công đã đồng bộ gần nhất có serverId
+  Future<SyncQueueEntry?> findLastSyncedPunchEntry() async {
+    final entries = await (select(syncQueueEntries)
+          ..where((tbl) => tbl.entity.equals('attendance_punch') & tbl.serverId.isNotNull())
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
+          ..limit(1))
+        .get();
+    return entries.isNotEmpty ? entries.first : null;
+  }
+
   /// Lấy danh sách đường dẫn ảnh cục bộ của lượt viếng thăm trước khi xoá queue
   Future<List<String>> getPendingVisitPhotoPaths(String clientUuid) async {
     final entries = await (select(syncQueueEntries)

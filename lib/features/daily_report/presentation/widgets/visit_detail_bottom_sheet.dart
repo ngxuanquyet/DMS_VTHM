@@ -126,6 +126,14 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
               if (visit.checkoutLat != null && visit.checkoutLng != null)
                 _detailRow('Toạ độ Check-out',
                     '${visit.checkoutLat!.toStringAsFixed(6)}, ${visit.checkoutLng!.toStringAsFixed(6)}'),
+              _detailRow(
+                'Quãng đường đến điểm',
+                visit.travelM == null
+                    ? '— (chờ tính tác vụ đêm)'
+                    : visit.travelM == 0
+                        ? '0 km (thiếu mốc để đo)'
+                        : '${(visit.travelM! / 1000.0).toStringAsFixed(1)} km',
+              ),
 
               // Hiển thị ảnh nếu có photoUrls
               if (visit.photoUrls.isNotEmpty) ...[

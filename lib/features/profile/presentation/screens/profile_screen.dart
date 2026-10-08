@@ -415,6 +415,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       },
                       isDark: isDark,
                     ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.two_wheeler_rounded,
+                      title: 'Quãng đường của tôi',
+                      onTap: () {
+                        context.push('/travel');
+                      },
+                      isDark: isDark,
+                    ),
                   ],
                 ),
               ),

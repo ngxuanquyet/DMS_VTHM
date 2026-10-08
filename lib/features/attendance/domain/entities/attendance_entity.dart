@@ -1,5 +1,46 @@
 import 'package:intl/intl.dart';
 
+/// Cấu hình trạng thái hôm nay từ GET /attendance/mobile/config (§2 SPEC-2026-10-06)
+class AttendanceTodayEntity {
+  final String? workDate;
+  final int punchCount;
+  final String? firstInAt;
+  final String? lastOutAt;
+  final String nextAction; // 'in' | 'out'
+  final String nextActionLabel; // 'Vào' | 'Ra'
+
+  const AttendanceTodayEntity({
+    this.workDate,
+    this.punchCount = 0,
+    this.firstInAt,
+    this.lastOutAt,
+    this.nextAction = 'in',
+    this.nextActionLabel = 'Vào',
+  });
+
+  /// Lấy giờ vào định dạng HH:mm
+  String? get firstInTimeFormatted => _formatTime(firstInAt);
+
+  /// Lấy giờ ra định dạng HH:mm
+  String? get lastOutTimeFormatted => _formatTime(lastOutAt);
+
+  static String? _formatTime(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.contains(' ')) {
+      final parts = raw.split(' ');
+      if (parts.length > 1) {
+        final sub = parts[1].split(':');
+        if (sub.length >= 2) return '${sub[0]}:${sub[1]}';
+      }
+    }
+    final dt = DateTime.tryParse(raw.replaceAll(' ', 'T'));
+    if (dt != null) {
+      return DateFormat('HH:mm').format(dt);
+    }
+    return raw;
+  }
+}
+
 /// Cấu hình chấm công từ GET /attendance/mobile/config
 class AttendanceConfigEntity {
   final bool canPunch;
@@ -7,6 +48,7 @@ class AttendanceConfigEntity {
   final AttendanceGroupEntity group;
   final AttendancePhotoConfigEntity photo;
   final List<AttendanceLocationItemEntity> locations;
+  final AttendanceTodayEntity? today;
 
   const AttendanceConfigEntity({
     required this.canPunch,
@@ -14,21 +56,30 @@ class AttendanceConfigEntity {
     required this.group,
     required this.photo,
     required this.locations,
+    this.today,
   });
 
   /// Kiểm tra xem hiện tại người dùng có nằm trong bất kỳ geofence nào không
+  /// Quy tắc 06/10/2026: Nếu có bất kỳ địa điểm kind == 'everywhere' thì luôn hợp lệ
   bool isWithinAnyGeofence() {
     if (locations.isEmpty) return false;
-    return locations.any((loc) => loc.distanceM != null && loc.distanceM! <= loc.radiusM);
+    if (locations.any((loc) => loc.isEverywhere)) return true;
+    return locations.any((loc) =>
+        loc.distanceM != null && loc.radiusM != null && loc.distanceM! <= loc.radiusM!);
   }
 
   /// Địa điểm gần nhất
   AttendanceLocationItemEntity? get closestLocation {
     if (locations.isEmpty) return null;
-    final withDistance = locations.where((l) => l.distanceM != null).toList();
+    final everywhere = locations.where((l) => l.isEverywhere).toList();
+    final withDistance =
+        locations.where((l) => !l.isEverywhere && l.distanceM != null).toList();
     if (withDistance.isNotEmpty) {
       withDistance.sort((a, b) => a.distanceM!.compareTo(b.distanceM!));
       return withDistance.first;
+    }
+    if (everywhere.isNotEmpty) {
+      return everywhere.first;
     }
     return locations.first;
   }
@@ -62,22 +113,31 @@ class AttendanceLocationItemEntity {
   final int id;
   final String code;
   final String name;
-  final double lat;
-  final double lng;
-  final int radiusM;
-  final int? distanceM;
+  final String kind; // 'radius' | 'everywhere'
+  final String kindLabel; // 'Bán kính' | 'Mọi nơi'
+  final double? lat; // null khi kind == 'everywhere'
+  final double? lng; // null khi kind == 'everywhere'
+  final int? radiusM; // null khi kind == 'everywhere'
+  final int? distanceM; // null khi kind == 'everywhere'
 
   const AttendanceLocationItemEntity({
     required this.id,
     required this.code,
     required this.name,
-    required this.lat,
-    required this.lng,
-    required this.radiusM,
+    this.kind = 'radius',
+    this.kindLabel = 'Bán kính',
+    this.lat,
+    this.lng,
+    this.radiusM,
     this.distanceM,
   });
 
-  bool get isWithinRadius => distanceM != null && distanceM! <= radiusM;
+  bool get isEverywhere => kind == 'everywhere';
+
+  bool get isWithinRadius {
+    if (isEverywhere) return true;
+    return distanceM != null && radiusM != null && distanceM! <= radiusM!;
+  }
 }
 
 /// Yêu cầu ảnh chụp kèm lượt chấm công
@@ -138,7 +198,7 @@ class AttendancePunchPhotoEntity {
   }
 }
 
-/// Lượt chấm công chuẩn hoá (§3 & §5 API-CHAM-CONG-MOBILE-2026-10-05.md)
+/// Lượt chấm công chuẩn hoá (§3 & §5 API-CHAM-CONG-MOBILE-2026-10-05.md + 2026-10-06.md)
 class AttendancePunchEntity {
   final int id;
   final String punchAt;
@@ -152,6 +212,8 @@ class AttendancePunchEntity {
   final bool isMockLocation;
   final bool isTimeTampered;
   final bool duplicate;
+  final String? direction; // 'in' | 'out' | 'mid' | null
+  final String? directionLabel; // 'Vào' | 'Ra' | 'Giữa ca' | null
   final List<AttendancePunchPhotoEntity> photos;
   final AttendanceRequirementsEntity requirements;
 
@@ -168,9 +230,18 @@ class AttendancePunchEntity {
     this.isMockLocation = false,
     this.isTimeTampered = false,
     this.duplicate = false,
+    this.direction,
+    this.directionLabel,
     this.photos = const [],
     required this.requirements,
   });
+
+  /// Chiều chuẩn hoá hiển thị cho người dùng: chỉ có 'Vào' hoặc 'Ra' (thực tế vận hành không có giữa ca)
+  String get displayDirectionLabel {
+    if (directionLabel == 'Giữa ca' || direction == 'mid' || direction == 'out') return 'Ra';
+    if (directionLabel == 'Vào' || direction == 'in') return 'Vào';
+    return directionLabel ?? 'Vào';
+  }
 
   /// Phân tích DateTime từ chuỗi punch_at của server
   DateTime? get punchAtDateTime {
