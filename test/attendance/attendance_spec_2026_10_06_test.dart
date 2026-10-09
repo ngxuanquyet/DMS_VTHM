@@ -2,16 +2,11 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/constants/app_constants.dart';
-import 'package:vthm_dms/core/errors/app_exceptions.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
-import 'package:vthm_dms/features/attendance/data/models/attendance_model.dart';
 import 'package:vthm_dms/features/attendance/data/repositories/attendance_repository_impl.dart';
 import 'package:vthm_dms/features/attendance/data/services/attendance_api_service.dart';
 import 'package:vthm_dms/features/attendance/domain/entities/attendance_entity.dart';
-import 'package:vthm_dms/features/attendance/domain/usecases/attendance_usecases.dart';
 import 'package:vthm_dms/features/attendance/presentation/states/attendance_state.dart';
-import 'package:vthm_dms/features/attendance/presentation/viewmodels/attendance_view_model.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:dio/dio.dart';
 
 class MockAttendanceApiClient20261006 extends ApiClient {
@@ -279,6 +274,66 @@ void main() {
       final configB = await repository.getConfig();
       expect(configB.group.code, 'MARKET_B');
       expect(configB.locations.first.kind, 'everywhere');
+    });
+
+    test('5. User có thể chọn địa điểm chấm công linh hoạt từ danh sách, không bị fix cứng', () async {
+      const loc1 = AttendanceLocationItemEntity(
+        id: 101,
+        code: 'VP_HN',
+        name: 'Văn phòng Hà Nội',
+        kind: 'radius',
+        lat: 21.0285,
+        lng: 105.8542,
+        radiusM: 100,
+        distanceM: 50, // trong bán kính
+      );
+      const loc2 = AttendanceLocationItemEntity(
+        id: 102,
+        code: 'NM_VP',
+        name: 'Nhà máy Vĩnh Phúc',
+        kind: 'radius',
+        lat: 21.3951,
+        lng: 105.5928,
+        radiusM: 200,
+        distanceM: 35000, // ngoài bán kính
+      );
+      const loc3 = AttendanceLocationItemEntity(
+        id: 103,
+        code: 'MARKET_ANY',
+        name: 'Mọi nơi',
+        kind: 'everywhere',
+        kindLabel: 'Mọi nơi',
+      );
+
+      final config = AttendanceConfigEntity(
+        canPunch: true,
+        group: const AttendanceGroupEntity(code: 'TECH', name: 'Kỹ thuật', enforceGeofence: true),
+        photo: const AttendancePhotoConfigEntity(),
+        locations: [loc1, loc2, loc3],
+      );
+
+      var state = AttendanceState(
+        status: AttendanceStatus.loaded,
+        config: config,
+      );
+
+      // Mặc định ban đầu chọn địa điểm gần nhất (loc1)
+      expect(state.activeLocation?.id, loc1.id);
+      expect(state.isWithinGeofence, isTrue);
+      expect(state.isBlockedByGeofence, isFalse);
+
+      // User chủ động đổi sang Nhà máy Vĩnh Phúc (loc2)
+      state = state.copyWith(selectedLocation: loc2);
+      expect(state.activeLocation?.id, loc2.id);
+      expect(state.activeLocation?.name, 'Nhà máy Vĩnh Phúc');
+      expect(state.isWithinGeofence, isFalse);
+      expect(state.isBlockedByGeofence, isTrue); // Bị chặn do ngoài bán kính loc2
+
+      // User chủ động đổi sang Mọi nơi (loc3)
+      state = state.copyWith(selectedLocation: loc3);
+      expect(state.activeLocation?.id, loc3.id);
+      expect(state.isWithinGeofence, isTrue);
+      expect(state.isBlockedByGeofence, isFalse);
     });
   });
 }

@@ -6,6 +6,7 @@ enum AttendanceStatus { initial, loading, loaded, error }
 class AttendanceState {
   final AttendanceStatus status;
   final AttendanceConfigEntity? config;
+  final AttendanceLocationItemEntity? selectedLocation;
   final List<AttendancePunchEntity> history;
   final AttendancePunchEntity? latestPunch;
   final int selectedDays;
@@ -21,6 +22,7 @@ class AttendanceState {
   const AttendanceState({
     this.status = AttendanceStatus.initial,
     this.config,
+    this.selectedLocation,
     this.history = const [],
     this.latestPunch,
     this.selectedDays = 7,
@@ -46,12 +48,22 @@ class AttendanceState {
   /// Nhóm có chặn cứng ngoài vùng hay không (§2 group.enforce_geofence)
   bool get isGeofenceEnforced => config?.group.enforceGeofence ?? true;
 
-  /// Địa điểm gần nhất
+  /// Địa điểm gần nhất do hệ thống xác định theo GPS
   AttendanceLocationItemEntity? get closestLocation => config?.closestLocation;
 
-  /// Người dùng có đang đứng trong bán kính của bất kỳ địa điểm nào không
+  /// Địa điểm chấm công đang chọn (ưu tiên lựa chọn của người dùng, mặc định theo địa điểm gần nhất)
+  AttendanceLocationItemEntity? get activeLocation {
+    if (selectedLocation != null) return selectedLocation;
+    return closestLocation;
+  }
+
+  /// Người dùng có đang đứng trong bán kính của địa điểm chấm công đang chọn hay không
   bool get isWithinGeofence {
     if (config == null || config!.locations.isEmpty) return false;
+    final active = activeLocation;
+    if (active != null) {
+      return active.isWithinRadius;
+    }
     return config!.isWithinAnyGeofence();
   }
 
@@ -78,6 +90,7 @@ class AttendanceState {
   AttendanceState copyWith({
     AttendanceStatus? status,
     AttendanceConfigEntity? config,
+    AttendanceLocationItemEntity? selectedLocation,
     List<AttendancePunchEntity>? history,
     AttendancePunchEntity? latestPunch,
     int? selectedDays,
@@ -93,6 +106,7 @@ class AttendanceState {
     return AttendanceState(
       status: status ?? this.status,
       config: config ?? this.config,
+      selectedLocation: selectedLocation ?? this.selectedLocation,
       history: history ?? this.history,
       latestPunch: latestPunch ?? this.latestPunch,
       selectedDays: selectedDays ?? this.selectedDays,

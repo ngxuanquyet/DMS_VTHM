@@ -296,6 +296,7 @@ class AttendancePhotoItemModel {
   final String? takenAt;
   final int? sortOrder;
   final bool duplicate;
+  final AttendanceRequirementsModel? requirements;
 
   const AttendancePhotoItemModel({
     required this.id,
@@ -308,6 +309,7 @@ class AttendancePhotoItemModel {
     this.takenAt,
     this.sortOrder,
     this.duplicate = false,
+    this.requirements,
   });
 
   factory AttendancePhotoItemModel.fromJson(Map<String, dynamic> json) {
@@ -322,6 +324,9 @@ class AttendancePhotoItemModel {
       takenAt: json['taken_at'] as String?,
       sortOrder: (json['sort_order'] as num?)?.toInt(),
       duplicate: json['duplicate'] as bool? ?? false,
+      requirements: json['requirements'] is Map<String, dynamic>
+          ? AttendanceRequirementsModel.fromJson(json['requirements'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -336,6 +341,7 @@ class AttendancePhotoItemModel {
         'taken_at': takenAt,
         'sort_order': sortOrder,
         'duplicate': duplicate,
+        if (requirements != null) 'requirements': requirements!.toJson(),
       };
 
   AttendancePunchPhotoEntity toEntity() => AttendancePunchPhotoEntity(
@@ -349,6 +355,7 @@ class AttendancePhotoItemModel {
         takenAt: takenAt,
         sortOrder: sortOrder,
         duplicate: duplicate,
+        requirements: requirements?.toEntity(),
       );
 }
 

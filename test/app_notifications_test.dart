@@ -168,5 +168,25 @@ void main() {
 
       expect(true, isTrue);
     });
+
+    test('Late checkin and overdue checkout reminders produce informative messages', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = AppNotificationService();
+
+      // Test late checkin
+      await service.notifyAttendanceCheckinReminder(isLate: true);
+      // Test overdue checkout
+      await service.notifyAttendanceCheckoutReminder(isOverdue: true);
+
+      final data = await service.getSavedNotifications();
+      final checkinNotif = data.today.firstWhere((e) => e.type == 'attendance_checkin');
+      final checkoutNotif = data.today.firstWhere((e) => e.type == 'attendance_checkout');
+
+      expect(checkinNotif.title, 'Cảnh báo chưa chấm công vào ca');
+      expect(checkinNotif.message, contains('08:00'));
+
+      expect(checkoutNotif.title, 'Cảnh báo chưa chấm công ra ca');
+      expect(checkoutNotif.message, contains('17:00'));
+    });
   });
 }

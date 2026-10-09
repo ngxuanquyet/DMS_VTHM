@@ -55,6 +55,8 @@ post_install do |installer|
         ## Enable Microphone and Speech Recognizer permissions
         'PERMISSION_MICROPHONE=1',
         'PERMISSION_SPEECH_RECOGNIZER=1',
+        ## Enable Notification permission
+        'PERMISSION_NOTIFICATIONS=1',
       ]
     end
   end

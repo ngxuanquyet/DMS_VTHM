@@ -1,15 +1,43 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/theme/app_typography.dart';
+import '../../../data/models/form_photo_model.dart';
 import '../../../data/models/market_form_submission_model.dart';
 import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
+
+/// Mục ảnh quản lý trạng thái tải lên và hiển thị cục bộ
+class FormPhotoEntry {
+  final String localPath;
+  String? token;
+  String? previewUrl;
+  bool isUploading;
+  String? uploadError;
+
+  FormPhotoEntry({
+    required this.localPath,
+    this.token,
+    this.previewUrl,
+    this.isUploading = false,
+    this.uploadError,
+  });
+
+  String get fullPreviewUrl {
+    if (previewUrl == null || previewUrl!.isEmpty) return '';
+    if (previewUrl!.startsWith('http://') || previewUrl!.startsWith('https://')) {
+      return previewUrl!;
+    }
+    final clean = previewUrl!.startsWith('/') ? previewUrl! : '/$previewUrl';
+    return '${AppConstants.baseUrl}$clean';
+  }
+}
 
 class MarketFormRenderer extends StatefulWidget {
   final List<MarketFormBlockEntity> blocks;
@@ -21,6 +49,8 @@ class MarketFormRenderer extends StatefulWidget {
   final String? defaultCustomerCode;
   final String? defaultCustomerAddress;
   final bool lockCustomer;
+  final int defaultMaxPhotos;
+  final Future<FormPhotoModel> Function(File file)? onUploadPhoto;
 
   const MarketFormRenderer({
     super.key,
@@ -33,6 +63,8 @@ class MarketFormRenderer extends StatefulWidget {
     this.defaultCustomerCode,
     this.defaultCustomerAddress,
     this.lockCustomer = false,
+    this.defaultMaxPhotos = 10,
+    this.onUploadPhoto,
   });
 
   @override
@@ -43,6 +75,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, dynamic> _answers = {};
   final Map<String, String> _errors = {};
   final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
 
   TextEditingController _getController(String code, String initial) {
@@ -50,6 +83,28 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       _textControllers[code] = TextEditingController(text: initial);
     }
     return _textControllers[code]!;
+  }
+
+  /// Trả về bản đồ đường dẫn ảnh cục bộ trên máy phục vụ lưu trữ offline (§5)
+  Map<String, List<String>> getLocalPhotoPaths() {
+    final Map<String, List<String>> map = {};
+    _photoEntries.forEach((code, entries) {
+      final paths = entries
+          .map((e) => e.localPath)
+          .where((p) => p.isNotEmpty)
+          .toList();
+      if (paths.isNotEmpty) {
+        map[code] = paths;
+      }
+    });
+    return map;
+  }
+
+  int _resolveMaxFiles(MarketFormBlockEntity block) {
+    if (block.resolved.maxFiles > 0) {
+      return block.resolved.maxFiles.clamp(1, 10);
+    }
+    return widget.defaultMaxPhotos.clamp(1, 10);
   }
 
   @override
@@ -87,6 +142,46 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   void initState() {
     super.initState();
     _answers.addAll(widget.initialAnswers);
+
+    // Khởi tạo danh sách ảnh cho các ô ảnh / tệp từ initialAnswers
+    for (final block in widget.blocks) {
+      if (block.isImage || block.resolved.inputType.toLowerCase() == 'file') {
+        final code = block.resolved.code;
+        final rawVal = _answers[code];
+        final List<FormPhotoEntry> entries = [];
+        if (rawVal is List) {
+          for (final item in rawVal) {
+            final str = item.toString().trim();
+            if (str.isEmpty) continue;
+            if (str.length == 32 && !str.contains('/') && !str.contains(r'\')) {
+              // Token hex 32 ký tự
+              entries.add(FormPhotoEntry(
+                localPath: '',
+                token: str,
+                previewUrl: '/dms/form-photos/public/$str',
+              ));
+            } else {
+              // File cục bộ
+              entries.add(FormPhotoEntry(localPath: str));
+            }
+          }
+        } else if (rawVal is String && rawVal.trim().isNotEmpty) {
+          final str = rawVal.trim();
+          if (str.length == 32 && !str.contains('/') && !str.contains(r'\')) {
+            entries.add(FormPhotoEntry(
+              localPath: '',
+              token: str,
+              previewUrl: '/dms/form-photos/public/$str',
+            ));
+          } else {
+            entries.add(FormPhotoEntry(localPath: str));
+          }
+        }
+        if (entries.isNotEmpty) {
+          _photoEntries[code] = entries;
+        }
+      }
+    }
 
     // Tự động gán defaultCustomerId cho các ô ref_customer hoặc ô khách hàng
     if (widget.defaultCustomerId != null) {
@@ -174,8 +269,38 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (!_isBlockVisible(block)) continue;
 
       final code = block.resolved.code;
-      final val = _answers[code];
       final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
+
+      // Xử lý riêng cho ô ảnh (§1, §2, §3)
+      if (block.isImage || block.resolved.inputType.toLowerCase() == 'file') {
+        final entries = _photoEntries[code] ?? [];
+        final hasUploading = entries.any((e) => e.isUploading);
+        if (hasUploading) {
+          newErrors[code] = '$label: Vui lòng chờ ảnh tải lên hoàn tất.';
+          continue;
+        }
+        if (block.required && entries.isEmpty) {
+          newErrors[code] = '$label không được để trống.';
+          continue;
+        }
+        final maxAllowed = _resolveMaxFiles(block);
+        if (entries.length > maxAllowed) {
+          newErrors[code] = '$label chỉ cho phép tối đa $maxAllowed ảnh.';
+          continue;
+        }
+        if (entries.isNotEmpty) {
+          // LUÔN gửi mảng các token (hoặc local path nếu offline chưa có token) (§3)
+          _answers[code] = entries
+              .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
+              .where((s) => s.isNotEmpty)
+              .toList();
+        } else {
+          _answers.remove(code);
+        }
+        continue;
+      }
+
+      final val = _answers[code];
 
       // 1. Kiểm tra bắt buộc (required) - 0, "0", false không phải rỗng (§2 Luật 1)
       final isEmpty = DynamicRuleEvaluator.isEmptyValue(val);
@@ -219,11 +344,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         .map((b) => b.resolved.code)
         .toSet();
 
+    final imageCodes = widget.blocks
+        .where((b) => b.isImage || b.resolved.inputType.toLowerCase() == 'file')
+        .map((b) => b.resolved.code)
+        .toSet();
+
     // Làm sạch: Bỏ các trường rỗng, ô trình bày, và ô đang ẩn (§5, §9)
     return MarketFormSubmissionModel.sanitizeAnswers(
       _answers,
       presentationCodes: _presentationCodes,
       allowedCodes: visibleCodes,
+      imageCodes: imageCodes,
     );
   }
 
@@ -296,8 +427,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return _buildMultiSelectField(block, isDark);
       case 'date':
         return _buildDateField(context, block, isDark);
+      case 'image':
       case 'file':
-        return _buildFileField(context, block, isDark);
+        return _buildImageField(context, block, isDark);
       case 'ref_customer':
         final currentVal = _answers[block.resolved.code];
         final int? selectedId = (widget.lockCustomer && widget.defaultCustomerId != null)
@@ -758,102 +890,433 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   // ==========================================
-  // Ô FILE / CHỤP ẢNH
+  // Ô ẢNH / MÁY ẢNH (IMAGE & FILE) (§1, §2, §3)
   // ==========================================
 
-  Widget _buildFileField(
+  Widget _buildImageField(
     BuildContext context,
     MarketFormBlockEntity block,
     bool isDark,
   ) {
     final code = block.resolved.code;
-    final currentPath = _answers[code]?.toString();
+    final maxFiles = _resolveMaxFiles(block);
+    final entries = _photoEntries[code] ?? [];
+    final canAddMore = entries.length < maxFiles;
+    final error = _errors[code];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildLabel(block, isDark),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: _buildLabel(block, isDark)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${entries.length}/$maxFiles ảnh',
+                style: AppTypography.labelSmall(
+                  color: entries.length >= maxFiles
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        if (block.resolved.description != null && block.resolved.description!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            block.resolved.description!,
+            style: AppTypography.bodySmall(
+              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
+
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _errors.containsKey(code)
+              color: error != null
                   ? AppColors.error
                   : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+              width: error != null ? 1.5 : 1.0,
             ),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (currentPath != null && currentPath.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: File(currentPath).existsSync()
-                      ? Image.file(
-                          File(currentPath),
-                          width: 54,
-                          height: 54,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 54,
-                          height: 54,
-                          color: AppColors.primaryContainer,
-                          child: const Icon(Icons.attach_file, color: Colors.white),
-                        ),
+              if (entries.isNotEmpty) ...[
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: entries
+                      .map((entry) => _buildPhotoThumbnail(context, block, entry, isDark))
+                      .toList(),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    currentPath.split(Platform.pathSeparator).last,
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                const SizedBox(height: 12),
+              ],
+
+              // Nút chụp ảnh
+              if (canAddMore)
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                    side: BorderSide(
+                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                      width: 1.2,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.error),
-                  onPressed: () => _updateValue(code, null),
-                ),
-              ] else ...[
-                Expanded(
-                  child: Text(
-                    'Chưa có ảnh/tệp đính kèm',
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                  label: const Text('Chụp ảnh'),
-                  onPressed: () async {
-                    final picker = ImagePicker();
-                    final photo = await picker.pickImage(
-                      source: ImageSource.camera,
-                      imageQuality: 80,
-                    );
-                    if (photo != null) {
-                      _updateValue(code, photo.path);
-                    }
-                  },
+                  icon: const Icon(Icons.camera_alt_rounded, size: 20),
+                  label: Text(
+                    entries.isEmpty
+                        ? 'Chụp ảnh ${block.resolved.label.isNotEmpty ? block.resolved.label : ""}'.trim()
+                        : 'Chụp thêm ảnh (${entries.length}/$maxFiles)',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  onPressed: () => _showPhotoSourceSheet(context, block),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (isDark ? AppColors.primaryFixedDim : AppColors.primary).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Đã đủ $maxFiles ảnh tối đa',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
             ],
           ),
         ),
-        if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
+        if (error != null) _buildErrorText(error),
       ],
     );
+  }
+
+  Widget _buildPhotoThumbnail(
+    BuildContext context,
+    MarketFormBlockEntity block,
+    FormPhotoEntry entry,
+    bool isDark,
+  ) {
+    final hasLocal = entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
+    final hasRemote = entry.previewUrl != null && entry.previewUrl!.isNotEmpty;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: () => _showImagePreviewDialog(context, entry),
+          child: Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+              ),
+              color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerHigh,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasLocal)
+                    Image.file(File(entry.localPath), fit: BoxFit.cover)
+                  else if (hasRemote)
+                    Image.network(
+                      entry.fullPreviewUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(Icons.broken_image_rounded, color: AppColors.error),
+                      ),
+                    )
+                  else
+                    const Center(child: Icon(Icons.photo_rounded, size: 28, color: Colors.grey)),
+
+                  // Trạng thái đang tải lên
+                  if (entry.isUploading)
+                    Container(
+                      color: Colors.black54,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Trạng thái lỗi tải lên
+                  if (!entry.isUploading && entry.uploadError != null)
+                    Container(
+                      color: Colors.black54,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 22),
+                            const SizedBox(height: 2),
+                            InkWell(
+                              onTap: () => _retryUploadPhoto(block.resolved.code, entry),
+                              child: const Text(
+                                'Thử lại',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Nút xoá ảnh
+        Positioned(
+          top: -6,
+          right: -6,
+          child: GestureDetector(
+            onTap: () => _removePhoto(block.resolved.code, entry),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: AppColors.error,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showPhotoSourceSheet(BuildContext context, MarketFormBlockEntity block) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded, color: AppColors.primary),
+                title: const Text('Chụp ảnh từ máy ảnh (Khuyến nghị)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Chụp ảnh trực tiếp tại điểm bán'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndUploadPhoto(context, block, ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: AppColors.secondary),
+                title: const Text('Chọn ảnh từ thư viện'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndUploadPhoto(context, block, ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showImagePreviewDialog(BuildContext context, FormPhotoEntry entry) {
+    final hasLocal = entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
+    final hasRemote = entry.previewUrl != null && entry.previewUrl!.isNotEmpty;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: InteractiveViewer(
+                child: hasLocal
+                    ? Image.file(File(entry.localPath), fit: BoxFit.contain)
+                    : hasRemote
+                        ? Image.network(entry.fullPreviewUrl, fit: BoxFit.contain)
+                        : Container(
+                            color: Colors.black,
+                            height: 200,
+                            child: const Center(
+                              child: Text('Không thể tải ảnh', style: TextStyle(color: Colors.white)),
+                            ),
+                          ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 30),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadPhoto(
+    BuildContext context,
+    MarketFormBlockEntity block,
+    ImageSource source,
+  ) async {
+    final code = block.resolved.code;
+    final maxFiles = _resolveMaxFiles(block);
+    final currentEntries = _photoEntries[code] ?? [];
+    if (currentEntries.length >= maxFiles) return;
+
+    try {
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (photo == null) return;
+
+      final entry = FormPhotoEntry(
+        localPath: photo.path,
+        isUploading: widget.onUploadPhoto != null,
+      );
+
+      setState(() {
+        if (!_photoEntries.containsKey(code)) {
+          _photoEntries[code] = [];
+        }
+        _photoEntries[code]!.add(entry);
+        _errors.remove(code);
+      });
+
+      // Nếu có callback upload, thực hiện upload ngay lập tức (§2: Tải ảnh lên TRƯỚC)
+      if (widget.onUploadPhoto != null) {
+        try {
+          final result = await widget.onUploadPhoto!(File(photo.path));
+          if (mounted) {
+            setState(() {
+              entry.token = result.token;
+              entry.previewUrl = result.url;
+              entry.isUploading = false;
+              entry.uploadError = null;
+              _updateAnswersForImageField(code);
+            });
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              entry.isUploading = false;
+              entry.uploadError = e.toString().replaceAll('AppException: ', '');
+              _updateAnswersForImageField(code);
+            });
+          }
+        }
+      } else {
+        _updateAnswersForImageField(code);
+      }
+    } catch (e) {
+      debugPrint('[MarketFormRenderer] Lỗi chụp/chọn ảnh: $e');
+    }
+  }
+
+  Future<void> _retryUploadPhoto(
+    String code,
+    FormPhotoEntry entry,
+  ) async {
+    if (widget.onUploadPhoto == null || entry.localPath.isEmpty) return;
+
+    setState(() {
+      entry.isUploading = true;
+      entry.uploadError = null;
+    });
+
+    try {
+      final result = await widget.onUploadPhoto!(File(entry.localPath));
+      if (mounted) {
+        setState(() {
+          entry.token = result.token;
+          entry.previewUrl = result.url;
+          entry.isUploading = false;
+          entry.uploadError = null;
+          _updateAnswersForImageField(code);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          entry.isUploading = false;
+          entry.uploadError = e.toString().replaceAll('AppException: ', '');
+          _updateAnswersForImageField(code);
+        });
+      }
+    }
+  }
+
+  void _removePhoto(String code, FormPhotoEntry entry) {
+    setState(() {
+      _photoEntries[code]?.remove(entry);
+      if (_photoEntries[code]?.isEmpty ?? false) {
+        _photoEntries.remove(code);
+      }
+      _updateAnswersForImageField(code);
+    });
+  }
+
+  void _updateAnswersForImageField(String code) {
+    final entries = _photoEntries[code] ?? [];
+    if (entries.isNotEmpty) {
+      _answers[code] = entries
+          .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } else {
+      _answers.remove(code);
+    }
+    widget.onChanged?.call(_answers);
   }
 
   // ==========================================

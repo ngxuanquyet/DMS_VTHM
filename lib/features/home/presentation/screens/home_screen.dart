@@ -73,14 +73,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final db = ref.read(appDatabaseProvider);
       final pendingCount = await db.countPendingSync();
-      final attState = ref.read(attendanceViewModelProvider);
+      final notifService = ref.read(appNotificationServiceProvider);
       final routeState = ref.read(routeViewModelProvider);
+      final attState = ref.read(attendanceViewModelProvider);
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
 
-      final hasIn = attState.history.any((p) => p.punchAt.startsWith(todayStr));
-      final hasOut = attState.history.where((p) => p.punchAt.startsWith(todayStr)).length >= 2;
+      final stateHasIn = attState.history.any((p) => p.punchAt.startsWith(todayStr));
+      final stateHasOut = attState.history.where((p) => p.punchAt.startsWith(todayStr)).length >= 2;
+      final cachedHasIn = await notifService.checkHasCheckedInToday();
+      final cachedHasOut = await notifService.checkHasCheckedOutToday();
 
-      await ref.read(appNotificationServiceProvider).checkDailyReminders(
+      final hasIn = stateHasIn || cachedHasIn;
+      final hasOut = stateHasOut || cachedHasOut;
+
+      await notifService.checkDailyReminders(
             hasCheckedInToday: hasIn,
             hasCheckedOutToday: hasOut,
             totalDealers: routeState.routeDetail?.totalDealers,
@@ -379,7 +385,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     : punchAt.startsWith(todayStr);
 
                                 if (isToday) {
-                                  final punchId = 'att_${p.id > 0 ? p.id : (p.clientUuid ?? i)}';
+                                  final punchId = 'att_${p.id > 0 ? p.id : (p.clientUuid.isNotEmpty ? p.clientUuid : i)}';
                                   final alreadyExists = activityItems.any((a) =>
                                       a.id == punchId ||
                                       (a.type == DailyActivityType.attendanceIn && a.time == p.timeFormatted) ||

@@ -1,7 +1,12 @@
 # API module CHẤM CÔNG BẰNG APP — cho app di động DMS
 
 **Host:** `https://api-app.vthmgroup.vn` · **Xác thực:** `Authorization: Bearer <access_token>` ·
-viết 05/10/2026.
+viết 05/10/2026 · **cập nhật 06/10/2026**.
+
+> 🆕 **Thay đổi 06/10/2026 — chiều Vào/Ra.** `config` có thêm khối **`today`** (trạng thái chấm công hôm nay
+> + nhãn nút tiếp theo), và mỗi lượt trả về có thêm **`direction` / `direction_label`**. **Không có trường
+> nào app phải gửi thêm** ⇒ bản app hiện tại vẫn chạy nguyên; đây là phần app đọc để vẽ nút "CHẤM VÀO" /
+> "CHẤM RA" và gắn nhãn cho dòng lịch sử. Xem §2 và §3.4.
 
 Tài liệu này là **hợp đồng đủ để làm trọn một lượt chấm công bằng app**: lấy cấu hình, gửi lượt chấm, chụp
 hai ảnh bắt buộc, đọc lịch sử. Mọi endpoint dưới đây đã được gọi thật bằng `curl` trên bản sao dữ liệu
@@ -11,11 +16,17 @@ hai ảnh bắt buộc, đọc lịch sử. Mọi endpoint dưới đây đã đ
 > thiếu gì; server kiểm lại tất cả và là nơi nói không. Mọi lời từ chối đều kèm **câu tiếng Việt viết cho
 > người lao động đọc** — hiện thẳng câu đó lên là đủ, đừng dịch lại.
 
-> 🔴 **ĐỌC TRƯỚC KHI LÊN LỊCH TÍCH HỢP:** trên **prod hiện chưa khai địa điểm chấm công nào**
-> (`att_geofence` = 0 dòng, đo 05/10/2026). Nhóm luật đang bật (`MARKET`) **chặn cứng ngoài vùng**, nên
-> *mọi* lượt gửi lên prod hôm nay đều nhận `422` kèm câu *"Chưa khai địa điểm chấm công nào — liên hệ nhân
-> sự…"*. Đó **không phải lỗi app**. Việc khai địa điểm là của nhân sự/quản trị (màn SPA
-> *Chấm công → Địa điểm chấm công*); app thử nghiệm được ngay khi có dòng đầu tiên.
+> 🔴 **ĐỌC TRƯỚC KHI LÊN LỊCH TÍCH HỢP — đo lại 09/10/2026:** prod đã khai **3 địa điểm**: `VVP` và `VHM`
+> (vùng bán kính 200 m) **cộng `EVERYWHERE` kiểu "Mọi nơi"**. Cả ba đều để trống chi nhánh **và** để trống
+> nhóm ⇒ **mọi người đều thấy `EVERYWHERE`**, nên hiện tại **không lượt nào bị chặn vì vị trí**, dù nhóm
+> `MARKET` vẫn bật "chặn cứng ngoài vùng". App thử ở bất kỳ đâu cũng chấm được.
+>
+> ⚠️ Đây là **trạng thái cấu hình, không phải hợp đồng** — nhân sự gỡ hoặc gán lại `EVERYWHERE` cho đúng một
+> nhóm (việc đang cân nhắc) thì hàng rào vị trí sống lại ngay và lượt ngoài bán kính nhận `422` kèm câu nêu
+> rõ *còn cách bao nhiêu mét*. Đó **không phải lỗi app** — app phải xử lý đúng cả hai trạng thái.
+>
+> *(Bản 05/10 ghi "prod chưa khai địa điểm nào, mọi lượt đều 422"; bản 06/10 ghi "2 địa điểm, chưa có điểm
+> `everywhere` nào" — cả hai câu nay đã cũ.)*
 
 ---
 
@@ -105,9 +116,15 @@ GET /attendance/mobile/config?lat=21.0280000&lng=105.8345000
   "blocked_reason": null,
   "group": {"code":"MARKET","name":"Khối thị trường","enforce_geofence":true},
   "photo": {"min_photos":2,"max_photos":10,"require_both":true},
+  "today": {"work_date":"2026-10-06","punch_count":3,
+            "first_in_at":"2026-10-06 08:55:40+07","last_out_at":"2026-10-06 08:56:34+07",
+            "next_action":"out","next_action_label":"Ra"},
   "locations": [
-    {"id":6,"code":"TESTCC-DOC1","name":"[TEST-CC] Văn phòng tài liệu mobile",
-     "lat":21.0277644,"lng":105.8341598,"radius_m":200,"distance_m":44}
+    {"id":6,"code":"TESTCC-DOC1","name":"[TEST-CC] Văn phòng tài liệu mobile","kind":"radius",
+     "kind_label":"Vùng bán kính cố định",
+     "lat":21.0277644,"lng":105.8341598,"radius_m":200,"distance_m":44},
+    {"id":16,"code":"TESTCC-EVERY","name":"[TEST-CC] Mọi nơi","kind":"everywhere","kind_label":"Mọi nơi",
+     "lat":null,"lng":null,"radius_m":null,"distance_m":null}
   ]}}
 ```
 
@@ -117,10 +134,20 @@ GET /attendance/mobile/config?lat=21.0280000&lng=105.8345000
 | `group.enforce_geofence` | `true` (giá trị đang chạy) ⇒ ngoài vùng là **chặn cứng**, app nên làm mờ nút khi `distance_m > radius_m` của mọi địa điểm |
 | `photo.min_photos` · `max_photos` · `require_both` | Đang là **2 · 10 · true** ⇒ màn ảnh phải có **đúng hai nút chụp**: camera trước + camera sau. **Đọc từ đây, đừng hardcode** |
 | `locations[]` | Danh sách để người bị chặn **biết phải đi đâu** — hiện tên + khoảng cách; `radius_m` nằm trong 20–5000 m |
-| `locations: []` | Chưa khai địa điểm nào (tình trạng prod hôm nay) ⇒ hiện câu chỉ sang nhân sự, đừng để màn hình trống một nút không ăn |
+| `locations[].kind` | 🆕 06/10/2026. `radius` = vùng tròn như cũ. **`everywhere` = chấm ở BẤT KỲ ĐÂU**, dựng cho đội đi tuyến: thấy một dòng như thế nghĩa là người này không bị ràng buộc vị trí |
+| `kind: "everywhere"` ⇒ `lat`/`lng`/`radius_m`/`distance_m` đều **`null`** | Điểm đó không có tâm nên không có khoảng cách. 🔴 App **phải chịu được `null` ở cả bốn khoá** — ép kiểu số sẽ biến `null` thành `0` và vẽ ra một địa điểm giữa Đại Tây Dương. Hiện chữ "Mọi nơi" thay cho số mét, và **đừng làm mờ nút** khi danh sách có một dòng `everywhere` |
+| `locations: []` | Chưa khai địa điểm nào ⇒ hiện câu chỉ sang nhân sự, đừng để màn hình trống một nút không ăn. *(Prod 09/10/2026 có 3 dòng, không còn rỗng — nhưng vẫn phải chịu được ca rỗng.)* |
+| `today` | **Trạng thái chấm công hôm nay** — vẽ nhãn nút bằng `next_action_label` ("Vào"/"Ra") và câu "đã vào lúc …" bằng `first_in_at`. `punch_count = 0` ⇒ `next_action: "in"`; từ lượt thứ nhất trở đi luôn `"out"`. 🔴 **Đọc từ đây, đừng tự suy từ `history`**: lượt chấm có thể vào bằng đường khác (nhân sự nhập tay, máy chấm công) mà `history` không trả |
+| `today.last_out_at` | `null` khi mới có **một** lượt — lượt đó là giờ Vào, chưa có giờ Ra |
 
 Địa điểm được lọc theo **đơn vị** (`branch_code` của hồ sơ nhân sự) và theo nhóm; điểm khai chung toàn tập
 đoàn thì ai cũng thấy. App không cần biết luật lọc, chỉ hiện những gì server trả về.
+
+🆕 **Nhóm luật nay chọn theo TỪNG NGƯỜI** (06/10/2026). Trước đó mọi người chịu chung một nhóm; nay nhân sự
+khai quy tắc theo **công ty / phòng ban / chức danh** (cộng ngoại lệ đích danh) trên màn *Chấm công → Nhóm
+chấm công*, khớp nhiều nhóm thì nhóm có `sort_order` nhỏ hơn thắng, không khớp nhóm nào thì rơi về **nhóm
+mặc định**. Với app thì **không có gì đổi**: vẫn đọc `group` và `locations` của `config` — chỉ là hai người
+khác nhau nay có thể nhận hai bộ địa điểm khác nhau, nên **đừng nhớ đệm `config` qua nhiều tài khoản**.
 
 ---
 
@@ -218,11 +245,42 @@ vì người đó nay đã đi khỏi đó.
   tín hiệu cho người xem**, không bao giờ làm lượt bị từ chối. Trong lần đo của tài liệu này, gửi
   `client_time` 09:00 trong khi server 13:30 vẫn `201`, chỉ `is_time_tampered: true`.
 
-### 3.4 Chấm nhiều lần trong ngày — được
+### 3.4 Chấm nhiều lần trong ngày — được, và server TỰ GẮN chiều Vào/Ra
 
-Không có giới hạn số lượt/ngày. Bảng công lấy **lượt đầu** làm giờ Vào, **lượt cuối** làm giờ Ra; các lượt
-giữa hiển thị thành dòng con trong báo cáo. App không phải chọn "vào" hay "ra" — **không có trường nào như
-thế** và server không suy ra chiều.
+Không có giới hạn số lượt/ngày. Trong một **ngày công**, server gắn nhãn chiều cho từng lượt (chủ hệ thống
+chốt 06/10/2026):
+
+| Lượt | `direction` | `direction_label` |
+|---|---|---|
+| **sớm nhất** trong ngày | `in` | Vào |
+| **muộn nhất** trong ngày | `out` | Ra |
+| ở giữa | `mid` | Giữa ca |
+| ngày chỉ có **một** lượt | `in` | Vào (đã vào, chưa ra) |
+
+🔴 **App KHÔNG gửi chiều lên.** Body của `POST punch` **không có** trường `direction` — không thêm. Chiều là
+nhãn server **suy ra**, nên nó tự đúng lại ngay khi lượt tiếp theo được ghi: lượt đang là "Ra" sẽ **tụt xuống
+"Giữa ca"** khi người đó chấm thêm lần nữa (đo thật 06/10/2026: lượt 8729 "Ra" → "Giữa ca" sau lượt 8730).
+Lý do không cho người chọn: bấm nhầm nút thì chiều sai **vĩnh viễn**, mà đợt này cố ý không có đường chấm bù.
+
+Nhãn bám đúng `att_day`, và tính **xuyên nguồn**: lượt nhập tay / lượt quẹt máy cùng ngày cũng tham gia xác
+định hai đầu mút. Đo thật 06/10: ngày 01/10 của `TEST001` có một lượt `manual` lúc 08:12 ⇒ lượt app 17:30:38
+nhận nhãn **"Giữa ca"**, không phải "Vào".
+
+**Lượt không có chiều (`direction: null`).** Một ngày đã được tính công thì **chỉ những lượt được tính** mới
+mang nhãn; lượt nằm ngoài cửa sổ ca của ngày đó (cửa sổ thật: **05:00–21:30**) nhận `null`. Ngày **không**
+được tính công (cuối tuần, ngày không xếp ca) thì cả ngày vẫn có nhãn bình thường — người đi tuyến chấm
+ngày nghỉ không bị màn hình trắng. Lượt đã huỷ và lượt chưa khớp mã nhân viên cũng luôn `null`.
+App hiển thị gạch ngang, **đừng coi `null` là lỗi**.
+
+### 3.4b Hai lượt trong CÙNG MỘT GIÂY — trả về lượt đã có, không phải lỗi
+
+`punch_at` ghi **giờ server cắt tới giây**, nên một đợt xả hàng đợi offline có thể gửi nhiều lượt rơi đúng
+cùng một giây. Khi đó server **không tạo dòng thứ hai** mà trả về **`200`** kèm **lượt đang chiếm giây đó**
+và `duplicate: true` — giống hệt ca gửi lại cùng `client_uuid` (§3.2).
+
+🔴 Hệ quả app phải biết: `id` trả về **có thể khác** lượt bạn vừa gửi, và `client_uuid` trong phản hồi **có
+thể không phải cái bạn gửi lên**. Luôn dùng `id` **trong phản hồi** để tải ảnh lên, đừng tự ghép theo uuid —
+nếu không ảnh sẽ gửi vào một lượt không tồn tại. Trước 06/10/2026 ca này trả `500`.
 
 ### 3.5 Lỗi hình dạng dữ liệu
 
@@ -358,6 +416,7 @@ GET /attendance/mobile/history?days=7
   "lat":21.028,"lng":105.8345,"accuracy_m":12.5,
   "geofence_id":6,"geofence_name":"[TEST-CC] Văn phòng tài liệu mobile",
   "is_outside_geofence":false,"is_mock_location":false,"is_time_tampered":true,
+  "direction":"in","direction_label":"Vào",
   "photos":[
     {"id":9,"file_id":15647,"token":"<token-32-hex>","url":"/attendance/punch-photos/public/<token-32-hex>",
      "photo_type":"front","photo_type_label":"Ảnh chân dung","photo_type_color":"primary",
@@ -371,6 +430,8 @@ GET /attendance/mobile/history?days=7
 * **Một lượt chấm có cùng bộ khoá ở cả hai nơi** (phản hồi `POST punch` và `history`) ⇒ app dùng **một kiểu
   dữ liệu duy nhất**, parse một lần;
 * `geofence_name` có thể `null` cho lượt cũ nếu địa điểm đã bị xoá — hiển thị phải chịu được `null`;
+* `direction` / `direction_label` có ở **cả** `POST punch` lẫn `history` (xem §3.4); `null` chỉ xảy ra với
+  lượt đã huỷ hoặc lượt chưa khớp mã nhân viên — hiển thị gạch ngang, đừng coi là lỗi;
 * `days=abc` ⇒ `400` *"Dữ liệu của tham số "days" không hợp lệ."*
 
 ---
@@ -416,6 +477,8 @@ và phần đối chiếu khi có tranh chấp mất sạch dữ liệu.
 6. [ ] Màn lịch sử đọc `history?days=7`, hiện ảnh bằng `photos[].url` (ghép với base URL của API), chịu được
        `null` ở `geofence_name` và ảnh đã bị dọn sau 90 ngày.
 7. [ ] Hiện mọi `message` của server **nguyên văn tiếng Việt**, đừng thay bằng câu chung "có lỗi xảy ra".
+7b. [ ] Nhãn nút và câu trạng thái lấy từ `config.today` (`next_action_label`, `first_in_at`); mỗi dòng lịch
+       sử hiện `direction_label`. **Không tự suy vào/ra ở app** — xem §3.4.
 8. [ ] Không gửi lượt chấm cho **người khác**: không endpoint nào nhận tham số người, mọi cửa đều là "của
        chính tôi".
 
@@ -424,7 +487,6 @@ và phần đối chiếu khi có tranh chấp mất sạch dữ liệu.
 * ❌ Không có **chấm bù / xin điều chỉnh** — bị chặn là mất lượt;
 * ❌ Không chấm tại **điểm bán trong tuyến** — chỉ địa điểm công ty khai (`att_geofence`);
 * ❌ Không so khớp **khuôn mặt** (ảnh chỉ là bằng chứng, `verify_method` ghi `any`);
-* ❌ Không phân biệt **vào/ra**; không có trạng thái "đang trong giờ làm";
 * ❌ Không có đường **xoá ảnh** hay **xoá lượt** từ app;
 * ❌ Không phân biệt ảnh **chụp trực tiếp** với ảnh **chọn từ thư viện** — ràng buộc "phải mở camera" là
   việc của app, server không kiểm được điều đó.
@@ -448,17 +510,23 @@ và phần đối chiếu khi có tranh chấp mất sạch dữ liệu.
 
 ---
 
-## 10. Tình trạng phía server (05/10/2026)
+## 10. Tình trạng phía server (đo lại 09/10/2026)
 
 | Hạng mục | Trạng thái |
 |---|---|
 | 4 endpoint mobile + ống ảnh | ✅ đã lên prod (01/10/2026) |
+| Chiều Vào/Ra (`today`, `direction`) | ✅ 06/10/2026 — nhãn suy ra, không cột DB mới, app không phải đổi body |
+| Hai lượt cùng một giây | ✅ 06/10/2026 — trả `200` + lượt đã có (trước đó là `500` lộ câu SQL) |
+| Địa điểm kiểu "Mọi nơi" (`kind`) | ✅ 06/10/2026 — app chỉ cần chịu được `null` ở toạ độ/bán kính |
+| Nhóm chọn theo từng người (quy tắc phạm vi) | ✅ 06/10/2026 — app không phải đổi gì |
 | 3 quyền + gán vai `employee` | ✅ có trên prod |
-| Nhóm luật `MARKET`, chặn cứng ngoài vùng | ✅ 1 dòng, đang bật |
+| Nhóm luật `MARKET`, chặn cứng ngoài vùng | ✅ 1 dòng, đang bật — và là **nhóm mặc định** (mọi người chưa khai quy tắc đều rơi vào đây) |
+| Quy tắc gán người vào nhóm | ⏳ **chưa khai dòng nào** ⇒ toàn bộ ~1.100 tài khoản dùng chung nhóm `MARKET` |
 | Ca `HC` + lịch làm việc | ✅ có |
-| **Địa điểm chấm công (`att_geofence`)** | 🔴 **0 dòng** ⇒ mọi lượt prod bị `422`; nhân sự phải khai trước |
-| Lượt chấm app trên prod | 0 dòng — chưa ai chấm thật |
-| Cron tính lại bảng công / dọn ảnh | ⏳ `is_enabled = false`, bật khi có lượt thật |
+| **Địa điểm chấm công (`att_geofence`)** | ✅ **3 dòng**: `VVP` 200 m (05/10) · `VHM` 200 m (06/10) · `EVERYWHERE` kiểu *Mọi nơi* (08/10). Cả ba để trống chi nhánh **và** nhóm ⇒ ai cũng thấy |
+| Hàng rào vị trí trên thực tế | 🔴 **đang mở** — vì `EVERYWHERE` dùng chung mọi nhóm, không lượt nào bị `422` ngoài vùng. Sẽ siết lại khi nhân sự gán điểm đó cho đúng một nhóm |
+| Lượt chấm app trên prod | ✅ **10 lượt thật** (05/10 → 08/10) |
+| Cron tính lại bảng công / dọn ảnh | ⏳ cả 5 cron `attendance/*` còn `is_enabled = false`; bảng công vẫn đúng vì tính ngay trong lượt `punch` |
 | Bảng công tự tính sau mỗi lượt | ✅ tính ngay trong lượt gọi `punch` (cron chỉ là lưới an toàn) |
 | **Cửa quản trị xem bằng chứng** | ✅ từ 05/10/2026 — màn *Chấm công → Lượt quẹt* của One hiện **địa điểm, toạ độ (mở được bản đồ), sai số GPS, cờ nghi vấn và ẢNH** của từng lượt app |
 
@@ -508,5 +576,6 @@ Chạy trên API test (`127.0.0.1:8899` → DB `app_test`) ngày 05/10/2026, tà
 ## 12. Tài liệu liên quan
 
 * [`docs/specs/hr/SPEC-CHAM-CONG-APP-2026-10-01.md`](../../specs/hr/SPEC-CHAM-CONG-APP-2026-10-01.md) — 8 quyết định nghiệp vụ, thiết kế đầy đủ
+* [`API-CHAM-CONG-THAY-DOI-CHO-MOBILE-2026-10-06.md`](./API-CHAM-CONG-THAY-DOI-CHO-MOBILE-2026-10-06.md) — **bản rút gọn chỉ phần THAY ĐỔI ngày 06/10**, gửi đội mobile đọc trước
 * [`API-VIENG-THAM-MOBILE-2026-09-29.md`](./API-VIENG-THAM-MOBILE-2026-09-29.md) — module viếng thăm (cùng khuôn GPS + ảnh + hàng đợi offline)
 * [`API-KHAI-BAO-VI-TRI-MOBILE-2026-10-01.md`](./API-KHAI-BAO-VI-TRI-MOBILE-2026-10-01.md) · [`API-THAY-DOI-CHO-MOBILE-2026-10-01.md`](./API-THAY-DOI-CHO-MOBILE-2026-10-01.md)

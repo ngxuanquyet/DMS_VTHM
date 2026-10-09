@@ -55,6 +55,9 @@ class MarketFormBlockEntity {
       resolved.inputType == 'heading' ||
       resolved.inputType == 'divider' ||
       resolved.inputType == 'note';
+
+  bool get isImage => resolved.isImage;
+  int get maxFiles => resolved.maxFiles;
 }
 
 /// Entity trường nhập liệu đã giải mã
@@ -66,6 +69,7 @@ class MarketFormResolvedEntity {
   final String? description;
   final List<MarketFormOptionEntity> options;
   final MarketFormValidationEntity? validation;
+  final int maxFiles; // Số lượng ảnh tối đa của ô (mặc định 10 theo config hệ thống, kẹp trần 10 theo §1)
 
   const MarketFormResolvedEntity({
     required this.code,
@@ -75,7 +79,10 @@ class MarketFormResolvedEntity {
     this.description,
     this.options = const [],
     this.validation,
+    this.maxFiles = 10,
   });
+
+  bool get isImage => inputType.toLowerCase() == 'image';
 }
 
 /// Lựa chọn cho ô select, multiselect, radio, checkbox

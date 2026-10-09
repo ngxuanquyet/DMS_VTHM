@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/workplace_location.dart';
+import '../viewmodels/attendance_view_model.dart';
 
 final selectedWorkplaceProvider = StateProvider<WorkplaceLocation>((ref) {
   return kFixedWorkplaces.first;
@@ -21,17 +22,33 @@ class WorkplaceSelectionCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final strings = ref.watch(stringsProvider);
+    final config = ref.watch(attendanceViewModelProvider.select((s) => s.config));
+    final locations = config?.locations ?? [];
     final selectedWorkplace = ref.watch(selectedWorkplaceProvider);
     final livePointAsync = ref.watch(currentPointProvider);
     final livePoint = livePointAsync.value;
+
+    final List<WorkplaceLocation> availableWorkplaces = locations.isNotEmpty
+        ? locations.map((l) => WorkplaceLocation(
+              id: l.id.toString(),
+              name: l.name,
+              mobiworkId: l.code,
+              lat: l.lat ?? 0.0,
+              lng: l.lng ?? 0.0,
+            )).toList()
+        : kFixedWorkplaces;
+
+    final currentWorkplace = availableWorkplaces.any((w) => w.id == selectedWorkplace.id)
+        ? selectedWorkplace
+        : availableWorkplaces.first;
 
     double? distanceMeters;
     if (livePoint != null) {
       distanceMeters = Geolocator.distanceBetween(
         livePoint.lat,
         livePoint.lng,
-        selectedWorkplace.lat,
-        selectedWorkplace.lng,
+        currentWorkplace.lat,
+        currentWorkplace.lng,
       );
     }
 
@@ -152,7 +169,7 @@ class WorkplaceSelectionCard extends ConsumerWidget {
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<WorkplaceLocation>(
-                value: selectedWorkplace,
+                value: currentWorkplace,
                 isExpanded: true,
                 dropdownColor: isDark
                     ? AppColors.darkSurfaceContainer
@@ -163,7 +180,7 @@ class WorkplaceSelectionCard extends ConsumerWidget {
                       ? AppColors.darkOnSurfaceVariant
                       : AppColors.onSurfaceVariant,
                 ),
-                items: kFixedWorkplaces.map((workplace) {
+                items: availableWorkplaces.map((workplace) {
                   return DropdownMenuItem<WorkplaceLocation>(
                     value: workplace,
                     child: Text(
@@ -180,6 +197,10 @@ class WorkplaceSelectionCard extends ConsumerWidget {
                 onChanged: (val) {
                   if (val != null) {
                     ref.read(selectedWorkplaceProvider.notifier).state = val;
+                    final matchedLoc = locations.where((l) => l.id.toString() == val.id).firstOrNull;
+                    if (matchedLoc != null) {
+                      ref.read(attendanceViewModelProvider.notifier).selectLocation(matchedLoc);
+                    }
                   }
                 },
               ),

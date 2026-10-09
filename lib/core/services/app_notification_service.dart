@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -71,6 +72,17 @@ class AppNotificationService {
         );
         // Xin quyền thông báo trên Android 13+
         await androidPlatform.requestNotificationsPermission();
+      }
+
+      // Xin quyền thông báo trên iOS
+      final iosPlatform = _localNotifications
+          ?.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      if (iosPlatform != null) {
+        await iosPlatform.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
       }
 
       try {
@@ -297,19 +309,68 @@ class AppNotificationService {
   // 4. CÁC NGHIỆP VỤ THÔNG BÁO CỤ THỂ (8 LOẠI YÊU CẦU)
   // ===========================================================================
 
+  /// Tự động kiểm tra trạng thái chấm công hôm nay từ bộ nhớ cache hoặc SharedPreferences
+  Future<bool> checkHasCheckedInToday() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final userId = prefs.getString('auth_user_id') ?? prefs.getString('user_id');
+      final attHistoryKey = (userId != null && userId.isNotEmpty)
+          ? 'dms_attendance_history_cache_v2_$userId'
+          : 'dms_attendance_history_cache_v2';
+      final cachedJson = prefs.getString(attHistoryKey) ??
+          prefs.getString('dms_attendance_history_cache_v2') ??
+          prefs.getString('att_mobile_history_cache');
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        final list = jsonDecode(cachedJson) as List<dynamic>;
+        return list.any((item) => (item['punch_at']?.toString() ?? '').startsWith(todayStr));
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> checkHasCheckedOutToday() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final userId = prefs.getString('auth_user_id') ?? prefs.getString('user_id');
+      final attHistoryKey = (userId != null && userId.isNotEmpty)
+          ? 'dms_attendance_history_cache_v2_$userId'
+          : 'dms_attendance_history_cache_v2';
+      final cachedJson = prefs.getString(attHistoryKey) ??
+          prefs.getString('dms_attendance_history_cache_v2') ??
+          prefs.getString('att_mobile_history_cache');
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        final list = jsonDecode(cachedJson) as List<dynamic>;
+        final count = list.where((item) => (item['punch_at']?.toString() ?? '').startsWith(todayStr)).length;
+        return count >= 2;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   /// 1. Nhắc Chấm công Vào ca buổi sáng (Ca 8h, Thứ 2 - Thứ 7)
-  Future<void> notifyAttendanceCheckinReminder() async {
+  Future<void> notifyAttendanceCheckinReminder({bool? isLate}) async {
     final now = DateTime.now();
     if (now.weekday == DateTime.sunday) return; // Không nhắc Chủ nhật
 
     final todayStr = now.toIso8601String().substring(0, 10);
-    final throttled = await _shouldThrottle('att_in_$todayStr', const Duration(hours: 12));
+    final isLateTime = isLate ?? (now.hour > 8 || (now.hour == 8 && now.minute > 5));
+    final throttleKey = isLateTime ? 'att_in_late_$todayStr' : 'att_in_$todayStr';
+    final throttled = await _shouldThrottle(throttleKey, const Duration(hours: 2));
     if (throttled) return;
+
+    final title = isLateTime ? 'Cảnh báo chưa chấm công vào ca' : 'Nhắc chấm công vào ca';
+    final message = isLateTime
+        ? 'Bạn chưa chấm công Vào ca hôm nay (giờ vào ca: 08:00). Hãy chấm công ngay để ghi nhận công làm việc!'
+        : 'Sắp đến giờ vào ca (08:00). Đừng quên chấm công Vào ca để ghi nhận công hôm nay!';
 
     await sendNotification(
       id: 101,
-      title: 'Nhắc chấm công vào ca',
-      message: 'Sắp đến giờ vào ca (08:00). Đừng quên chấm công Vào ca để ghi nhận công hôm nay!',
+      title: title,
+      message: message,
       type: 'attendance_checkin',
       category: 'work',
       routePath: '/attendance',
@@ -406,18 +467,25 @@ class AppNotificationService {
   }
 
   /// 6. Nhắc Chấm công Ra ca cuối ngày (Ca tan 17h, Thứ 2 - Thứ 7)
-  Future<void> notifyAttendanceCheckoutReminder() async {
+  Future<void> notifyAttendanceCheckoutReminder({bool? isOverdue}) async {
     final now = DateTime.now();
     if (now.weekday == DateTime.sunday) return; // Không nhắc Chủ nhật
 
     final todayStr = now.toIso8601String().substring(0, 10);
-    final throttled = await _shouldThrottle('att_out_$todayStr', const Duration(hours: 12));
+    final isOverdueTime = isOverdue ?? (now.hour > 17 || (now.hour == 17 && now.minute >= 15));
+    final throttleKey = isOverdueTime ? 'att_out_overdue_$todayStr' : 'att_out_$todayStr';
+    final throttled = await _shouldThrottle(throttleKey, const Duration(hours: 2));
     if (throttled) return;
+
+    final title = isOverdueTime ? 'Cảnh báo chưa chấm công ra ca' : 'Nhắc chấm công ra ca';
+    final message = isOverdueTime
+        ? 'Đã quá giờ tan ca (17:00). Bạn chưa chấm công Ra ca hôm nay, hãy bấm Ra ca để chốt công!'
+        : 'Đã đến giờ tan ca (17:00). Đừng quên chấm công Ra ca để ghi nhận đầy đủ công hôm nay nhé!';
 
     await sendNotification(
       id: 107,
-      title: 'Nhắc chấm công ra ca',
-      message: 'Đã đến giờ tan ca (17:00). Đừng quên chấm công Ra ca để ghi nhận đầy đủ công hôm nay nhé!',
+      title: title,
+      message: message,
       type: 'attendance_checkout',
       category: 'work',
       routePath: '/attendance',
@@ -474,14 +542,18 @@ class AppNotificationService {
     final minute = now.minute;
     final isWorkingDay = now.weekday != DateTime.sunday; // Thứ 2 đến Thứ 7 (1..6)
 
-    // 1. Nhắc Chấm công Vào ca buổi sáng: Khung giờ 07:30 - 08:30 (Chỉ từ Thứ 2 đến Thứ 7)
-    if (isWorkingDay && ((hour == 7 && minute >= 30) || (hour == 8 && minute <= 30))) {
-      if (hasCheckedInToday == false) {
-        await notifyAttendanceCheckinReminder();
+    final checkedIn = hasCheckedInToday ?? await checkHasCheckedInToday();
+    final checkedOut = hasCheckedOutToday ?? await checkHasCheckedOutToday();
+
+    // 1. Nhắc Chấm công Vào ca buổi sáng: Khung giờ 07:00 - 12:00 (Thứ 2 đến Thứ 7)
+    // Nếu trong buổi sáng chưa vào ca, dù mở app lúc 07:45 hay 09:30, 10:15 ĐỀU nhắc!
+    if (isWorkingDay && hour >= 7 && hour < 12) {
+      if (!checkedIn) {
+        await notifyAttendanceCheckinReminder(isLate: hour >= 8);
       }
     }
 
-    // 2. Nhắc Lộ trình đầu ngày: 08:00 - 10:30 nếu có tuyến và điểm bán
+    // 2. Nhắc Lộ trình đầu ngày: 08:00 - 11:00 nếu có tuyến và điểm bán
     if (hour >= 8 && hour < 11 && (totalDealers ?? 0) > 0) {
       await notifyRouteBriefing(
         totalDealers: totalDealers!,
@@ -515,10 +587,10 @@ class AppNotificationService {
       }
     }
 
-    // 6. Nhắc Chấm công Ra ca cuối ngày: Khung giờ 17:00 - 18:30 (Chỉ từ Thứ 2 đến Thứ 7)
-    if (isWorkingDay && (hour >= 17 && (hour < 18 || (hour == 18 && minute <= 30)))) {
-      if (hasCheckedInToday == true && hasCheckedOutToday == false) {
-        await notifyAttendanceCheckoutReminder();
+    // 6. Nhắc Chấm công Ra ca cuối ngày: Khung giờ 16:45 - 20:30 (Thứ 2 đến Thứ 7)
+    if (isWorkingDay && (hour >= 16 && (hour > 16 || minute >= 45)) && hour < 21) {
+      if (checkedIn && !checkedOut) {
+        await notifyAttendanceCheckoutReminder(isOverdue: hour > 17 || (hour == 17 && minute >= 15));
       }
     }
 
@@ -530,16 +602,16 @@ class AppNotificationService {
     // 9. Đồng bộ lịch hẹn với Hệ điều hành (Bảo đảm TẮT HẲN APP vẫn nổ chuông theo ca 8h-17h T2-T7)
     if (isWorkingDay) {
       // Nhắc ra ca 17:00
-      if (hasCheckedInToday == true && hasCheckedOutToday == false) {
+      if (checkedIn && !checkedOut) {
         await scheduleDailyCheckoutReminder(hour: 17, minute: 0);
-      } else if (hasCheckedOutToday == true) {
+      } else if (checkedOut) {
         await cancelCheckoutReminder(todayOnly: true);
       }
 
       // Nhắc vào ca 07:50 (trước 8:00 10 phút)
-      if (hasCheckedInToday == false) {
+      if (!checkedIn) {
         await scheduleDailyCheckinReminder(hour: 7, minute: 50);
-      } else if (hasCheckedInToday == true) {
+      } else if (checkedIn) {
         await cancelCheckinReminder(todayOnly: true);
       }
     } else {

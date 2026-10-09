@@ -197,6 +197,21 @@ không tồn tại, và **mất ảnh bằng chứng của lượt chấm**.
 ⚠️ Bản tài liệu 05/10 ghi *"prod chưa khai địa điểm nào, mọi lượt đều 422"* — **câu đó nay đã cũ**, đã sửa
 trong hợp đồng đầy đủ.
 
+### 🔄 Cập nhật 09/10/2026 — bảng trên đã cũ
+
+Prod nay có **3 địa điểm**: thêm `EVERYWHERE` kiểu *Mọi nơi* (khai 08/10), **để trống cả chi nhánh lẫn
+nhóm** ⇒ mọi người đều thấy nó. Hệ quả cho đội mobile:
+
+* **Không lượt nào bị `422` ngoài vùng nữa** — thử ở bất kỳ đâu cũng chấm được, dù `MARKET` vẫn bật
+  "chặn cứng". Đừng kết luận "hàng rào vị trí đã bỏ" từ việc thử thành công.
+* `config.locations` nay **luôn có một dòng `kind: "everywhere"`** với `lat`/`lng`/`radius_m`/`distance_m`
+  đều `null` ⇒ ca `null` ở §3 không còn là lý thuyết, nó là ca **mặc định** hôm nay. App ép kiểu số ở bốn
+  khoá này sẽ hỏng ngay lần gọi đầu.
+* Trạng thái này **sẽ đổi**: nhân sự đang cân nhắc gán `EVERYWHERE` cho đúng một nhóm (đội đi tuyến), lúc
+  đó người ngoài nhóm đó quay lại bị chặn theo bán kính. App phải chạy đúng ở **cả hai** trạng thái.
+
+Prod cũng đã có **10 lượt chấm thật** từ app (05/10 → 08/10).
+
 ---
 
 ## 7. Hai câu lỗi còn tiếng Anh (nợ từ 05/10, chưa vá)

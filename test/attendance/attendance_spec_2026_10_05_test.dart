@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/errors/app_exceptions.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
-import 'package:vthm_dms/features/attendance/data/models/attendance_model.dart';
 import 'package:vthm_dms/features/attendance/data/repositories/attendance_repository_impl.dart';
 import 'package:vthm_dms/features/attendance/data/services/attendance_api_service.dart';
-import 'package:vthm_dms/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:vthm_dms/features/attendance/domain/usecases/attendance_usecases.dart';
 import 'package:vthm_dms/features/attendance/presentation/viewmodels/attendance_view_model.dart';
 import 'package:geolocator/geolocator.dart';

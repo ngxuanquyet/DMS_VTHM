@@ -164,7 +164,7 @@ class _AttendancePhotoCaptureDialogState
             final hasFront = updatedPhotos.any((p) => p.photoType == 'front');
             final hasBack = updatedPhotos.any((p) => p.photoType == 'back');
 
-            final updatedReq = AttendanceRequirementsEntity(
+            final updatedReq = photo.requirements ?? AttendanceRequirementsEntity(
               photoCount: updatedPhotos.length,
               minPhotos: punch!.requirements.minPhotos,
               maxPhotos: punch!.requirements.maxPhotos,

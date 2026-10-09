@@ -264,6 +264,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
       } catch (_) {}
 
       // 2. Tạo submission DTO
+      final localPhotos = _rendererKey.currentState?.getLocalPhotoPaths();
       final submission = MarketFormSubmissionModel(
         configId: widget.args.config.configId,
         visitId: widget.args.kind == 'survey' ? widget.args.visitId : null,
@@ -272,6 +273,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
         submitLat: lat,
         submitLng: lng,
         submitAddress: address,
+        localPhotoPaths: localPhotos,
       );
 
       final isOnline = ref.read(connectivityProvider).isOnline;
@@ -479,6 +481,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
               defaultCustomerCode: widget.args.customerCode,
               defaultCustomerAddress: widget.args.customerAddress,
               lockCustomer: widget.args.isCustomerLocked,
+              onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
             ),
             const SizedBox(height: 80),
           ],

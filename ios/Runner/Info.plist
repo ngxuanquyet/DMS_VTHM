@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Vthm Dms</string>
+	<string>VTHM DMS</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -53,9 +53,16 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>vi</string>
+		<string>en</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>DMS VTHM cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>DMS VTHM cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
 	<string>DMS VTHM cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Ứng dụng cần quyền nhận diện giọng nói để chuyển giọng nói thành văn bản.</string>
@@ -85,5 +92,15 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>maps</string>
+		<string>tel</string>
+		<string>https</string>
+		<string>http</string>
+	</array>
 </dict>
 </plist>

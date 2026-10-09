@@ -5,8 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/app_language.dart';
 import '../../../../core/localization/language_provider.dart';
-import '../../../../core/network/connectivity_provider.dart';
-import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -24,49 +22,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  int _devTapCount = 0;
-  bool _isDevMode = false;
 
-  void _onVersionTap() {
-    if (_isDevMode) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Chế độ nhà phát triển đang được kích hoạt'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _devTapCount++;
-    });
-
-    if (_devTapCount >= 5) {
-      setState(() {
-        _isDevMode = true;
-        _devTapCount = 0;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '🚀 Đã mở khóa Tùy chọn Nhà phát triển (Developer Options)',
-          ),
-          backgroundColor: AppColors.primary,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } else if (_devTapCount >= 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Bấm thêm ${5 - _devTapCount} lần nữa để mở Tùy chọn Nhà phát triển',
-          ),
-          duration: const Duration(milliseconds: 800),
-        ),
-      );
-    }
-  }
 
   void _showInfoDialog(String title, String content) {
     showDialog(
@@ -498,13 +454,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                     const Divider(height: 1),
                     _buildMenuItem(
-                      icon: Icons.mic_none_rounded,
-                      title: strings.voiceToTextMenu,
-                      onTap: () => context.push('/voice-to-text'),
-                      isDark: isDark,
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
                       icon: Icons.shield_outlined,
                       title: strings.privacyPolicy,
                       onTap: () {
@@ -553,84 +502,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 ),
               ),
-
-              // Section 4: Developer Options (Chỉ hiển thị khi mở khóa)
-              if (_isDevMode) ...[
-                const SizedBox(height: AppSpacing.stackLg),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildSectionTitle(
-                      'TÙY CHỌN NHÀ PHÁT TRIỂN (DEV TOOLS)',
-                      isDark,
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          _isDevMode = false;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Đã tắt Chế độ nhà phát triển'),
-                          ),
-                        );
-                      },
-                      child: Text(
-                        'Tắt Dev Mode',
-                        style: AppTypography.labelSmall(color: AppColors.error)
-                            .copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                AppCard(
-                  padding: EdgeInsets.zero,
-                  child: Column(
-                    children: [
-                      _buildMenuItem(
-                        icon: Icons.dynamic_form_rounded,
-                        title: '🧪 Demo UI Field Động (Dynamic Form)',
-                        onTap: () => context.push('/dev/dynamic-form-demo'),
-                        isDark: isDark,
-                      ),
-                      const Divider(height: 1),
-                      _buildMenuItem(
-                        icon: Icons.rocket_launch_outlined,
-                        title: strings.previewSplash,
-                        onTap: () => context.push('/splash'),
-                        isDark: isDark,
-                      ),
-                      const Divider(height: 1),
-                      _buildMenuItem(
-                        icon: Icons.wifi_off_rounded,
-                        title: strings.simulateOffline,
-                        onTap: () {
-                          final notifier = ref.read(
-                            connectivityProvider.notifier,
-                          );
-                          notifier.simulateOffline();
-                          Future.delayed(const Duration(seconds: 3), () {
-                            notifier.simulateOnline();
-                          });
-                        },
-                        isDark: isDark,
-                      ),
-                      const Divider(height: 1),
-                      _buildMenuItem(
-                        icon: Icons.location_off_rounded,
-                        title: strings.simulateLocationOff,
-                        onTap: () {
-                          ref
-                              .read(locationServiceProvider)
-                              .simulateLocationOff(context);
-                        },
-                        isDark: isDark,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
               const SizedBox(height: AppSpacing.stackLg),
 
               // Logout Button
@@ -671,30 +542,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 },
               ),
               const SizedBox(height: 14),
-              InkWell(
-                onTap: _onVersionTap,
-                borderRadius: AppRadius.roundedSm,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: Text(
-                    _isDevMode
-                        ? '${AppConstants.appVersionBuild} (Dev Mode Active)'
-                        : AppConstants.appVersionBuild,
-                    style:
-                        AppTypography.labelSmall(
-                          color: _isDevMode
-                              ? AppColors.primary
-                              : (isDark
-                                    ? AppColors.darkOnSurfaceVariant
-                                    : AppColors.outline),
-                        ).copyWith(
-                          fontWeight: _isDevMode
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                        ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Text(
+                  AppConstants.appVersionBuild,
+                  style: AppTypography.labelSmall(
+                    color: isDark
+                        ? AppColors.darkOnSurfaceVariant
+                        : AppColors.outline,
                   ),
                 ),
               ),

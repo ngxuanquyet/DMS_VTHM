@@ -396,14 +396,14 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
 
               // 2. Nếu ngoài vùng và nhóm enforce_geofence: hiển thị cảnh báo
               if (isBlockedByGeofence) {
-                final closest = state.closestLocation;
-                if (context.mounted && closest != null) {
+                final targetLocation = state.activeLocation ?? state.closestLocation;
+                if (context.mounted && targetLocation != null) {
                   AttendanceOutOfRangeDialog.show(
                     context,
-                    workplace: closest,
+                    workplace: targetLocation,
                     userPoint: GoongLatLng(position.latitude, position.longitude),
-                    distanceMeters: (closest.distanceM ?? 9999).toDouble(),
-                    maxAllowedMeters: (closest.radiusM ?? 200).toDouble(),
+                    distanceMeters: (targetLocation.distanceM ?? 9999).toDouble(),
+                    maxAllowedMeters: (targetLocation.radiusM ?? 200).toDouble(),
                   );
                 }
                 return;

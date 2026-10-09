@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -261,6 +260,8 @@ class AntiFraudService {
     bool blockOnMock = false;
     switch (actionType) {
       case AntiFraudActionType.attendance:
+        blockOnMock = false; // §7 API-CHAM-CONG-MOBILE-2026-10-05.md: Chỉ gắn cờ, không chặn
+        break;
       case AntiFraudActionType.visitCheckin:
       case AntiFraudActionType.visitCheckout:
         blockOnMock = rules.visit.blockOnMockLocation;

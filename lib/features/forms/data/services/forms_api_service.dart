@@ -1,4 +1,9 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/image_upload_helper.dart';
+import '../models/form_photo_model.dart';
 import '../models/market_form_model.dart';
 import '../models/market_form_submission_model.dart';
 
@@ -42,6 +47,36 @@ class FormsApiService {
         .toList();
   }
 
+  /// Tải 1 tấm ảnh lên nhận token 32-hex theo đặc tả §2:
+  /// POST /dms/form-photos
+  /// Header: Authorization: Bearer `<token>`
+  /// Multipart: file, tối đa 10 MB, định dạng jpg, jpeg, png, gif, webp, bmp
+  Future<FormPhotoModel> uploadPhoto(File file) async {
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(
+        preparedFile.path,
+        filename: fileName,
+      ),
+    });
+
+    final response = await _apiClient.postMultipart(
+      '/dms/form-photos',
+      formData: formData,
+    );
+
+    if (response is Map<String, dynamic>) {
+      final data = response['data'];
+      if (data is Map<String, dynamic>) {
+        return FormPhotoModel.fromJson(data);
+      }
+    }
+
+    throw AppException('Phản hồi tải ảnh biểu mẫu không hợp lệ từ máy chủ');
+  }
+
   /// Nộp phiếu biểu mẫu thị trường theo đặc tả §2:
   /// POST /dms/form-submissions
   Future<MarketFormSubmitResult> submitForm(MarketFormSubmissionModel submission) async {
@@ -58,5 +93,20 @@ class FormsApiService {
       success: true,
       message: 'Đã nộp phiếu biểu mẫu thành công.',
     );
+  }
+
+  /// Xem lại chi tiết phiếu đã nộp kèm khoá answer_photos theo đặc tả §4.3:
+  /// GET /dms/form-submissions/{id}
+  Future<MarketFormSubmissionDetailModel> getSubmissionDetail(int id) async {
+    final response = await _apiClient.get('/dms/form-submissions/$id');
+
+    if (response is Map<String, dynamic>) {
+      final data = response['data'] ?? response;
+      if (data is Map<String, dynamic>) {
+        return MarketFormSubmissionDetailModel.fromJson(data);
+      }
+    }
+
+    throw AppException('Không tìm thấy thông tin phiếu');
   }
 }

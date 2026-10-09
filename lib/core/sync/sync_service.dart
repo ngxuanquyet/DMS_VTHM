@@ -751,6 +751,25 @@ class SyncService {
     }
   }
 
+  /// Tải ảnh biểu mẫu thị trường lên /dms/form-photos (§2)
+  Future<String?> _uploadFormPhoto(File file) async {
+    try {
+      final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+      final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
+      });
+      final res = await _apiClient.postMultipart('/dms/form-photos', formData: formData);
+      if (res is Map && res['data'] is Map && res['data']['token'] != null) {
+        return res['data']['token'].toString();
+      }
+    } catch (e) {
+      debugPrint('[SyncService] Lỗi khi upload ảnh biểu mẫu: $e');
+    }
+    return null;
+  }
+
   /// Đồng bộ phiếu biểu mẫu thị trường (survey / collect) lên server
   Future<void> _syncSubmitForm(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
@@ -780,21 +799,98 @@ class SyncService {
     }
     payload['client_boot_id'] = entry.bootId;
 
-    final response = await _apiClient.post(
-      '/dms/form-submissions',
-      data: payload,
-    );
+    // §5: Trích xuất _local_photo_paths phục vụ tải ảnh lên hoặc tải lại khi bị dọn rác
+    final localPhotoPaths = payload['_local_photo_paths'] as Map<String, dynamic>?;
+    final answers = payload['answers'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(payload['answers'] as Map)
+        : <String, dynamic>{};
 
-    int? serverId;
-    if (response is Map<String, dynamic>) {
-      final data = response['data'];
-      if (data is Map<String, dynamic> && data['id'] is num) {
-        serverId = (data['id'] as num).toInt();
+    Future<void> uploadAllLocalPhotos() async {
+      if (localPhotoPaths == null || localPhotoPaths.isEmpty) return;
+      for (final kv in localPhotoPaths.entries) {
+        final fieldCode = kv.key;
+        final paths = kv.value;
+        if (paths is List) {
+          final newTokens = <String>[];
+          for (final p in paths) {
+            final file = File(p.toString());
+            if (await file.exists()) {
+              final token = await _uploadFormPhoto(file);
+              if (token != null && token.isNotEmpty) {
+                newTokens.add(token);
+              }
+            }
+          }
+          if (newTokens.isNotEmpty) {
+            answers[fieldCode] = newTokens;
+          }
+        }
+      }
+      payload['answers'] = answers;
+    }
+
+    // Kiểm tra xem trong answers có trường ảnh nào còn đang giữ đường dẫn file cục bộ không
+    bool hasLocalPathsInAnswers = false;
+    answers.forEach((k, v) {
+      if (v is List) {
+        for (final item in v) {
+          final str = item.toString();
+          if (str.contains('/') || str.contains(r'\') || str.length != 32) {
+            hasLocalPathsInAnswers = true;
+          }
+        }
+      }
+    });
+
+    if (hasLocalPathsInAnswers && localPhotoPaths != null) {
+      await uploadAllLocalPhotos();
+    }
+
+    // Payload gửi lên server loại bỏ các khoá nội bộ
+    final sendPayload = Map<String, dynamic>.from(payload);
+    sendPayload.remove('_local_photo_paths');
+
+    dynamic response;
+    try {
+      response = await _apiClient.post(
+        '/dms/form-submissions',
+        data: sendPayload,
+      );
+    } catch (e) {
+      final errStr = e.toString().toLowerCase();
+      // §5 & §6: Nếu server báo "không tìm thấy ảnh vừa tải lên. Vui lòng tải lại."
+      // do cron dọn rác sau 1 ngày, app tự động tải lại ảnh gốc từ máy và nộp lại với CÙNG client_uuid
+      if ((errStr.contains('không tìm thấy ảnh') || errStr.contains('không tìm thấy ảnh vừa tải lên')) &&
+          localPhotoPaths != null &&
+          localPhotoPaths.isNotEmpty) {
+        debugPrint('[SyncService] Phát hiện ảnh bị dọn rác, tự động tải lại ảnh gốc từ máy...');
+        await uploadAllLocalPhotos();
+        sendPayload['answers'] = payload['answers'];
+        // Gửi lại cùng client_uuid (§3 & §5)
+        response = await _apiClient.post(
+          '/dms/form-submissions',
+          data: sendPayload,
+        );
+      } else {
+        rethrow;
       }
     }
 
+    int? serverId;
+    bool isDuplicate = false;
+    if (response is Map<String, dynamic>) {
+      final data = response['data'];
+      if (data is Map<String, dynamic>) {
+        if (data['id'] is num) {
+          serverId = (data['id'] as num).toInt();
+        }
+        isDuplicate = data['duplicate'] == true;
+      }
+    }
+
+    // §3 & §9: duplicate: true coi như thành công, xoá khỏi hàng đợi
     await _db.markDone(entry.id, serverId: serverId);
-    debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+    debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId, Duplicate: $isDuplicate');
   }
 
   /// Tải ảnh khai báo vị trí lên /dms/position-photos

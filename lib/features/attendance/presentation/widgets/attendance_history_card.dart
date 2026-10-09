@@ -156,6 +156,9 @@ class AttendanceHistoryCard extends ConsumerWidget {
                                   if (item.directionLabel != null && item.directionLabel!.isNotEmpty) ...[
                                     const SizedBox(width: 8),
                                     _directionBadge(item.direction, item.directionLabel!),
+                                  ] else ...[
+                                    const SizedBox(width: 8),
+                                    _directionBadge(item.direction, '—'),
                                   ],
                                 ],
                               ),
@@ -340,16 +343,27 @@ class AttendanceHistoryCard extends ConsumerWidget {
   }
 
   Widget _directionBadge(String? direction, String label) {
-    // Chuẩn hoá: Thực tế vận hành chỉ có Vào và Ra (không có khái niệm Giữa ca)
-    final effectiveLabel = (label == 'Giữa ca' || direction == 'mid') ? 'Ra' : label;
-    final isOut = effectiveLabel == 'Ra' || direction == 'out';
+    // Hiển thị nguyên văn direction_label từ server (§1 & §5 SPEC-2026-10-06)
+    final isOut = label == 'Ra' || direction == 'out';
+    final isMid = label == 'Giữa ca' || direction == 'mid';
+    final isNone = label == '—' || direction == null;
 
-    final Color badgeBg = isOut
-        ? Colors.orange.withValues(alpha: 0.15)
-        : AppColors.primary.withValues(alpha: 0.12);
-    final Color textColor = isOut
-        ? Colors.orange.shade800
-        : AppColors.primary;
+    final Color badgeBg;
+    final Color textColor;
+
+    if (isOut) {
+      badgeBg = Colors.orange.withValues(alpha: 0.15);
+      textColor = Colors.orange.shade800;
+    } else if (isMid) {
+      badgeBg = Colors.blue.withValues(alpha: 0.15);
+      textColor = Colors.blue.shade800;
+    } else if (isNone) {
+      badgeBg = AppColors.surfaceVariant;
+      textColor = AppColors.outline;
+    } else {
+      badgeBg = AppColors.primary.withValues(alpha: 0.12);
+      textColor = AppColors.primary;
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -358,7 +372,7 @@ class AttendanceHistoryCard extends ConsumerWidget {
         borderRadius: AppRadius.roundedSm,
       ),
       child: Text(
-        effectiveLabel,
+        label,
         style: TextStyle(
           color: textColor,
           fontSize: 10.5,

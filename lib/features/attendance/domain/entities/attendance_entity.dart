@@ -75,6 +75,14 @@ class AttendanceConfigEntity {
     final withDistance =
         locations.where((l) => !l.isEverywhere && l.distanceM != null).toList();
     if (withDistance.isNotEmpty) {
+      final inside = withDistance.where((l) => l.isWithinRadius).toList();
+      if (inside.isNotEmpty) {
+        inside.sort((a, b) => a.distanceM!.compareTo(b.distanceM!));
+        return inside.first;
+      }
+      if (everywhere.isNotEmpty) {
+        return everywhere.first;
+      }
       withDistance.sort((a, b) => a.distanceM!.compareTo(b.distanceM!));
       return withDistance.first;
     }
@@ -173,6 +181,7 @@ class AttendancePunchPhotoEntity {
   final String? takenAt;
   final int? sortOrder;
   final bool duplicate;
+  final AttendanceRequirementsEntity? requirements;
 
   const AttendancePunchPhotoEntity({
     required this.id,
@@ -185,6 +194,7 @@ class AttendancePunchPhotoEntity {
     this.takenAt,
     this.sortOrder,
     this.duplicate = false,
+    this.requirements,
   });
 
   /// Sinh full URL từ base URL của hệ thống

@@ -23,6 +23,8 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final config = ref.watch(attendanceViewModelProvider.select((s) => s.config));
+    final activeLocation = ref.watch(attendanceViewModelProvider.select((s) => s.activeLocation));
+    final vm = ref.read(attendanceViewModelProvider.notifier);
     final numberFormat = NumberFormat('#,###', 'vi_VN');
 
     if (config == null) {
@@ -133,8 +135,9 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
       );
     }
 
-    // 🔴 TRƯỜNG HỢP 3: Có danh sách địa điểm (§2)
+    // 🔴 TRƯỜNG HỢP 3: Có danh sách địa điểm (§2) - Cho phép chọn linh hoạt, không fix cứng
     final closest = config.closestLocation;
+    final selected = activeLocation ?? closest ?? config.locations.first;
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -204,32 +207,120 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                 ),
             ],
           ),
-          const SizedBox(height: 14),
 
-          // Địa điểm gần nhất
-          if (closest != null)
-            _buildLocationItem(
-              location: closest,
-              isClosest: true,
-              numberFormat: numberFormat,
-              isDark: isDark,
+          // Bộ chọn nhanh thả xuống (Dropdown) nếu có từ 2 địa điểm trở lên
+          if (config.locations.length > 1) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppColors.darkSurfaceContainerLowest
+                    : AppColors.surface,
+                borderRadius: AppRadius.roundedMd,
+                border: Border.all(
+                  color: isDark
+                      ? AppColors.darkOutlineVariant
+                      : AppColors.outlineVariant,
+                  width: 1,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: config.locations.any((l) => l.id == selected.id) ? selected.id : null,
+                  isExpanded: true,
+                  dropdownColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+                  icon: const Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: AppColors.primary,
+                  ),
+                  items: config.locations.map((loc) {
+                    final isCls = loc.id == closest?.id;
+                    return DropdownMenuItem<int>(
+                      value: loc.id,
+                      child: Row(
+                        children: [
+                          Icon(
+                            loc.isEverywhere
+                                ? Icons.public_rounded
+                                : (loc.isWithinRadius ? Icons.check_circle_rounded : Icons.location_on_rounded),
+                            size: 18,
+                            color: loc.isWithinRadius ? AppColors.primary : AppColors.secondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              loc.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.bodyMedium(
+                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                              ).copyWith(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          if (isCls) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: AppRadius.roundedSm,
+                              ),
+                              child: Text(
+                                'Gần nhất',
+                                style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (newId) {
+                    if (newId != null) {
+                      final chosen = config.locations.firstWhere((l) => l.id == newId);
+                      vm.selectLocation(chosen);
+                    }
+                  },
+                ),
+              ),
             ),
+          ],
 
-          // Danh sách các địa điểm khác nếu được mở rộng
+          const SizedBox(height: 12),
+
+          // Địa điểm đang được chọn (Thẻ nổi bật)
+          _buildLocationItem(
+            location: selected,
+            isSelected: true,
+            isClosest: selected.id == closest?.id,
+            onSelect: () {},
+            numberFormat: numberFormat,
+            isDark: isDark,
+          ),
+
+          // Danh sách các địa điểm khác khi người dùng mở rộng "Xem tất cả"
           if (_isExpanded && config.locations.length > 1) ...[
-            const SizedBox(height: 10),
-            Divider(
-              height: 1,
-              color: isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant,
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  'CÁC ĐỊA ĐIỂM KHÁC (CHẠM ĐỂ CHỌN):',
+                  style: AppTypography.labelSmall(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                  ).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.8),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             ...config.locations
-                .where((loc) => loc.id != closest?.id)
+                .where((loc) => loc.id != selected.id)
                 .map((loc) => Padding(
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: _buildLocationItem(
                         location: loc,
-                        isClosest: false,
+                        isSelected: false,
+                        isClosest: loc.id == closest?.id,
+                        onSelect: () => vm.selectLocation(loc),
                         numberFormat: numberFormat,
                         isDark: isDark,
                       ),
@@ -250,7 +341,7 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
               Expanded(
                 child: Text(
                   config.group.enforceGeofence
-                      ? 'Quy định: Bắt buộc đứng trong bán kính địa điểm chấm công.'
+                      ? 'Quy định: Bắt buộc đứng trong bán kính địa điểm chấm công đã chọn.'
                       : 'Quy định: Không bắt buộc geofence.',
                   style: AppTypography.bodySmall(
                     color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
@@ -266,7 +357,9 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
 
   Widget _buildLocationItem({
     required AttendanceLocationItemEntity location,
+    required bool isSelected,
     required bool isClosest,
+    required VoidCallback onSelect,
     required NumberFormat numberFormat,
     required bool isDark,
   }) {
@@ -278,11 +371,11 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
     if (isEverywhere) {
       distanceText = location.kindLabel.isNotEmpty
           ? location.kindLabel
-          : 'Mọi nơi (Không ràng buộc vị trí)';
+          : 'Mọi nơi (Không ràng buộc vị trí - Hợp lệ)';
     } else if (!hasDistance) {
       distanceText = 'Đang xác định khoảng cách...';
     } else if (isValid) {
-      distanceText = 'Cách ${location.distanceM}m (Trong bán kính ${location.radiusM}m)';
+      distanceText = 'Cách ${location.distanceM}m (Trong bán kính ${location.radiusM}m - Hợp lệ)';
     } else if (location.distanceM! >= 1000) {
       distanceText =
           'Cách ${(location.distanceM! / 1000).toStringAsFixed(1)}km (${numberFormat.format(location.distanceM)}m - Bán kính ${location.radiusM}m)';
@@ -295,80 +388,131 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
         ? AppColors.primary
         : (!hasDistance ? AppColors.secondary : AppColors.error);
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface,
-        borderRadius: AppRadius.roundedMd,
-        border: Border.all(
-          color: (isEverywhere || isValid)
-              ? AppColors.primary.withValues(alpha: 0.35)
-              : (isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant),
-          width: (isEverywhere || isValid) ? 1.5 : 1,
+    return InkWell(
+      onTap: onSelect,
+      borderRadius: AppRadius.roundedMd,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: isDark ? 0.15 : 0.08)
+              : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface),
+          borderRadius: AppRadius.roundedMd,
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : (isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant),
+            width: isSelected ? 1.8 : 1,
+          ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            isEverywhere
-                ? Icons.public_rounded
-                : (isValid ? Icons.check_circle_rounded : Icons.location_on_rounded),
-            color: statusColor,
-            size: 20,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        location.name,
-                        style: AppTypography.titleMedium(
-                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                        ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
-                      ),
-                    ),
-                    if (isEverywhere)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: AppRadius.roundedSm,
-                        ),
-                        child: Text(
-                          location.kindLabel.isNotEmpty ? location.kindLabel : 'Mọi nơi',
-                          style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
-                        ),
-                      )
-                    else if (isClosest)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: AppRadius.roundedSm,
-                        ),
-                        child: Text(
-                          'Gần nhất',
-                          style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  distanceText,
-                  style: AppTypography.bodySmall(
-                    color: statusColor,
-                  ).copyWith(fontWeight: FontWeight.w500),
-                ),
-              ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2.0),
+              child: Icon(
+                isSelected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                color: isSelected ? AppColors.primary : AppColors.outline,
+                size: 20,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          location.name,
+                          style: AppTypography.titleMedium(
+                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          ).copyWith(
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      if (isSelected)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: AppRadius.roundedSm,
+                          ),
+                          child: const Text(
+                            'Đang chọn',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else if (isEverywhere)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.12),
+                            borderRadius: AppRadius.roundedSm,
+                          ),
+                          child: Text(
+                            location.kindLabel.isNotEmpty ? location.kindLabel : 'Mọi nơi',
+                            style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
+                          ),
+                        )
+                      else if (isClosest)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withValues(alpha: 0.15),
+                            borderRadius: AppRadius.roundedSm,
+                          ),
+                          child: Text(
+                            'Gần nhất',
+                            style: AppTypography.labelSmall(color: AppColors.secondary).copyWith(fontSize: 10),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        isEverywhere
+                            ? Icons.public_rounded
+                            : (isValid ? Icons.check_circle_rounded : Icons.info_outline_rounded),
+                        color: statusColor,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          distanceText,
+                          style: AppTypography.bodySmall(
+                            color: statusColor,
+                          ).copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!isSelected) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Chạm để chọn địa điểm này',
+                      style: AppTypography.labelSmall(
+                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                      ).copyWith(fontSize: 11, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

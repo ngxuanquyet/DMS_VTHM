@@ -129,9 +129,19 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
       final legacyDetail = await getAttendanceDetailUseCase();
 
+      // Lựa chọn địa điểm chấm công: giữ lựa chọn cũ hoặc chọn địa điểm gần nhất
+      AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
+      if (activeLoc != null) {
+        final match = config.locations.where((l) => l.id == activeLoc!.id).firstOrNull;
+        activeLoc = match ?? config.closestLocation;
+      } else {
+        activeLoc = config.closestLocation;
+      }
+
       state = state.copyWith(
         status: AttendanceStatus.loaded,
         config: config,
+        selectedLocation: activeLoc,
         history: history,
         latestPunch: latest,
         liveWorkDurationSeconds: workDuration,
@@ -155,10 +165,27 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         lat: position.latitude,
         lng: position.longitude,
       );
-      state = state.copyWith(config: updatedConfig);
+
+      AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
+      if (activeLoc != null) {
+        final match = updatedConfig.locations.where((l) => l.id == activeLoc!.id).firstOrNull;
+        activeLoc = match ?? updatedConfig.closestLocation;
+      } else {
+        activeLoc = updatedConfig.closestLocation;
+      }
+
+      state = state.copyWith(
+        config: updatedConfig,
+        selectedLocation: activeLoc,
+      );
     } catch (e) {
       debugPrint('[AttendanceViewModel] Lỗi refresh config theo vị trí: $e');
     }
+  }
+
+  /// Người dùng chủ động chọn địa điểm chấm công
+  void selectLocation(AttendanceLocationItemEntity location) {
+    state = state.copyWith(selectedLocation: location);
   }
 
   /// Đổi khoảng thời gian xem lịch sử (§5)
@@ -362,7 +389,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         final hasFront = currentPhotos.any((p) => p.photoType == 'front');
         final hasBack = currentPhotos.any((p) => p.photoType == 'back');
 
-        final updatedRequirements = AttendanceRequirementsEntity(
+        final updatedRequirements = photo.requirements ?? AttendanceRequirementsEntity(
           photoCount: currentPhotos.length,
           minPhotos: state.config?.photo.minPhotos ?? 2,
           maxPhotos: state.config?.photo.maxPhotos ?? 10,

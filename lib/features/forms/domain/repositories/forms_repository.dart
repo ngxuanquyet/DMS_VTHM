@@ -13,4 +13,7 @@ abstract class FormsRepository {
     MarketFormSubmissionModel submission, {
     bool isOffline = false,
   });
+
+  /// Tải 1 tấm ảnh lên nhận token 32-hex theo đặc tả §2 (POST /dms/form-photos)
+  Future<dynamic> uploadPhoto(dynamic file);
 }

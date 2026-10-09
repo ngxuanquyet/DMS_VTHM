@@ -143,6 +143,8 @@ class FakeFormsRepository implements FormsRepository {
   Future<List<MarketFormConfigEntity>> getAvailableForms({required String kind, int? customerId}) async => [];
   @override
   Future<MarketFormSubmitResult> submitForm(MarketFormSubmissionModel submission, {bool isOffline = false}) => throw UnimplementedError();
+  @override
+  Future<dynamic> uploadPhoto(dynamic file) => throw UnimplementedError();
 }
 
 CheckInViewModel createCheckInViewModel(VisitRepository visitRepo) {

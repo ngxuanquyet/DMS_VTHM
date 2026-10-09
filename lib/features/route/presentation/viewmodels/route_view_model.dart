@@ -735,40 +735,50 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
     // Tự động kích hoạt nhắc nhở lộ trình đầu ngày và cảnh báo tiến độ tuyến
     if (ref != null && total > 0) {
-      try {
-        final hour = DateTime.now().hour;
-        final routeName = state.selectedRoute.isNotEmpty && state.selectedRoute != 'Tất cả tuyến'
-            ? state.selectedRoute
-            : 'Tuyến hôm nay';
+      () async {
+        try {
+          final now = DateTime.now();
+          final hour = now.hour;
+          final routeName = state.selectedRoute.isNotEmpty && state.selectedRoute != 'Tất cả tuyến'
+              ? state.selectedRoute
+              : 'Tuyến hôm nay';
 
-        // Nhắc lộ trình đầu ngày (07:30 - 10:30)
-        if (hour >= 7 && hour < 11) {
-          ref!.read(appNotificationServiceProvider).notifyRouteBriefing(
-                totalDealers: total,
-                routeName: routeName,
-              );
-          ref!.invalidate(unreadNotificationCountProvider);
-        }
+          final notifService = ref!.read(appNotificationServiceProvider);
 
-        // Cảnh báo tiến độ tuyến (Khung trưa 11:15 - 13:00 và Chiều 15:00 - 17:00)
-        if (completed < total) {
-          if (hour >= 11 && hour < 13) {
-            ref!.read(appNotificationServiceProvider).notifyRouteProgress(
-                  completed: completed,
-                  total: total,
-                  period: 'Trưa',
-                );
-            ref!.invalidate(unreadNotificationCountProvider);
-          } else if (hour >= 15 && hour < 17) {
-            ref!.read(appNotificationServiceProvider).notifyRouteProgress(
-                  completed: completed,
-                  total: total,
-                  period: 'Chiều',
-                );
+          // Nhắc lộ trình đầu ngày (07:00 - 11:00) và Nhắc Chấm công Vào ca nếu chưa vào ca
+          if (hour >= 7 && hour < 11) {
+            final hasIn = await notifService.checkHasCheckedInToday();
+            if (!hasIn && now.weekday != DateTime.sunday) {
+              await notifService.notifyAttendanceCheckinReminder(isLate: hour >= 8);
+            }
+
+            await notifService.notifyRouteBriefing(
+              totalDealers: total,
+              routeName: routeName,
+            );
             ref!.invalidate(unreadNotificationCountProvider);
           }
-        }
-      } catch (_) {}
+
+          // Cảnh báo tiến độ tuyến (Khung trưa 11:15 - 13:00 và Chiều 15:00 - 17:00)
+          if (completed < total) {
+            if (hour >= 11 && hour < 13) {
+              await notifService.notifyRouteProgress(
+                completed: completed,
+                total: total,
+                period: 'Trưa',
+              );
+              ref!.invalidate(unreadNotificationCountProvider);
+            } else if (hour >= 15 && hour < 17) {
+              await notifService.notifyRouteProgress(
+                completed: completed,
+                total: total,
+                period: 'Chiều',
+              );
+              ref!.invalidate(unreadNotificationCountProvider);
+            }
+          }
+        } catch (_) {}
+      }();
     }
   }
 
