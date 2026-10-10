@@ -12,6 +12,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/custom_donut_chart.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
+import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
@@ -558,6 +559,13 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       );
       return;
     }
+
+    final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+      context,
+      featureName: 'viếng thăm',
+      customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh check-in và trưng bày tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+    );
+    if (!hasPermission) return;
 
     try {
       final XFile? image = await _picker.pickImage(

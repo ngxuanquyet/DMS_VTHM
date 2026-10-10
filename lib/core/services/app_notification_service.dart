@@ -29,6 +29,7 @@ class AppNotificationService {
   static const String _channelDesc =
       'Kênh nhận thông báo chấm công, lộ trình, cảnh báo và đồng bộ ngoại tuyến';
   static const String _prefsKey = 'local_notifications_store_v1';
+  static const String _readIdsKey = 'local_notifications_read_ids_v1';
   static const String _throttlePrefix = 'notify_throttle_';
 
   /// Khởi tạo plugin thông báo cục bộ
@@ -108,16 +109,37 @@ class AppNotificationService {
   Future<NotificationDataEntity> getSavedNotifications() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final readIds = await getReadNotificationIds();
       final jsonStr = prefs.getString(_prefsKey);
       if (jsonStr == null || jsonStr.isEmpty) {
         return const NotificationDataEntity(today: [], earlier: []);
       }
       final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
       final model = NotificationDataModel.fromJson(decoded);
-      return model.toEntity();
+      final rawEntity = model.toEntity();
+
+      // Đồng bộ trạng thái đã đọc từ readIds
+      final todayWithRead = rawEntity.today.map((e) => e.copyWith(
+        isRead: e.isRead || readIds.contains(e.id),
+      )).toList();
+      final earlierWithRead = rawEntity.earlier.map((e) => e.copyWith(
+        isRead: e.isRead || readIds.contains(e.id),
+      )).toList();
+
+      return NotificationDataEntity(today: todayWithRead, earlier: earlierWithRead);
     } catch (e) {
       debugPrint('[NotificationService] Lỗi đọc thông báo đã lưu: $e');
       return const NotificationDataEntity(today: [], earlier: []);
+    }
+  }
+
+  /// Lấy danh sách ID các thông báo đã đọc
+  Future<Set<String>> getReadNotificationIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getStringList(_readIdsKey)?.toSet() ?? <String>{};
+    } catch (_) {
+      return <String>{};
     }
   }
 
@@ -126,13 +148,18 @@ class AppNotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final current = await getSavedNotifications();
+      final readIds = await getReadNotificationIds();
 
       // Kiểm tra trùng lặp ID hoặc nội dung gần nhất
       final exists = current.today.any((e) => e.id == item.id) ||
           current.earlier.any((e) => e.id == item.id);
       if (exists) return;
 
-      final updatedToday = [item, ...current.today];
+      final itemWithRead = item.copyWith(
+        isRead: item.isRead || readIds.contains(item.id),
+      );
+
+      final updatedToday = [itemWithRead, ...current.today];
       // Giới hạn tối đa 50 thông báo gần nhất
       final limitedToday = updatedToday.take(30).toList();
       final limitedEarlier = current.earlier.take(20).toList();
@@ -172,11 +199,70 @@ class AppNotificationService {
     }
   }
 
+  /// Đánh dấu một thông báo cụ thể là đã đọc
+  Future<void> markAsRead(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. Lưu ID vào danh sách đã đọc để luôn duy trì trạng thái kể cả khi tải lại từ server
+      final readIds = prefs.getStringList(_readIdsKey)?.toSet() ?? <String>{};
+      readIds.add(id);
+      await prefs.setStringList(_readIdsKey, readIds.toList());
+
+      // 2. Cập nhật trong bộ nhớ local notifications store
+      final current = await getSavedNotifications();
+      final updatedToday = current.today.map((e) => e.id == id ? e.copyWith(isRead: true) : e).toList();
+      final updatedEarlier = current.earlier.map((e) => e.id == id ? e.copyWith(isRead: true) : e).toList();
+
+      final model = NotificationDataModel(
+        today: updatedToday
+            .map((e) => NotificationModel(
+                  id: e.id,
+                  type: e.type,
+                  title: e.title,
+                  message: e.message,
+                  timeAgo: e.timeAgo,
+                  isRead: e.isRead,
+                  category: e.category,
+                  routePath: e.routePath,
+                  createdAt: e.createdAt,
+                ))
+            .toList(),
+        earlier: updatedEarlier
+            .map((e) => NotificationModel(
+                  id: e.id,
+                  type: e.type,
+                  title: e.title,
+                  message: e.message,
+                  timeAgo: e.timeAgo,
+                  isRead: e.isRead,
+                  category: e.category,
+                  routePath: e.routePath,
+                  createdAt: e.createdAt,
+                ))
+            .toList(),
+      );
+
+      await prefs.setString(_prefsKey, jsonEncode(model.toJson()));
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi cập nhật đã đọc theo ID $id: $e');
+    }
+  }
+
   /// Đánh dấu tất cả thông báo là đã đọc
   Future<void> markAllAsRead() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final current = await getSavedNotifications();
+
+      final readIds = prefs.getStringList(_readIdsKey)?.toSet() ?? <String>{};
+      for (final e in current.today) {
+        readIds.add(e.id);
+      }
+      for (final e in current.earlier) {
+        readIds.add(e.id);
+      }
+      await prefs.setStringList(_readIdsKey, readIds.toList());
 
       final updatedToday = current.today.map((e) => e.copyWith(isRead: true)).toList();
       final updatedEarlier = current.earlier.map((e) => e.copyWith(isRead: true)).toList();
@@ -301,6 +387,51 @@ class AppNotificationService {
     );
   }
 
+  /// Lên lịch thông báo thử nghiệm sau [seconds] giây để người dùng kiểm tra khi tắt app.
+  /// Người dùng bấm nút, sau đó có thể thoát hẳn ứng dụng (vuốt tắt app) và khóa màn hình
+  /// để kiểm tra xem hệ thống Android & iOS có tự động đánh thức và nổ chuông hay không.
+  Future<DateTime> scheduleTestNotificationAfterSeconds({int seconds = 10}) async {
+    if (_localNotifications == null) {
+      await init();
+    }
+    final now = tz.TZDateTime.now(tz.local);
+    final scheduledDate = now.add(Duration(seconds: seconds));
+
+    final scheduleMode = await _resolveAndroidScheduleMode();
+    const androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher',
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    );
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _localNotifications?.zonedSchedule(
+      id: 998,
+      title: '🔔 Thử nghiệm thông báo khi tắt app!',
+      body: 'Thông báo nền DMS VTHM hoạt động thành công! Lịch nhắc Vào ca (07:50) & Ra ca (17:00) sẽ tự động đổ chuông đúng giờ.',
+      scheduledDate: scheduledDate,
+      notificationDetails: details,
+      androidScheduleMode: scheduleMode,
+      payload: '/home',
+    );
+
+    debugPrint('[NotificationService] Đã lên lịch thông báo thử nghiệm sau $seconds giây tại $scheduledDate');
+    return scheduledDate;
+  }
+
   // ===========================================================================
   // 3. THROTTLING & SPAM PROTECTION
   // ===========================================================================
@@ -410,7 +541,7 @@ class AppNotificationService {
       message: 'Hôm nay bạn có $totalDealers điểm bán cần viếng thăm trên tuyến "$routeName". Chúc bạn một ngày làm việc hiệu quả!',
       type: 'route_briefing',
       category: 'work',
-      routePath: '/route',
+      routePath: '/routes',
     );
   }
 
@@ -433,7 +564,7 @@ class AppNotificationService {
       message: 'Bạn đã hoàn thành $completed/$total điểm bán ($percent%). Còn $remaining điểm chưa ghé, hãy tăng tốc để kịp tiến độ!',
       type: 'route_progress',
       category: 'work',
-      routePath: '/route',
+      routePath: '/routes',
     );
   }
 
@@ -458,7 +589,7 @@ class AppNotificationService {
       message: msg,
       type: 'forgot_checkout',
       category: 'work',
-      routePath: '/route/check-in',
+      routePath: '/routes',
     );
   }
 
@@ -480,7 +611,7 @@ class AppNotificationService {
       message: 'Bạn đang ở gần "$dealerName" (cách ${distanceMeters}m) trên tuyến hôm nay. Ghé thăm ngay để tối ưu lộ trình di chuyển!',
       type: 'nearby_suggestion',
       category: 'work',
-      routePath: '/route',
+      routePath: '/routes',
     );
   }
 

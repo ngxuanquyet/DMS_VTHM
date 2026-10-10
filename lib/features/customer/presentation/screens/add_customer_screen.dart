@@ -200,8 +200,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   }
 
   Future<void> _handleSubmit(Map<String, dynamic> formData) async {
+    if (_isSubmitting) return;
+
     // 1. Validate Tên điểm bán (§5)
     if (formData['name'] == null || formData['name'].toString().trim().isEmpty) {
+      _formKey.currentState?.focusField('name');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Tên điểm bán là bắt buộc.'),
@@ -213,6 +216,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
     // 2. Validate Khu vực (§5)
     if (formData['region_id'] == null || formData['region_id'].toString().trim().isEmpty) {
+      _formKey.currentState?.focusField('region_id');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Vui lòng chọn khu vực quản lý (Region).'),
@@ -239,6 +243,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       finalRouteIds = [userRoutes.first.id];
     }
     if (finalRouteIds.isEmpty) {
+      _formKey.currentState?.focusField('route_ids');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Hãy chọn ít nhất một tuyến bán hàng cho điểm bán mới.'),
@@ -263,6 +268,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
     }
     if (!hasPhoto) {
+      _formKey.currentState?.focusField('photo_file_id');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Vui lòng chụp ảnh điểm bán trước khi lưu.'),
@@ -469,8 +475,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           ),
         );
 
-        // Refresh danh sách khách hàng ở màn hình chính
-        ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -604,7 +608,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           ),
         ),
       ),
-      body: schemaAsync.when(
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+        },
+        child: schemaAsync.when(
         loading: () => const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -996,12 +1005,23 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           isLoading: _isSubmitting,
                           icon: Icons.check_circle_outline_rounded,
                           height: 46,
-                          onPressed: () {
-                            if (_formKey.currentState != null &&
-                                _formKey.currentState!.validate()) {
-                              _handleSubmit(_formKey.currentState!.getFormData());
-                            }
-                          },
+                          onPressed: _isSubmitting
+                              ? null
+                              : () {
+                                  if (_formKey.currentState != null) {
+                                    final isValid = _formKey.currentState!.validate();
+                                    if (isValid) {
+                                      _handleSubmit(_formKey.currentState!.getFormData());
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Vui lòng hoàn thành các trường thông tin bắt buộc (*).'),
+                                          backgroundColor: AppColors.error,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
                         ),
                       ),
                     ],
@@ -1013,6 +1033,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         },
       ),
     ),
-  );
+  ),
+);
   }
 }

@@ -10,6 +10,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
   final dynamic value;
   final ValueChanged<dynamic> onChanged;
   final String? errorText;
+  final FocusNode? focusNode;
 
   const DynamicSingleChoiceFieldWidget({
     super.key,
@@ -17,6 +18,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.focusNode,
   });
 
   void _showSearchablePicker(BuildContext context) {
@@ -63,6 +65,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
         field: field,
         errorText: errorText,
         child: DropdownButtonFormField<dynamic>(
+          focusNode: focusNode,
           initialValue: selectedOption?.value,
           isDense: true,
           isExpanded: true,

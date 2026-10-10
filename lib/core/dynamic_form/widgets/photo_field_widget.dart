@@ -6,6 +6,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../widgets/camera_permission_dialog.dart';
 import '../models/dynamic_form_field.dart';
 import 'dynamic_form_field_wrapper.dart';
 
@@ -57,22 +58,12 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
     }
 
     if (isCamera) {
-      // 1. Check & Request Camera Permission
-      var status = await Permission.camera.status;
-      if (status.isDenied) {
-        status = await Permission.camera.request();
-      }
-
-      if (!status.isGranted && !status.isLimited) {
-        if (!context.mounted) return;
-        _showPermissionDeniedDialog(
-          context,
-          title: 'Yêu cầu quyền Máy ảnh',
-          description: 'Ứng dụng cần quyền truy cập Camera để chụp ảnh thực tế tại điểm bán. Vui lòng cấp quyền trong Cài đặt thiết bị.',
-          isPermanentlyDenied: status.isPermanentlyDenied,
-        );
-        return;
-      }
+      final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+        context,
+        featureName: 'khảo sát điểm bán',
+        customDescription: 'Ứng dụng cần quyền truy cập Camera để chụp ảnh thực tế tại điểm bán. Vui lòng cấp quyền trong Cài đặt thiết bị.',
+      );
+      if (!hasPermission) return;
     } else {
       // 2. Check Photo Library Permission
       var status = await Permission.photos.status;

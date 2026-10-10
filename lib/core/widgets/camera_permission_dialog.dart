@@ -2,33 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../localization/app_language.dart';
 import '../localization/app_strings.dart';
-import '../services/app_notification_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import 'app_button.dart';
 import '../services/route_restoration_service.dart';
 
-enum NotificationDialogType {
-  /// Quyền bị từ chối thông thường
+enum CameraDialogType {
+  /// Quyền bị từ chối
   permissionDenied,
 
   /// Đã bị từ chối vĩnh viễn (cần mở Cài đặt ứng dụng để bật lại)
   permissionDeniedForever,
 }
 
-/// Dialog chuyên dụng khi quyền Thông báo chưa được cấp hoặc bị từ chối,
-/// giải thích rõ mục đích và cung cấp nút mở Cài đặt để nhân viên bật quyền.
-class NotificationPermissionDialog extends StatelessWidget {
-  final NotificationDialogType type;
+/// Dialog chuyên dụng khi quyền Máy ảnh (Camera) chưa được cấp hoặc bị từ chối,
+/// giải thích lý do cần quyền cho các tính năng như chấm công, viếng thăm, chụp ảnh khảo sát
+/// kèm nút chuyển thẳng đến Cài đặt ứng dụng để người dùng cấp quyền.
+class CameraPermissionDialog extends StatelessWidget {
+  final CameraDialogType type;
+  final String featureName;
+  final String? customDescription;
   final VoidCallback onOpenSettings;
   final VoidCallback? onDismiss;
   final AppStrings? strings;
 
   // ignore: prefer_const_constructors_in_immutables
-  NotificationPermissionDialog({
+  CameraPermissionDialog({
     super.key,
     required this.type,
+    this.featureName = 'chụp ảnh',
+    this.customDescription,
     VoidCallback? onOpenSettings,
     VoidCallback? onPrimaryAction,
     this.onDismiss,
@@ -37,12 +41,13 @@ class NotificationPermissionDialog extends StatelessWidget {
 
   static bool isShowing = false;
   static BuildContext? _activeDialogContext;
-  static DateTime? _lastPromptTime;
 
-  /// Hiển thị Dialog thông báo quyền nhận thông báo bị từ chối
+  /// Hiển thị Dialog thông báo quyền Camera bị từ chối
   static Future<void> show(
     BuildContext context, {
-    required NotificationDialogType type,
+    required CameraDialogType type,
+    String featureName = 'chụp ảnh',
+    String? customDescription,
     VoidCallback? onOpenSettings,
     VoidCallback? onPrimaryAction,
     VoidCallback? onDismiss,
@@ -74,8 +79,10 @@ class NotificationPermissionDialog extends StatelessWidget {
               onDismiss?.call();
             }
           },
-          child: NotificationPermissionDialog(
+          child: CameraPermissionDialog(
             type: type,
+            featureName: featureName,
+            customDescription: customDescription,
             strings: strings,
             onOpenSettings: effectiveOpenSettings,
             onDismiss: () {
@@ -104,71 +111,57 @@ class NotificationPermissionDialog extends StatelessWidget {
     }
   }
 
-  /// Helper kiểm tra trạng thái và yêu cầu quyền thông báo.
-  /// Nếu chưa có quyền:
-  /// - Thử yêu cầu hệ thống
-  /// - Nếu vẫn chưa có hoặc đã bị chặn vĩnh viễn: hiển thị Dialog giải thích và mở Cài đặt.
-  /// [cooldown]: thời gian giãn cách giữa các lần tự động hiện Dialog (mặc định 10 phút để tránh làm phiền).
+  /// Helper kiểm tra trạng thái và yêu cầu quyền Camera trước khi thực hiện chụp ảnh.
+  /// Trả về true nếu đã có quyền, false nếu chưa có (kèm hiển thị dialog hướng dẫn).
   static Future<bool> checkAndRequestPermission(
     BuildContext context, {
+    String featureName = 'chụp ảnh',
+    String? customDescription,
     AppStrings? strings,
-    Duration cooldown = const Duration(minutes: 10),
-    bool ignoreCooldown = false,
+    VoidCallback? onOpenSettings,
   }) async {
-    try {
-      final status = await Permission.notification.status;
+    // 1. Kiểm tra trạng thái quyền Camera hiện tại
+    final status = await Permission.camera.status;
 
-      if (status.isGranted) {
-        // Đã có quyền -> Đồng bộ lại lịch hẹn thông báo nền với Hệ điều hành
-        await AppNotificationService().setupDefaultWeeklySchedules();
-        return true;
-      }
+    if (status.isGranted || status.isLimited) {
+      return true;
+    }
 
-      // Kiểm tra cooldown để không gây phiền khi nhân viên vừa bấm 'Để sau'
-      final now = DateTime.now();
-      if (!ignoreCooldown && _lastPromptTime != null) {
-        if (now.difference(_lastPromptTime!) < cooldown) {
-          return false;
-        }
-      }
-      _lastPromptTime = now;
-
-      if (status.isPermanentlyDenied) {
-        if (context.mounted) {
-          show(
-            context,
-            type: NotificationDialogType.permissionDeniedForever,
-            strings: strings,
-            onOpenSettings: () => openAppSettings(),
-          );
-        }
-        return false;
-      }
-
-      // Yêu cầu quyền hệ thống (Android 13+ & iOS sẽ hiện popup của OS)
-      final result = await Permission.notification.request();
-      if (result.isGranted) {
-        await AppNotificationService().setupDefaultWeeklySchedules();
-        return true;
-      }
-
-      // Người dùng từ chối -> Hiện dialog giải thích
+    if (status.isPermanentlyDenied) {
       if (context.mounted) {
         show(
           context,
-          type: result.isPermanentlyDenied
-              ? NotificationDialogType.permissionDeniedForever
-              : NotificationDialogType.permissionDenied,
+          type: CameraDialogType.permissionDeniedForever,
+          featureName: featureName,
+          customDescription: customDescription,
           strings: strings,
-          onOpenSettings: () => openAppSettings(),
+          onOpenSettings: onOpenSettings ?? () => openAppSettings(),
         );
       }
-
-      return false;
-    } catch (e) {
-      debugPrint('[NotificationPermissionDialog] Lỗi kiểm tra quyền thông báo: $e');
       return false;
     }
+
+    // 2. Yêu cầu quyền hệ thống (OS popup)
+    final result = await Permission.camera.request();
+    if (result.isGranted || result.isLimited) {
+      return true;
+    }
+
+    // 3. Nếu người dùng từ chối: hiển thị Dialog giải thích và nút đi đến Cài đặt
+    if (context.mounted) {
+      show(
+        context,
+        type: result.isPermanentlyDenied
+            ? CameraDialogType.permissionDeniedForever
+            : CameraDialogType.permissionDenied,
+        featureName: featureName,
+        customDescription: customDescription,
+        strings: strings,
+        onOpenSettings: onOpenSettings ?? () => openAppSettings(),
+      );
+    }
+
+    return false;
   }
 
   @override
@@ -176,15 +169,18 @@ class NotificationPermissionDialog extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final s = strings ?? const AppStrings(AppLanguage.vi);
 
-    final isForever = type == NotificationDialogType.permissionDeniedForever;
+    final isForever = type == CameraDialogType.permissionDeniedForever;
     final title = isForever
-        ? s.notificationPermissionDeniedForeverTitle
-        : s.notificationPermissionDeniedTitle;
-    final description = isForever
-        ? s.notificationPermissionDeniedForeverDesc
-        : s.notificationPermissionDeniedDesc;
-    final buttonText = isForever ? s.goToSettingsAction : s.enableNotificationAction;
-    final iconData = isForever ? Icons.notifications_off_rounded : Icons.notifications_active_rounded;
+        ? s.cameraPermissionDeniedForeverTitle
+        : 'Cần quyền Máy ảnh cho $featureName';
+
+    final description = customDescription ??
+        (isForever
+            ? 'Quyền truy cập Máy ảnh đã bị tắt trong Cài đặt thiết bị. Tính năng $featureName cần sử dụng Camera để chụp ảnh thực tế và xác thực dữ liệu. Vui lòng mở Cài đặt để cấp lại quyền.'
+            : 'Ứng dụng cần quyền truy cập Máy ảnh để chụp ảnh $featureName thực tế tại hiện trường và đóng dấu thông tin toạ độ/thời gian.');
+
+    final buttonText = s.goToSettingsAction;
+    final iconData = isForever ? Icons.no_photography_rounded : Icons.camera_alt_outlined;
     final iconColor = isForever ? AppColors.error : AppColors.primary;
     final iconBgColor = isForever
         ? AppColors.errorContainer.withValues(alpha: 0.35)
@@ -206,7 +202,7 @@ class NotificationPermissionDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon Bell Header
+            // Camera Icon Header
             Container(
               width: 64,
               height: 64,
@@ -249,7 +245,7 @@ class NotificationPermissionDialog extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // Lợi ích cốt lõi của thông báo
+            // Mục đích sử dụng quyền Camera
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -262,33 +258,33 @@ class NotificationPermissionDialog extends StatelessWidget {
                 children: [
                   _buildBenefitRow(
                     context,
-                    icon: Icons.alarm_rounded,
+                    icon: Icons.camera_enhance_rounded,
                     color: AppColors.primary,
-                    text: 'Nhắc Vào ca (07:50) & Ra ca (17:00) đúng giờ',
+                    text: 'Chụp ảnh thực tế hiện trường (khuôn mặt / điểm bán)',
                   ),
                   const SizedBox(height: 8),
                   _buildBenefitRow(
                     context,
-                    icon: Icons.alt_route_rounded,
+                    icon: Icons.location_on_rounded,
                     color: AppColors.tertiary,
-                    text: 'Cảnh báo tiến độ lộ trình & gợi ý điểm bán',
+                    text: 'Tự động đóng dấu Watermark toạ độ GPS & thời gian',
                   ),
                   const SizedBox(height: 8),
                   _buildBenefitRow(
                     context,
-                    icon: Icons.sync_rounded,
+                    icon: Icons.verified_user_rounded,
                     color: AppColors.secondary,
-                    text: 'Nhắc nhở đồng bộ dữ liệu tránh thất thoát công',
+                    text: 'Bảo vệ quyền lợi ghi nhận công và tiến độ viếng thăm',
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 22),
 
-            // Option 1: "ĐI ĐẾN CÀI ĐẶT" / "BẬT THÔNG BÁO" (Primary CTA)
+            // Button 1: "ĐI ĐẾN CÀI ĐẶT" (Primary CTA)
             AppButton(
               text: buttonText,
-              icon: isForever ? Icons.settings_outlined : Icons.check_circle_outline_rounded,
+              icon: Icons.settings_outlined,
               width: double.infinity,
               height: 48,
               onPressed: () {
@@ -298,7 +294,7 @@ class NotificationPermissionDialog extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            // Option 2: "Để sau" (Dismiss)
+            // Button 2: "Để sau" (Dismiss)
             SizedBox(
               width: double.infinity,
               height: 40,

@@ -11,6 +11,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../viewmodels/attendance_view_model.dart';
@@ -89,6 +90,13 @@ class _AttendancePhotoCaptureDialogState
     required String photoType,
     required CameraDevice preferredCamera,
   }) async {
+    final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+      context,
+      featureName: 'chấm công',
+      customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh chân dung và bối cảnh xác thực ca làm việc. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+    );
+    if (!hasPermission) return;
+
     try {
       final xFile = await _picker.pickImage(
         source: ImageSource.camera,

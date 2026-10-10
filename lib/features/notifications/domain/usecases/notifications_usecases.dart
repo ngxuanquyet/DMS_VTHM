@@ -20,3 +20,13 @@ class MarkAllReadUseCase {
     return _repository.markAllAsRead();
   }
 }
+
+class MarkNotificationReadUseCase {
+  final NotificationsRepository _repository;
+
+  MarkNotificationReadUseCase(this._repository);
+
+  Future<void> call(String id) {
+    return _repository.markAsRead(id);
+  }
+}

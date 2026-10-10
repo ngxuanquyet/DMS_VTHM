@@ -84,9 +84,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
             _buildDialogScheduleItem(Icons.alarm_off_rounded, 'Nhắc Ra ca: 17:00 (Thứ 2 - Thứ 7)'),
             const SizedBox(height: 6),
             _buildDialogScheduleItem(Icons.alt_route_rounded, 'Cảnh báo lộ trình & đồng bộ dữ liệu'),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primaryContainer.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bạn có thể hẹn giờ 10 giây rồi thoát hẳn app để kiểm tra chuông khi tắt app.',
+                      style: AppTypography.bodySmall(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                          .copyWith(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
+          OutlinedButton.icon(
+            icon: const Icon(Icons.timer_outlined, size: 16),
+            label: const Text('Thử khi TẮT APP (10s)'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _startBackgroundTestFlow(seconds: 10);
+            },
+          ),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
@@ -94,17 +124,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Đã phát thông báo thử nghiệm! Vui lòng kiểm tra khay thông báo thiết bị.'),
+                    content: Text('Đã phát thông báo tức thì! Kiểm tra khay thông báo.'),
                     backgroundColor: AppColors.primary,
                   ),
                 );
               }
             },
-            child: const Text('Thử thông báo', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text('Thử tức thì'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startBackgroundTestFlow({int seconds = 10}) async {
+    await AppNotificationService().scheduleTestNotificationAfterSeconds(seconds: seconds);
+    if (!mounted) return;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedLg),
+        title: const Row(
+          children: [
+            Icon(Icons.hourglass_top_rounded, color: AppColors.primary, size: 24),
+            SizedBox(width: 10),
+            Text('Đã hẹn giờ thử khi tắt app!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Hệ thống đã lên lịch thông báo sau $seconds giây nữa.',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '👉 BÂY GIỜ HÃY:\n'
+              '1. Bấm nút Home hoặc vuốt TẮT HẲN APP (Kill app khỏi đa nhiệm).\n'
+              '2. Khóa màn hình điện thoại lại.\n'
+              '3. Đợi đúng 10 giây để xem chuông và thông báo tự động xuất hiện trên màn hình khóa!',
+              style: TextStyle(height: 1.5, fontSize: 13.5),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ĐÃ HIỂU, TÔI TẮT APP NGAY'),
           ),
         ],
       ),

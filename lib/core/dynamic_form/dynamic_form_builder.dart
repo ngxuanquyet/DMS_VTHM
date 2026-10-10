@@ -52,6 +52,16 @@ class DynamicFormBuilder extends StatefulWidget {
 class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   final Map<String, dynamic> _formData = {};
   final Map<String, String?> _errors = {};
+  final Map<String, FocusNode> _fieldFocusNodes = {};
+  final Map<String, GlobalKey> _fieldKeys = {};
+
+  FocusNode _getFocusNode(String code) {
+    return _fieldFocusNodes.putIfAbsent(code, () => FocusNode());
+  }
+
+  GlobalKey _getFieldKey(String code) {
+    return _fieldKeys.putIfAbsent(code, () => GlobalKey());
+  }
 
   @override
   void initState() {
@@ -66,11 +76,23 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     _initializeData(preserveExisting: true);
   }
 
+  @override
+  void dispose() {
+    for (final node in _fieldFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
   void _initializeData({bool preserveExisting = false}) {
     final existingData = preserveExisting ? Map<String, dynamic>.from(_formData) : <String, dynamic>{};
     _formData.clear();
 
     for (final field in widget.fields) {
+      // Khởi tạo trước key và focusNode cho trường
+      _getFieldKey(field.code);
+      _getFocusNode(field.code);
+
       // Nếu người dùng đã nhập hoặc chỉnh sửa dữ liệu của trường này -> Giữ nguyên 100% không bị mất
       if (preserveExisting && existingData.containsKey(field.code) && existingData[field.code] != null) {
         _formData[field.code] = existingData[field.code];
@@ -113,10 +135,45 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     widget.onChanged?.call(Map<String, dynamic>.from(_formData));
   }
 
+  /// Focus vào trường dữ liệu cụ thể và cuộn màn hình đến vị trí trường đó
+  void focusField(String code) {
+    var targetCode = code;
+    // Map alias nếu có (ví dụ lng dùng chung widget với lat, photo alias)
+    if (targetCode == 'lng' && !_fieldKeys.containsKey('lng') && _fieldKeys.containsKey('lat')) {
+      targetCode = 'lat';
+    } else if (targetCode == 'photo' && !_fieldKeys.containsKey('photo') && _fieldKeys.containsKey('photo_file_id')) {
+      targetCode = 'photo_file_id';
+    } else if (targetCode == 'photo_file_id' && !_fieldKeys.containsKey('photo_file_id') && _fieldKeys.containsKey('photo')) {
+      targetCode = 'photo';
+    }
+
+    // 1. Request focus trên FocusNode nếu trường hỗ trợ input
+    final node = _fieldFocusNodes[targetCode];
+    if (node != null && node.canRequestFocus) {
+      node.requestFocus();
+    }
+
+    // 2. Cuộn viewport tới widget của trường đó
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _fieldKeys[targetCode];
+      final targetContext = key?.currentContext;
+      if (targetContext != null && targetContext.mounted) {
+        Scrollable.ensureVisible(
+          targetContext,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.15,
+        );
+      }
+    });
+  }
+
   /// Kiểm tra tính hợp lệ toàn bộ form (Validate)
-  bool validate() {
+  /// Nếu [focusFirstError] = true (mặc định), tự động focus và cuộn đến trường lỗi đầu tiên
+  bool validate({bool focusFirstError = true}) {
     bool isValid = true;
     final newErrors = <String, String?>{};
+    String? firstInvalidCode;
 
     for (final field in widget.fields) {
       final value = _formData[field.code];
@@ -126,16 +183,19 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         if (value == null) {
           newErrors[field.code] = '${field.label} là bắt buộc';
           isValid = false;
+          firstInvalidCode ??= field.code;
           continue;
         }
         if (value is String && value.trim().isEmpty) {
           newErrors[field.code] = '${field.label} không được để trống';
           isValid = false;
+          firstInvalidCode ??= field.code;
           continue;
         }
         if (value is List && value.isEmpty) {
           newErrors[field.code] = 'Vui lòng chọn ít nhất 1 ${field.label.toLowerCase()}';
           isValid = false;
+          firstInvalidCode ??= field.code;
           continue;
         }
       }
@@ -145,11 +205,13 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         if (field.min != null && value < field.min!) {
           newErrors[field.code] = 'Giá trị phải lớn hơn hoặc bằng ${field.min}';
           isValid = false;
+          firstInvalidCode ??= field.code;
           continue;
         }
         if (field.max != null && value > field.max!) {
           newErrors[field.code] = 'Giá trị phải nhỏ hơn hoặc bằng ${field.max}';
           isValid = false;
+          firstInvalidCode ??= field.code;
           continue;
         }
       }
@@ -159,6 +221,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       _errors.clear();
       _errors.addAll(newErrors);
     });
+
+    if (!isValid && focusFirstError && firstInvalidCode != null) {
+      focusField(firstInvalidCode);
+    }
 
     return isValid;
   }
@@ -345,18 +411,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         final errText = _errors['lat'] ?? _errors['lng'];
 
         widgets.add(
-          DynamicGpsCoordinatesWidget(
-            latField: field,
-            lngField: lngField,
-            lat: latVal,
-            lng: lngVal,
-            errorText: errText,
-            onCoordinatesChanged: (newLat, newLng) {
-              updateFieldValue('lat', newLat);
-              if (hasLng) {
-                updateFieldValue('lng', newLng);
-              }
-            },
+          KeyedSubtree(
+            key: _getFieldKey('lat'),
+            child: DynamicGpsCoordinatesWidget(
+              latField: field,
+              lngField: lngField,
+              lat: latVal,
+              lng: lngVal,
+              errorText: errText,
+              onCoordinatesChanged: (newLat, newLng) {
+                updateFieldValue('lat', newLat);
+                if (hasLng) {
+                  updateFieldValue('lng', newLng);
+                }
+              },
+            ),
           ),
         );
         continue;
@@ -375,21 +444,29 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         final errText = _errors['lng'];
 
         widgets.add(
-          DynamicGpsCoordinatesWidget(
-            lngField: field,
-            lat: null,
-            lng: lngVal,
-            errorText: errText,
-            onCoordinatesChanged: (newLat, newLng) {
-              updateFieldValue('lng', newLng);
-            },
+          KeyedSubtree(
+            key: _getFieldKey('lng'),
+            child: DynamicGpsCoordinatesWidget(
+              lngField: field,
+              lat: null,
+              lng: lngVal,
+              errorText: errText,
+              onCoordinatesChanged: (newLat, newLng) {
+                updateFieldValue('lng', newLng);
+              },
+            ),
           ),
         );
         continue;
       }
 
       // Các trường thông thường khác
-      widgets.add(_buildFieldWidget(field));
+      widgets.add(
+        KeyedSubtree(
+          key: _getFieldKey(field.code),
+          child: _buildFieldWidget(field),
+        ),
+      );
     }
 
     return widgets;
@@ -398,6 +475,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   Widget _buildFieldWidget(DynamicFormField field) {
     final value = _formData[field.code];
     final errorText = _errors[field.code];
+    final focusNode = _getFocusNode(field.code);
 
     switch (field.type) {
       case DynamicFormFieldType.text:
@@ -405,6 +483,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: value?.toString(),
           errorText: errorText,
+          focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 
@@ -413,6 +492,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: value?.toString(),
           errorText: errorText,
+          focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 
@@ -421,6 +501,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: value is num ? value : num.tryParse(value?.toString() ?? ''),
           errorText: errorText,
+          focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 
@@ -429,6 +510,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: value,
           errorText: errorText,
+          focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 
@@ -492,6 +574,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: value?.toString(),
           errorText: errorText,
+          focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
     }

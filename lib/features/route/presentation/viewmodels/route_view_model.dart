@@ -12,6 +12,7 @@ import '../../../../core/rules/mobile_rules_model.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
+import '../../../customer/data/datasources/customer_local_data_source.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/domain/entities/customer_meta_entity.dart';
@@ -460,7 +461,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
         return c;
       }).toList();
 
-      _rawCustomers = resolvedCustomers;
+      _rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers);
       final availableRoutes = routeSet.toList();
 
       // Trích xuất danh sách loại khách hàng từ meta hệ thống và khách hàng thực tế

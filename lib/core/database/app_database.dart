@@ -321,6 +321,43 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Dọn dẹp các bản ghi khách hàng bị trùng lặp trên SQLite (theo id hoặc code)
+  Future<void> cleanupDuplicateCustomers() async {
+    try {
+      final all = await select(localCustomers).get();
+      final seenIds = <int, String>{};
+      final seenCodes = <String, String>{};
+      final toDelete = <String>[];
+
+      for (final row in all) {
+        bool isDup = false;
+        if (row.id != null && row.id! > 0) {
+          if (seenIds.containsKey(row.id!)) {
+            isDup = true;
+          } else {
+            seenIds[row.id!] = row.clientUuid;
+          }
+        }
+
+        if (!isDup && row.code.isNotEmpty && !row.code.startsWith('PENDING_')) {
+          if (seenCodes.containsKey(row.code)) {
+            isDup = true;
+          } else {
+            seenCodes[row.code] = row.clientUuid;
+          }
+        }
+
+        if (isDup) {
+          toDelete.add(row.clientUuid);
+        }
+      }
+
+      if (toDelete.isNotEmpty) {
+        await (delete(localCustomers)..where((tbl) => tbl.clientUuid.isIn(toDelete))).go();
+      }
+    } catch (_) {}
+  }
+
   /// Xóa các điểm bán đã đồng bộ trên SQLite nhưng không còn trong danh sách ID từ máy chủ (§7 reconcile)
   Future<int> deleteSyncedCustomersNotIn(List<int> activeServerIds) {
     if (activeServerIds.isEmpty) {

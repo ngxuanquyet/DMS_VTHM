@@ -110,7 +110,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
       // Đọc lại từ SQLite để gộp cả các khách hàng offline vừa tạo đang chờ đồng bộ
       final mergedList = await _localDataSource.getLocalCustomers(query: query);
-      _cachedCustomers = mergedList;
+      _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(mergedList);
       return _cachedCustomers;
     } catch (_) {
       // Khi API lỗi hoặc rớt mạng giữa chừng -> Sử dụng SQLite cục bộ đã lưu trước đó
@@ -319,8 +319,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
           await _localDataSource.cacheRemoteCustomers([entity]);
           _cachedCustomers.removeWhere((c) =>
               (entity.clientUuid != null && c.clientUuid == entity.clientUuid) ||
-              (entity.id > 0 && c.id == entity.id));
+              (entity.id > 0 && c.id == entity.id) ||
+              (entity.code.isNotEmpty && !entity.code.startsWith('PENDING_') && c.code == entity.code));
           _cachedCustomers.insert(0, entity);
+          _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
           return entity;
         }
       } catch (e) {
@@ -340,7 +342,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     // 1. Ghi máy trước, sinh client_uuid lúc nhập (BB-1, BB-2)
     final localEntity = await _localDataSource.createCustomerOffline(data);
+    _cachedCustomers.removeWhere((c) =>
+        (localEntity.clientUuid != null && c.clientUuid == localEntity.clientUuid) ||
+        (localEntity.code.isNotEmpty && c.code == localEntity.code));
     _cachedCustomers.insert(0, localEntity);
+    _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
 
     // 2. Kích hoạt tiến trình đồng bộ ngầm nếu có mạng (BB-1: Single Write Path)
     unawaited(_syncService.syncQueue());

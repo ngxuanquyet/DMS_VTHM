@@ -28,6 +28,7 @@ import '../../features/travel/domain/entities/travel_day_entity.dart';
 import '../../features/travel/presentation/screens/my_travel_screen.dart';
 import '../../features/travel/presentation/screens/travel_leg_detail_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../services/route_restoration_service.dart';
 import 'branch_animated_slide_container.dart';
 import 'page_transitions.dart';
 
@@ -58,7 +59,7 @@ class MainShellScaffold extends StatelessWidget {
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     routes: [
@@ -129,6 +130,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/route',
+        redirect: (context, state) => '/routes',
+      ),
+      GoRoute(
+        path: '/route/check-in',
+        redirect: (context, state) => '/routes',
       ),
       GoRoute(
         path: '/attendance',
@@ -331,4 +340,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       body: Center(child: Text('Không tìm thấy trang: ${state.uri}')),
     ),
   );
+
+  router.routerDelegate.addListener(() {
+    try {
+      final uri = router.routerDelegate.currentConfiguration.uri.toString();
+      if (uri.isNotEmpty && uri != '/splash' && uri != '/login') {
+        RouteRestorationService.saveLastActiveRoute(uri);
+      }
+    } catch (_) {}
+  });
+
+  return router;
 });

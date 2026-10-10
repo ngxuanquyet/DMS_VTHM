@@ -4,6 +4,7 @@ import '../../../../core/map/goong_providers.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../route/data/services/route_api_service.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
+import '../../data/datasources/customer_local_data_source.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -217,7 +218,7 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
 
       if (!mounted) return;
       state = state.copyWith(
-        allCustomers: resolvedCustomers,
+        allCustomers: CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers),
         assignedRoutes: assignedRouteNames,
         dynamicColumns: meta.dynamicColumns.isNotEmpty ? meta.dynamicColumns : state.dynamicColumns,
         meta: meta,
@@ -272,9 +273,10 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
     final list = List<CustomerEntity>.from(state.allCustomers)
       ..removeWhere((c) =>
           (entity.clientUuid != null && c.clientUuid == entity.clientUuid) ||
-          (entity.id > 0 && c.id == entity.id))
+          (entity.id > 0 && c.id == entity.id) ||
+          (entity.code.isNotEmpty && !entity.code.startsWith('PENDING_') && c.code == entity.code))
       ..insert(0, entity);
-    state = state.copyWith(allCustomers: list);
+    state = state.copyWith(allCustomers: CustomerLocalDataSource.deduplicateCustomers(list));
     return entity;
   }
 

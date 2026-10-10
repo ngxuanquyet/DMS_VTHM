@@ -7,6 +7,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../profile/presentation/viewmodels/profile_view_model.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../../core/services/route_restoration_service.dart';
 import '../viewmodels/auth_view_model.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -61,6 +63,27 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
       _isAuthenticated = await ref.read(authViewModelProvider.notifier).checkAuth();
       if (_isAuthenticated) {
         ref.read(profileViewModelProvider.notifier).loadProfile();
+
+        // Kiểm tra xem có phiên làm việc cần khôi phục sau khi người dùng cấp quyền từ Cài đặt không
+        final restoreRoute = await RouteRestorationService.getAndClearPendingRestoreRoute();
+        if (restoreRoute != null && restoreRoute.isNotEmpty && restoreRoute != '/home') {
+          if (mounted) {
+            _progressController.stop();
+            ref.read(connectivityProvider.notifier).notifySplashFinished();
+            context.go(restoreRoute);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              rootScaffoldMessengerKey.currentState?.showSnackBar(
+                const SnackBar(
+                  content: Text('Đã khôi phục màn hình làm việc sau khi cấp quyền.'),
+                  backgroundColor: AppColors.primary,
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            });
+            return;
+          }
+        }
       }
     } catch (_) {
       _isAuthenticated = false;

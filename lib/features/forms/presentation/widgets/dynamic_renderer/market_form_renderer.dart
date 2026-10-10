@@ -12,6 +12,7 @@ import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
+import '../../../../../core/widgets/camera_permission_dialog.dart';
 
 /// Mục ảnh quản lý trạng thái tải lên và hiển thị cục bộ
 class FormPhotoEntry {
@@ -1211,6 +1212,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final maxFiles = _resolveMaxFiles(block);
     final currentEntries = _photoEntries[code] ?? [];
     if (currentEntries.length >= maxFiles) return;
+
+    if (source == ImageSource.camera) {
+      final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+        context,
+        featureName: 'khảo sát thị trường',
+        customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh khảo sát trực tiếp tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+      );
+      if (!hasPermission) return;
+    }
 
     try {
       final picker = ImagePicker();

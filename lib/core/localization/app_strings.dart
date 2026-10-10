@@ -311,6 +311,18 @@ class AppStrings {
       : 'Notification permission is disabled on your device. Please open App Settings and enable notifications so you do not miss attendance reminders and work progress updates.';
   String get enableNotificationAction =>
       isVietnamese ? 'BẬT THÔNG BÁO' : 'ENABLE NOTIFICATIONS';
+
+  // Camera Permission Dialog
+  String get cameraPermissionDeniedTitle =>
+      isVietnamese ? 'Yêu cầu quyền Máy ảnh' : 'Camera Access Required';
+  String get cameraPermissionDeniedForeverTitle =>
+      isVietnamese ? 'Quyền Máy ảnh bị vô hiệu hóa' : 'Camera Access Disabled';
+  String get cameraPermissionDeniedDesc => isVietnamese
+      ? 'Ứng dụng cần quyền truy cập Máy ảnh để chụp ảnh thực tế tại điểm bán và xác thực chấm công.'
+      : 'The app needs Camera access to take photos at store visits and verify attendance.';
+  String get cameraPermissionDeniedForeverDesc => isVietnamese
+      ? 'Quyền truy cập Máy ảnh đã bị tắt trong Cài đặt thiết bị. Vui lòng mở Cài đặt ứng dụng để cấp lại quyền Máy ảnh.'
+      : 'Camera access is disabled in device settings. Please open App Settings to grant Camera permission.';
   String get speechNotAvailable => isVietnamese
       ? 'Thiết bị không hỗ trợ hoặc nhận diện giọng nói chưa sẵn sàng'
       : 'Speech recognition engine is not available on this device';

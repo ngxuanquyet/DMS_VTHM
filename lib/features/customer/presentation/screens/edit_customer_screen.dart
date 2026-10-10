@@ -12,6 +12,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
+import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -1272,6 +1273,15 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+        context,
+        featureName: 'chụp ảnh khách hàng',
+        customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh cửa hàng / khách hàng. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+      );
+      if (!hasPermission) return;
+    }
+
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: source,

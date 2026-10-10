@@ -7,6 +7,7 @@ import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../states/position_declaration_state.dart';
 import '../viewmodels/position_declaration_view_model.dart';
@@ -459,7 +460,15 @@ class _PositionDeclarationScreenState
           InkWell(
             onTap: state.photos.length >= 10
                 ? null
-                : () => vm.takePhotoFromCamera(),
+                : () async {
+                    final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+                      context,
+                      featureName: 'khai báo vị trí',
+                      customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh hiện trường tại vị trí khai báo. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+                    );
+                    if (!hasPermission) return;
+                    vm.takePhotoFromCamera();
+                  },
             borderRadius: BorderRadius.circular(12),
             child: Container(
               width: 90,

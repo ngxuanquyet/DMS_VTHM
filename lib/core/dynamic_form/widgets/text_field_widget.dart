@@ -11,6 +11,7 @@ class DynamicTextFieldWidget extends StatefulWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
   final String? errorText;
+  final FocusNode? focusNode;
 
   const DynamicTextFieldWidget({
     super.key,
@@ -18,6 +19,7 @@ class DynamicTextFieldWidget extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.focusNode,
   });
 
   @override
@@ -67,6 +69,7 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
           ),
         ),
         child: TextField(
+          focusNode: widget.focusNode,
           controller: _controller,
           readOnly: widget.field.isReadOnly,
           onChanged: (val) {

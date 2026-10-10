@@ -10,6 +10,7 @@ class DynamicNumberFieldWidget extends StatefulWidget {
   final num? value;
   final ValueChanged<num?> onChanged;
   final String? errorText;
+  final FocusNode? focusNode;
 
   const DynamicNumberFieldWidget({
     super.key,
@@ -17,6 +18,7 @@ class DynamicNumberFieldWidget extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.focusNode,
   });
 
   @override
@@ -88,6 +90,7 @@ class _DynamicNumberFieldWidgetState extends State<DynamicNumberFieldWidget> {
           children: [
             Expanded(
               child: TextField(
+                focusNode: widget.focusNode,
                 controller: _controller,
                 readOnly: widget.field.isReadOnly,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),

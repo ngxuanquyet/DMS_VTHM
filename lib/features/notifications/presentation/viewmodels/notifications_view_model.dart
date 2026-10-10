@@ -27,6 +27,10 @@ final markAllReadUseCaseProvider = Provider<MarkAllReadUseCase>((ref) {
   return MarkAllReadUseCase(ref.read(notificationsRepositoryProvider));
 });
 
+final markNotificationReadUseCaseProvider = Provider<MarkNotificationReadUseCase>((ref) {
+  return MarkNotificationReadUseCase(ref.read(notificationsRepositoryProvider));
+});
+
 final unreadNotificationCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final notifService = ref.watch(appNotificationServiceProvider);
   return notifService.getUnreadCount();
@@ -37,16 +41,22 @@ final notificationsViewModelProvider =
   return NotificationsViewModel(
     getNotificationsUseCase: ref.read(getNotificationsUseCaseProvider),
     markAllReadUseCase: ref.read(markAllReadUseCaseProvider),
+    markNotificationReadUseCase: ref.read(markNotificationReadUseCaseProvider),
+    ref: ref,
   );
 });
 
 class NotificationsViewModel extends StateNotifier<NotificationsState> {
   final GetNotificationsUseCase getNotificationsUseCase;
   final MarkAllReadUseCase markAllReadUseCase;
+  final MarkNotificationReadUseCase markNotificationReadUseCase;
+  final Ref ref;
 
   NotificationsViewModel({
     required this.getNotificationsUseCase,
     required this.markAllReadUseCase,
+    required this.markNotificationReadUseCase,
+    required this.ref,
   }) : super(const NotificationsState()) {
     loadNotifications();
   }
@@ -72,6 +82,19 @@ class NotificationsViewModel extends StateNotifier<NotificationsState> {
     }
   }
 
+  /// Đánh dấu 1 thông báo là đã đọc
+  Future<void> markAsRead(String id) async {
+    if (state.data != null) {
+      final updatedData = NotificationDataEntity(
+        today: state.data!.today.map((e) => e.id == id ? e.copyWith(isRead: true) : e).toList(),
+        earlier: state.data!.earlier.map((e) => e.id == id ? e.copyWith(isRead: true) : e).toList(),
+      );
+      state = state.copyWith(data: updatedData);
+    }
+    await markNotificationReadUseCase(id);
+    ref.invalidate(unreadNotificationCountProvider);
+  }
+
   Future<void> markAllAsRead() async {
     await markAllReadUseCase();
     if (state.data != null) {
@@ -81,5 +104,6 @@ class NotificationsViewModel extends StateNotifier<NotificationsState> {
       );
       state = state.copyWith(data: updatedData);
     }
+    ref.invalidate(unreadNotificationCountProvider);
   }
 }

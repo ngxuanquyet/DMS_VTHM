@@ -11,6 +11,7 @@ class DynamicLongTextFieldWidget extends StatefulWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
   final String? errorText;
+  final FocusNode? focusNode;
 
   const DynamicLongTextFieldWidget({
     super.key,
@@ -18,6 +19,7 @@ class DynamicLongTextFieldWidget extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.focusNode,
   });
 
   @override
@@ -70,6 +72,7 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             TextField(
+              focusNode: widget.focusNode,
               controller: _controller,
               readOnly: widget.field.isReadOnly,
               minLines: 3,

@@ -278,7 +278,7 @@ class CustomerLocalDataSource {
     );
   }
 
-  /// Đọc danh sách điểm bán từ SQLite cục bộ, hỗ trợ tìm kiếm không dấu (§7.4)
+  /// Đọc danh sách điểm bán từ SQLite cục bộ, hỗ trợ tìm kiếm không dấu (§7.4) và tự động khử trùng lặp
   Future<List<CustomerEntity>> getLocalCustomers({String? query}) async {
     final List<LocalCustomer> rows;
     if (query != null && query.trim().isNotEmpty) {
@@ -288,14 +288,63 @@ class CustomerLocalDataSource {
       rows = await _db.getAllLocalCustomers();
     }
 
-    return rows.map(_mapRowToEntity).toList();
+    final entities = rows.map(_mapRowToEntity).toList();
+    return deduplicateCustomers(entities);
   }
 
-  /// Cập nhật cache từ server về SQLite khi có mạng (không ghi đè các bản ghi đang pending)
+  /// Khử trùng lặp danh sách điểm bán theo ID (>0), Mã code chuẩn, và clientUuid
+  static List<CustomerEntity> deduplicateCustomers(List<CustomerEntity> list) {
+    final seenIds = <int>{};
+    final seenCodes = <String>{};
+    final seenUuids = <String>{};
+    final result = <CustomerEntity>[];
+
+    for (final c in list) {
+      if (c.id > 0 && seenIds.contains(c.id)) continue;
+      final cleanCode = c.code.trim();
+      if (cleanCode.isNotEmpty && !cleanCode.startsWith('PENDING_') && seenCodes.contains(cleanCode)) {
+        continue;
+      }
+      if (c.clientUuid != null && c.clientUuid!.isNotEmpty && seenUuids.contains(c.clientUuid)) {
+        continue;
+      }
+
+      if (c.id > 0) seenIds.add(c.id);
+      if (cleanCode.isNotEmpty && !cleanCode.startsWith('PENDING_')) seenCodes.add(cleanCode);
+      if (c.clientUuid != null && c.clientUuid!.isNotEmpty) seenUuids.add(c.clientUuid!);
+
+      result.add(c);
+    }
+    return result;
+  }
+
+  /// Cập nhật cache từ server về SQLite khi có mạng (không ghi đè các bản ghi đang pending và ngăn ngừa duplicate)
   /// [reconcile]: Nếu true, tự động xóa các khách hàng đã đồng bộ trên SQLite nhưng không còn tồn tại trên server
   Future<void> cacheRemoteCustomers(List<CustomerEntity> remoteList, {bool reconcile = false}) async {
     for (final remote in remoteList) {
-      final clientUuid = remote.clientUuid ?? 'server_${remote.id}';
+      // 1. Kiểm tra xem điểm bán này đã tồn tại trên SQLite chưa (theo serverId, code hoặc clientUuid)
+      LocalCustomer? existing;
+      if (remote.id > 0) {
+        final matches = await (_db.select(_db.localCustomers)
+              ..where((tbl) => tbl.id.equals(remote.id)))
+            .get();
+        if (matches.isNotEmpty) existing = matches.first;
+      }
+      if (existing == null && remote.code.isNotEmpty && !remote.code.startsWith('PENDING_')) {
+        final matches = await (_db.select(_db.localCustomers)
+              ..where((tbl) => tbl.code.equals(remote.code)))
+            .get();
+        if (matches.isNotEmpty) existing = matches.first;
+      }
+      if (existing == null && remote.clientUuid != null && remote.clientUuid!.isNotEmpty) {
+        final matches = await (_db.select(_db.localCustomers)
+              ..where((tbl) => tbl.clientUuid.equals(remote.clientUuid!)))
+            .get();
+        if (matches.isNotEmpty) existing = matches.first;
+      }
+
+      // Giữ nguyên clientUuid của bản ghi hiện có để UPDATE thay vì INSERT thêm bản ghi mới
+      final clientUuid = existing?.clientUuid ?? remote.clientUuid ?? 'server_${remote.id}';
       final nameUnaccent = StringUtils.toUnaccentedLower(remote.name);
 
       await _db.insertOrUpdateCustomer(
@@ -335,11 +384,19 @@ class CustomerLocalDataSource {
           updatedAt: Value(remote.updatedAt),
         ),
       );
+
+      // Nếu có bản ghi trùng thừa khác có cùng server ID nhưng clientUuid khác -> dọn dẹp
+      if (remote.id > 0) {
+        await (_db.delete(_db.localCustomers)
+              ..where((tbl) => tbl.id.equals(remote.id) & tbl.clientUuid.isNotValue(clientUuid)))
+            .go();
+      }
     }
 
     if (reconcile) {
       final activeIds = remoteList.map((e) => e.id).where((id) => id > 0).toList();
       await _db.deleteSyncedCustomersNotIn(activeIds);
+      await _db.cleanupDuplicateCustomers();
     }
   }
 
