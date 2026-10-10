@@ -91,19 +91,18 @@ final visitReportViewModelProvider =
 });
 
 class VisitReportViewModel extends StateNotifier<VisitReportState> {
-  final VisitRepository _visitRepository;
+  final VisitRepository visitRepository;
 
   VisitReportViewModel({
-    required VisitRepository visitRepository,
-  })  : _visitRepository = visitRepository,
-        super(VisitReportState(selectedDate: DateTime.now())) {
+    required this.visitRepository,
+  })  : super(VisitReportState(selectedDate: DateTime.now())) {
     loadVisits();
   }
 
   Future<void> loadVisits({bool forceRefresh = false}) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final visits = await _visitRepository.getVisitsByDate(
+      final visits = await visitRepository.getVisitsByDate(
         state.selectedDate,
         forceRefresh: forceRefresh,
       );
@@ -113,7 +112,7 @@ class VisitReportViewModel extends StateNotifier<VisitReportState> {
       );
     } catch (e) {
       // Trong trường hợp lỗi API, vẫn đọc dữ liệu cục bộ đã lưu
-      final all = await _visitRepository.getAllLocalVisits();
+      final all = await visitRepository.getAllLocalVisits();
       state = state.copyWith(
         visits: all,
         isLoading: false,

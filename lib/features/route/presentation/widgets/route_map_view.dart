@@ -426,6 +426,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     final locState = ref.read(locationProvider);
     if (!locState.isReady) {
       // Chưa cấp quyền hoặc chưa bật GPS -> Mở dialog yêu cầu cấp quyền ngay
+      if (!context.mounted) return;
       await ref.read(locationServiceProvider).checkAndGetLocation(context);
       return;
     }

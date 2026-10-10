@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:vthm_dms/core/rules/mobile_rules_model.dart';
-import 'package:vthm_dms/core/rules/mobile_rules_service.dart';
 import 'package:vthm_dms/core/services/anti_fraud_service.dart';
 import 'package:vthm_dms/core/widgets/anti_fraud_warning_dialog.dart';
 

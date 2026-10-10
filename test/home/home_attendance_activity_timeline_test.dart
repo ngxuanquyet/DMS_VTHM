@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/features/daily_report/domain/entities/daily_activity_entity.dart';
 import 'package:vthm_dms/features/daily_report/presentation/widgets/daily_activity_timeline_card.dart';
 import 'package:vthm_dms/features/home/data/models/dashboard_model.dart';
@@ -139,13 +138,13 @@ void main() {
       expect(find.text('Toạ độ GPS'), findsOneWidget);
     });
 
-    test('3. Không bao giờ hiển thị "Giữa ca", chuẩn hoá thành "Chấm công Ra" khi có lượt giữa', () async {
+    test('3. Hiển thị đúng lượt Chấm công Vào và Ra trên dòng thời gian', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
 
       final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-      // Server trả về 3 lượt: Vào (08:00), Giữa ca (12:00), Ra (17:30)
+      // Server trả về 2 lượt: Vào (08:00) và Ra (17:30)
       final samplePunches = [
         {
           'id': 201,
@@ -156,15 +155,8 @@ void main() {
         },
         {
           'id': 202,
-          'punch_at': '${todayStr}T12:00:00+07:00',
-          'client_uuid': 'uuid_202',
-          'direction': 'mid',
-          'direction_label': 'Giữa ca',
-        },
-        {
-          'id': 203,
           'punch_at': '${todayStr}T17:30:00+07:00',
-          'client_uuid': 'uuid_203',
+          'client_uuid': 'uuid_202',
           'direction': 'out',
           'direction_label': 'Ra',
         },
@@ -179,17 +171,9 @@ void main() {
           .where((a) => a.title.contains('Chấm công'))
           .toList();
 
-      expect(attActivities.length, 3);
+      expect(attActivities.length, 2);
 
-      // Tuyệt đối không chứa chữ "Giữa ca"
-      final hasMidShift = attActivities.any((a) => a.title.contains('Giữa ca'));
-      expect(hasMidShift, isFalse);
-
-      // Lượt 12:00 chuẩn hoá thành "Chấm công Ra"
-      final midPunchActivity = attActivities.firstWhere((a) => a.time == '12:00');
-      expect(midPunchActivity.title, 'Chấm công Ra');
-
-      // Lượt 17:30 cũng là "Chấm công Ra"
+      // Lượt 17:30 là "Chấm công Ra"
       final outPunchActivity = attActivities.firstWhere((a) => a.time == '17:30');
       expect(outPunchActivity.title, 'Chấm công Ra');
 

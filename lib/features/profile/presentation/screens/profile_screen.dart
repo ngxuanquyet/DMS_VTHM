@@ -11,6 +11,9 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/top_app_bar.dart';
+import '../../../../core/services/app_notification_service.dart';
+import '../../../../core/widgets/notification_permission_dialog.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
 
@@ -21,7 +24,104 @@ class ProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindingObserver {
+  bool _notifGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkNotificationStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkNotificationStatus();
+    }
+  }
+
+  Future<void> _checkNotificationStatus() async {
+    try {
+      final isGranted = await Permission.notification.isGranted;
+      if (mounted) {
+        setState(() => _notifGranted = isGranted);
+      }
+    } catch (_) {}
+  }
+
+  void _showNotificationStatusDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedLg),
+        title: Row(
+          children: [
+            const Icon(Icons.notifications_active_rounded, color: AppColors.primary, size: 24),
+            const SizedBox(width: 10),
+            Text('Thông báo hệ thống', style: AppTypography.titleMedium().copyWith(fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quyền thông báo đã được kích hoạt. Các lịch nhắc nhở sau đang hoạt động tự động ngay cả khi tắt app:',
+              style: AppTypography.bodyMedium().copyWith(height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            _buildDialogScheduleItem(Icons.alarm_rounded, 'Nhắc Vào ca: 07:50 (Thứ 2 - Thứ 7)'),
+            const SizedBox(height: 6),
+            _buildDialogScheduleItem(Icons.alarm_off_rounded, 'Nhắc Ra ca: 17:00 (Thứ 2 - Thứ 7)'),
+            const SizedBox(height: 6),
+            _buildDialogScheduleItem(Icons.alt_route_rounded, 'Cảnh báo lộ trình & đồng bộ dữ liệu'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await AppNotificationService().sendTestNotification();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Đã phát thông báo thử nghiệm! Vui lòng kiểm tra khay thông báo thiết bị.'),
+                    backgroundColor: AppColors.primary,
+                  ),
+                );
+              }
+            },
+            child: const Text('Thử thông báo', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogScheduleItem(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: AppColors.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+        ),
+      ],
+    );
+  }
 
 
   void _showInfoDialog(String title, String content) {
@@ -451,6 +551,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ],
                       ),
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.notifications_none_rounded,
+                      title: 'Thông báo & Nhắc nhở',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _notifGranted
+                                  ? AppColors.primaryContainer.withValues(alpha: 0.25)
+                                  : AppColors.errorContainer.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              _notifGranted ? 'Đã bật' : 'Chưa bật',
+                              style: AppTypography.labelSmall(
+                                color: _notifGranted ? AppColors.primary : AppColors.error,
+                              ).copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 20,
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                          ),
+                        ],
+                      ),
+                      onTap: () async {
+                        final isGranted = await Permission.notification.isGranted;
+                        if (!isGranted) {
+                          if (context.mounted) {
+                            final res = await NotificationPermissionDialog.checkAndRequestPermission(
+                              context,
+                              ignoreCooldown: true,
+                            );
+                            if (mounted) setState(() => _notifGranted = res);
+                          }
+                        } else {
+                          if (context.mounted) {
+                            _showNotificationStatusDialog();
+                          }
+                        }
+                      },
+                      isDark: isDark,
                     ),
                     const Divider(height: 1),
                     _buildMenuItem(

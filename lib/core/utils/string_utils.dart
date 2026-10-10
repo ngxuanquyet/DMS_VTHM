@@ -29,6 +29,9 @@ class StringUtils {
       }
     });
 
+    // Bổ sung loại bỏ các dấu thanh tổ hợp Unicode NFD (combining diacritics)
+    result = result.replaceAll(RegExp(r'[\u0300\u0301\u0303\u0309\u0323\u02C6\u0306\u031B]'), '');
+
     return result.toLowerCase().trim();
   }
 

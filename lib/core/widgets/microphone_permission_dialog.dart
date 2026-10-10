@@ -23,6 +23,7 @@ class MicrophonePermissionDialog extends StatelessWidget {
   final VoidCallback? onDismiss;
   final AppStrings? strings;
 
+  // ignore: prefer_const_constructors_in_immutables
   MicrophonePermissionDialog({
     super.key,
     required this.type,

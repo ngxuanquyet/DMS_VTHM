@@ -5,11 +5,21 @@ import 'core/constants/app_constants.dart';
 import 'core/localization/language_provider.dart';
 import 'core/network/connectivity_provider.dart';
 import 'core/router/app_router.dart';
+import 'core/services/app_notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Khởi tạo dịch vụ thông báo cục bộ và thiết lập lịch báo thức nền T2-T7
+  try {
+    final notifService = AppNotificationService();
+    await notifService.init();
+    await notifService.setupDefaultWeeklySchedules();
+  } catch (e) {
+    debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
+  }
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(

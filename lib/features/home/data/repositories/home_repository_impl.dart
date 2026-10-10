@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,7 +26,7 @@ class HomeRepositoryImpl implements HomeRepository {
     // 1. Thử gọi API nếu server backend có triển khai /dashboard
     try {
       final model = await _apiService.getDashboardData();
-      return _enrichDashboard(model.toEntity());
+      return await _enrichDashboard(model.toEntity());
     } catch (_) {
       // 2. Khi backend chưa có /dashboard hoặc thiết bị đang ngoại tuyến:
       // Xây dựng DashboardEntity hoàn toàn từ dữ liệu thực tế của phiên đăng nhập và SQLite/Cache cục bộ.
@@ -259,10 +258,7 @@ class HomeRepositoryImpl implements HomeRepository {
 
       final direction = punch['direction']?.toString();
       String directionLabel = punch['direction_label']?.toString() ?? '';
-      // Quy trình thực tế chỉ có chấm công Vào và Ra (không có khái niệm Giữa ca)
-      if (directionLabel == 'Giữa ca' || direction == 'mid') {
-        directionLabel = 'Ra';
-      } else if (directionLabel.isEmpty) {
+      if (directionLabel.isEmpty) {
         directionLabel = (i == 0 || direction == 'in') ? 'Vào' : 'Ra';
       }
 

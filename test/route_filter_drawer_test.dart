@@ -105,8 +105,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ProviderScope(
-          parent: container,
+        UncontrolledProviderScope(
+          container: container,
           child: MaterialApp(
             home: Scaffold(
               endDrawer: RouteFilterDrawer(state: state, vm: vm),

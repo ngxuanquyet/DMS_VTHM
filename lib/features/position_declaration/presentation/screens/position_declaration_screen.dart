@@ -694,7 +694,7 @@ class _PositionDeclarationScreenState
                   headingAccuracy: 0,
                   speed: 0,
                   speedAccuracy: 0,
-                  isMocked: state.isMockLocation ?? false,
+                  isMocked: state.isMockLocation,
                 );
 
                 final fraudCheck = await ref.read(antiFraudServiceProvider).validateAction(

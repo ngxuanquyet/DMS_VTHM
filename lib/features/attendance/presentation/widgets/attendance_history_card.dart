@@ -343,9 +343,8 @@ class AttendanceHistoryCard extends ConsumerWidget {
   }
 
   Widget _directionBadge(String? direction, String label) {
-    // Hiển thị nguyên văn direction_label từ server (§1 & §5 SPEC-2026-10-06)
+    // Hiển thị direction_label từ server: chỉ có 'Vào' và 'Ra'
     final isOut = label == 'Ra' || direction == 'out';
-    final isMid = label == 'Giữa ca' || direction == 'mid';
     final isNone = label == '—' || direction == null;
 
     final Color badgeBg;
@@ -354,9 +353,6 @@ class AttendanceHistoryCard extends ConsumerWidget {
     if (isOut) {
       badgeBg = Colors.orange.withValues(alpha: 0.15);
       textColor = Colors.orange.shade800;
-    } else if (isMid) {
-      badgeBg = Colors.blue.withValues(alpha: 0.15);
-      textColor = Colors.blue.shade800;
     } else if (isNone) {
       badgeBg = AppColors.surfaceVariant;
       textColor = AppColors.outline;

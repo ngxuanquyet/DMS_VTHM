@@ -84,25 +84,6 @@ class MockAttendanceApiClient20261006 extends ApiClient {
             },
           },
           {
-            'id': 8729,
-            'punch_at': '2026-10-06 12:00:00+07',
-            'client_uuid': 'uuid-mid',
-            'lat': null,
-            'lng': null,
-            'direction': 'mid',
-            'direction_label': 'Giữa ca',
-            'photos': [],
-            'requirements': {
-              'photo_count': 0,
-              'min_photos': 2,
-              'max_photos': 10,
-              'need_front': true,
-              'need_back': true,
-              'require_both': true,
-              'satisfied': false,
-            },
-          },
-          {
             'id': 8728,
             'punch_at': '2026-10-06 08:55:40+07',
             'client_uuid': 'uuid-in',
@@ -211,7 +192,7 @@ void main() {
       expect(today.nextActionLabel, 'Ra');
     });
 
-    test('3. POST punch và GET history trả về direction và direction_label ("in", "out", "mid")', () async {
+    test('3. POST punch và GET history trả về direction và direction_label ("in", "out")', () async {
       final punch = await repository.punch(
         lat: 21.028,
         lng: 105.8345,
@@ -222,13 +203,11 @@ void main() {
       expect(punch.directionLabel, 'Ra');
 
       final history = await repository.getHistory(days: 7);
-      expect(history.length, 3);
+      expect(history.length, 2);
       expect(history[0].direction, 'out');
       expect(history[0].directionLabel, 'Ra');
-      expect(history[1].direction, 'mid');
-      expect(history[1].directionLabel, 'Giữa ca');
-      expect(history[2].direction, 'in');
-      expect(history[2].directionLabel, 'Vào');
+      expect(history[1].direction, 'in');
+      expect(history[1].directionLabel, 'Vào');
     });
 
     test('4. Cách ly cache config theo từng tài khoản (không nhớ đệm qua nhiều user trên cùng máy)', () async {

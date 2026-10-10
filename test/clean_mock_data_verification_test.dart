@@ -13,7 +13,6 @@ import 'package:vthm_dms/features/home/data/repositories/home_repository_impl.da
 import 'package:vthm_dms/features/home/data/services/home_api_service.dart';
 import 'package:vthm_dms/features/notifications/data/repositories/notifications_repository_impl.dart';
 import 'package:vthm_dms/features/notifications/data/services/notifications_api_service.dart';
-import 'package:vthm_dms/features/profile/data/services/profile_api_service.dart';
 import 'package:vthm_dms/features/route/data/services/route_api_service.dart';
 
 class FailingApiClient implements ApiClient {

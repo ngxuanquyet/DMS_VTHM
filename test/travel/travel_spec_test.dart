@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/features/travel/data/models/travel_day_model.dart';
 import 'package:vthm_dms/features/travel/data/models/travel_leg_model.dart';
 import 'package:vthm_dms/features/travel/domain/entities/travel_day_entity.dart';
-import 'package:vthm_dms/features/travel/domain/entities/travel_leg_entity.dart';
 import 'package:vthm_dms/features/visit/data/models/checkin_request_model.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 

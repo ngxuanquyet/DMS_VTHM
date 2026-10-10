@@ -212,6 +212,7 @@ class RouteDealerTimeline extends ConsumerWidget {
     final locState = ref.read(locationProvider);
     if (!locState.isReady) {
       // Chưa cấp quyền hoặc chưa bật GPS -> Mở dialog yêu cầu cấp quyền
+      if (!context.mounted) return;
       await ref.read(locationServiceProvider).checkAndGetLocation(context);
       return;
     }

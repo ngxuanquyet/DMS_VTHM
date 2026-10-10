@@ -222,8 +222,8 @@ class AttendancePunchEntity {
   final bool isMockLocation;
   final bool isTimeTampered;
   final bool duplicate;
-  final String? direction; // 'in' | 'out' | 'mid' | null
-  final String? directionLabel; // 'Vào' | 'Ra' | 'Giữa ca' | null
+  final String? direction; // 'in' | 'out' | null
+  final String? directionLabel; // 'Vào' | 'Ra' | null
   final List<AttendancePunchPhotoEntity> photos;
   final AttendanceRequirementsEntity requirements;
 
@@ -246,9 +246,9 @@ class AttendancePunchEntity {
     required this.requirements,
   });
 
-  /// Chiều chuẩn hoá hiển thị cho người dùng: chỉ có 'Vào' hoặc 'Ra' (thực tế vận hành không có giữa ca)
+  /// Chiều chuẩn hoá hiển thị cho người dùng: chỉ có 'Vào' hoặc 'Ra'
   String get displayDirectionLabel {
-    if (directionLabel == 'Giữa ca' || direction == 'mid' || direction == 'out') return 'Ra';
+    if (directionLabel == 'Ra' || direction == 'out') return 'Ra';
     if (directionLabel == 'Vào' || direction == 'in') return 'Vào';
     return directionLabel ?? 'Vào';
   }

@@ -65,7 +65,7 @@ class AppNotificationService {
             _channelId,
             _channelName,
             description: _channelDesc,
-            importance: Importance.high,
+            importance: Importance.max,
             playSound: true,
             enableVibration: true,
           ),
@@ -87,6 +87,9 @@ class AppNotificationService {
 
       try {
         tz.initializeTimeZones();
+        try {
+          tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
+        } catch (_) {}
       } catch (_) {}
 
       _isInitialized = true;
@@ -286,6 +289,18 @@ class AppNotificationService {
     }
   }
 
+  /// Gửi thông báo thử nghiệm để kiểm tra hoạt động của hệ thống
+  Future<void> sendTestNotification() async {
+    await sendNotification(
+      id: 999,
+      title: 'Kiểm tra thông báo DMS VTHM',
+      message: 'Hệ thống thông báo hoạt động tốt! Bạn sẽ nhận được thông báo nhắc chấm công Vào ca (07:50) và Ra ca (17:00).',
+      type: 'test_notification',
+      category: 'system',
+      routePath: '/home',
+    );
+  }
+
   // ===========================================================================
   // 3. THROTTLING & SPAM PROTECTION
   // ===========================================================================
@@ -344,8 +359,11 @@ class AppNotificationService {
           prefs.getString('att_mobile_history_cache');
       if (cachedJson != null && cachedJson.isNotEmpty) {
         final list = jsonDecode(cachedJson) as List<dynamic>;
-        final count = list.where((item) => (item['punch_at']?.toString() ?? '').startsWith(todayStr)).length;
-        return count >= 2;
+        final todayPunches = list.where((item) => (item['punch_at']?.toString() ?? '').startsWith(todayStr)).toList();
+        final hasOutPunch = todayPunches.any((item) =>
+            item['direction']?.toString() == 'out' ||
+            item['direction_label']?.toString() == 'Ra');
+        return hasOutPunch || todayPunches.length >= 2;
       }
     } catch (_) {}
     return false;
@@ -600,30 +618,30 @@ class AppNotificationService {
     }
 
     // 9. Đồng bộ lịch hẹn với Hệ điều hành (Bảo đảm TẮT HẲN APP vẫn nổ chuông theo ca 8h-17h T2-T7)
-    if (isWorkingDay) {
-      // Nhắc ra ca 17:00
-      if (checkedIn && !checkedOut) {
-        await scheduleDailyCheckoutReminder(hour: 17, minute: 0);
-      } else if (checkedOut) {
-        await cancelCheckoutReminder(todayOnly: true);
-      }
-
-      // Nhắc vào ca 07:50 (trước 8:00 10 phút)
-      if (!checkedIn) {
-        await scheduleDailyCheckinReminder(hour: 7, minute: 50);
-      } else if (checkedIn) {
-        await cancelCheckinReminder(todayOnly: true);
-      }
-    } else {
-      // Chủ nhật: Hủy các nhắc nhở nếu có
-      await cancelCheckoutReminder(todayOnly: true);
-      await cancelCheckinReminder(todayOnly: true);
-    }
+    await setupDefaultWeeklySchedules(
+      hasCheckedInToday: checkedIn,
+      hasCheckedOutToday: checkedOut,
+    );
   }
 
   // ===========================================================================
   // 5. LÊN LỊCH VỚI HỆ ĐIỀU HÀNH KHI TẮT APP (OS ALARM SCHEDULING - CA 8H - 17H T2-T7)
   // ===========================================================================
+
+  /// Xác định chế độ báo thức tối ưu nhất trên Android (ưu tiên exactAlarm nếu được cấp phép)
+  Future<AndroidScheduleMode> _resolveAndroidScheduleMode() async {
+    try {
+      final androidPlatform = _localNotifications
+          ?.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlatform != null) {
+        final canExact = await androidPlatform.canScheduleExactNotifications();
+        if (canExact == true) {
+          return AndroidScheduleMode.exactAllowWhileIdle;
+        }
+      }
+    } catch (_) {}
+    return AndroidScheduleMode.inexactAllowWhileIdle;
+  }
 
   /// Tính thời điểm hẹn giờ gần nhất cho một thứ cụ thể trong tuần (T2 - T7)
   tz.TZDateTime _nextInstanceOfDayAndTime(int weekday, int hour, int minute) {
@@ -642,17 +660,35 @@ class AppNotificationService {
     return scheduledDate;
   }
 
+  /// Thiết lập trọn bộ lịch nhắc chấm công Vào ca (07:50) & Ra ca (17:00) từ T2 đến T7
+  /// Đảm bảo dù tắt hẳn ứng dụng, hệ thống iOS và Android vẫn tự động phát thông báo định kỳ hàng tuần.
+  Future<void> setupDefaultWeeklySchedules({
+    bool? hasCheckedInToday,
+    bool? hasCheckedOutToday,
+  }) async {
+    if (!_isInitialized || _localNotifications == null) {
+      await init();
+    }
+    await scheduleDailyCheckinReminder(hour: 7, minute: 50, skipTodayIfCheckedIn: hasCheckedInToday);
+    await scheduleDailyCheckoutReminder(hour: 17, minute: 0, skipTodayIfCheckedOut: hasCheckedOutToday);
+  }
+
   /// Lên lịch nhắc chấm công Ra ca với Hệ điều hành lúc [hour]:[minute] (mặc định 17:00)
   /// Áp dụng từ Thứ 2 đến Thứ 7, hoàn toàn KHÔNG đặt lịch vào Chủ nhật.
   /// Dù người dùng có TẮT HẲN APP (killed/closed), hệ thống Android/iOS vẫn tự động phát thông báo.
-  Future<void> scheduleDailyCheckoutReminder({int hour = 17, int minute = 0}) async {
+  Future<void> scheduleDailyCheckoutReminder({
+    int hour = 17,
+    int minute = 0,
+    bool? skipTodayIfCheckedOut,
+  }) async {
     if (_localNotifications == null) return;
     try {
+      final scheduleMode = await _resolveAndroidScheduleMode();
       const androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
-        importance: Importance.high,
+        importance: Importance.max,
         priority: Priority.high,
         showWhen: true,
         icon: '@mipmap/ic_launcher',
@@ -661,22 +697,33 @@ class AppNotificationService {
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
       );
       const details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
 
+      final now = DateTime.now();
+      final todayCheckedOut = skipTodayIfCheckedOut ?? await checkHasCheckedOutToday();
+
       // Lên lịch riêng cho 6 ngày làm việc từ Thứ 2 đến Thứ 7 (bỏ qua Chủ nhật)
       for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
-        final scheduledDate = _nextInstanceOfDayAndTime(day, hour, minute);
+        var scheduledDate = _nextInstanceOfDayAndTime(day, hour, minute);
+
+        // Nếu hôm nay là ngày này và đã chấm công ra ca rồi,
+        // dời lịch sang tuần sau để không phát lại hôm nay nhưng KHÔNG hủy tuần tới
+        if (day == now.weekday && todayCheckedOut) {
+          scheduledDate = scheduledDate.add(const Duration(days: 7));
+        }
+
         await _localNotifications?.zonedSchedule(
           id: 1070 + day, // 1071 (T2) .. 1076 (T7)
           title: 'Nhắc chấm công ra ca',
           body: 'Đã đến giờ tan ca ($hour:${minute.toString().padLeft(2, '0')}). Đừng quên chấm công Ra ca để ghi nhận đầy đủ công hôm nay nhé!',
           scheduledDate: scheduledDate,
           notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
           payload: '/attendance',
         );
@@ -688,19 +735,44 @@ class AppNotificationService {
   }
 
   /// Hủy lịch nhắc chấm công Ra ca (khi nhân viên đã chấm công ra ca)
-  /// [todayOnly]: nếu true chỉ hủy lịch của ngày hôm nay, giữ nguyên lịch các ngày khác trong tuần
+  /// [todayOnly]: nếu true chỉ dời lịch của ngày hôm nay sang tuần sau (giữ nguyên các ngày khác)
   Future<void> cancelCheckoutReminder({bool todayOnly = true}) async {
     try {
       final now = DateTime.now();
+      await _localNotifications?.cancel(id: 107);
       if (todayOnly && now.weekday != DateTime.sunday) {
-        await _localNotifications?.cancel(id: 1070 + now.weekday);
-        await _localNotifications?.cancel(id: 107);
-        debugPrint('[NotificationService] Đã hủy lịch nhắc Ra ca hôm nay (Thứ ${now.weekday + 1})');
+        final scheduleMode = await _resolveAndroidScheduleMode();
+        final nextWeekDate = _nextInstanceOfDayAndTime(now.weekday, 17, 0).add(const Duration(days: 7));
+        const androidDetails = AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDesc,
+          importance: Importance.max,
+          priority: Priority.high,
+          showWhen: true,
+          icon: '@mipmap/ic_launcher',
+        );
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        );
+        await _localNotifications?.zonedSchedule(
+          id: 1070 + now.weekday,
+          title: 'Nhắc chấm công ra ca',
+          body: 'Đã đến giờ tan ca (17:00). Đừng quên chấm công Ra ca để ghi nhận đầy đủ công hôm nay nhé!',
+          scheduledDate: nextWeekDate,
+          notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
+          androidScheduleMode: scheduleMode,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+          payload: '/attendance',
+        );
+        debugPrint('[NotificationService] Đã dời lịch nhắc Ra ca hôm nay (Thứ ${now.weekday + 1}) sang tuần sau');
       } else {
         for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
           await _localNotifications?.cancel(id: 1070 + day);
         }
-        await _localNotifications?.cancel(id: 107);
         debugPrint('[NotificationService] Đã hủy toàn bộ lịch nhắc Ra ca T2-T7');
       }
     } catch (e) {
@@ -710,14 +782,19 @@ class AppNotificationService {
 
   /// Lên lịch nhắc chấm công Vào ca với Hệ điều hành lúc [hour]:[minute] sáng (mặc định 07:50)
   /// Áp dụng từ Thứ 2 đến Thứ 7, hoàn toàn KHÔNG đặt lịch vào Chủ nhật.
-  Future<void> scheduleDailyCheckinReminder({int hour = 7, int minute = 50}) async {
+  Future<void> scheduleDailyCheckinReminder({
+    int hour = 7,
+    int minute = 50,
+    bool? skipTodayIfCheckedIn,
+  }) async {
     if (_localNotifications == null) return;
     try {
+      final scheduleMode = await _resolveAndroidScheduleMode();
       const androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
-        importance: Importance.high,
+        importance: Importance.max,
         priority: Priority.high,
         showWhen: true,
         icon: '@mipmap/ic_launcher',
@@ -726,22 +803,33 @@ class AppNotificationService {
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
       );
       const details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
 
+      final now = DateTime.now();
+      final todayCheckedIn = skipTodayIfCheckedIn ?? await checkHasCheckedInToday();
+
       // Lên lịch riêng cho 6 ngày làm việc từ Thứ 2 đến Thứ 7 (bỏ qua Chủ nhật)
       for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
-        final scheduledDate = _nextInstanceOfDayAndTime(day, hour, minute);
+        var scheduledDate = _nextInstanceOfDayAndTime(day, hour, minute);
+
+        // Nếu hôm nay là ngày này và đã chấm công vào ca rồi,
+        // dời lịch sang tuần sau để không phát thông báo hôm nay nhưng KHÔNG hủy tuần tới
+        if (day == now.weekday && todayCheckedIn) {
+          scheduledDate = scheduledDate.add(const Duration(days: 7));
+        }
+
         await _localNotifications?.zonedSchedule(
           id: 1010 + day, // 1011 (T2) .. 1016 (T7)
           title: 'Nhắc chấm công vào ca',
           body: 'Sắp đến giờ vào ca (08:00). Đừng quên chấm công Vào ca để ghi nhận công hôm nay!',
           scheduledDate: scheduledDate,
           notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
           payload: '/attendance',
         );
@@ -756,15 +844,40 @@ class AppNotificationService {
   Future<void> cancelCheckinReminder({bool todayOnly = true}) async {
     try {
       final now = DateTime.now();
+      await _localNotifications?.cancel(id: 101);
       if (todayOnly && now.weekday != DateTime.sunday) {
-        await _localNotifications?.cancel(id: 1010 + now.weekday);
-        await _localNotifications?.cancel(id: 101);
-        debugPrint('[NotificationService] Đã hủy lịch nhắc Vào ca hôm nay (Thứ ${now.weekday + 1})');
+        final scheduleMode = await _resolveAndroidScheduleMode();
+        final nextWeekDate = _nextInstanceOfDayAndTime(now.weekday, 7, 50).add(const Duration(days: 7));
+        const androidDetails = AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDesc,
+          importance: Importance.max,
+          priority: Priority.high,
+          showWhen: true,
+          icon: '@mipmap/ic_launcher',
+        );
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        );
+        await _localNotifications?.zonedSchedule(
+          id: 1010 + now.weekday,
+          title: 'Nhắc chấm công vào ca',
+          body: 'Sắp đến giờ vào ca (08:00). Đừng quên chấm công Vào ca để ghi nhận công hôm nay!',
+          scheduledDate: nextWeekDate,
+          notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
+          androidScheduleMode: scheduleMode,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+          payload: '/attendance',
+        );
+        debugPrint('[NotificationService] Đã dời lịch nhắc Vào ca hôm nay (Thứ ${now.weekday + 1}) sang tuần sau');
       } else {
         for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
           await _localNotifications?.cancel(id: 1010 + day);
         }
-        await _localNotifications?.cancel(id: 101);
         debugPrint('[NotificationService] Đã hủy toàn bộ lịch nhắc Vào ca T2-T7');
       }
     } catch (_) {}

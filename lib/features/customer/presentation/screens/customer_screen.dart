@@ -132,13 +132,13 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
           const SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.cloud_done_rounded, color: Colors.white),
-                const SizedBox(width: 8),
-                const Text('Tất cả dữ liệu đã được cập nhật thành công!'),
+                Icon(Icons.cloud_done_rounded, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Tất cả dữ liệu đã được cập nhật thành công!'),
               ],
             ),
-            backgroundColor: const Color(0xFF10B981),
-            duration: const Duration(seconds: 2),
+            backgroundColor: Color(0xFF10B981),
+            duration: Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
         );

@@ -22,7 +22,10 @@ import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/database/database_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../../../../core/localization/app_strings.dart';
 import '../../../../core/services/app_notification_service.dart';
+import '../../../../core/widgets/notification_permission_dialog.dart';
 import '../../../attendance/presentation/viewmodels/attendance_view_model.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../widgets/attendance_summary_card.dart';
@@ -38,16 +41,40 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   bool _isSyncing = false;
   static DateTime? _lastAutoSyncTime;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndAutoSync();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkNotificationPermissionOnResume();
+    }
+  }
+
+  Future<void> _checkNotificationPermissionOnResume() async {
+    try {
+      final isGranted = await Permission.notification.isGranted;
+      if (isGranted) {
+        final notifService = ref.read(appNotificationServiceProvider);
+        await notifService.setupDefaultWeeklySchedules();
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkAndAutoSync() async {
@@ -58,6 +85,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 🔴 KIỂM TRA GIAN LẬN & TOÀN VẸN THIẾT BỊ KHI NHÂN VIÊN VÀO APP
     if (mounted) {
       ref.read(antiFraudServiceProvider).checkAndWarnOnAppEntry(context);
+    }
+
+    // 🔔 KIỂM TRA QUYỀN THÔNG BÁO (NẾU CHƯA CẤP THÌ HIỆN YÊU CẦU CẤP QUYỀN)
+    if (mounted) {
+      final language = ref.read(languageProvider);
+      final strings = AppStrings(language);
+      NotificationPermissionDialog.checkAndRequestPermission(
+        context,
+        strings: strings,
+      );
     }
 
     // Tự động đồng bộ các dữ liệu về form, khách hàng, tuyến,... ngay khi vào máy
@@ -393,10 +430,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                                   if (!alreadyExists) {
                                     String directionLabel = p.directionLabel ?? '';
-                                    // Quy trình thực tế chỉ có chấm công Vào và Ra (không có khái niệm Giữa ca)
-                                    if (directionLabel == 'Giữa ca' || p.direction == 'mid') {
-                                      directionLabel = 'Ra';
-                                    } else if (directionLabel.isEmpty) {
+                                    if (directionLabel.isEmpty) {
                                       directionLabel = (p.direction == 'in' || p.directionLabel == 'Vào') ? 'Vào' : 'Ra';
                                     }
                                     final isOut = directionLabel == 'Ra' || p.direction == 'out';

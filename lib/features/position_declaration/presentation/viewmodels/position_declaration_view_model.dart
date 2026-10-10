@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_initializing_formals
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
