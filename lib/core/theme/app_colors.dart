@@ -44,6 +44,11 @@ class AppColors {
   static const Color success = Color(0xFF10B981);
   static const Color onSuccess = Color(0xFFFFFFFF);
 
+  // Warning palette
+  static const Color warning = Color(0xFFD97706);
+  static const Color onWarning = Color(0xFFFFFFFF);
+  static const Color warningContainer = Color(0xFFFEF3C7);
+
   // Neutral / Surface palette (Light Mode)
   static const Color surface = Color(0xFFF7FAF6);
   static const Color surfaceDim = Color(0xFFD5DCCF);

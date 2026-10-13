@@ -2040,6 +2040,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     double? accuracyM,
     int? allowedRadiusMeters,
     bool? requireGeofence,
+    bool forceCheckout = false,
   }) async {
     if (state.visitId == 0) {
       return (false, 'Chưa có lượt viếng thăm hợp lệ');
@@ -2084,16 +2085,22 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         dealerLng,
       );
       if (distanceM > allowedRadius) {
-        final distText = distanceM < 1000
-            ? '${distanceM.round()}m'
-            : '${(distanceM / 1000).toStringAsFixed(1)}km';
-        final maxRadiusText = allowedRadius < 1000
-            ? '${allowedRadius}m'
-            : '${(allowedRadius / 1000).toStringAsFixed(1)}km';
-        return (
-          false,
-          'Khoảng cách hiện tại ($distText) vượt quá phạm vi cho phép (tối đa $maxRadiusText). Vui lòng di chuyển đến gần điểm bán để thực hiện check-out.',
-        );
+        if (!forceCheckout) {
+          final distText = distanceM < 1000
+              ? '${distanceM.round()}m'
+              : '${(distanceM / 1000).toStringAsFixed(1)}km';
+          final maxRadiusText = allowedRadius < 1000
+              ? '${allowedRadius}m'
+              : '${(allowedRadius / 1000).toStringAsFixed(1)}km';
+          return (
+            false,
+            'Khoảng cách hiện tại ($distText) vượt quá phạm vi cho phép (tối đa $maxRadiusText). Vui lòng di chuyển đến gần điểm bán để thực hiện check-out.',
+          );
+        } else {
+          debugPrint(
+            '[CheckInViewModel] Checkout ngoài bán kính ($distanceM m > $allowedRadius m) - người dùng đã xác nhận gắn cờ vi phạm theo API 13/10/2026',
+          );
+        }
       }
     }
 

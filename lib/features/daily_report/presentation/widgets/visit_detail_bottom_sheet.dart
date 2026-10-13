@@ -134,6 +134,21 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                         ? '0 km (thiếu mốc để đo)'
                         : '${(visit.travelM! / 1000.0).toStringAsFixed(1)} km',
               ),
+              _detailRow(
+                'Khoảng cách Check-in',
+                visit.distanceToCustomerM == null
+                    ? '— (chưa tính)'
+                    : '${visit.checkinDistanceFormatted}${visit.isWithinGeofence != null ? (visit.isWithinGeofence == true ? ' (Hợp lệ)' : ' (Ngoài vùng)') : ''}',
+                valueColor: visit.isWithinGeofence == false ? const Color(0xFFDC2626) : null,
+              ),
+              if (visit.checkoutAt != null)
+                _detailRow(
+                  'Khoảng cách Check-out',
+                  visit.checkoutDistanceM == null
+                      ? '— (chưa tính)'
+                      : '${visit.checkoutDistanceFormatted}${visit.isCheckoutWithinGeofence != null ? (visit.isCheckoutWithinGeofence == true ? ' (Trong vùng)' : ' (Ngoài vùng - Đã gắn cờ)') : ''}',
+                  valueColor: visit.isCheckoutWithinGeofence == false ? const Color(0xFFDC2626) : null,
+                ),
 
               // Hiển thị ảnh nếu có photoUrls
               if (visit.photoUrls.isNotEmpty) ...[
@@ -183,14 +198,14 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
   );
 }
 
-Widget _detailRow(String label, String value) {
+Widget _detailRow(String label, String value, {Color? valueColor}) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 130,
+          width: 140,
           child: Text(
             label,
             style: const TextStyle(
@@ -203,9 +218,10 @@ Widget _detailRow(String label, String value) {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
+              color: valueColor,
             ),
           ),
         ),

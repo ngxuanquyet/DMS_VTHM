@@ -223,6 +223,46 @@ void main() {
       expect(visit.checkoutLng, 106.7009456);
     });
 
+    test('VisitEntity parses checkout distance and geofence flags from API 13/10/2026', () {
+      final json = {
+        "id": 132325,
+        "customer_id": 3315,
+        "distance_to_customer_m": "12.00",
+        "is_within_geofence": true,
+        "checkout_distance_m": "1223.14",
+        "is_checkout_within_geofence": false,
+        "checkout_lat": "10.9628144",
+        "checkout_lng": "106.8112606",
+        "checkout_at": "2026-10-13 08:49:32.023047+07",
+        "duration_seconds": 2412
+      };
+
+      final visit = VisitEntity.fromJson(json);
+
+      expect(visit.id, 132325);
+      expect(visit.distanceToCustomerM, 12.00);
+      expect(visit.isWithinGeofence, isTrue);
+      expect(visit.checkoutDistanceM, 1223.14);
+      expect(visit.isCheckoutWithinGeofence, isFalse);
+      expect(visit.checkoutDistanceFormatted, "1.2 km");
+      expect(visit.checkinDistanceFormatted, "12 m");
+
+      // Trường hợp null (chưa tính được) - không được hiểu là false (§1.2)
+      final jsonNull = {
+        "id": 132326,
+        "customer_id": 3315,
+        "distance_to_customer_m": null,
+        "is_within_geofence": null,
+        "checkout_distance_m": null,
+        "is_checkout_within_geofence": null,
+      };
+      final visitNull = VisitEntity.fromJson(jsonNull);
+      expect(visitNull.checkoutDistanceM, isNull);
+      expect(visitNull.isCheckoutWithinGeofence, isNull);
+      expect(visitNull.checkoutDistanceFormatted, "—");
+      expect(visitNull.checkinDistanceFormatted, "—");
+    });
+
     test('VisitPhotoEntity parses public URL, token, and duplicate flag from §4.1', () {
       final json = {
         "id": 191,
@@ -626,6 +666,38 @@ void main() {
       expect(success, isFalse);
       expect(errorMsg, contains('vượt quá phạm vi cho phép (tối đa 100m)'));
       expect(vm.state.status, isNot(CheckInStatus.checkedOut));
+    });
+
+    test('CheckInViewModel.checkout succeeds when forceCheckout is true even if distance > 100m (§1 & §3 SPEC-2026-10-13)', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      const dealer = DealerEntity(
+        id: '101',
+        order: '01',
+        name: 'Đại lý Bến Thành',
+        address: 'Quận 1',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        lat: 10.7725,
+        lng: 106.6980,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+
+      // Vị trí người dùng ở xa (~3km, Landmark 81: 10.7950, 106.7218), nhưng user xác nhận chấp nhận gửi (forceCheckout: true)
+      final (success, errorMsg) = await vm.checkout(
+        lat: 10.7950,
+        lng: 106.7218,
+        forceCheckout: true,
+      );
+
+      expect(success, isTrue);
+      expect(errorMsg, isNull);
+      expect(vm.state.status, CheckInStatus.checkedOut);
     });
 
     test('CheckInViewModel.checkout succeeds if distance to dealer <= 100m', () async {

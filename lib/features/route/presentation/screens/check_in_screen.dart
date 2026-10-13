@@ -2240,42 +2240,68 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     rules: mobileRules,
                                   );
 
-                                  if (dealerLat != null && dealerLng != null && mobileRules.visit.requireGeofence) {
-                                    if (pos == null) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Vui lòng bật định vị GPS để xác thực khoảng cách khi check-out'),
-                                            backgroundColor: AppColors.error,
-                                          ),
-                                        );
-                                      }
-                                      return;
-                                    }
-
-                                    final distanceM = Geolocator.distanceBetween(
+                                  double? checkoutDistanceM;
+                                  if (pos != null && dealerLat != null && dealerLng != null) {
+                                    checkoutDistanceM = Geolocator.distanceBetween(
                                       pos.latitude,
                                       pos.longitude,
                                       dealerLat,
                                       dealerLng,
                                     );
-
-                                    if (distanceM > allowedRadius) {
-                                      if (context.mounted) {
-                                        showCheckinDistanceWarningDialog(
-                                          context,
-                                          dealerName: dealerName,
-                                          distanceMeters: distanceM,
-                                          allowedRadiusMeters: allowedRadius,
-                                          lat: dealerLat,
-                                          lng: dealerLng,
-                                          address: dealerAddress,
-                                          isCheckout: true,
-                                        );
-                                      }
-                                      return;
+                                  } else if (pos == null && dealerLat != null && dealerLng != null && mobileRules.visit.requireGeofence) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Không thể lấy tọa độ GPS lúc check-out. Tọa độ sẽ được ghi nhận là chưa tính được.'),
+                                          backgroundColor: AppColors.warning,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
                                     }
                                   }
+
+                                  final isOutOfGeofence = checkoutDistanceM != null &&
+                                      mobileRules.visit.requireGeofence &&
+                                      checkoutDistanceM > allowedRadius;
+
+                                  bool userConfirmedCheckout = false;
+
+                                  // Kiểm tra luật khoảng cách trước khi check-out (§1 & §3 SPEC-2026-10-13)
+                                  if (isOutOfGeofence) {
+                                    if (!context.mounted) return;
+                                    // Thông báo khoảng cách vượt bán kính và có thể bị gắn cờ vi phạm (ngoài vùng)
+                                    final acceptProceed = await showCheckoutDistanceWarningDialog(
+                                      context,
+                                      dealerName: dealerName,
+                                      distanceMeters: checkoutDistanceM,
+                                      allowedRadiusMeters: allowedRadius,
+                                      lat: dealerLat,
+                                      lng: dealerLng,
+                                      address: dealerAddress,
+                                    );
+
+                                    // Nếu user không chấp nhận -> dừng lại, không check-out
+                                    if (!acceptProceed || !context.mounted) return;
+                                    userConfirmedCheckout = true;
+                                  } else {
+                                    // Trường hợp vị trí hợp lệ hoặc không có GPS/tọa độ điểm bán: Hiện xác nhận check-out thông thường
+                                    if (!context.mounted) return;
+                                    final isConfirmed = await CheckoutConfirmationDialog.show(
+                                      context: context,
+                                      dealerName: dealerName,
+                                      durationText: state.liveVisitDuration,
+                                      photoCount: state.photos.length,
+                                      surveyCompletedCount: completedSurveys,
+                                      surveyTotalCount: surveyCount,
+                                      isClosed: isClosed,
+                                      distanceMeters: checkoutDistanceM,
+                                    );
+
+                                    if (!isConfirmed || !context.mounted) return;
+                                    userConfirmedCheckout = true;
+                                  }
+
+                                  if (!userConfirmedCheckout || !context.mounted) return;
 
                                   // 🔴 KIỂM TRA CHỐNG GIAN LẬN TRƯỚC KHI CHECK-OUT VIẾNG THĂM
                                   if (context.mounted) {
@@ -2288,30 +2314,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     if (!fraudCheck.isAllowed) return;
                                   }
 
-                                  // 🟢 XÁC NHẬN CHECK-OUT KHI ĐỦ MỌI ĐIỀU KIỆN
                                   if (!context.mounted) return;
-                                  double? checkoutDistanceM;
-                                  if (pos != null && dealerLat != null && dealerLng != null) {
-                                    checkoutDistanceM = Geolocator.distanceBetween(
-                                      pos.latitude,
-                                      pos.longitude,
-                                      dealerLat,
-                                      dealerLng,
-                                    );
-                                  }
-
-                                  final isConfirmed = await CheckoutConfirmationDialog.show(
-                                    context: context,
-                                    dealerName: dealerName,
-                                    durationText: state.liveVisitDuration,
-                                    photoCount: state.photos.length,
-                                    surveyCompletedCount: completedSurveys,
-                                    surveyTotalCount: surveyCount,
-                                    isClosed: isClosed,
-                                    distanceMeters: checkoutDistanceM,
-                                  );
-
-                                  if (!isConfirmed || !context.mounted) return;
 
                                   final (success, errorMsg) = await vm.checkout(
                                     lat: pos?.latitude,
@@ -2319,6 +2322,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     accuracyM: pos?.accuracy,
                                     allowedRadiusMeters: allowedRadius,
                                     requireGeofence: mobileRules.visit.requireGeofence,
+                                    forceCheckout: true,
                                   );
 
                                   if (success && context.mounted) {

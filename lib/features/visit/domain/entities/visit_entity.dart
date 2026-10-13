@@ -32,6 +32,19 @@ class VisitEntity {
   /// 0 = thiếu mốc · null = chưa tính · số = đã tính (§4.4 SPEC-2026-10-08)
   final num? travelM;
 
+  /// Khoảng cách tới điểm bán lúc Check-in (mét)
+  final double? distanceToCustomerM;
+
+  /// Cờ nằm trong bán kính lúc Check-in: true = trong vùng · false = ngoài vùng · null = chưa tính được
+  final bool? isWithinGeofence;
+
+  /// Khoảng cách tới điểm bán lúc Check-out (mét) (§1 SPEC-2026-10-13). null = chưa tính được
+  final double? checkoutDistanceM;
+
+  /// Cờ nằm trong bán kính lúc Check-out (§1 SPEC-2026-10-13).
+  /// true = trong vùng · false = ngoài vùng (gắn cờ) · null = chưa tính được
+  final bool? isCheckoutWithinGeofence;
+
   const VisitEntity({
     required this.id,
     this.visitDate,
@@ -59,6 +72,10 @@ class VisitEntity {
     this.checkoutLng,
     this.clientUuid,
     this.travelM,
+    this.distanceToCustomerM,
+    this.isWithinGeofence,
+    this.checkoutDistanceM,
+    this.isCheckoutWithinGeofence,
   });
 
   /// Chuỗi hiển thị km tuân thủ 3 trạng thái (§3 SPEC-2026-10-08):
@@ -70,6 +87,23 @@ class VisitEntity {
     if (travelM == 0) return '0 km';
     final km = travelM! / 1000.0;
     return '${km.toStringAsFixed(1)} km';
+  }
+
+  /// Hiển thị khoảng cách lúc check-out tuân thủ 3 trạng thái (§3 SPEC-2026-10-13):
+  /// - null: "—" (không hiện 0)
+  /// - < 1000m: "X m"
+  /// - >= 1000m: "X.X km"
+  String get checkoutDistanceFormatted {
+    if (checkoutDistanceM == null) return '—';
+    if (checkoutDistanceM! < 1000) return '${checkoutDistanceM!.round()} m';
+    return '${(checkoutDistanceM! / 1000.0).toStringAsFixed(1)} km';
+  }
+
+  /// Hiển thị khoảng cách lúc check-in:
+  String get checkinDistanceFormatted {
+    if (distanceToCustomerM == null) return '—';
+    if (distanceToCustomerM! < 1000) return '${distanceToCustomerM!.round()} m';
+    return '${(distanceToCustomerM! / 1000.0).toStringAsFixed(1)} km';
   }
 
   /// Trạng thái quãng đường: null = pending/chưa tính, 0 = thiếu mốc, > 0 = đã tính
@@ -97,6 +131,21 @@ class VisitEntity {
       } catch (_) {
         return null;
       }
+    }
+
+    double? parseNullableDouble(dynamic val) {
+      if (val == null) return null;
+      if (val is num) return val.toDouble();
+      final str = val.toString().trim();
+      if (str.isEmpty || str == 'null') return null;
+      return double.tryParse(str);
+    }
+
+    bool? parseNullableBool(dynamic val) {
+      if (val == null) return null;
+      if (val == true || val == 1 || val == '1' || val == 'true') return true;
+      if (val == false || val == 0 || val == '0' || val == 'false') return false;
+      return null;
     }
 
     final rawCheckin = json['checkin_at']?.toString();
@@ -169,6 +218,10 @@ class VisitEntity {
       travelM: json['travel_m'] is num
           ? (json['travel_m'] as num)
           : (json['travel_m'] != null ? num.tryParse(json['travel_m'].toString()) : null),
+      distanceToCustomerM: parseNullableDouble(json['distance_to_customer_m']),
+      isWithinGeofence: parseNullableBool(json['is_within_geofence']),
+      checkoutDistanceM: parseNullableDouble(json['checkout_distance_m']),
+      isCheckoutWithinGeofence: parseNullableBool(json['is_checkout_within_geofence']),
     );
   }
 
@@ -196,6 +249,10 @@ class VisitEntity {
         'checkout_lng': checkoutLng,
         'client_uuid': clientUuid,
         'travel_m': travelM,
+        'distance_to_customer_m': distanceToCustomerM,
+        'is_within_geofence': isWithinGeofence,
+        'checkout_distance_m': checkoutDistanceM,
+        'is_checkout_within_geofence': isCheckoutWithinGeofence,
       };
 
   VisitEntity copyWith({
@@ -225,6 +282,10 @@ class VisitEntity {
     double? checkoutLng,
     String? clientUuid,
     num? travelM,
+    double? distanceToCustomerM,
+    bool? isWithinGeofence,
+    double? checkoutDistanceM,
+    bool? isCheckoutWithinGeofence,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -253,6 +314,10 @@ class VisitEntity {
       checkoutLng: checkoutLng ?? this.checkoutLng,
       clientUuid: clientUuid ?? this.clientUuid,
       travelM: travelM ?? this.travelM,
+      distanceToCustomerM: distanceToCustomerM ?? this.distanceToCustomerM,
+      isWithinGeofence: isWithinGeofence ?? this.isWithinGeofence,
+      checkoutDistanceM: checkoutDistanceM ?? this.checkoutDistanceM,
+      isCheckoutWithinGeofence: isCheckoutWithinGeofence ?? this.isCheckoutWithinGeofence,
     );
   }
 }

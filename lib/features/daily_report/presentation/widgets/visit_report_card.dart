@@ -299,6 +299,41 @@ class VisitReportCard extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (visit.isCheckoutWithinGeofence == false) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2).withValues(alpha: isDark ? 0.2 : 0.9),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: const Color(0xFFFCA5A5).withValues(alpha: isDark ? 0.3 : 1),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.warning_amber_rounded,
+                                    size: 11,
+                                    color: Color(0xFFDC2626),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    visit.checkoutDistanceFormatted != '—'
+                                        ? 'Ngoài vùng (${visit.checkoutDistanceFormatted})'
+                                        : 'Ngoài vùng',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFFDC2626),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
