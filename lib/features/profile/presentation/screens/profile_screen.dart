@@ -11,9 +11,6 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/top_app_bar.dart';
-import '../../../../core/services/app_notification_service.dart';
-import '../../../../core/widgets/notification_permission_dialog.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
 
@@ -24,181 +21,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindingObserver {
-  bool _notifGranted = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _checkNotificationStatus();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkNotificationStatus();
-    }
-  }
-
-  Future<void> _checkNotificationStatus() async {
-    try {
-      final isGranted = await Permission.notification.isGranted;
-      if (mounted) {
-        setState(() => _notifGranted = isGranted);
-      }
-    } catch (_) {}
-  }
-
-  void _showNotificationStatusDialog() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedLg),
-        title: Row(
-          children: [
-            const Icon(Icons.notifications_active_rounded, color: AppColors.primary, size: 24),
-            const SizedBox(width: 10),
-            Text('Thông báo hệ thống', style: AppTypography.titleMedium().copyWith(fontWeight: FontWeight.w700)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Quyền thông báo đã được kích hoạt. Các lịch nhắc nhở sau đang hoạt động tự động ngay cả khi tắt app:',
-              style: AppTypography.bodyMedium().copyWith(height: 1.45),
-            ),
-            const SizedBox(height: 12),
-            _buildDialogScheduleItem(Icons.alarm_rounded, 'Nhắc Vào ca: 07:50 (Thứ 2 - Thứ 7)'),
-            const SizedBox(height: 6),
-            _buildDialogScheduleItem(Icons.alarm_off_rounded, 'Nhắc Ra ca: 17:00 (Thứ 2 - Thứ 7)'),
-            const SizedBox(height: 6),
-            _buildDialogScheduleItem(Icons.alt_route_rounded, 'Cảnh báo lộ trình & đồng bộ dữ liệu'),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primaryContainer.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Bạn có thể hẹn giờ 10 giây rồi thoát hẳn app để kiểm tra chuông khi tắt app.',
-                      style: AppTypography.bodySmall(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                          .copyWith(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          OutlinedButton.icon(
-            icon: const Icon(Icons.timer_outlined, size: 16),
-            label: const Text('Thử khi TẮT APP (10s)'),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _startBackgroundTestFlow(seconds: 10);
-            },
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await AppNotificationService().sendTestNotification();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Đã phát thông báo tức thì! Kiểm tra khay thông báo.'),
-                    backgroundColor: AppColors.primary,
-                  ),
-                );
-              }
-            },
-            child: const Text('Thử tức thì'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _startBackgroundTestFlow({int seconds = 10}) async {
-    await AppNotificationService().scheduleTestNotificationAfterSeconds(seconds: seconds);
-    if (!mounted) return;
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedLg),
-        title: const Row(
-          children: [
-            Icon(Icons.hourglass_top_rounded, color: AppColors.primary, size: 24),
-            SizedBox(width: 10),
-            Text('Đã hẹn giờ thử khi tắt app!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Hệ thống đã lên lịch thông báo sau $seconds giây nữa.',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '👉 BÂY GIỜ HÃY:\n'
-              '1. Bấm nút Home hoặc vuốt TẮT HẲN APP (Kill app khỏi đa nhiệm).\n'
-              '2. Khóa màn hình điện thoại lại.\n'
-              '3. Đợi đúng 10 giây để xem chuông và thông báo tự động xuất hiện trên màn hình khóa!',
-              style: TextStyle(height: 1.5, fontSize: 13.5),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('ĐÃ HIỂU, TÔI TẮT APP NGAY'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDialogScheduleItem(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: AppColors.primary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-        ),
-      ],
-    );
-  }
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
 
   void _showInfoDialog(String title, String content) {
@@ -557,15 +380,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
                       },
                       isDark: isDark,
                     ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.shield_outlined,
-                      title: 'Ai đã xem vị trí của tôi',
-                      onTap: () {
-                        context.push('/location-access-log');
-                      },
-                      isDark: isDark,
-                    ),
                   ],
                 ),
               ),
@@ -637,54 +451,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
                           ),
                         ],
                       ),
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.notifications_none_rounded,
-                      title: 'Thông báo & Nhắc nhở',
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: _notifGranted
-                                  ? AppColors.primaryContainer.withValues(alpha: 0.25)
-                                  : AppColors.errorContainer.withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              _notifGranted ? 'Đã bật' : 'Chưa bật',
-                              style: AppTypography.labelSmall(
-                                color: _notifGranted ? AppColors.primary : AppColors.error,
-                              ).copyWith(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.chevron_right,
-                            size: 20,
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                          ),
-                        ],
-                      ),
-                      onTap: () async {
-                        final isGranted = await Permission.notification.isGranted;
-                        if (!isGranted) {
-                          if (context.mounted) {
-                            final res = await NotificationPermissionDialog.checkAndRequestPermission(
-                              context,
-                              ignoreCooldown: true,
-                            );
-                            if (mounted) setState(() => _notifGranted = res);
-                          }
-                        } else {
-                          if (context.mounted) {
-                            _showNotificationStatusDialog();
-                          }
-                        }
-                      },
-                      isDark: isDark,
                     ),
                     const Divider(height: 1),
                     _buildMenuItem(

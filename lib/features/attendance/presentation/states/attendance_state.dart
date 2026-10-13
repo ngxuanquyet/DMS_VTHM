@@ -25,7 +25,7 @@ class AttendanceState {
     this.selectedLocation,
     this.history = const [],
     this.latestPunch,
-    this.selectedDays = 7,
+    this.selectedDays = 30,
     this.isPunching = false,
     this.isUploadingPhoto = false,
     this.errorMessage,

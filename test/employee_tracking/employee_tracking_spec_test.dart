@@ -273,7 +273,7 @@ void main() {
 
       expect(find.text('Theo dõi vị trí nhân viên'), findsOneWidget);
       expect(find.text('180 giây (server điều khiển)'), findsOneWidget);
-      expect(find.text('AI ĐÃ XEM VỊ TRÍ CỦA TÔI'), findsOneWidget);
+      expect(find.text('AI ĐÃ XEM VỊ TRÍ CỦA TÔI'), findsNothing);
     });
 
     testWidgets('LocationAccessLogScreen displays access log cards without Law 91/2025 banner', (tester) async {

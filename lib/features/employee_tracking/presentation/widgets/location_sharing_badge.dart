@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../services/employee_tracking_service.dart';
@@ -263,34 +261,17 @@ class _LocationSharingBadgeState extends ConsumerState<LocationSharingBadge>
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    if (!trackingState.isPermissionGranted)
-                      Expanded(
-                        child: AppButton(
-                          text: 'CẤP QUYỀN VỊ TRÍ',
-                          variant: AppButtonVariant.primary,
-                          onPressed: () async {
-                            Navigator.pop(ctx);
-                            await trackingNotifier.requestPermission();
-                          },
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: AppButton(
-                          text: 'AI ĐÃ XEM VỊ TRÍ CỦA TÔI',
-                          variant: AppButtonVariant.primary,
-                          icon: Icons.visibility_outlined,
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            context.push('/location-access-log');
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+                if (!trackingState.isPermissionGranted) ...[
+                  const SizedBox(height: 18),
+                  AppButton(
+                    text: 'CẤP QUYỀN VỊ TRÍ',
+                    variant: AppButtonVariant.primary,
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await trackingNotifier.requestPermission();
+                    },
+                  ),
+                ],
               ],
             ),
           ),
