@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_dynamic_column.dart';
@@ -86,8 +87,30 @@ class FakeVisitRepository implements VisitRepository {
   }
   @override
   Future<VisitRequirementsEntity> getRequirements(int visitId, {String? visitResult}) => throw UnimplementedError();
+  Exception? throwOnUploadPhoto;
+  String? lastUploadedPhotoType;
+
   @override
-  Future<VisitPhotoEntity> uploadPhoto({required int visitId, required dynamic file, String photoType = 'other', DateTime? takenAt, double? lat, double? lng}) => throw UnimplementedError();
+  Future<VisitPhotoEntity> uploadPhoto({
+    required int visitId,
+    required dynamic file,
+    String photoType = 'other',
+    DateTime? takenAt,
+    double? lat,
+    double? lng,
+  }) async {
+    lastUploadedPhotoType = photoType;
+    if (throwOnUploadPhoto != null) throw throwOnUploadPhoto!;
+    return VisitPhotoEntity(
+      id: 1001,
+      token: 'tok',
+      url: '/photo',
+      photoType: photoType,
+      photoTypeLabel: photoType,
+      photoTypeColor: 'primary',
+      takenAt: DateTime.now().toIso8601String(),
+    );
+  }
   @override
   Future<VisitRequirementsEntity> deletePhoto({required int visitId, required int photoId}) => throw UnimplementedError();
   @override
@@ -968,6 +991,69 @@ void main() {
       expect(success, isTrue);
       expect(infoMsg, contains('đã check-out trước đó trên hệ thống'));
       expect(vm.state.visitId, 0);
+      expect(visitRepo.activeVisit, isNull);
+    });
+
+    test('CheckInViewModel.uploadPhoto maps "closed_store" to "store_front" and handles 422 cancelled error gracefully', () async {
+      final visitRepo = FakeVisitRepository([]);
+      final vm = createCheckInViewModel(visitRepo);
+
+      await vm.performCheckin(customerId: 101);
+      expect(vm.state.visitId, 999);
+      expect(visitRepo.activeVisit, isNotNull);
+
+      // Mô phỏng server từ chối vì lượt đã bị huỷ trên server (§4.1 HUY-LUOT-VIENG-THAM)
+      visitRepo.throwOnUploadPhoto = Exception(
+        'ServerException: Lượt viếng thăm này đã bị huỷ, không nhận thêm ảnh được. (code: 422)',
+      );
+
+      final (success, errorMsg) = await vm.uploadPhoto(
+        File('dummy.jpg'),
+        photoType: 'closed_store',
+      );
+
+      // Đã tự động map closed_store sang store_front theo chuẩn API §4.1
+      expect(visitRepo.lastUploadedPhotoType, 'store_front');
+      // Trả về cờ lỗi huỷ lượt đặc thù để UI hiển thị recovery dialog
+      expect(success, isFalse);
+      expect(errorMsg, startsWith('VISIT_CANCELLED:'));
+      // Đã tự động dọn dẹp active visit bị lỗi thời
+      expect(visitRepo.activeVisit, isNull);
+    });
+
+    test('RouteViewModel clears stale activeVisit when todayVisits has loaded and server visit is missing (cancelled on server)', () async {
+      final custRepo = FakeCustomerRepository([
+        const CustomerEntity(id: 101, code: 'C101', name: 'Đại lý A', address: '123 Đường 1', contactPerson: 'Người liên hệ', phone: '0901', route: 'Tuyến 1', type: 'Đại lý'),
+      ]);
+      final savedVisit = VisitEntity(
+        id: 888,
+        customerId: 101,
+        customerName: 'Đại lý A',
+        checkinAt: DateTime.now(),
+      );
+      // todayVisits từ server trả về một lượt khác (777), trong khi lượt 888 đã bị huỷ trên server nên biến mất (§4.1)
+      final serverTodayVisits = [
+        VisitEntity(
+          id: 777,
+          customerId: 102,
+          customerName: 'Đại lý B',
+          checkinAt: DateTime.now(),
+          checkoutAt: DateTime.now(),
+        ),
+      ];
+      final visitRepo = FakeVisitRepository(serverTodayVisits, activeVisit: savedVisit);
+
+      final vm = RouteViewModel(
+        customerRepository: custRepo,
+        getRouteDetailUseCase: GetRouteDetailUseCase(FakeRouteRepository()),
+        getTodayVisitsUseCase: GetTodayVisitsUseCase(visitRepo),
+        visitRepository: visitRepo,
+      );
+
+      await vm.loadRouteDetail();
+
+      // Active visit stale 888 đã được dọn dẹp hoàn toàn
+      expect(vm.state.activeVisit, isNull);
       expect(visitRepo.activeVisit, isNull);
     });
   });

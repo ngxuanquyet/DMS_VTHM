@@ -28,11 +28,30 @@ class DynamicLongTextFieldWidget extends StatefulWidget {
 
 class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isInternalFocusNode = false;
+  bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.value ?? '');
+    if (widget.focusNode != null) {
+      _focusNode = widget.focusNode!;
+    } else {
+      _focusNode = FocusNode();
+      _isInternalFocusNode = true;
+    }
+    _isFocused = _focusNode.hasFocus;
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted && _isFocused != _focusNode.hasFocus) {
+      setState(() {
+        _isFocused = _focusNode.hasFocus;
+      });
+    }
   }
 
   @override
@@ -41,10 +60,29 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
     if (widget.value != oldWidget.value && widget.value != _controller.text) {
       _controller.text = widget.value ?? '';
     }
+    if (widget.focusNode != oldWidget.focusNode) {
+      _focusNode.removeListener(_onFocusChange);
+      if (_isInternalFocusNode) {
+        _focusNode.dispose();
+      }
+      if (widget.focusNode != null) {
+        _focusNode = widget.focusNode!;
+        _isInternalFocusNode = false;
+      } else {
+        _focusNode = FocusNode();
+        _isInternalFocusNode = true;
+      }
+      _isFocused = _focusNode.hasFocus;
+      _focusNode.addListener(_onFocusChange);
+    }
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    if (_isInternalFocusNode) {
+      _focusNode.dispose();
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -65,14 +103,17 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
           border: Border.all(
             color: widget.errorText != null
                 ? AppColors.error
-                : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+                : (_isFocused
+                    ? AppColors.primary
+                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant)),
+            width: _isFocused ? 1.5 : 1.0,
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             TextField(
-              focusNode: widget.focusNode,
+              focusNode: _focusNode,
               controller: _controller,
               readOnly: widget.field.isReadOnly,
               minLines: 3,
@@ -90,6 +131,13 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
                 ),
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                filled: false,
+                fillColor: Colors.transparent,
                 contentPadding: const EdgeInsets.all(12),
               ),
             ),

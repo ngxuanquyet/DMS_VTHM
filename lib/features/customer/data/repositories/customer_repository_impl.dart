@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -220,11 +221,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
     required Map<String, dynamic> changes,
     String? clientUuid,
   }) async {
-    // Nếu là bản ghi tạo offline (id <= 0 hoặc có clientUuid không bắt đầu bằng server_)
-    final isLocalRecord = id <= 0 || (clientUuid != null && !clientUuid.startsWith('server_'));
-    if (isLocalRecord) {
+    // 1. Nếu là bản ghi tạo offline chưa có trên server (id <= 0)
+    final isLocalPendingRecord = id <= 0;
+    if (isLocalPendingRecord) {
       String? targetUuid = clientUuid;
-      if (targetUuid == null && id <= 0) {
+      if (targetUuid == null) {
         final found = _cachedCustomers.where((c) => c.id == id && c.clientUuid != null).firstOrNull;
         targetUuid = found?.clientUuid;
       }
@@ -244,56 +245,156 @@ class CustomerRepositoryImpl implements CustomerRepository {
       }
     }
 
-    await _apiService.updateCustomer(id, changes);
+    // 2. Khách hàng đã có trên server (id > 0)
+    // Cả khách hàng do user tự tạo hay được phân công, khi đã có id > 0 thì phải gọi API cập nhật lên server
+    if (_isOnline) {
+      try {
+        await _apiService.updateCustomer(id, changes);
+      } catch (e) {
+        // Lỗi nghiệp vụ hoặc validate từ server (4xx, trừ 408/429) -> rethrow cho UI hiển thị
+        if (e is AppException &&
+            e.statusCode != null &&
+            e.statusCode! >= 400 &&
+            e.statusCode! < 500 &&
+            e.statusCode != 408 &&
+            e.statusCode != 429) {
+          rethrow;
+        }
+        // Nếu lỗi mất mạng giữa chừng, đưa vào hàng đợi offline
+        if (!_isNetworkError(e)) {
+          rethrow;
+        }
+        return await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+      }
+    } else {
+      // Khi ngoại tuyến không có mạng, đưa vào hàng đợi offline
+      return await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+    }
 
-    // Update in cached list
-    final index = _cachedCustomers.indexWhere((c) => c.id == id);
+    // 3. Cập nhật trong cache RAM và CSDL SQLite cục bộ
+    final index = _cachedCustomers.indexWhere(
+      (c) => (id > 0 && c.id == id) || (clientUuid != null && c.clientUuid == clientUuid),
+    );
     if (index != -1) {
       final current = _cachedCustomers[index];
-      final updated = current.copyWith(
-        code: changes['code']?.toString() ?? current.code,
-        name: changes['name']?.toString() ?? current.name,
-        customerTypeId: changes.containsKey('customer_type_id')
-            ? (changes['customer_type_id'] as int?)
-            : current.customerTypeId,
-        channelId: changes.containsKey('channel_id')
-            ? (changes['channel_id'] as int?)
-            : current.channelId,
-        regionId: changes.containsKey('region_id')
-            ? (changes['region_id'] as int?)
-            : current.regionId,
-        provinceName: changes.containsKey('province_name')
-            ? changes['province_name']?.toString()
-            : current.provinceName,
-        wardName: changes.containsKey('ward_name')
-            ? changes['ward_name']?.toString()
-            : current.wardName,
-        contactPerson: changes['contact_name']?.toString() ??
-            changes['contact_person']?.toString() ??
-            current.contactPerson,
-        contactTitle: changes.containsKey('contact_title')
-            ? changes['contact_title']?.toString()
-            : current.contactTitle,
-        phone: changes['phone']?.toString() ?? current.phone,
-        email: changes.containsKey('email')
-            ? changes['email']?.toString()
-            : current.email,
-        address: changes['address']?.toString() ?? current.address,
-        lat: changes.containsKey('lat')
-            ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
-            : current.lat,
-        lng: changes.containsKey('lng')
-            ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
-            : current.lng,
-        geofenceRadiusM: changes.containsKey('geofence_radius_m')
-            ? (changes['geofence_radius_m'] as int?)
-            : current.geofenceRadiusM,
-      );
+      final updated = _applyChangesToCustomer(current, changes);
       _cachedCustomers[index] = updated;
+
+      // Đồng bộ vào SQLite để dữ liệu offline luôn mới nhất
+      await _localDataSource.cacheRemoteCustomers([updated]);
       return updated;
     }
 
     throw Exception('Không tìm thấy khách hàng ID: $id');
+  }
+
+  bool _isNetworkError(dynamic e) {
+    if (!_isOnline) return true;
+    if (e is SocketException || e is HttpException) return true;
+    if (e is AppException) {
+      if (e.statusCode == null) return true;
+      if (e.statusCode == 408 || e.statusCode == 503 || e.statusCode == 504) return true;
+    }
+    final str = e.toString().toLowerCase();
+    return str.contains('socketexception') ||
+        str.contains('network') ||
+        str.contains('connection') ||
+        str.contains('timeout') ||
+        str.contains('mất kết nối');
+  }
+
+  Future<CustomerEntity> _updateCustomerOfflineQueue(
+    int id,
+    Map<String, dynamic> changes, {
+    String? clientUuid,
+  }) async {
+    final index = _cachedCustomers.indexWhere(
+      (c) => (id > 0 && c.id == id) || (clientUuid != null && c.clientUuid == clientUuid),
+    );
+    if (index == -1) {
+      throw Exception('Không tìm thấy khách hàng ID: $id để cập nhật offline');
+    }
+
+    final current = _cachedCustomers[index];
+    final updated = _applyChangesToCustomer(current, changes);
+    _cachedCustomers[index] = updated;
+
+    // 1. Cập nhật vào SQLite LocalCustomers
+    await _localDataSource.cacheRemoteCustomers([updated]);
+
+    // 2. Đẩy vào hàng đợi sync_queue
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final effectiveUuid = clientUuid ?? current.clientUuid ?? 'server_$id';
+
+    await _localDataSource.enqueueCustomerUpdate(
+      serverId: id,
+      clientUuid: effectiveUuid,
+      changes: changes,
+      nowMs: nowMs,
+    );
+
+    return updated;
+  }
+
+  CustomerEntity _applyChangesToCustomer(CustomerEntity current, Map<String, dynamic> changes) {
+    final newDynamicFields = Map<String, dynamic>.from(current.dynamicFields);
+    if (changes['data'] is Map) {
+      newDynamicFields.addAll(changes['data'] as Map<String, dynamic>);
+    }
+
+    List<String> newPhotoUrls = List<String>.from(current.photoUrls);
+    String? newPhotoUrl = current.photoUrl;
+    if (changes['photo_tokens'] is List) {
+      final tokens = (changes['photo_tokens'] as List).map((e) => e.toString()).toList();
+      newPhotoUrls = tokens;
+      newPhotoUrl = tokens.isNotEmpty ? tokens.first : null;
+      newDynamicFields['photo_tokens'] = tokens;
+      newDynamicFields['photo_urls'] = tokens;
+      if (newPhotoUrl != null) newDynamicFields['photo_url'] = newPhotoUrl;
+    }
+
+    return current.copyWith(
+      code: changes['code']?.toString() ?? current.code,
+      name: changes['name']?.toString() ?? current.name,
+      customerTypeId: changes.containsKey('customer_type_id')
+          ? (changes['customer_type_id'] as int?)
+          : current.customerTypeId,
+      channelId: changes.containsKey('channel_id')
+          ? (changes['channel_id'] as int?)
+          : current.channelId,
+      regionId: changes.containsKey('region_id')
+          ? (changes['region_id'] as int?)
+          : current.regionId,
+      provinceName: changes.containsKey('province_name')
+          ? changes['province_name']?.toString()
+          : current.provinceName,
+      wardName: changes.containsKey('ward_name')
+          ? changes['ward_name']?.toString()
+          : current.wardName,
+      contactPerson: changes['contact_name']?.toString() ??
+          changes['contact_person']?.toString() ??
+          current.contactPerson,
+      contactTitle: changes.containsKey('contact_title')
+          ? changes['contact_title']?.toString()
+          : current.contactTitle,
+      phone: changes['phone']?.toString() ?? current.phone,
+      email: changes.containsKey('email')
+          ? changes['email']?.toString()
+          : current.email,
+      address: changes['address']?.toString() ?? current.address,
+      lat: changes.containsKey('lat')
+          ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
+          : current.lat,
+      lng: changes.containsKey('lng')
+          ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
+          : current.lng,
+      geofenceRadiusM: changes.containsKey('geofence_radius_m')
+          ? (changes['geofence_radius_m'] as int?)
+          : current.geofenceRadiusM,
+      dynamicFields: newDynamicFields,
+      photoUrl: newPhotoUrl,
+      photoUrls: newPhotoUrls,
+    );
   }
 
   @override

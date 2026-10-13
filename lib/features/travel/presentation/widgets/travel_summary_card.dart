@@ -60,7 +60,7 @@ class TravelSummaryCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     const Text(
-                      'TỔNG QUÃNG ĐƯỜNG ĐÃ CHỐT',
+                      'TỔNG QUÃNG ĐƯỜNG DI CHUYỂN',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 12,
@@ -78,7 +78,7 @@ class TravelSummaryCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${state.completedDaysCount}/${state.totalDays} ngày đã chốt',
+                    '${state.totalDays} ngày di chuyển',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,

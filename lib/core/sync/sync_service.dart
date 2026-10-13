@@ -275,6 +275,8 @@ class SyncService {
     try {
       if (entry.entity == 'customer' && entry.op == 'create') {
         await _syncCreateCustomer(entry);
+      } else if (entry.entity == 'customer' && entry.op == 'update') {
+        await _syncUpdateCustomer(entry);
       } else if (entry.entity == 'visit' && entry.op == 'create') {
         await _syncCreateVisit(entry);
       } else if (entry.entity == 'visit_photo' && entry.op == 'upload') {
@@ -505,6 +507,39 @@ class SyncService {
     }
 
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
+  }
+
+  /// Đồng bộ Cập nhật điểm bán lên server (§7 PATCH /crm/customers/{id})
+  Future<void> _syncUpdateCustomer(SyncQueueEntry entry) async {
+    int? serverId = entry.serverId;
+    if (serverId == null || serverId <= 0) {
+      if (entry.clientUuid.startsWith('server_')) {
+        serverId = int.tryParse(entry.clientUuid.replaceFirst('server_', ''));
+      }
+    }
+
+    if (serverId == null || serverId <= 0) {
+      debugPrint('[SyncService] Không tìm thấy serverId để cập nhật khách hàng: ${entry.clientUuid}');
+      await _db.markDone(entry.id);
+      return;
+    }
+
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+
+    // Xử lý photo_tokens nếu có đường dẫn cục bộ cần upload
+    if (payload['photo_tokens'] is List) {
+      final rawTokens = payload['photo_tokens'] as List;
+      final resolved = <String>[];
+      for (final t in rawTokens) {
+        final res = await _resolvePhotoToken(t.toString());
+        if (res != null) resolved.add(res);
+      }
+      payload['photo_tokens'] = resolved;
+    }
+
+    await _apiClient.patch('/crm/customers/$serverId', data: payload);
+    await _db.markDone(entry.id, serverId: serverId);
+    debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
   }
 
   /// Đồng bộ Check-in viếng thăm lên server (§3 & §9)

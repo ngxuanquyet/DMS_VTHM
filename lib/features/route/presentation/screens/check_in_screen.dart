@@ -107,24 +107,41 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 currentActive.clientUuid!.isNotEmpty &&
                 v.clientUuid == currentActive.clientUuid),
       ).firstOrNull;
-      if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
-        // Lượt này trên máy chủ đã check-out (hoặc huỷ) rồi!
-        debugPrint('[CheckInScreen] Active visit id=${currentActive.id} đã hoàn tất trên server, giải phóng phiên stale.');
+
+      // ⚠️ Nếu todayVisits đã tải về từ server thành công nhưng lượt server (currentActive.id > 0) biến mất:
+      // Theo §4.1 HUY-LUOT-VIENG-THAM-2026-09-30, lượt đã huỷ biến mất khỏi /dms/visits/mine
+      final isStaleCancelledOnServer = todayVisits.isNotEmpty &&
+          currentActive.id > 0 &&
+          matchingServerVisit == null;
+
+      if ((matchingServerVisit != null && !matchingServerVisit.isOpen) || isStaleCancelledOnServer) {
+        final isCancelled = isStaleCancelledOnServer || (matchingServerVisit?.isCancelled == true);
+        debugPrint('[CheckInScreen] Active visit id=${currentActive.id} đã ${isCancelled ? "bị huỷ" : "hoàn tất"} trên server, giải phóng phiên stale.');
         await ref.read(visitRepositoryProvider).clearActiveVisit();
+        if (isCancelled) {
+          await ref.read(visitRepositoryProvider).cancelVisit(currentActive.id, clientUuid: currentActive.clientUuid);
+          ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(currentActive.id, clientUuid: currentActive.clientUuid);
+        }
         ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
         vm.resetSession();
         activeVisit = null;
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.'),
-              backgroundColor: Color(0xFF10B981),
+            SnackBar(
+              content: Text(
+                isCancelled
+                    ? 'Lượt viếng thăm trước đó đã được huỷ. Bạn có thể bắt đầu lượt check-in mới.'
+                    : 'Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.',
+              ),
+              backgroundColor: isCancelled ? const Color(0xFF0284C7) : const Color(0xFF10B981),
               behavior: SnackBarBehavior.floating,
             ),
           );
-          _safePop();
-          return;
+          if (!isCancelled) {
+            _safePop();
+            return;
+          }
         }
       }
     }
@@ -750,6 +767,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ),
         );
       } else if (message != null) {
+        if (message.startsWith('VISIT_CANCELLED:') ||
+            message.toLowerCase().contains('đã bị huỷ') ||
+            message.toLowerCase().contains('đã huỷ') ||
+            message.toLowerCase().contains('already cancelled')) {
+          _showCancelledVisitRecoveryDialog(vm);
+          return;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -824,8 +849,109 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+      } else if (message != null) {
+        if (message.startsWith('VISIT_CANCELLED:') ||
+            message.toLowerCase().contains('đã bị huỷ') ||
+            message.toLowerCase().contains('đã huỷ') ||
+            message.toLowerCase().contains('already cancelled')) {
+          _showCancelledVisitRecoveryDialog(vm);
+          return;
+        }
       }
     } catch (_) {}
+  }
+
+  /// Hộp thoại hỗ trợ khôi phục khi lượt viếng thăm trên server đã bị huỷ
+  Future<void> _showCancelledVisitRecoveryDialog(CheckInViewModel vm) async {
+    if (!mounted) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isClosed = ref.read(checkInViewModelProvider).visitResult == 'closed';
+    final savedClosedNote = _closedNoteController.text;
+    final savedVisitNote = _noteController.text;
+
+    final shouldRecheckin = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Lượt viếng thăm đã bị huỷ',
+                style: AppTypography.titleLarge(
+                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                ).copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Lượt viếng thăm này đã bị huỷ trên hệ thống nên không thể thêm ảnh hay hoàn tất.',
+              style: AppTypography.bodyMedium(
+                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Bạn có muốn tạo lượt check-in mới ngay bây giờ để tiếp tục ghi nhận ${isClosed ? "điểm bán đóng cửa" : "viếng thăm"} không?',
+              style: AppTypography.bodySmall(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('QUAY LẠI TUYẾN'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('CHECK-IN LẠI'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRecheckin == true && mounted) {
+      vm.resetSession();
+      if (isClosed) {
+        vm.setVisitResult('closed');
+        if (savedClosedNote.isNotEmpty) {
+          _closedNoteController.text = savedClosedNote;
+          vm.setClosedNote(savedClosedNote);
+        }
+      }
+      if (savedVisitNote.isNotEmpty) {
+        _noteController.text = savedVisitNote;
+        vm.setVisitNote(savedVisitNote);
+      }
+      await _checkinIfNeeded();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã tạo lượt check-in mới thành công. Bạn có thể chụp ảnh ngay bây giờ.'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else if (mounted) {
+      vm.resetSession();
+      _safePop();
+    }
   }
 
   Future<String?> _showPhotoTypeSelectionSheet() async {
@@ -2341,6 +2467,13 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       context.pop();
                                     }
                                   } else if (errorMsg != null && context.mounted) {
+                                    if (errorMsg.startsWith('VISIT_CANCELLED:') ||
+                                        errorMsg.toLowerCase().contains('đã bị huỷ') ||
+                                        errorMsg.toLowerCase().contains('đã huỷ') ||
+                                        errorMsg.toLowerCase().contains('already cancelled')) {
+                                      _showCancelledVisitRecoveryDialog(vm);
+                                      return;
+                                    }
                                     _showBlockersDialog([errorMsg]);
                                   }
                                 },

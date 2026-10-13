@@ -374,7 +374,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     const Divider(height: 1),
                     _buildMenuItem(
                       icon: Icons.two_wheeler_rounded,
-                      title: 'Quãng đường của tôi',
+                      title: 'Quãng đường di chuyển',
                       onTap: () {
                         context.push('/travel');
                       },

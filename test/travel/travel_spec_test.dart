@@ -192,6 +192,125 @@ void main() {
       });
       expect(legBetween.legKind, "between");
     });
+
+    test('Parses exact sample legs from spec §4.2 with from and to endpoints', () {
+      final jsonLeg1 = {
+        "id": 683,
+        "seq": 1,
+        "leg_kind": "start",
+        "leg_kind_label": "Chấm công vào → điểm bán đầu tiên",
+        "status": "missing_anchor",
+        "status_label": "Thiếu mốc để đo",
+        "status_color": "danger",
+        "haversine_m": null,
+        "road_m": "0.00",
+        "from_visit_id": null,
+        "to_visit_id": 42141,
+        "from_punch_id": null,
+        "to_punch_id": null,
+        "provider": null,
+        "error_note": null,
+        "from": {"type": "missing", "label": "Không có chấm công vào"},
+        "to": {
+          "type": "visit",
+          "visit_id": 42141,
+          "customer_id": 8744,
+          "code": "08290618",
+          "name": "Tạp hoá Minh Anh",
+          "at": "2026-09-04 07:42:00+07"
+        }
+      };
+
+      final leg1 = TravelLegModel.fromJson(jsonLeg1);
+      expect(leg1.from, isNotNull);
+      expect(leg1.from!.type, "missing");
+      expect(leg1.from!.isMissing, true);
+      expect(leg1.from!.displayName, "Không có chấm công vào");
+      expect(leg1.from!.formattedTime, isNull);
+
+      expect(leg1.to, isNotNull);
+      expect(leg1.to!.type, "visit");
+      expect(leg1.to!.isVisit, true);
+      expect(leg1.to!.visitId, 42141);
+      expect(leg1.to!.customerId, 8744);
+      expect(leg1.to!.code, "08290618");
+      expect(leg1.to!.name, "Tạp hoá Minh Anh");
+      expect(leg1.to!.displayName, "Tạp hoá Minh Anh");
+      expect(leg1.to!.formattedTime, "07:42");
+
+      final jsonLeg2 = {
+        "id": 684,
+        "seq": 2,
+        "leg_kind": "between",
+        "leg_kind_label": "Giữa hai điểm bán",
+        "status": "pending",
+        "status_label": "Chờ tính",
+        "status_color": "secondary",
+        "haversine_m": "13879.88",
+        "road_m": null,
+        "from_visit_id": 42141,
+        "to_visit_id": 42142,
+        "from": {
+          "type": "visit",
+          "visit_id": 42141,
+          "customer_id": 8744,
+          "code": "08290618",
+          "name": "Tạp hoá Minh Anh",
+          "at": "2026-09-04 08:00:00+07"
+        },
+        "to": {
+          "type": "visit",
+          "visit_id": 42142,
+          "customer_id": 8741,
+          "code": "08430110",
+          "name": "NPP Hùng Chi",
+          "at": "2026-09-04 08:35:00+07"
+        }
+      };
+
+      final leg2 = TravelLegModel.fromJson(jsonLeg2);
+      expect(leg2.from!.visitId, 42141);
+      expect(leg2.from!.displayName, "Tạp hoá Minh Anh");
+      expect(leg2.from!.formattedTime, "08:00");
+      expect(leg2.to!.visitId, 42142);
+      expect(leg2.to!.displayName, "NPP Hùng Chi");
+      expect(leg2.to!.formattedTime, "08:35");
+
+      // Verify serialization round-trip
+      final serialized = leg2.toJson();
+      expect(serialized['from']['code'], "08290618");
+      expect(serialized['to']['code'], "08430110");
+    });
+
+    test('Endpoint handles null cases gracefully according to spec §4.2 table', () {
+      // 1. visit.at ở from null (lượt tự đóng / MobiWork cũ)
+      final epFromNoCheckout = TravelEndpointModel.fromJson({
+        "type": "visit",
+        "code": "08290618",
+        "name": "Tạp hoá Minh Anh",
+        "at": null,
+      });
+      expect(epFromNoCheckout.formattedTime, isNull);
+
+      // 2. visit.name null (dữ liệu MobiWork cũ) -> hiện code
+      final epNoName = TravelEndpointModel.fromJson({
+        "type": "visit",
+        "code": "08290618",
+        "name": null,
+      });
+      expect(epNoName.displayName, "08290618");
+
+      // 3. punch.code & punch.name null (máy vân tay) -> hiện 'Chấm công vào'
+      final epPunchBiometric = TravelEndpointModel.fromJson({
+        "type": "punch",
+        "punch_id": 55,
+        "code": null,
+        "name": null,
+        "at": "2026-09-04 07:30:00+07",
+      });
+      expect(epPunchBiometric.displayName, "Chấm công vào");
+      expect(epPunchBiometric.formattedTime, "07:30");
+    });
   });
 
   group('VisitEntity & CheckinRequestModel Integration Tests (§2.3 & §4.4)', () {

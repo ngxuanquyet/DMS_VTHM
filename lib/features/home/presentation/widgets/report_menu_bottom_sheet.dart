@@ -151,9 +151,9 @@ void showReportMenuBottomSheet(BuildContext context) {
                   },
                 ),
 
-                // 4. Quãng đường của tôi
+                // 4. Quãng đường di chuyển
                 ReportMenuItem(
-                  title: 'Quãng đường của tôi',
+                  title: 'Quãng đường di chuyển',
                   subtitle: 'Theo dõi km di chuyển theo ngày và chi tiết từng chặng',
                   icon: Icons.two_wheeler_rounded,
                   iconColor: const Color(0xFF0D9488),

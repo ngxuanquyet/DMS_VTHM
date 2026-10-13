@@ -1,5 +1,117 @@
 import 'package:flutter/material.dart';
 
+/// Thực thể biểu diễn mốc đầu / mốc cuối của một chặng di chuyển (from / to)
+/// Theo đặc tả API-QUANG-DUONG-MOBILE-2026-10-08.md §4.2 (cập nhật 13/10/2026)
+class TravelEndpointEntity {
+  final String type; // 'punch' | 'visit' | 'missing'
+  final String? label; // Câu hiển thị sẵn khi type == 'missing'
+  final int? punchId; // Khi type == 'punch'
+  final int? visitId; // Khi type == 'visit'
+  final int? customerId; // Khi type == 'visit'
+  final String? code; // Mã địa điểm chấm công hoặc mã điểm bán
+  final String? name; // Tên địa điểm chấm công hoặc tên điểm bán
+  final String? at; // 'YYYY-MM-DD HH:MM:SS[.µs]+07'
+
+  const TravelEndpointEntity({
+    required this.type,
+    this.label,
+    this.punchId,
+    this.visitId,
+    this.customerId,
+    this.code,
+    this.name,
+    this.at,
+  });
+
+  bool get isPunch => type.toLowerCase() == 'punch';
+  bool get isVisit => type.toLowerCase() == 'visit';
+  bool get isMissing => type.toLowerCase() == 'missing';
+
+  /// Nhãn loại mốc hiển thị dạng badge
+  String get typeLabel {
+    if (isPunch) return 'Chấm công vào';
+    if (isVisit) return 'Điểm bán';
+    if (isMissing) return 'Thiếu mốc';
+    return type;
+  }
+
+  /// Tên chính của mốc theo quy tắc §4.2
+  String get displayName {
+    if (isMissing) {
+      if (label != null && label!.trim().isNotEmpty) {
+        return label!.trim();
+      }
+      return 'Không có mốc';
+    }
+
+    if (isPunch) {
+      if (name != null && name!.trim().isNotEmpty) {
+        return name!.trim();
+      }
+      return 'Chấm công vào';
+    }
+
+    if (isVisit) {
+      if (name != null && name!.trim().isNotEmpty) {
+        return name!.trim();
+      }
+      if (code != null && code!.trim().isNotEmpty) {
+        return code!.trim();
+      }
+      if (visitId != null) {
+        return 'Điểm bán #$visitId';
+      }
+      return 'Điểm bán';
+    }
+
+    // Fallback cho loại lạ
+    if (label != null && label!.trim().isNotEmpty) return label!.trim();
+    if (name != null && name!.trim().isNotEmpty) return name!.trim();
+    if (code != null && code!.trim().isNotEmpty) return code!.trim();
+    return '—';
+  }
+
+  /// Mã phụ hiển thị (nếu có và khác tên hiển thị chính)
+  String? get displayCode {
+    if (code != null && code!.trim().isNotEmpty) {
+      final trimmedCode = code!.trim();
+      if (trimmedCode != displayName) {
+        return trimmedCode;
+      }
+    }
+    return null;
+  }
+
+  /// Format thời gian hiển thị: HH:mm
+  /// Trích xuất trực tiếp giờ phút theo mốc thời gian server gửi
+  String? get formattedTime {
+    if (at == null || at!.trim().isEmpty) return null;
+    final trimmed = at!.trim();
+
+    // 1. Trích xuất trực tiếp HH:mm từ chuỗi có ngày giờ (tránh bị timezone shift khi test runner chạy UTC)
+    final match = RegExp(r'(?:T|\s)(\d{1,2}:\d{2})(?::\d{2})?').firstMatch(trimmed);
+    if (match != null) {
+      final hm = match.group(1)!;
+      final parts = hm.split(':');
+      final h = parts[0].padLeft(2, '0');
+      final m = parts[1].padLeft(2, '0');
+      return '$h:$m';
+    }
+
+    // 2. Regex fallback cho chuỗi giờ phút
+    final fallbackMatch = RegExp(r'(\d{1,2}:\d{2})').firstMatch(trimmed);
+    if (fallbackMatch != null) {
+      final hm = fallbackMatch.group(1)!;
+      final parts = hm.split(':');
+      final h = parts[0].padLeft(2, '0');
+      final m = parts[1].padLeft(2, '0');
+      return '$h:$m';
+    }
+
+    return trimmed;
+  }
+}
+
 /// Thực thể biểu diễn chi tiết 1 Chặng di chuyển trong ngày công
 /// Theo đặc tả API-QUANG-DUONG-MOBILE-2026-10-08.md §4.2 & §3
 class TravelLegEntity {
@@ -18,6 +130,8 @@ class TravelLegEntity {
   final int? toPunchId;
   final String? provider;
   final String? errorNote; // 🔴 Dành cho quản trị, KHÔNG hiển thị cho nhân viên (§4.2)
+  final TravelEndpointEntity? from; // 🆕 13/10/2026: Đầu chặng (điểm xuất phát)
+  final TravelEndpointEntity? to; // 🆕 13/10/2026: Đích chặng (điểm đến)
 
   const TravelLegEntity({
     required this.id,
@@ -35,6 +149,8 @@ class TravelLegEntity {
     this.toPunchId,
     this.provider,
     this.errorNote,
+    this.from,
+    this.to,
   });
 
   /// 🔴 §3 & §4.2: DÙNG status ĐỂ QUYẾT ĐỊNH HIỂN THỊ, KHÔNG ĐOÁN TỪ road_m

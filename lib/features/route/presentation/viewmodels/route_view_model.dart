@@ -389,6 +389,15 @@ class RouteViewModel extends StateNotifier<RouteState> {
                 '[RouteViewModel] Lượt viếng thăm id=${saved.id} đã hoàn tất trên server, xoá active visit stale.',
               );
               await visitRepository!.clearActiveVisit();
+            } else if (todayVisits.isNotEmpty && saved.id > 0 && matchingServerVisit == null) {
+              // ⚠️ LƯỢT ĐÃ BỊ HUỶ TRÊN SERVER (§4.1 HUY-LUOT-VIENG-THAM-2026-09-30):
+              // Khi server trả về todayVisits thành công nhưng lượt server (saved.id > 0) biến mất hoàn toàn
+              // khỏi todayVisits, điều đó có nghĩa là lượt này đã bị huỷ trên server!
+              debugPrint(
+                '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn trong todayVisits của server (đã bị huỷ), dọn dẹp active visit.',
+              );
+              await visitRepository!.clearActiveVisit();
+              await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
             } else {
               activeVisit = saved;
             }
@@ -1686,11 +1695,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
     state = state.copyWith(isUploadingPhoto: true);
 
+    // Chuẩn hoá photoType theo đặc tả API (§4.1):
+    // Server chỉ nhận: display, store_front, posm, document, other.
+    // Nếu app phân loại là closed_store (ảnh đóng cửa) -> map về store_front (mặt tiền đóng cửa)
+    final apiPhotoType = (photoType == 'closed_store') ? 'store_front' : photoType;
+
     // Nếu phiên hiện tại là ngoại tuyến (visitId < 0) -> Lưu ảnh ngoại tuyến ngay
     if (state.visitId < 0) {
       return _savePhotoOffline(
         file: file,
-        photoType: photoType,
+        photoType: apiPhotoType,
         lat: lat,
         lng: lng,
       );
@@ -1700,7 +1714,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final photo = await uploadVisitPhotoUseCase(
         visitId: state.visitId,
         file: file,
-        photoType: photoType,
+        photoType: apiPhotoType,
         takenAt: DateTime.now(),
         lat: lat,
         lng: lng,
@@ -1753,12 +1767,41 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (_isNetworkError(e)) {
         return _savePhotoOffline(
           file: file,
-          photoType: photoType,
+          photoType: apiPhotoType,
           lat: lat,
           lng: lng,
         );
       }
       state = state.copyWith(isUploadingPhoto: false);
+      final rawMsg = e.toString().toLowerCase();
+      final isCancelledError = rawMsg.contains('đã bị huỷ') ||
+          rawMsg.contains('đã huỷ') ||
+          rawMsg.contains('đã bị hủy') ||
+          rawMsg.contains('đã hủy') ||
+          rawMsg.contains('already cancelled');
+
+      if (isCancelledError) {
+        // Lượt viếng thăm này đã bị huỷ trên server (§3 & §4 HUY-LUOT-VIENG-THAM)!
+        // Tự động dọn dẹp active session bị lỗi thời:
+        final cancelledVisitId = state.visitId;
+        final clientUuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
+        await visitRepository.clearActiveVisit();
+        await visitRepository.cancelVisit(cancelledVisitId, clientUuid: clientUuid);
+        if (ref != null) {
+          try {
+            ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(
+              cancelledVisitId,
+              clientUuid: clientUuid,
+            );
+            ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
+          } catch (_) {}
+        }
+        return (
+          false,
+          'VISIT_CANCELLED:Lượt viếng thăm này đã bị huỷ trên hệ thống, không nhận thêm ảnh được.',
+        );
+      }
+
       final msg = e
           .toString()
           .replaceAll('ServerException: ', '')
@@ -1931,6 +1974,24 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         state = state.copyWith(requirements: req);
         return;
       } catch (e) {
+        final rawMsg = e.toString().toLowerCase();
+        if (rawMsg.contains('đã bị huỷ') ||
+            rawMsg.contains('đã huỷ') ||
+            rawMsg.contains('đã bị hủy') ||
+            rawMsg.contains('đã hủy') ||
+            rawMsg.contains('already cancelled')) {
+          final cId = state.visitId;
+          final uuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
+          await visitRepository.clearActiveVisit();
+          await visitRepository.cancelVisit(cId, clientUuid: uuid);
+          if (ref != null) {
+            try {
+              ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(cId, clientUuid: uuid);
+              ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
+            } catch (_) {}
+          }
+          state = state.copyWith(visitId: 0, visitEntity: null);
+        }
         if (!_isNetworkError(e)) {
           return;
         }
@@ -2208,6 +2269,34 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       return (true, null);
     } catch (e) {
       final rawMsg = e.toString().toLowerCase();
+      // Nếu server trả về lỗi lượt đã bị huỷ (§4.1 HUY-LUOT-VIENG-THAM)
+      if (rawMsg.contains('đã bị huỷ') ||
+          rawMsg.contains('đã huỷ') ||
+          rawMsg.contains('đã bị hủy') ||
+          rawMsg.contains('đã hủy') ||
+          rawMsg.contains('already cancelled')) {
+        _visitTimer?.cancel();
+        await visitRepository.clearActiveVisit();
+        await visitRepository.cancelVisit(state.visitId, clientUuid: _sessionClientUuid);
+        if (ref != null) {
+          try {
+            ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(
+              state.visitId,
+              clientUuid: _sessionClientUuid,
+            );
+            ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
+            ref!
+                .read(routeViewModelProvider.notifier)
+                .loadRouteDetail(isRefresh: true);
+          } catch (_) {}
+        }
+        resetSession();
+        return (
+          false,
+          'VISIT_CANCELLED:Lượt viếng thăm này đã bị huỷ trên hệ thống, không check-out được.',
+        );
+      }
+
       // Nếu server trả về 422 "đã check-out rồi" / "đã đóng" thì coi là thành công (§9)
       if (rawMsg.contains('đã check-out rồi') ||
           rawMsg.contains('đã check out') ||

@@ -32,7 +32,7 @@ class _MyTravelScreenState extends ConsumerState<MyTravelScreen> {
           isDark ? AppColors.darkBackground : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
-          'Quãng đường của tôi',
+          'Quãng đường di chuyển',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
         centerTitle: true,

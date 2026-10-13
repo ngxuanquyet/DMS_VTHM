@@ -75,6 +75,18 @@ class MockSyncDioAdapter implements HttpClientAdapter {
         headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
       );
     }
+    if (options.path.startsWith('/crm/customers/') && options.method == 'PATCH') {
+      final res = {
+        'success': true,
+        'message': 'Đã cập nhật điểm bán thành công.',
+        'data': options.data,
+      };
+      return ResponseBody.fromString(
+        jsonEncode(res),
+        200,
+        headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+      );
+    }
     return ResponseBody.fromString('{"success":true}', 200, headers: {Headers.contentTypeHeader: [Headers.jsonContentType]});
   }
 
@@ -243,6 +255,106 @@ void main() {
     expect(cachedRoutes.length, 2);
     expect(cachedRoutes.first.name, 'Tuyến Hà Nội - Đông Anh');
     expect(cachedRoutes.last.name, 'Tuyến Sóc Sơn');
+  });
+
+  test('updateCustomer on user-created customer (with uuid and id > 0) sends PATCH /crm/customers/{id} when online', () async {
+    // 1. Giả lập một khách hàng do user tự tạo trên app, đã sync lên server thành công
+    // Khách hàng này có id = 8888 (> 0) và clientUuid = 'my-custom-uuid-1234' (không bắt đầu bằng server_)
+    final localDataSource = CustomerLocalDataSource(db);
+    final userCreatedInput = {
+      'name': 'Điểm Bán Tự Tạo Cũ',
+      'region_id': 1,
+      'route_ids': [1],
+      'phone': '0901112222',
+      'address': 'Hà Nội',
+    };
+    final created = await repo.createCustomer(userCreatedInput);
+    expect(created.id, 8888);
+    expect(created.clientUuid, isNotNull);
+    final originalUuid = created.clientUuid!;
+
+    // 2. Người dùng sửa khách hàng tự tạo này
+    final changes = {
+      'name': 'Điểm Bán Tự Tạo ĐÃ ĐƯỢC CẬP NHẬT',
+      'phone': '0999999999',
+    };
+
+    final updated = await repo.updateCustomer(
+      id: created.id,
+      changes: changes,
+      clientUuid: originalUuid,
+    );
+
+    // 3. Phải gọi API PATCH /crm/customers/8888 lên server, KHÔNG BỊ RETURN VỀ GIÁ TRỊ CŨ!
+    expect(adapter.lastOptions?.path, '/crm/customers/8888');
+    expect(adapter.lastOptions?.method, 'PATCH');
+    final sentChanges = adapter.lastData as Map<String, dynamic>;
+    expect(sentChanges['name'], 'Điểm Bán Tự Tạo ĐÃ ĐƯỢC CẬP NHẬT');
+    expect(sentChanges['phone'], '0999999999');
+
+    // 4. Giá trị trả về và trong SQLite đều là giá trị mới
+    expect(updated.name, 'Điểm Bán Tự Tạo ĐÃ ĐƯỢC CẬP NHẬT');
+    expect(updated.phone, '0999999999');
+
+    final localList = await db.getAllLocalCustomers();
+    final localItem = localList.firstWhere((c) => c.id == 8888);
+    expect(localItem.name, 'Điểm Bán Tự Tạo ĐÃ ĐƯỢC CẬP NHẬT');
+    expect(localItem.phone, '0999999999');
+
+    // 5. Hàng đợi sync_queue KHÔNG bị tạo rác op: create
+    final pendingCount = await db.countPendingSync();
+    expect(pendingCount, 0);
+  });
+
+  test('updateCustomer offline enqueues op: update and syncQueue executes PATCH when online', () async {
+    final localDataSource = CustomerLocalDataSource(db);
+    final apiService = CustomerApiService(ApiClient(Dio()));
+
+    // 1. Tạo 1 khách hàng đã có trên SQLite và cache
+    await repo.createCustomer({
+      'name': 'Cửa hàng Online Ban Đầu',
+      'region_id': 1,
+      'route_ids': [1],
+      'phone': '0900000000',
+      'address': 'Hà Nội',
+    });
+
+    // 2. Giả lập repo ở chế độ ngoại tuyến
+    final offlineRepo = CustomerRepositoryImpl(
+      apiService,
+      localDataSource,
+      syncService,
+      null,
+      () => false, // Offline
+    );
+    await offlineRepo.getCustomers();
+
+    // 3. Sửa khách hàng khi offline
+    final updatedOffline = await offlineRepo.updateCustomer(
+      id: 8888,
+      changes: {'name': 'Tên Sửa Lúc Offline'},
+      clientUuid: 'test-uuid-8888',
+    );
+
+    expect(updatedOffline.name, 'Tên Sửa Lúc Offline');
+
+    // 4. Kiểm tra trong sync_queue có mục op: update
+    final pendingEntries = await db.getPendingQueueEntries(limit: 10, force: true);
+    expect(pendingEntries.length, 1);
+    expect(pendingEntries.first.entity, 'customer');
+    expect(pendingEntries.first.op, 'update');
+    expect(pendingEntries.first.serverId, 8888);
+
+    // 5. Khi có mạng trở lại -> syncQueue gửi PATCH /crm/customers/8888 thành công
+    await syncService.syncQueue(force: true);
+
+    expect(adapter.lastOptions?.path, '/crm/customers/8888');
+    expect(adapter.lastOptions?.method, 'PATCH');
+    final sentChanges = adapter.lastData as Map<String, dynamic>;
+    expect(sentChanges['name'], 'Tên Sửa Lúc Offline');
+
+    final remainingPending = await db.countPendingSync();
+    expect(remainingPending, 0);
   });
 }
 

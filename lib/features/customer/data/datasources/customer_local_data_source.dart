@@ -711,4 +711,55 @@ class CustomerLocalDataSource {
       photoUrls: localPhotoUrls,
     );
   }
+
+  /// Đẩy yêu cầu cập nhật thông tin điểm bán vào hàng đợi sync_queue (op: update)
+  Future<void> enqueueCustomerUpdate({
+    required int serverId,
+    required String clientUuid,
+    required Map<String, dynamic> changes,
+    required int nowMs,
+  }) async {
+    // Kiểm tra xem đã có mục update pending cho khách hàng này trong queue chưa
+    final existingEntries = await (_db.select(_db.syncQueueEntries)
+          ..where((tbl) =>
+              tbl.entity.equals('customer') &
+              tbl.op.equals('update') &
+              (tbl.serverId.equals(serverId) | tbl.clientUuid.equals(clientUuid)) &
+              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+        .get();
+
+    if (existingEntries.isNotEmpty) {
+      final entry = existingEntries.first;
+      Map<String, dynamic> oldPayload = {};
+      try {
+        oldPayload = jsonDecode(entry.payload) as Map<String, dynamic>;
+      } catch (_) {}
+      final merged = {...oldPayload, ...changes};
+      await (_db.update(_db.syncQueueEntries)..where((tbl) => tbl.id.equals(entry.id))).write(
+        SyncQueueEntriesCompanion(
+          payload: Value(jsonEncode(merged)),
+          state: const Value('pending'),
+          attempts: const Value(0),
+          nextAttemptAt: Value(nowMs),
+          lastError: const Value(null),
+        ),
+      );
+    } else {
+      await _db.enqueue(
+        SyncQueueEntriesCompanion(
+          entity: const Value('customer'),
+          op: const Value('update'),
+          clientUuid: Value(clientUuid),
+          serverId: Value(serverId),
+          payload: Value(jsonEncode(changes)),
+          state: const Value('pending'),
+          attempts: const Value(0),
+          nextAttemptAt: Value(nowMs),
+          createdAt: Value(nowMs),
+          createdElapsed: Value(SystemClock.nowMonotonicMs),
+          bootId: Value(SystemClock.bootId),
+        ),
+      );
+    }
+  }
 }

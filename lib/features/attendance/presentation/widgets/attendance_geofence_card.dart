@@ -9,18 +9,11 @@ import '../../../../core/widgets/app_card.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../viewmodels/attendance_view_model.dart';
 
-class AttendanceGeofenceCard extends ConsumerStatefulWidget {
+class AttendanceGeofenceCard extends ConsumerWidget {
   const AttendanceGeofenceCard({super.key});
 
   @override
-  ConsumerState<AttendanceGeofenceCard> createState() => _AttendanceGeofenceCardState();
-}
-
-class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard> {
-  bool _isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final config = ref.watch(attendanceViewModelProvider.select((s) => s.config));
     final activeLocation = ref.watch(attendanceViewModelProvider.select((s) => s.activeLocation));
@@ -135,24 +128,30 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
       );
     }
 
-    // 🔴 TRƯỜNG HỢP 3: Có danh sách địa điểm (§2) - Cho phép chọn linh hoạt, không fix cứng
+    // 🔴 TRƯỜNG HỢP 3: Có danh sách địa điểm - Giao diện tinh gọn với 1 nút xem danh sách sắp xếp theo khoảng cách
     final closest = config.closestLocation;
     final selected = activeLocation ?? closest ?? config.locations.first;
+
+    // Sắp xếp danh sách địa điểm theo khoảng cách tăng dần (gần nhất lên đầu)
+    final sortedLocations = _sortLocationsByDistance(config.locations);
+
+    final isSelectedValid = selected.isWithinRadius || selected.isEverywhere;
+    final distanceText = _formatDistanceText(selected, numberFormat);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.gutter),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header: Tiêu đề + Nút "Đổi địa điểm"
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: 30,
+                    height: 30,
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
@@ -160,10 +159,10 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                     child: const Icon(
                       Icons.business_rounded,
                       color: AppColors.primary,
-                      size: 18,
+                      size: 17,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 9),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -171,10 +170,10 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                         'Địa điểm chấm công',
                         style: AppTypography.titleMedium(
                           color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                        ).copyWith(fontWeight: FontWeight.w600),
+                        ).copyWith(fontWeight: FontWeight.w700),
                       ),
                       Text(
-                        '${config.group.name} (${config.locations.length} địa điểm)',
+                        '${config.group.name} (${config.locations.length} điểm)',
                         style: AppTypography.bodySmall(
                           color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                         ),
@@ -183,23 +182,43 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                   ),
                 ],
               ),
+              // Nút bấm duy nhất để xem toàn bộ danh sách sắp xếp theo khoảng cách
               if (config.locations.length > 1)
                 InkWell(
-                  onTap: () => setState(() => _isExpanded = !_isExpanded),
+                  onTap: () => _showLocationPickerBottomSheet(
+                    context,
+                    sortedLocations: sortedLocations,
+                    selected: selected,
+                    closest: closest,
+                    vm: vm,
+                    numberFormat: numberFormat,
+                    isDark: isDark,
+                  ),
                   borderRadius: AppRadius.roundedSm,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.1),
+                      borderRadius: AppRadius.roundedSm,
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          _isExpanded ? 'Thu gọn' : 'Xem tất cả',
-                          style: AppTypography.labelSmall(color: AppColors.primary),
-                        ),
-                        Icon(
-                          _isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                          size: 16,
+                        const Icon(
+                          Icons.format_list_bulleted_rounded,
+                          size: 15,
                           color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Đổi địa điểm',
+                          style: AppTypography.labelSmall(
+                            color: AppColors.primary,
+                          ).copyWith(fontWeight: FontWeight.w700),
                         ),
                       ],
                     ),
@@ -207,129 +226,118 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
                 ),
             ],
           ),
-
-          // Bộ chọn nhanh thả xuống (Dropdown) nếu có từ 2 địa điểm trở lên
-          if (config.locations.length > 1) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? AppColors.darkSurfaceContainerLowest
-                    : AppColors.surface,
-                borderRadius: AppRadius.roundedMd,
-                border: Border.all(
-                  color: isDark
-                      ? AppColors.darkOutlineVariant
-                      : AppColors.outlineVariant,
-                  width: 1,
-                ),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
-                  value: config.locations.any((l) => l.id == selected.id) ? selected.id : null,
-                  isExpanded: true,
-                  dropdownColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-                  icon: const Icon(
-                    Icons.arrow_drop_down_rounded,
-                    color: AppColors.primary,
-                  ),
-                  items: config.locations.map((loc) {
-                    final isCls = loc.id == closest?.id;
-                    return DropdownMenuItem<int>(
-                      value: loc.id,
-                      child: Row(
-                        children: [
-                          Icon(
-                            loc.isEverywhere
-                                ? Icons.public_rounded
-                                : (loc.isWithinRadius ? Icons.check_circle_rounded : Icons.location_on_rounded),
-                            size: 18,
-                            color: loc.isWithinRadius ? AppColors.primary : AppColors.secondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              loc.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.bodyMedium(
-                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                          if (isCls) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.12),
-                                borderRadius: AppRadius.roundedSm,
-                              ),
-                              child: Text(
-                                'Gần nhất',
-                                style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (newId) {
-                    if (newId != null) {
-                      final chosen = config.locations.firstWhere((l) => l.id == newId);
-                      vm.selectLocation(chosen);
-                    }
-                  },
-                ),
-              ),
-            ),
-          ],
-
           const SizedBox(height: 12),
 
-          // Địa điểm đang được chọn (Thẻ nổi bật)
-          _buildLocationItem(
-            location: selected,
-            isSelected: true,
-            isClosest: selected.id == closest?.id,
-            onSelect: () {},
-            numberFormat: numberFormat,
-            isDark: isDark,
-          ),
-
-          // Danh sách các địa điểm khác khi người dùng mở rộng "Xem tất cả"
-          if (_isExpanded && config.locations.length > 1) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Text(
-                  'CÁC ĐỊA ĐIỂM KHÁC (CHẠM ĐỂ CHỌN):',
-                  style: AppTypography.labelSmall(
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                  ).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.8),
+          // Thẻ hiển thị địa điểm đang chọn (bấm vào cũng mở danh sách chọn)
+          InkWell(
+            onTap: config.locations.length > 1
+                ? () => _showLocationPickerBottomSheet(
+                      context,
+                      sortedLocations: sortedLocations,
+                      selected: selected,
+                      closest: closest,
+                      vm: vm,
+                      numberFormat: numberFormat,
+                      isDark: isDark,
+                    )
+                : null,
+            borderRadius: AppRadius.roundedMd,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSelectedValid
+                    ? (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface)
+                    : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface),
+                borderRadius: AppRadius.roundedMd,
+                border: Border.all(
+                  color: isSelectedValid
+                      ? const Color(0xFF10B981).withValues(alpha: 0.6)
+                      : AppColors.error.withValues(alpha: 0.6),
+                  width: 1.2,
                 ),
-              ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: isSelectedValid
+                          ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                          : AppColors.error.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      selected.isEverywhere
+                          ? Icons.public_rounded
+                          : (isSelectedValid ? Icons.check_circle_rounded : Icons.location_on_rounded),
+                      color: isSelectedValid ? const Color(0xFF10B981) : AppColors.error,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                selected.name,
+                                style: AppTypography.titleMedium(
+                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                ).copyWith(fontWeight: FontWeight.w700, fontSize: 14.5),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (selected.id == closest?.id) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                  borderRadius: AppRadius.roundedSm,
+                                ),
+                                child: const Text(
+                                  'Gần nhất',
+                                  style: TextStyle(
+                                    color: Color(0xFF10B981),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          distanceText,
+                          style: AppTypography.bodySmall(
+                            color: isSelectedValid
+                                ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
+                                : AppColors.error,
+                          ).copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (config.locations.length > 1) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 22,
+                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            ...config.locations
-                .where((loc) => loc.id != selected.id)
-                .map((loc) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: _buildLocationItem(
-                        location: loc,
-                        isSelected: false,
-                        isClosest: loc.id == closest?.id,
-                        onSelect: () => vm.selectLocation(loc),
-                        numberFormat: numberFormat,
-                        isDark: isDark,
-                      ),
-                    )),
-          ],
-
+          ),
           const SizedBox(height: 10),
 
-          // Bắt buộc geofence tag
+          // Quy định geofence
           Row(
             children: [
               Icon(
@@ -341,7 +349,7 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
               Expanded(
                 child: Text(
                   config.group.enforceGeofence
-                      ? 'Quy định: Bắt buộc đứng trong bán kính địa điểm chấm công đã chọn.'
+                      ? 'Quy định: Bắt buộc đứng trong bán kính địa điểm chấm công.'
                       : 'Quy định: Không bắt buộc geofence.',
                   style: AppTypography.bodySmall(
                     color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
@@ -355,165 +363,279 @@ class _AttendanceGeofenceCardState extends ConsumerState<AttendanceGeofenceCard>
     );
   }
 
-  Widget _buildLocationItem({
-    required AttendanceLocationItemEntity location,
-    required bool isSelected,
-    required bool isClosest,
-    required VoidCallback onSelect,
+  /// Sắp xếp danh sách địa điểm theo khoảng cách từ gần đến xa
+  static List<AttendanceLocationItemEntity> _sortLocationsByDistance(
+    List<AttendanceLocationItemEntity> locations,
+  ) {
+    final sorted = List<AttendanceLocationItemEntity>.from(locations);
+    sorted.sort((a, b) {
+      final distA = a.distanceM;
+      final distB = b.distanceM;
+
+      // 1. So sánh khoảng cách tính bằng mét
+      if (distA != null && distB != null) {
+        return distA.compareTo(distB);
+      }
+      if (distA != null && distB == null) return -1;
+      if (distA == null && distB != null) return 1;
+
+      // 2. Nếu cùng null (vd: Mọi nơi), ưu tiên Mọi nơi
+      if (a.isEverywhere && !b.isEverywhere) return -1;
+      if (!a.isEverywhere && b.isEverywhere) return 1;
+
+      return a.name.compareTo(b.name);
+    });
+    return sorted;
+  }
+
+  /// Định dạng chuỗi khoảng cách hiển thị
+  static String _formatDistanceText(
+    AttendanceLocationItemEntity location,
+    NumberFormat numberFormat,
+  ) {
+    if (location.isEverywhere) {
+      return location.kindLabel.isNotEmpty
+          ? '${location.kindLabel} (Không ràng buộc vị trí - Hợp lệ)'
+          : 'Mọi nơi (Không ràng buộc vị trí - Hợp lệ)';
+    }
+    if (location.distanceM == null) {
+      return 'Đang xác định khoảng cách...';
+    }
+    if (location.isWithinRadius) {
+      return 'Cách ${location.distanceM}m · Trong bán kính ${location.radiusM}m (Hợp lệ)';
+    }
+    if (location.distanceM! >= 1000) {
+      return 'Cách ${(location.distanceM! / 1000).toStringAsFixed(1)}km (${numberFormat.format(location.distanceM)}m) · Ngoài bán kính ${location.radiusM}m';
+    }
+    return 'Cách ${location.distanceM}m · Ngoài bán kính ${location.radiusM}m';
+  }
+
+  /// Hiển thị Modal BottomSheet danh sách địa điểm được sắp xếp theo khoảng cách
+  void _showLocationPickerBottomSheet(
+    BuildContext context, {
+    required List<AttendanceLocationItemEntity> sortedLocations,
+    required AttendanceLocationItemEntity selected,
+    required AttendanceLocationItemEntity? closest,
+    required AttendanceViewModel vm,
     required NumberFormat numberFormat,
     required bool isDark,
   }) {
-    final isEverywhere = location.isEverywhere;
-    final isValid = location.isWithinRadius;
-    final hasDistance = location.distanceM != null;
-
-    final String distanceText;
-    if (isEverywhere) {
-      distanceText = location.kindLabel.isNotEmpty
-          ? location.kindLabel
-          : 'Mọi nơi (Không ràng buộc vị trí - Hợp lệ)';
-    } else if (!hasDistance) {
-      distanceText = 'Đang xác định khoảng cách...';
-    } else if (isValid) {
-      distanceText = 'Cách ${location.distanceM}m (Trong bán kính ${location.radiusM}m - Hợp lệ)';
-    } else if (location.distanceM! >= 1000) {
-      distanceText =
-          'Cách ${(location.distanceM! / 1000).toStringAsFixed(1)}km (${numberFormat.format(location.distanceM)}m - Bán kính ${location.radiusM}m)';
-    } else {
-      distanceText =
-          'Cách ${location.distanceM}m (Ngoài bán kính ${location.radiusM}m)';
-    }
-
-    final Color statusColor = (isEverywhere || isValid)
-        ? AppColors.primary
-        : (!hasDistance ? AppColors.secondary : AppColors.error);
-
-    return InkWell(
-      onTap: onSelect,
-      borderRadius: AppRadius.roundedMd,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: isDark ? 0.15 : 0.08)
-              : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surface),
-          borderRadius: AppRadius.roundedMd,
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primary
-                : (isDark ? AppColors.darkOutlineVariant : AppColors.surfaceVariant),
-            width: isSelected ? 1.8 : 1,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2.0),
-              child: Icon(
-                isSelected
-                    ? Icons.radio_button_checked_rounded
-                    : Icons.radio_button_off_rounded,
-                color: isSelected ? AppColors.primary : AppColors.outline,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          location.name,
-                          style: AppTypography.titleMedium(
-                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                          ).copyWith(
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      if (isSelected)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: AppRadius.roundedSm,
-                          ),
-                          child: const Text(
-                            'Đang chọn',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        )
-                      else if (isEverywhere)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.12),
-                            borderRadius: AppRadius.roundedSm,
-                          ),
-                          child: Text(
-                            location.kindLabel.isNotEmpty ? location.kindLabel : 'Mọi nơi',
-                            style: AppTypography.labelSmall(color: AppColors.primary).copyWith(fontSize: 10),
-                          ),
-                        )
-                      else if (isClosest)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.secondary.withValues(alpha: 0.15),
-                            borderRadius: AppRadius.roundedSm,
-                          ),
-                          child: Text(
-                            'Gần nhất',
-                            style: AppTypography.labelSmall(color: AppColors.secondary).copyWith(fontSize: 10),
-                          ),
-                        ),
-                    ],
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        isEverywhere
-                            ? Icons.public_rounded
-                            : (isValid ? Icons.check_circle_rounded : Icons.info_outline_rounded),
-                        color: statusColor,
-                        size: 14,
+                ),
+                const SizedBox(height: 12),
+
+                // Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Chọn địa điểm chấm công',
+                            style: AppTypography.titleMedium(
+                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                            ).copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.sort_rounded,
+                                size: 13,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Đã sắp xếp theo khoảng cách gần nhất (${sortedLocations.length} địa điểm)',
+                                  style: AppTypography.bodySmall(
+                                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                                  ).copyWith(fontSize: 11.5),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          distanceText,
-                          style: AppTypography.bodySmall(
-                            color: statusColor,
-                          ).copyWith(fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (!isSelected) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Chạm để chọn địa điểm này',
-                      style: AppTypography.labelSmall(
-                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                      ).copyWith(fontSize: 11, fontStyle: FontStyle.italic),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+
+                // Danh sách địa điểm đã sắp xếp theo khoảng cách
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.55,
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: sortedLocations.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final loc = sortedLocations[index];
+                      final isCurrentSelected = loc.id == selected.id;
+                      final isClosestLoc = loc.id == closest?.id;
+                      final isValid = loc.isWithinRadius || loc.isEverywhere;
+                      final distLabel = _formatDistanceText(loc, numberFormat);
+
+                      return InkWell(
+                        onTap: () {
+                          vm.selectLocation(loc);
+                          Navigator.pop(ctx);
+                        },
+                        borderRadius: AppRadius.roundedMd,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isCurrentSelected
+                                ? AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.08)
+                                : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceVariant.withValues(alpha: 0.3)),
+                            borderRadius: AppRadius.roundedMd,
+                            border: Border.all(
+                              color: isCurrentSelected
+                                  ? AppColors.primary
+                                  : (isDark ? AppColors.darkOutlineVariant.withValues(alpha: 0.4) : Colors.transparent),
+                              width: isCurrentSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isCurrentSelected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_off_rounded,
+                                color: isCurrentSelected ? AppColors.primary : AppColors.outline,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            loc.name,
+                                            style: AppTypography.titleMedium(
+                                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                            ).copyWith(
+                                              fontWeight: isCurrentSelected ? FontWeight.w700 : FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (isClosestLoc) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                              borderRadius: AppRadius.roundedSm,
+                                            ),
+                                            child: const Text(
+                                              'Gần nhất',
+                                              style: TextStyle(
+                                                color: Color(0xFF10B981),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        if (isCurrentSelected) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary,
+                                              borderRadius: AppRadius.roundedSm,
+                                            ),
+                                            child: const Text(
+                                              'Đang chọn',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          loc.isEverywhere
+                                              ? Icons.public_rounded
+                                              : (isValid ? Icons.check_circle_rounded : Icons.location_on_rounded),
+                                          size: 13,
+                                          color: isValid ? const Color(0xFF10B981) : AppColors.error,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            distLabel,
+                                            style: AppTypography.bodySmall(
+                                              color: isValid
+                                                  ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
+                                                  : AppColors.error,
+                                            ).copyWith(fontSize: 12, fontWeight: FontWeight.w500),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

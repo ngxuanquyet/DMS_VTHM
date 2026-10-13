@@ -51,8 +51,9 @@ void main() {
       // Con số tạm tính
       expect(find.text('+8.5 km tạm tính'), findsOneWidget);
 
-      // Các chỉ số phụ
-      expect(find.text('1/2 ngày đã chốt'), findsOneWidget);
+      // Tiêu đề và các chỉ số phụ
+      expect(find.text('TỔNG QUÃNG ĐƯỜNG DI CHUYỂN'), findsOneWidget);
+      expect(find.text('2 ngày di chuyển'), findsOneWidget);
       expect(find.text('1 chặng'), findsOneWidget); // Thiếu mốc
       expect(find.text('2 chặng'), findsOneWidget); // Chờ tính đêm
     });
@@ -207,6 +208,60 @@ void main() {
       expect(find.text('Lỗi dịch vụ'), findsOneWidget);
       // Bảo đảm error_note bí mật của hệ thống KHÔNG hiển thị cho nhân viên (§4.2)
       expect(find.text('SECRET_BACKEND_ERROR_NOTE_INTERNAL'), findsNothing);
+    });
+
+    testWidgets('Renders route timeline with from and to endpoints (§4.2 13/10/2026)',
+        (tester) async {
+      final leg = const TravelLegEntity(
+        id: 10,
+        seq: 1,
+        legKind: 'start',
+        legKindLabel: 'Chấm công vào → điểm bán đầu tiên',
+        status: 'ok',
+        statusLabel: 'Đã tính',
+        statusColor: 'success',
+        roadM: '3500.00',
+        from: TravelEndpointEntity(
+          type: 'punch',
+          punchId: 12,
+          code: 'VP01',
+          name: 'Văn phòng VTHM',
+          at: '2026-09-04 07:30:00+07',
+        ),
+        to: TravelEndpointEntity(
+          type: 'visit',
+          visitId: 42141,
+          customerId: 8744,
+          code: '08290618',
+          name: 'Tạp hoá Minh Anh',
+          at: '2026-09-04 07:42:00+07',
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TravelLegItemCard(leg: leg),
+          ),
+        ),
+      );
+
+      // Nhãn TỪ / ĐẾN
+      expect(find.text('TỪ'), findsOneWidget);
+      expect(find.text('ĐẾN'), findsOneWidget);
+
+      // Điểm xuất phát
+      expect(find.text('Văn phòng VTHM'), findsOneWidget);
+      expect(find.text('Mã: VP01'), findsOneWidget);
+      expect(find.text('Chấm: 07:30'), findsOneWidget);
+
+      // Điểm đến
+      expect(find.text('Tạp hoá Minh Anh'), findsOneWidget);
+      expect(find.text('Mã: 08290618'), findsOneWidget);
+      expect(find.text('Đến: 07:42'), findsOneWidget);
+
+      // Khoảng cách
+      expect(find.text('3.5 km'), findsOneWidget);
     });
   });
 }
