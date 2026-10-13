@@ -134,11 +134,15 @@ class DynamicRuleEvaluator {
 
   /// Luật 1 (§2): 0, "0", false KHÔNG phải rỗng.
   /// Chỉ null, chuỗi rỗng (sau trim), và mảng/map rỗng mới là rỗng.
+  /// Object chứa toàn giá trị rỗng/null (như {address: "", lat: null, lng: null}) cũng là rỗng (§3).
   static bool isEmptyValue(dynamic v) {
     if (v == null) return true;
     if (v is String) return v.trim().isEmpty;
     if (v is List) return v.isEmpty;
-    if (v is Map) return v.isEmpty;
+    if (v is Map) {
+      if (v.isEmpty) return true;
+      return v.values.every((val) => val == null || (val is String && val.trim().isEmpty));
+    }
     return false;
   }
 

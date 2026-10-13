@@ -810,7 +810,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               insertIdx != -1 ? insertIdx + 1 : 1,
               DynamicFormField(
                 code: 'region_id',
-                label: 'Khu vực (Region - bắt buộc để sinh mã)',
+                label: 'Khu vực quản lý',
                 type: DynamicFormFieldType.singleChoice,
                 isRequired: true,
                 options: regionOptions,
@@ -828,7 +828,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               insertIdx != -1 ? insertIdx + 1 : 1,
               DynamicFormField(
                 code: 'route_ids',
-                label: 'Tuyến bán hàng (Bắt buộc)',
+                label: 'Tuyến bán hàng',
                 type: DynamicFormFieldType.singleChoice,
                 isRequired: true,
                 options: dynamicRouteOptions,
@@ -846,7 +846,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             fields.add(
               const DynamicFormField(
                 code: 'photo_file_id',
-                label: 'Ảnh điểm bán (Bắt buộc)',
+                label: 'Ảnh điểm bán',
                 type: DynamicFormFieldType.photo,
                 maxPhotos: 10,
                 isRequired: true,
@@ -864,7 +864,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 type: DynamicFormFieldType.photo,
                 allowGallery: false,
                 maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
-                label: existing.label.isEmpty ? 'Ảnh điểm bán (Bắt buộc)' : existing.label,
+                label: existing.label.isEmpty ? 'Ảnh điểm bán' : existing.label,
                 helperText: existing.helperText?.replaceAll('hoặc tải lên ', '') ??
                     'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
                 section: existing.section == null || existing.section!.isEmpty
@@ -884,6 +884,15 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                     'Chụp tối đa ${fields[i].maxPhotos} ảnh thực tế điểm bán từ máy ảnh',
               );
             }
+          }
+
+          // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
+          for (int i = 0; i < fields.length; i++) {
+            final cleaned = fields[i].label
+                .replaceAll(RegExp(r'\s*\((?:bắt buộc|Bắt buộc|Region\s*-\s*bắt buộc để sinh mã)\)', caseSensitive: false), '')
+                .replaceAll(RegExp(r'\s*-\s*bắt buộc\b', caseSensitive: false), '')
+                .trim();
+            fields[i] = fields[i].copyWith(label: cleaned);
           }
 
           if (fields.isEmpty) {

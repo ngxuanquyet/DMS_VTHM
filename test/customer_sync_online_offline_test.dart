@@ -260,7 +260,6 @@ void main() {
   test('updateCustomer on user-created customer (with uuid and id > 0) sends PATCH /crm/customers/{id} when online', () async {
     // 1. Giả lập một khách hàng do user tự tạo trên app, đã sync lên server thành công
     // Khách hàng này có id = 8888 (> 0) và clientUuid = 'my-custom-uuid-1234' (không bắt đầu bằng server_)
-    final localDataSource = CustomerLocalDataSource(db);
     final userCreatedInput = {
       'name': 'Điểm Bán Tự Tạo Cũ',
       'region_id': 1,

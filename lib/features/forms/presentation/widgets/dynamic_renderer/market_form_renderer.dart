@@ -11,6 +11,7 @@ import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
+import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
 
@@ -303,6 +304,61 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
       final val = _answers[code];
 
+      // Xử lý riêng cho ô vị trí (§2, §3, §4)
+      if (block.isLocation) {
+        if (val == null || DynamicRuleEvaluator.isEmptyValue(val)) {
+          if (block.required) {
+            newErrors[code] = '$label không được để trống.';
+          }
+          continue;
+        }
+
+        if (val is! Map) {
+          newErrors[code] = '$label có giá trị không hợp lệ.';
+          continue;
+        }
+
+        final latVal = val['lat'];
+        final lngVal = val['lng'];
+        final addrVal = val['address']?.toString();
+
+        // Chỉ có address hoặc chỉ một nửa toạ độ (chưa có toạ độ GPS)
+        if (latVal == null || lngVal == null) {
+          if (addrVal != null && addrVal.trim().isNotEmpty) {
+            newErrors[code] = '$label cần có toạ độ GPS — bấm "Lấy vị trí".';
+          } else if (block.required) {
+            newErrors[code] = '$label không được để trống.';
+          }
+          continue;
+        }
+
+        final numLat = latVal is num ? latVal : double.tryParse(latVal.toString());
+        final numLng = lngVal is num ? lngVal : double.tryParse(lngVal.toString());
+        final accuracyVal = val['accuracy'];
+        final numAcc = accuracyVal is num
+            ? accuracyVal
+            : (accuracyVal != null ? double.tryParse(accuracyVal.toString()) : null);
+
+        if (numLat == null ||
+            numLng == null ||
+            numLat < -90 ||
+            numLat > 90 ||
+            numLng < -180 ||
+            numLng > 180 ||
+            (numAcc != null && numAcc < 0)) {
+          newErrors[code] = '$label có giá trị không hợp lệ.';
+          continue;
+        }
+
+        final maxLen = block.resolved.validation?.maxLength ?? 500;
+        if (addrVal != null && addrVal.trim().length > maxLen) {
+          newErrors[code] = '$label không được vượt quá $maxLen ký tự.';
+          continue;
+        }
+
+        continue;
+      }
+
       // 1. Kiểm tra bắt buộc (required) - 0, "0", false không phải rỗng (§2 Luật 1)
       final isEmpty = DynamicRuleEvaluator.isEmptyValue(val);
 
@@ -431,6 +487,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'image':
       case 'file':
         return _buildImageField(context, block, isDark);
+      case 'location':
+        return _buildLocationField(block, isDark);
       case 'ref_customer':
         final currentVal = _answers[block.resolved.code];
         final int? selectedId = (widget.lockCustomer && widget.defaultCustomerId != null)
@@ -453,6 +511,34 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       default:
         return _buildTextField(block, isDark, isMultiline: false);
     }
+  }
+
+  // ==========================================
+  // Ô ĐỊA CHỈ + TOẠ ĐỘ GPS (LOCATION - SPEC 13/10/2026)
+  // ==========================================
+
+  Widget _buildLocationField(MarketFormBlockEntity block, bool isDark) {
+    final code = block.resolved.code;
+    final val = _answers[code];
+    Map<String, dynamic>? locMap;
+    if (val is Map<String, dynamic>) {
+      locMap = val;
+    } else if (val is Map) {
+      locMap = Map<String, dynamic>.from(val);
+    }
+
+    return LocationFieldWidget(
+      label: block.resolved.label.isNotEmpty ? block.resolved.label : code,
+      isRequired: block.required,
+      isReadOnly: false,
+      description: block.resolved.description,
+      maxLength: block.resolved.validation?.maxLength ?? 500,
+      errorText: _errors[code],
+      value: locMap,
+      onChanged: (newMap) {
+        _updateValue(code, newMap);
+      },
+    );
   }
 
   // ==========================================

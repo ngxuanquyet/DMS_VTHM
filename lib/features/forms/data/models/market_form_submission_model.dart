@@ -52,7 +52,42 @@ class MarketFormSubmissionModel {
       if (value == null) return;
       if (value is String && value.trim().isEmpty) return;
       if (value is List && value.isEmpty) return;
-      if (value is Map && value.isEmpty) return;
+      if (value is Map) {
+        if (value.isEmpty) return;
+        // Kiểm tra nếu là ô vị trí hoặc map toàn null/rỗng
+        final isAllNullOrEmpty = value.values.every((v) => v == null || (v is String && v.trim().isEmpty));
+        if (isAllNullOrEmpty) return;
+
+        // Nếu là map vị trí có chứa lat/lng hoặc address (§3)
+        if (value.containsKey('lat') || value.containsKey('lng') || value.containsKey('address')) {
+          final latVal = value['lat'];
+          final lngVal = value['lng'];
+          final addrVal = value['address']?.toString().trim();
+
+          final numLat = latVal is num ? latVal : double.tryParse(latVal?.toString() ?? '');
+          final numLng = lngVal is num ? lngVal : double.tryParse(lngVal?.toString() ?? '');
+
+          if (numLat == null && numLng == null && (addrVal == null || addrVal.isEmpty)) {
+            return; // Rỗng, bỏ qua (§3)
+          }
+
+          final numAccuracy = value['accuracy'] is num
+              ? value['accuracy'] as num
+              : double.tryParse(value['accuracy']?.toString() ?? '');
+
+          final isMock = value['mock'] == true;
+
+          final locationMap = <String, dynamic>{
+            if (addrVal != null && addrVal.isNotEmpty) 'address': addrVal,
+            if (numLat != null) 'lat': double.parse(numLat.toStringAsFixed(7)),
+            if (numLng != null) 'lng': double.parse(numLng.toStringAsFixed(7)),
+            if (numAccuracy != null) 'accuracy': double.parse(numAccuracy.toStringAsFixed(1)),
+            'mock': isMock,
+          };
+          clean[key] = locationMap;
+          return;
+        }
+      }
 
       // §3: LUÔN gửi mảng cho ô ảnh, kể cả khi chỉ có một ảnh: ["<token>"]
       if (imageCodes != null && imageCodes.contains(key)) {

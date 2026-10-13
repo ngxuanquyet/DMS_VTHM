@@ -57,6 +57,7 @@ class MarketFormBlockEntity {
       resolved.inputType == 'note';
 
   bool get isImage => resolved.isImage;
+  bool get isLocation => resolved.isLocation;
   int get maxFiles => resolved.maxFiles;
 }
 
@@ -83,6 +84,7 @@ class MarketFormResolvedEntity {
   });
 
   bool get isImage => inputType.toLowerCase() == 'image';
+  bool get isLocation => inputType.toLowerCase() == 'location';
 }
 
 /// Lựa chọn cho ô select, multiselect, radio, checkbox

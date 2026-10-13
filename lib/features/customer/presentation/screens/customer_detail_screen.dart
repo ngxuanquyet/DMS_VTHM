@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/location_field_widget.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -971,7 +972,43 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   // 5. ROUTE & MANAGEMENT CARD
   // ===========================================================================
 
+  String? _resolveRegionName() {
+    // 1. Tên khu vực có sẵn từ đối tượng khách hàng
+    if (_customer.regionName != null && _customer.regionName!.trim().isNotEmpty) {
+      return _customer.regionName!.trim();
+    }
+
+    // 2. Tra cứu từ dynamicFields
+    final dynName = _customer.dynamicFields['region_name']?.toString() ??
+        _customer.dynamicFields['region']?.toString();
+    if (dynName != null && dynName.trim().isNotEmpty) {
+      return dynName.trim();
+    }
+
+    // 3. Tra cứu theo regionId trong CustomerMetaData (Riverpod Provider)
+    final rId = _customer.regionId;
+    if (rId != null) {
+      final meta = ref.watch(customerViewModelProvider).meta;
+      final match = meta.regions.where((r) => r.id == rId).firstOrNull;
+      if (match != null) {
+        return match.name.isNotEmpty ? match.name : match.code;
+      }
+
+      // 4. Fallback tra cứu trong kDefaultCustomerMeta
+      final defaultMatch = kDefaultCustomerMeta.regions.where((r) => r.id == rId).firstOrNull;
+      if (defaultMatch != null) {
+        return defaultMatch.name.isNotEmpty ? defaultMatch.name : defaultMatch.code;
+      }
+
+      return 'Khu vực #$rId';
+    }
+
+    return null;
+  }
+
   Widget _buildRouteAndManagementCard(bool isDark) {
+    final regionDisplayName = _resolveRegionName();
+
     return _buildSectionCard(
       title: 'Quản trị & Tuyến bán hàng',
       icon: Icons.hub_outlined,
@@ -990,11 +1027,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           icon: Icons.storefront_outlined,
           isDark: isDark,
         ),
-        if (_customer.regionId != null) ...[
+        if (regionDisplayName != null && regionDisplayName.isNotEmpty) ...[
           const SizedBox(height: 10),
           _buildInfoRow(
-            label: 'Khu vực (Region ID)',
-            value: '#${_customer.regionId}',
+            label: 'Khu vực',
+            value: regionDisplayName,
             icon: Icons.map_outlined,
             isDark: isDark,
           ),
@@ -1018,25 +1055,21 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   // 6. DYNAMIC FIELDS CARD
   // ===========================================================================
 
+  static const _detailIgnoredDynamicKeys = {
+    'photo_url', 'photo_urls', 'photo_token', 'photo_tokens', 'data',
+    'routes', 'route_ids', 'route', 'region', 'region_id', 'region_name',
+    'id', 'code', 'name', 'address', 'phone', 'contact_name', 'contact_title',
+    'email', 'lat', 'lng', 'geofence_radius_m', 'type',
+  };
+
   bool _hasDynamicFields() {
-    const ignoredKeys = {
-      'photo_url', 'photo_urls', 'photo_token', 'photo_tokens', 'data',
-      'id', 'code', 'name', 'address', 'phone', 'contact_name', 'contact_title',
-      'email', 'lat', 'lng', 'geofence_radius_m', 'type', 'route',
-    };
-    return _customer.dynamicFields.keys.any((k) => !ignoredKeys.contains(k));
+    return _customer.dynamicFields.keys.any((k) => !_detailIgnoredDynamicKeys.contains(k));
   }
 
   Widget _buildDynamicFieldsCard(bool isDark) {
-    const ignoredKeys = {
-      'photo_url', 'photo_urls', 'photo_token', 'photo_tokens', 'data',
-      'id', 'code', 'name', 'address', 'phone', 'contact_name', 'contact_title',
-      'email', 'lat', 'lng', 'geofence_radius_m', 'type', 'route',
-    };
-
     final columns = ref.watch(customerViewModelProvider).dynamicColumns;
     final entries = _customer.dynamicFields.entries
-        .where((e) => !ignoredKeys.contains(e.key) && e.value != null && e.value.toString().isNotEmpty)
+        .where((e) => !_detailIgnoredDynamicKeys.contains(e.key) && e.value != null && e.value.toString().isNotEmpty)
         .toList();
 
     return _buildSectionCard(
@@ -1048,6 +1081,23 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             .cast<CustomerDynamicColumn?>()
             .firstWhere((c) => c?.code == e.key, orElse: () => null);
         final label = col?.label.isNotEmpty == true ? col!.label : e.key;
+        final isLocation = (col != null && col.isLocation) ||
+            (e.value is Map && (e.value.containsKey('lat') || e.value.containsKey('lng') || e.value.containsKey('address')));
+
+        if (isLocation) {
+          final locMap = e.value is Map<String, dynamic>
+              ? e.value as Map<String, dynamic>
+              : (e.value is Map ? Map<String, dynamic>.from(e.value as Map) : null);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: LocationFieldWidget(
+              label: label,
+              isReadOnly: true,
+              value: locMap,
+              onChanged: (_) {},
+            ),
+          );
+        }
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 10.0),

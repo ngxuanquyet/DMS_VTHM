@@ -40,6 +40,7 @@ class CustomerEntity {
   final int? channelId;
   final String? channelName;
   final int? regionId;
+  final String? regionName;
   final String route;
   final String address;
   final String? provinceName;
@@ -83,6 +84,7 @@ class CustomerEntity {
     this.channelId,
     this.channelName,
     this.regionId,
+    this.regionName,
     required this.route,
     this.routes = const [],
     this.routeIds = const [],
@@ -180,6 +182,7 @@ class CustomerEntity {
     int? channelId,
     String? channelName,
     int? regionId,
+    String? regionName,
     String? route,
     List<String>? routes,
     List<int>? routeIds,
@@ -218,6 +221,7 @@ class CustomerEntity {
       channelId: channelId ?? this.channelId,
       channelName: channelName ?? this.channelName,
       regionId: regionId ?? this.regionId,
+      regionName: regionName ?? this.regionName,
       route: route ?? this.route,
       routes: routes ?? this.routes,
       routeIds: routeIds ?? this.routeIds,

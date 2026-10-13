@@ -35,8 +35,11 @@ enum DynamicFormFieldType {
   /// Đánh giá sao / Thang điểm
   rating,
 
-  /// Lấy tọa độ GPS (Vị trí)
+  /// Lấy tọa độ GPS (Vị trí cũ)
   gps,
+
+  /// Ô Địa chỉ + Tọa độ GPS (Spec 13/10/2026)
+  location,
 
   /// Chữ ký điện tử
   signature;
@@ -124,8 +127,10 @@ enum DynamicFormFieldType {
       case 'scale':
         return DynamicFormFieldType.rating;
 
-      case 'gps':
       case 'location':
+        return DynamicFormFieldType.location;
+
+      case 'gps':
       case 'coords':
       case 'coordinates':
       case 'lat_lng':

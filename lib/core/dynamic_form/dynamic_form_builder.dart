@@ -15,6 +15,7 @@ import 'widgets/photo_field_widget.dart';
 import 'widgets/rating_field_widget.dart';
 import 'widgets/single_choice_field_widget.dart';
 import 'widgets/text_field_widget.dart';
+import '../widgets/location_field_widget.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
   /// Danh sách đặc tả các trường form nhận từ API
@@ -200,7 +201,43 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         }
       }
 
-      // 2. Kiểm tra giới hạn số (Min/Max check)
+      // 2. Kiểm tra trường Vị trí GPS (Location check theo Spec 13/10/2026)
+      if (field.type == DynamicFormFieldType.location) {
+        if (field.isRequired) {
+          if (value == null || (value is Map && (value['lat'] == null || value['lng'] == null))) {
+            if (value is Map && value['address'] != null && value['address'].toString().trim().isNotEmpty) {
+              newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
+            } else {
+              newErrors[field.code] = '${field.label} không được để trống.';
+            }
+            isValid = false;
+            firstInvalidCode ??= field.code;
+            continue;
+          }
+        } else if (value is Map) {
+          final latVal = value['lat'];
+          final lngVal = value['lng'];
+          final addrVal = value['address']?.toString();
+          if ((latVal == null || lngVal == null) && addrVal != null && addrVal.trim().isNotEmpty) {
+            newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
+            isValid = false;
+            firstInvalidCode ??= field.code;
+            continue;
+          }
+          if (latVal != null && lngVal != null) {
+            final numLat = latVal is num ? latVal : double.tryParse(latVal.toString());
+            final numLng = lngVal is num ? lngVal : double.tryParse(lngVal.toString());
+            if (numLat == null || numLng == null || numLat < -90 || numLat > 90 || numLng < -180 || numLng > 180) {
+              newErrors[field.code] = '${field.label} có giá trị không hợp lệ.';
+              isValid = false;
+              firstInvalidCode ??= field.code;
+              continue;
+            }
+          }
+        }
+      }
+
+      // 3. Kiểm tra giới hạn số (Min/Max check)
       if (field.type == DynamicFormFieldType.number && value is num) {
         if (field.min != null && value < field.min!) {
           newErrors[field.code] = 'Giá trị phải lớn hơn hoặc bằng ${field.min}';
@@ -286,7 +323,6 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         ...sections.entries.map((secEntry) {
           final sectionTitle = secEntry.key;
           final sectionFields = secEntry.value;
-          final hasRequired = sectionFields.any((f) => f.isRequired);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -346,18 +382,6 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
                           ).copyWith(fontWeight: FontWeight.w700, fontSize: 14),
                         ),
                       ),
-                      if (hasRequired)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.1),
-                            borderRadius: AppRadius.roundedSm,
-                          ),
-                          child: Text(
-                            'Có trường bắt buộc',
-                            style: AppTypography.labelSmall(color: AppColors.error).copyWith(fontSize: 10),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -566,6 +590,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           field: field,
           value: gpsMap,
           errorText: errorText,
+          onChanged: (val) => updateFieldValue(field.code, val),
+        );
+
+      case DynamicFormFieldType.location:
+        final locMap = value is Map<String, dynamic>
+            ? value
+            : (value is Map ? Map<String, dynamic>.from(value) : null);
+        return LocationFieldWidget(
+          label: field.label,
+          isRequired: field.isRequired,
+          isReadOnly: field.isReadOnly,
+          description: field.helperText,
+          maxLength: field.max?.toInt() ?? 500,
+          errorText: errorText,
+          value: locMap,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 

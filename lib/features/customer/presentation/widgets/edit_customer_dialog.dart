@@ -9,13 +9,15 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
-import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
+import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
+import '../screens/add_customer_screen.dart';
 import '../screens/edit_customer_screen.dart';
+import '../viewmodels/customer_view_model.dart';
 
 class EditCustomerDialog extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -83,6 +85,32 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
   bool _isSaving = false;
   bool _isLocating = false;
 
+  static const _ignoredDynamicKeys = {
+    // Photos
+    'photo_url', 'photo_urls', 'photo_token', 'photo_tokens', 'photo_file_id', 'photo', 'photos',
+    'photo_path', 'photo_paths', 'image', 'images', 'image_url', 'image_urls', 'avatar',
+    // Routes
+    'routes', 'route_ids', 'route', 'route_id', 'route_name', 'routename', 'route_code', 'routecode',
+    'sales_route', 'sales_routes',
+    // Core fields
+    'id', 'code', 'customer_code', 'name', 'customer_name', 'address', 'phone', 'contact_name', 'contact_title', 'contact_person',
+    'email', 'lat', 'lng', 'latitude', 'longitude', 'geofence_radius_m', 'geofence',
+    'birthday', 'tax_code', 'delivery_address', 'description', 'notes',
+    // Classifications & Administrative divisions
+    'type', 'customer_type', 'customer_type_id', 'customer_type_name',
+    'channel', 'channel_id', 'channel_name',
+    'region', 'region_id', 'region_name', 'area_id', 'area_name', 'customer_group_id', 'customer_group_name',
+    'province', 'province_id', 'province_name', 'province_code',
+    'ward', 'ward_id', 'ward_name', 'ward_code',
+    'district', 'district_id', 'district_name', 'district_code',
+    // System metadata
+    'status', 'is_active', 'is_draft', 'approval_status', 'client_uuid',
+    'created_at', 'updated_at', 'deleted_at', 'created_by_name', 'updated_by_name',
+    'creator_id', 'user_id', 'assigned_to', 'assignees',
+    'sync_status', 'sync_action', 'sync_retry_count', 'sync_error',
+    'data', 'dynamic_fields', 'dynamicFieldsJson',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -129,20 +157,56 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
       if (p.isNotEmpty) _photos.add(p);
     }
 
-    // Initialize dynamic controllers from active schema and customer data
+    // Initialize dynamic controllers from active schema and customer data, strictly filtering out internal/system keys
     final effectiveColumns = widget.dynamicColumns.isNotEmpty
         ? widget.dynamicColumns
-        : widget.meta.dynamicColumns;
+        : (widget.meta.dynamicColumns.isNotEmpty
+            ? widget.meta.dynamicColumns
+            : ref.read(customerViewModelProvider).dynamicColumns);
 
-    final allDynamicKeys = <String>{
+    final rawDynamicKeys = <String>{
       ...effectiveColumns.map((col) => col.code),
       ...widget.customer.dynamicFields.keys,
-    };
+    }..removeWhere((k) => _ignoredDynamicKeys.contains(k.toLowerCase().trim()));
+
+    // Deduplicate mw_ prefix keys if both key and mw_key exist
+    final allDynamicKeys = <String>{};
+    for (final k in rawDynamicKeys) {
+      if (k.startsWith('mw_')) {
+        final rawKey = k.substring(3);
+        if (rawDynamicKeys.contains(rawKey)) {
+          final hasRawVal = widget.customer.dynamicFields[rawKey]?.toString().trim().isNotEmpty == true;
+          final hasKVal = widget.customer.dynamicFields[k]?.toString().trim().isNotEmpty == true;
+          if (hasRawVal && !hasKVal) {
+            allDynamicKeys.add(rawKey);
+          } else {
+            allDynamicKeys.add(k);
+          }
+          continue;
+        }
+      } else {
+        final mwKey = 'mw_$k';
+        if (rawDynamicKeys.contains(mwKey)) {
+          continue;
+        }
+      }
+      allDynamicKeys.add(k);
+    }
 
     for (final key in allDynamicKeys) {
-      final val = widget.customer.dynamicFields[key];
+      var val = widget.customer.dynamicFields[key];
+      if (val == null && key.startsWith('mw_')) {
+        val = widget.customer.dynamicFields[key.substring(3)];
+      } else if (val == null && !key.startsWith('mw_')) {
+        val = widget.customer.dynamicFields['mw_$key'];
+      }
+      if (val is List || val is Map) continue;
+      final valStr = val != null ? val.toString().trim() : '';
+      if (valStr.startsWith('[') && valStr.endsWith(']')) continue;
+      if (valStr.startsWith('{') && valStr.endsWith('}')) continue;
+
       _dynamicControllers[key] =
-          TextEditingController(text: val != null ? val.toString() : '');
+          TextEditingController(text: valStr);
     }
   }
 
@@ -312,24 +376,14 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
       changes['geofence_radius_m'] = newGeofence;
     }
 
-    // 5. Dynamic Editable Fields (Only source == "own" and read_only == false per spec)
-    final effectiveColumns = widget.dynamicColumns.isNotEmpty
-        ? widget.dynamicColumns
-        : widget.meta.dynamicColumns;
-
+    // 5. Dynamic Editable Fields (Cho phép sửa được mọi trường, không quan tâm hệ cũ)
     final dynamicChanges = <String, dynamic>{};
     for (final entry in _dynamicControllers.entries) {
       final key = entry.key;
       final newVal = entry.value.text.trim();
       final oldVal = c.dynamicFields[key]?.toString() ?? '';
 
-      final colDef = effectiveColumns
-          .cast<CustomerDynamicColumn?>()
-          .firstWhere((col) => col?.code == key, orElse: () => null);
-
-      final isReadOnly =
-          colDef?.readOnly == true || colDef?.source == 'mobiwork';
-      if (!isReadOnly && newVal != oldVal) {
+      if (newVal != oldVal) {
         dynamicChanges[key] = newVal.isNotEmpty ? newVal : null;
       }
     }
@@ -1338,10 +1392,175 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
     );
   }
 
+  bool _isSelectField(String key, CustomerDynamicColumn? colDef, DynamicFormField? schemaField) {
+    if (colDef != null) {
+      final it = colDef.inputType.toLowerCase().trim();
+      if (it == 'select' ||
+          it == 'dropdown' ||
+          it == 'single_choice' ||
+          it == 'choice' ||
+          it == 'radio' ||
+          it == 'combobox') {
+        return true;
+      }
+      if (colDef.options.isNotEmpty) return true;
+    }
+
+    if (schemaField != null) {
+      if (schemaField.type == DynamicFormFieldType.singleChoice) return true;
+      if (schemaField.catalog == 'dropdown' || schemaField.catalog == 'select') return true;
+      if (schemaField.options.isNotEmpty) return true;
+    }
+
+    final k = key.toLowerCase().trim();
+    if (k.contains('khach_hang_vthm') || k.contains('kh_vthm')) return true;
+    if (k.contains('nhan_1') || k.contains('nhan_2') || k.contains('nhan_3')) return true;
+
+    final label = (colDef?.label ?? schemaField?.label ?? '').toLowerCase().trim();
+    if (label.contains('khách hàng vthm') || label.contains('khach hang vthm')) return true;
+    if (label.contains('nhãn 1') || label.contains('nhãn 2') || label.contains('nhãn 3') || label.startsWith('nhãn')) return true;
+
+    return false;
+  }
+
+  List<String> _resolveSelectOptions({
+    required String key,
+    required CustomerDynamicColumn? colDef,
+    required DynamicFormField? schemaField,
+    required String currentValue,
+  }) {
+    final optionsSet = <String>{};
+
+    // 1. Lấy từ colDef
+    if (colDef != null && colDef.options.isNotEmpty) {
+      for (final opt in colDef.options) {
+        final label = opt.label.trim();
+        if (label.isNotEmpty) optionsSet.add(label);
+      }
+    }
+
+    // 2. Lấy từ schemaField
+    if (schemaField != null && schemaField.options.isNotEmpty) {
+      for (final opt in schemaField.options) {
+        final label = opt.label.trim();
+        if (label.isNotEmpty) optionsSet.add(label);
+      }
+    }
+
+    // 3. Fallback cho các trường danh mục chuẩn MobiWork / DMS
+    final k = key.toLowerCase().trim();
+    final label = (colDef?.label ?? schemaField?.label ?? '').toLowerCase().trim();
+
+    if (k.contains('khach_hang_vthm') || label.contains('khách hàng vthm')) {
+      optionsSet.addAll([
+        '1 - KH VTHM',
+        '0 - Không phải KH VTHM',
+        '2 - Chưa xác định',
+      ]);
+    }
+
+    // 4. Thu thập các giá trị nhãn thực tế từ danh sách điểm bán khác
+    if (k.contains('nhan_') || label.contains('nhãn')) {
+      final allCustomers = ref.watch(customerViewModelProvider).allCustomers;
+      for (final cust in allCustomers) {
+        final v = cust.dynamicFields[key]?.toString().trim() ??
+            cust.dynamicFields[k]?.toString().trim() ??
+            cust.dynamicFields['mw_$k']?.toString().trim();
+        if (v != null && v.isNotEmpty && !v.startsWith('[') && !v.startsWith('{')) {
+          optionsSet.add(v);
+        }
+      }
+    }
+
+    // 5. Luôn thêm giá trị hiện tại nếu có
+    if (currentValue.isNotEmpty && !currentValue.startsWith('[') && !currentValue.startsWith('{')) {
+      optionsSet.add(currentValue);
+    }
+
+    return optionsSet.toList();
+  }
+
+  Future<void> _promptCustomValue(
+    BuildContext context,
+    String key,
+    String label,
+    TextEditingController controller,
+  ) async {
+    final customController = TextEditingController(text: controller.text);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.edit_note_rounded, color: AppColors.primary, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Nhập giá trị: $label',
+                style: AppTypography.titleMedium(
+                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: TextField(
+          controller: customController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Nhập giá trị cho $label...',
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, customController.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Đồng ý'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        controller.text = result;
+      });
+    }
+  }
+
+  String _formatDynamicKey(String key) {
+    var k = key.replaceFirst('mw_', '');
+    if (k == 'khach_hang_vthm') return 'Khách hàng VTHM';
+    if (k == 'nhan_1') return 'Nhãn 1';
+    if (k == 'nhan_2') return 'Nhãn 2';
+    if (k == 'nhan_3') return 'Nhãn 3';
+    return k.replaceAll('_', ' ');
+  }
+
   Widget _buildDynamicFieldsCard(bool isDark) {
     final effectiveColumns = widget.dynamicColumns.isNotEmpty
         ? widget.dynamicColumns
-        : widget.meta.dynamicColumns;
+        : (widget.meta.dynamicColumns.isNotEmpty
+            ? widget.meta.dynamicColumns
+            : ref.watch(customerViewModelProvider).dynamicColumns);
+
+    final schemaAsync = ref.watch(customerFormSchemaProvider);
+    final schemaFields = (schemaAsync.valueOrNull?['data']?['fields'] as List? ?? [])
+        .map((f) => DynamicFormField.fromJson(f as Map<String, dynamic>))
+        .toList();
 
     if (_dynamicControllers.isEmpty) {
       return Container(
@@ -1391,100 +1610,173 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
 
           final colDef = effectiveColumns
               .cast<CustomerDynamicColumn?>()
-              .firstWhere((col) => col?.code == key, orElse: () => null);
+              .firstWhere(
+                (col) =>
+                    col?.code == key ||
+                    col?.legacyKey == key ||
+                    'mw_${col?.legacyKey}' == key ||
+                    col?.code.replaceFirst('mw_', '') == key.replaceFirst('mw_', ''),
+                orElse: () => null,
+              );
 
-          final label = colDef?.label.isNotEmpty == true ? colDef!.label : key;
-          final isReadOnly =
-              colDef?.readOnly == true || colDef?.source == 'mobiwork';
-          final source = colDef?.source ?? 'own';
+          final schemaField = schemaFields
+              .cast<DynamicFormField?>()
+              .firstWhere(
+                (f) =>
+                    f?.code == key ||
+                    'mw_${f?.code}' == key ||
+                    f?.code.replaceFirst('mw_', '') == key.replaceFirst('mw_', ''),
+                orElse: () => null,
+              );
+
+          final label = colDef?.label.isNotEmpty == true
+              ? colDef!.label
+              : (schemaField?.label.isNotEmpty == true
+                  ? schemaField!.label
+                  : _formatDynamicKey(key));
+
+          final isSelect = _isSelectField(key, colDef, schemaField);
+
+          if (isSelect) {
+            final currentValue = controller.text.trim();
+            final options = _resolveSelectOptions(
+              key: key,
+              colDef: colDef,
+              schemaField: schemaField,
+              currentValue: currentValue,
+            );
+
+            final hasCurrentInOptions = currentValue.isNotEmpty && options.contains(currentValue);
+            final effectiveValue = hasCurrentInOptions
+                ? currentValue
+                : (currentValue.isNotEmpty ? currentValue : null);
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: AppTypography.labelSmall(
+                            color: isDark
+                                ? AppColors.darkOnSurfaceVariant
+                                : AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Danh sách chọn',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey('dialog_select_${key}_$currentValue'),
+                    initialValue: effectiveValue,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      prefixIcon: const Icon(Icons.list_alt_rounded, size: 18),
+                      hintText: 'Chọn $label...',
+                      filled: true,
+                      fillColor: isDark
+                          ? AppColors.darkSurfaceContainerLowest
+                          : AppColors.surfaceContainerLowest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: AppColors.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    dropdownColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('(Chưa chọn)', style: TextStyle(color: AppColors.outline)),
+                      ),
+                      if (!hasCurrentInOptions && currentValue.isNotEmpty)
+                        DropdownMenuItem<String?>(
+                          value: currentValue,
+                          child: Text(currentValue, overflow: TextOverflow.ellipsis),
+                        ),
+                      ...options.map(
+                        (opt) => DropdownMenuItem<String?>(
+                          value: opt,
+                          child: Text(opt, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                      const DropdownMenuItem<String?>(
+                        value: '__custom__',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_note_rounded, size: 16, color: AppColors.primary),
+                            SizedBox(width: 6),
+                            Text(
+                              '+ Nhập giá trị khác...',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (newVal) {
+                      if (newVal == '__custom__') {
+                        _promptCustomValue(context, key, label, controller);
+                      } else {
+                        setState(() {
+                          controller.text = newVal ?? '';
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          }
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      label,
-                      style: AppTypography.labelLarge(
-                        color: isDark
-                            ? AppColors.darkOnSurfaceVariant
-                            : AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: isReadOnly
-                            ? AppColors.tertiary.withValues(alpha: 0.12)
-                            : AppColors.primary.withValues(alpha: 0.12),
-                        borderRadius: AppRadius.roundedSm,
-                      ),
-                      child: Text(
-                        isReadOnly ? 'Hệ cũ (Chỉ đọc)' : 'Tự tạo ($source)',
-                        style: AppTypography.labelSmall(
-                          color: isReadOnly
-                              ? AppColors.tertiary
-                              : AppColors.primary,
-                        ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                if (isReadOnly)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.darkSurfaceContainer
-                          : AppColors.surfaceContainerHigh,
-                      borderRadius: AppRadius.roundedMd,
-                      border: Border.all(
-                        color: isDark
-                            ? AppColors.darkOutlineVariant
-                            : AppColors.outlineVariant,
-                      ),
-                    ),
-                    child: Text(
-                      controller.text.isNotEmpty
-                          ? controller.text
-                          : '(Trống)',
-                      style: AppTypography.bodyMedium(
-                        color: controller.text.isNotEmpty
-                            ? (isDark
-                                ? AppColors.darkOnSurface
-                                : AppColors.onSurface)
-                            : (isDark
-                                ? AppColors.darkOutline
-                                : AppColors.outline),
-                      ),
-                    ),
-                  )
-                else
-                  TextField(
-                    controller: controller,
-                    style: AppTypography.bodyMedium(
-                      color: isDark
-                          ? AppColors.darkOnSurface
-                          : AppColors.onSurface,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Nhập $label...',
-                      isDense: true,
-                      suffixIcon: VoiceInputMicButton(
-                        currentText: controller.text,
-                        fieldName: label,
-                        onTextRecognized: (t) => controller.text = t,
-                      ),
-                    ),
-                  ),
-              ],
+            child: AppTextField(
+              label: label,
+              hintText: 'Nhập $label...',
+              controller: controller,
+              enableVoiceInput: true,
             ),
           );
         }).toList(),

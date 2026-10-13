@@ -169,4 +169,47 @@ void main() {
     expect(find.byTooltip('Chỉnh sửa điểm bán'), findsNothing);
     expect(find.byTooltip('Sửa thông tin'), findsNothing);
   });
+
+  testWidgets('CustomerDetailScreen displays region name instead of raw ID in Quản trị & Tuyến bán hàng', (tester) async {
+    const customerWithRegion = CustomerEntity(
+      id: 888,
+      code: '08290619',
+      name: 'test0810',
+      type: 'Đại lý',
+      route: 'Chưa phân tuyến',
+      channelName: 'MB1',
+      regionId: 3,
+      regionName: '03 - Phú Thọ',
+      address: 'Phú Thọ',
+      contactPerson: 'Chưa cập nhật',
+      phone: 'Chưa có SĐT',
+      lat: 21.39507,
+      lng: 105.59340,
+    );
+
+    final mockRepo = MockCustomerRepository(customerWithRegion);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(mockRepo),
+          routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
+        ],
+        child: const MaterialApp(
+          home: CustomerDetailScreen(customer: customerWithRegion),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // 1. Phải hiển thị nhãn "Khu vực" và tên "03 - Phú Thọ"
+    expect(find.text('Khu vực'), findsOneWidget);
+    expect(find.text('03 - Phú Thọ'), findsOneWidget);
+
+    // 2. TUYỆT ĐỐI không hiển thị "Khu vực (Region ID)" hoặc "#3"
+    expect(find.text('Khu vực (Region ID)'), findsNothing);
+    expect(find.text('#3'), findsNothing);
+  });
 }
+

@@ -240,7 +240,9 @@ class CustomerDto {
       regionId: json['region_id'] is int
           ? json['region_id'] as int
           : int.tryParse(json['region_id']?.toString() ?? ''),
-      regionName: json['region_name']?.toString(),
+      regionName: json['region_name']?.toString() ??
+          json['region']?.toString() ??
+          (json['data'] is Map ? json['data']['region_name']?.toString() ?? json['data']['region']?.toString() : null),
       route: validRouteName,
       routes: validRoutes,
       routeIds: parsedRouteIds,
@@ -316,6 +318,7 @@ class CustomerDto {
       channelId: channelId,
       channelName: channelName,
       regionId: regionId,
+      regionName: regionName,
       route: resolvedRoute,
       routes: routes.isNotEmpty ? routes : (route != null && route!.trim().isNotEmpty ? [route!.trim()] : const []),
       routeIds: routeIds,

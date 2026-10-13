@@ -375,6 +375,7 @@ class CustomerLocalDataSource {
           syncStatus: const Value('synced'),
           dynamicFieldsJson: Value(jsonEncode({
             ...remote.dynamicFields,
+            if (remote.regionName != null) 'region_name': remote.regionName,
             if (remote.routes.isNotEmpty) 'routes': remote.routes,
             if (remote.routeIds.isNotEmpty) 'route_ids': remote.routeIds,
             if (remote.photoUrl != null) 'photo_url': remote.photoUrl,
@@ -467,6 +468,21 @@ class CustomerLocalDataSource {
     final lng = changes.containsKey('lng')
         ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
         : existing.lng;
+    final route = changes.containsKey('route')
+        ? (changes['route']?.toString() ?? existing.route)
+        : existing.route;
+
+    if (changes.containsKey('routes') && changes['routes'] is List) {
+      dynFields['routes'] = (changes['routes'] as List).map((e) => e.toString()).toList();
+    } else if (changes.containsKey('route')) {
+      dynFields['routes'] = [route];
+    }
+    if (changes.containsKey('route_ids') && changes['route_ids'] is List) {
+      dynFields['route_ids'] = (changes['route_ids'] as List)
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
 
     if (changes['data'] is Map<String, dynamic>) {
       dynFields.addAll(changes['data'] as Map<String, dynamic>);
@@ -499,6 +515,7 @@ class CustomerLocalDataSource {
         customerTypeId: Value(customerTypeId),
         channelId: Value(channelId),
         regionId: Value(regionId),
+        route: Value(route),
         provinceName: Value(provinceName),
         wardName: Value(wardName),
         contactPerson: Value(contactPerson),
@@ -553,6 +570,9 @@ class CustomerLocalDataSource {
       } else if (changes['photos'] is List) {
         queuePayload['photo_tokens'] = changes['photos'];
       }
+      if (changes.containsKey('route')) queuePayload['route'] = route;
+      if (changes.containsKey('routes')) queuePayload['routes'] = changes['routes'];
+      if (changes.containsKey('route_ids')) queuePayload['route_ids'] = changes['route_ids'];
 
       await (_db.update(_db.syncQueueEntries)..where((tbl) => tbl.id.equals(entry.id))).write(
         SyncQueueEntriesCompanion(
@@ -580,8 +600,9 @@ class CustomerLocalDataSource {
         'address': address,
         'lat': lat,
         'lng': lng,
-        'route': existing.route,
-        'routes': [existing.route],
+        'route': route,
+        'routes': changes['routes'] is List ? changes['routes'] : [route],
+        if (changes.containsKey('route_ids')) 'route_ids': changes['route_ids'],
         'data': dynFields,
       };
 
@@ -686,6 +707,9 @@ class CustomerLocalDataSource {
       channelId: row.channelId,
       channelName: row.channelName,
       regionId: row.regionId,
+      regionName: dynFields['region_name']?.toString() ??
+          dynFields['region']?.toString() ??
+          (dynFields['data'] is Map ? dynFields['data']['region_name']?.toString() : null),
       route: resolvedRowRoute,
       routes: localRoutes,
       routeIds: localRouteIds,

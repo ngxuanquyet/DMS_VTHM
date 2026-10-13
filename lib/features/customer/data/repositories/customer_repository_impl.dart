@@ -365,6 +365,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
       regionId: changes.containsKey('region_id')
           ? (changes['region_id'] as int?)
           : current.regionId,
+      regionName: changes.containsKey('region_name')
+          ? changes['region_name']?.toString()
+          : current.regionName,
       provinceName: changes.containsKey('province_name')
           ? changes['province_name']?.toString()
           : current.provinceName,
@@ -391,6 +394,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
       geofenceRadiusM: changes.containsKey('geofence_radius_m')
           ? (changes['geofence_radius_m'] as int?)
           : current.geofenceRadiusM,
+      route: changes.containsKey('route')
+          ? (changes['route']?.toString() ?? current.route)
+          : current.route,
+      routes: changes.containsKey('routes') && changes['routes'] is List
+          ? (changes['routes'] as List).map((e) => e.toString()).toList()
+          : (changes.containsKey('route') ? [changes['route'].toString()] : current.routes),
+      routeIds: changes.containsKey('route_ids') && changes['route_ids'] is List
+          ? (changes['route_ids'] as List).map((e) => int.tryParse(e.toString()) ?? 0).where((id) => id > 0).toList()
+          : current.routeIds,
       dynamicFields: newDynamicFields,
       photoUrl: newPhotoUrl,
       photoUrls: newPhotoUrls,
@@ -681,9 +693,10 @@ const CustomerMetaData kDefaultCustomerMeta = CustomerMetaData(
     CustomerCategoryItem(id: 4, code: 'HORECA', name: 'Horeca'),
   ],
   regions: [
+    CustomerCategoryItem(id: 1, code: '01', name: '01 - Hà Nội'),
+    CustomerCategoryItem(id: 3, code: '03', name: '03 - Phú Thọ'),
     CustomerCategoryItem(id: 8, code: '08', name: '08 - Miền Trung'),
     CustomerCategoryItem(id: 62, code: '62', name: '62 - Vĩnh Phúc'),
-    CustomerCategoryItem(id: 1, code: '01', name: '01 - Hà Nội'),
   ],
   provinces: [
     CustomerProvinceItem(provinceName: 'Tỉnh Vĩnh Phúc'),
@@ -727,7 +740,7 @@ const Map<String, dynamic> kDefaultCustomerFormSchema = {
       },
       {
         'code': 'region_id',
-        'label': 'Khu vực quản lý (Region - bắt buộc để sinh mã)',
+        'label': 'Khu vực quản lý',
         'type': 'single_choice',
         'is_required': true,
         'section': 'Thông tin chung',

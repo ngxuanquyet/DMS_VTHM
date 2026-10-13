@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -239,6 +240,9 @@ class _MarketFormSubmissionDetailScreenState
                 !v.contains('/') &&
                 !v.contains(r'\'));
 
+        final isLocationField = value is Map &&
+            (value.containsKey('lat') || value.containsKey('lng') || value.containsKey('address'));
+
         return Container(
           width: double.infinity,
           margin: const EdgeInsets.only(bottom: 12),
@@ -268,6 +272,8 @@ class _MarketFormSubmissionDetailScreenState
               const SizedBox(height: 8),
               if (isPhotoField)
                 _buildPhotoFieldAnswer(detail, value, isDark)
+              else if (isLocationField)
+                _buildLocationFieldAnswer(value, isDark)
               else
                 Text(
                   value?.toString() ?? '—',
@@ -281,6 +287,136 @@ class _MarketFormSubmissionDetailScreenState
           ),
         );
       }).toList(),
+    );
+  }
+
+  /// Hiển thị câu trả lời ô vị trí theo đặc tả §5
+  Widget _buildLocationFieldAnswer(Map value, bool isDark) {
+    final addr = value['address']?.toString();
+    final lat = value['lat'];
+    final lng = value['lng'];
+    final accuracy = value['accuracy'];
+    final isMock = value['mock'] == true;
+
+    final numLat = lat is num ? lat.toDouble() : double.tryParse(lat?.toString() ?? '');
+    final numLng = lng is num ? lng.toDouble() : double.tryParse(lng?.toString() ?? '');
+    final numAcc = accuracy is num ? accuracy.toDouble() : double.tryParse(accuracy?.toString() ?? '');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (addr != null && addr.isNotEmpty) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.place_outlined, size: 16, color: AppColors.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    addr,
+                    style: AppTypography.bodyMedium(
+                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                    ).copyWith(fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (numLat != null && numLng != null)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceContainerLowest : Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.my_location_rounded, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${numLat.toStringAsFixed(6)}, ${numLng.toStringAsFixed(6)}',
+                        style: AppTypography.bodySmall(
+                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (numAcc != null) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(±${numAcc.toStringAsFixed(1)} m)',
+                          style: AppTypography.bodySmall(
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                          ).copyWith(fontSize: 11),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (isMock)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEA580C).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'GPS giả',
+                      style: TextStyle(
+                        color: Color(0xFFEA580C),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                InkWell(
+                  onTap: () async {
+                    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$numLat,$numLng');
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.map_outlined, size: 14, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Mở Google Maps',
+                          style: AppTypography.labelSmall(
+                            color: AppColors.primary,
+                          ).copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
