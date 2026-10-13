@@ -566,5 +566,18 @@ class AppStrings {
       isVietnamese ? 'LƯU THAY ĐỔI' : 'SAVE CHANGES';
   String get cancelAction =>
       isVietnamese ? 'HỦY' : 'CANCEL';
+
+  // Theo dõi vị trí nhân viên (specs/theo_doi_gps/API-VI-TRI-NHAN-VIEN-MOBILE-2026-10-09.md)
+  String get locationTrackingTitle =>
+      isVietnamese ? 'Theo dõi vị trí' : 'Location Tracking';
+  String get locationSharingActive =>
+      isVietnamese ? 'Đang chia sẻ vị trí' : 'Location Sharing Active';
+  String get locationSharingInactive =>
+      isVietnamese ? 'Tạm tắt chia sẻ vị trí' : 'Location Sharing Inactive';
+  String get myLocationAccessLog =>
+      isVietnamese ? 'Ai đã xem vị trí của tôi' : 'Who Viewed My Location';
+  String get locationAccessLogDesc => isVietnamese
+      ? 'Nhật ký truy cập toạ độ theo Luật BVDLCN 91/2025'
+      : 'Location access log under Privacy Law 91/2025';
 }
 

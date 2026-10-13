@@ -642,29 +642,40 @@ class AppNotificationService {
   }
 
   /// 7. Thông báo đồng bộ ngoại tuyến thành công
-  Future<void> notifyOfflineSyncSuccess({required int successCount}) async {
+  Future<void> notifyOfflineSyncSuccess({
+    required int successCount,
+    String? summaryText,
+  }) async {
     if (successCount <= 0) return;
+    final messageDetail = summaryText != null && summaryText.isNotEmpty
+        ? summaryText
+        : '$successCount tác vụ';
     await sendNotification(
       id: 108,
       title: 'Đồng bộ ngoại tuyến thành công',
-      message: 'Đã gửi thành công $successCount tác vụ (đơn hàng, check-in, ảnh) lên hệ thống máy chủ.',
+      message: 'Đã gửi thành công $messageDetail lên hệ thống máy chủ.',
       type: 'sync_success',
       category: 'system',
-      routePath: '/notifications',
+      routePath: null,
     );
   }
 
   /// 8. Cảnh báo tồn đọng hàng đợi offline
   Future<void> notifyOfflineQueuePending({
     required int pendingCount,
+    String? summaryText,
     String? reason,
   }) async {
     if (pendingCount <= 0) return;
     final throttled = await _shouldThrottle('queue_pending', const Duration(hours: 1));
     if (throttled) return;
 
+    final detail = summaryText != null && summaryText.isNotEmpty
+        ? summaryText
+        : '$pendingCount bản ghi ngoại tuyến';
+
     final msg = reason ??
-        'Bạn đang có $pendingCount bản ghi ngoại tuyến chưa được gửi lên máy chủ. Vui lòng kết nối mạng để đồng bộ tránh thất thoát dữ liệu!';
+        'Bạn đang có $detail chưa được gửi lên máy chủ. Vui lòng kết nối mạng để đồng bộ tránh thất thoát dữ liệu!';
 
     await sendNotification(
       id: 109,
@@ -672,7 +683,7 @@ class AppNotificationService {
       message: msg,
       type: 'offline_queue_warning',
       category: 'system',
-      routePath: '/notifications',
+      routePath: null,
     );
   }
 

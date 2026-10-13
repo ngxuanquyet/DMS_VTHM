@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/database_provider.dart';
 import '../network/connectivity_provider.dart';
+import '../sync/sync_entity_group.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/string_utils.dart';
@@ -18,15 +18,20 @@ class OfflineSyncBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pendingCountAsync = ref.watch(pendingSyncCountProvider);
+    final pendingEntriesAsync = ref.watch(allPendingQueueEntriesProvider);
     final deadCountAsync = ref.watch(deadSyncCountProvider);
     final isOnline = ref.watch(connectivityProvider).isOnline;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final pendingCount = pendingCountAsync.value ?? 0;
+    final pendingEntries = pendingEntriesAsync.value ?? [];
+    final groupedPending = SyncEntityGroupHelper.groupEntries(pendingEntries);
+    final displayPendingCount = groupedPending.isNotEmpty
+        ? groupedPending.length
+        : (pendingCountAsync.value ?? 0);
     final deadCount = deadCountAsync.value ?? 0;
 
     // Nếu online và không có bản ghi nào chờ -> ẩn hoặc hiện trạng thái xanh nhẹ
-    if (isOnline && pendingCount == 0 && deadCount == 0) {
+    if (isOnline && displayPendingCount == 0 && deadCount == 0) {
       if (!showLabel) return const SizedBox.shrink();
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -68,8 +73,8 @@ class OfflineSyncBadge extends ConsumerWidget {
     final badgeText = hasError
         ? '$deadCount lỗi'
         : (!isOnline
-            ? (pendingCount > 0 ? '$pendingCount chờ' : 'Ngoại tuyến')
-            : '$pendingCount chờ');
+            ? (displayPendingCount > 0 ? '$displayPendingCount chờ' : 'Ngoại tuyến')
+            : '$displayPendingCount chờ');
 
     return InkWell(
       onTap: () => showOfflineSyncModal(context),
@@ -126,6 +131,9 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
     final deadEntries = ref.watch(deadQueueEntriesProvider).value ?? [];
     final isOnline = ref.watch(connectivityProvider).isOnline;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final groupedPending = SyncEntityGroupHelper.groupEntries(pendingEntries);
+    final displayPendingCount = groupedPending.isNotEmpty ? groupedPending.length : pendingCount;
 
     return Container(
       decoration: BoxDecoration(
@@ -208,7 +216,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                   Expanded(
                     child: _SyncStatBox(
                       title: 'Đang chờ gửi',
-                      count: '$pendingCount',
+                      count: '$displayPendingCount',
                       color: const Color(0xFF3B82F6),
                       bgColor: const Color(0xFFEFF6FF),
                       icon: Icons.hourglass_top_rounded,
@@ -229,7 +237,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
               const SizedBox(height: 16),
 
               // Danh sách chi tiết các mục đang chờ
-              if (pendingEntries.isNotEmpty || pendingCount > 0) ...[
+              if (groupedPending.isNotEmpty || displayPendingCount > 0) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -238,7 +246,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                     Text(
-                      '${pendingEntries.isNotEmpty ? pendingEntries.length : pendingCount} mục',
+                      '${groupedPending.isNotEmpty ? groupedPending.length : displayPendingCount} mục',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -250,11 +258,11 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Container(
                   constraints: const BoxConstraints(maxHeight: 220),
-                  child: pendingEntries.isNotEmpty
+                  child: groupedPending.isNotEmpty
                       ? ListView.builder(
                           shrinkWrap: true,
-                          itemCount: pendingEntries.length,
-                          itemBuilder: (ctx, idx) => _buildQueueEntryTile(ctx, pendingEntries[idx], isDark),
+                          itemCount: groupedPending.length,
+                          itemBuilder: (ctx, idx) => _buildGroupedEntryTile(ctx, groupedPending[idx], isDark),
                         )
                       : Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -268,7 +276,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  '$pendingCount mục đang chờ gửi lên hệ thống...',
+                                  '$displayPendingCount mục đang chờ gửi lên hệ thống...',
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                                 ),
                               ),
@@ -449,146 +457,24 @@ class _SyncStatBox extends StatelessWidget {
   }
 }
 
-Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isDark) {
-  IconData icon;
-  Color color;
-  Color bgColor;
-  String title;
-  String subtitle;
-
-  switch (entry.entity) {
-    case 'customer':
-      icon = Icons.person_add_alt_1_rounded;
-      color = const Color(0xFF10B981); // Emerald
-      bgColor = const Color(0xFFECFDF5);
-      String name = 'Khách hàng mới';
-      String? address;
-      String? route;
-      try {
-        final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
-        if (payload['name'] != null && payload['name'].toString().trim().isNotEmpty) {
-          name = payload['name'].toString().trim();
-        }
-        if (payload['address'] != null && payload['address'].toString().trim().isNotEmpty) {
-          address = payload['address'].toString().trim();
-        }
-        if (payload['route'] != null && payload['route'].toString().trim().isNotEmpty) {
-          route = payload['route'].toString().trim();
-        }
-      } catch (_) {}
-      title = 'Thêm khách hàng mới: $name';
-      final details = <String>[];
-      if (route != null && route.isNotEmpty) details.add('Tuyến: $route');
-      if (address != null && address.isNotEmpty) details.add(address);
-      subtitle = details.isNotEmpty
-          ? '${details.join(' • ')} (Chờ gửi)'
-          : 'Đã lưu trên máy, chờ gửi khi có mạng';
-      break;
-
-    case 'declaration':
-      icon = Icons.pin_drop_rounded;
-      color = const Color(0xFF0D9488); // Teal
-      bgColor = const Color(0xFFF0FDFA);
-      String reason = 'Điểm bán';
-      String? addr;
-      try {
-        final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
-        if (payload['reason_name'] != null) {
-          reason = payload['reason_name'].toString().trim();
-        }
-        if (payload['address'] != null && payload['address'].toString().trim().isNotEmpty) {
-          addr = payload['address'].toString().trim();
-        }
-      } catch (_) {}
-      title = 'Khai báo vị trí: $reason';
-      subtitle = addr != null ? '$addr (Chờ gửi)' : 'Chờ gửi lên hệ thống';
-      break;
-
-    case 'form_submission':
-      icon = Icons.assignment_turned_in_rounded;
-      color = const Color(0xFF3B82F6); // Blue
-      bgColor = const Color(0xFFEFF6FF);
-      String formTitle = 'Biểu mẫu thị trường';
-      try {
-        final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
-        if (payload['title'] != null) {
-          formTitle = payload['title'].toString().trim();
-        } else if (payload['form_code'] != null) {
-          formTitle = 'Biểu mẫu #${payload['form_code']}';
-        }
-      } catch (_) {}
-      title = formTitle;
-      subtitle = 'Đã lưu trên máy, sẽ tự động gửi khi có mạng';
-      break;
-
-    case 'visit':
-      icon = Icons.location_on_rounded;
-      color = const Color(0xFF06B6D4); // Cyan
-      bgColor = const Color(0xFFECFEFF);
-      String dealerName = 'Điểm bán';
-      try {
-        final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
-        if (payload['dealer_name'] != null) {
-          dealerName = payload['dealer_name'].toString().trim();
-        }
-      } catch (_) {}
-      title = 'Lượt ghé thăm: $dealerName';
-      subtitle = 'Đang chờ gửi lên hệ thống';
-      break;
-
-    case 'photo':
-    case 'visit_photo':
-      icon = Icons.photo_camera_rounded;
-      color = const Color(0xFFF59E0B); // Amber
-      bgColor = const Color(0xFFFFFBEB);
-      title = 'Ảnh thực địa điểm bán';
-      subtitle = 'Chờ tải lên hệ thống';
-      break;
-
-    case 'attendance_punch':
-      icon = Icons.access_time_filled_rounded;
-      color = const Color(0xFF10B981);
-      bgColor = const Color(0xFFECFDF5);
-      title = 'Lượt chấm công';
-      subtitle = 'Đã lưu trên máy, chờ gửi';
-      break;
-
-    case 'attendance_photo':
-      icon = Icons.camera_alt_rounded;
-      color = const Color(0xFFF59E0B);
-      bgColor = const Color(0xFFFFFBEB);
-      title = 'Ảnh chấm công';
-      subtitle = 'Chờ tải lên hệ thống';
-      break;
-
-    default:
-      icon = Icons.cloud_upload_outlined;
-      color = const Color(0xFF6366F1); // Indigo
-      bgColor = const Color(0xFFEEF2FF);
-      title = 'Dữ liệu lưu trên máy';
-      subtitle = 'Sẽ tự động gửi khi có mạng';
-      break;
-  }
-
-  final isSending = entry.state == 'sending';
-
+Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool isDark) {
   return Container(
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(
-      color: isDark ? color.withValues(alpha: 0.1) : bgColor.withValues(alpha: 0.7),
+      color: isDark ? item.color.withValues(alpha: 0.1) : item.bgColor.withValues(alpha: 0.7),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: color.withValues(alpha: isDark ? 0.3 : 0.4)),
+      border: Border.all(color: item.color.withValues(alpha: isDark ? 0.3 : 0.4)),
     ),
     child: Row(
       children: [
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isDark ? color.withValues(alpha: 0.2) : Colors.white,
+            color: isDark ? item.color.withValues(alpha: 0.2) : Colors.white,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Icon(item.icon, color: item.color, size: 20),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -596,7 +482,7 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                title,
+                item.title,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -606,7 +492,7 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
               ),
               const SizedBox(height: 2),
               Text(
-                subtitle,
+                item.subtitle,
                 style: TextStyle(
                   fontSize: 11,
                   color: isDark ? Colors.white60 : const Color(0xFF6F7A74),
@@ -621,17 +507,17 @@ Widget _buildQueueEntryTile(BuildContext context, SyncQueueEntry entry, bool isD
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
           decoration: BoxDecoration(
-            color: isSending
+            color: item.isSending
                 ? const Color(0xFF3B82F6).withValues(alpha: 0.15)
-                : color.withValues(alpha: 0.15),
+                : item.color.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            isSending ? 'Đang gửi' : 'Chờ gửi',
+            item.isSending ? 'Đang gửi' : 'Chờ gửi',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: isSending ? const Color(0xFF3B82F6) : color,
+              color: item.isSending ? const Color(0xFF3B82F6) : item.color,
             ),
           ),
         ),

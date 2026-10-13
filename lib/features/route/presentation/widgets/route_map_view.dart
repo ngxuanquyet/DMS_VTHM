@@ -388,7 +388,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           : dealer.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
       ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
-        context.push('/check-in', extra: dealerWithVisit);
+        await context.push('/check-in', extra: dealerWithVisit);
+        if (context.mounted) {
+          ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+        }
       }
       return;
     }
@@ -400,7 +403,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           : (activeVisit != null ? dealer.copyWith(visit: activeVisit) : dealer);
       ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
-        context.push('/check-in', extra: dealerWithVisit);
+        await context.push('/check-in', extra: dealerWithVisit);
+        if (context.mounted) {
+          ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+        }
       }
       return;
     }
@@ -411,13 +417,20 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           ? activeVisit.customerName
           : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');
       if (context.mounted) {
-        await showActiveVisitBlockingDialog(
+        final chosenDealer = await showActiveVisitBlockingDialog(
           context: context,
           ref: ref,
           activeVisit: activeVisit,
           activeDealerName: activeDealerName,
           targetDealerName: dealer.name,
         );
+        if (chosenDealer != null && context.mounted) {
+          ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(chosenDealer);
+          await context.push('/check-in', extra: chosenDealer);
+          if (context.mounted) {
+            ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+          }
+        }
       }
       return;
     }
@@ -494,7 +507,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     // 4. Hợp lệ -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
-      context.push('/check-in', extra: dealer);
+      await context.push('/check-in', extra: dealer);
+      if (context.mounted) {
+        ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+      }
     }
   }
 

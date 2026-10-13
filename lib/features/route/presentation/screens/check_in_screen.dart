@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/sync/sync_service.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -25,7 +28,9 @@ import '../../../../core/rules/geofence_rule_helper.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
 import '../widgets/active_visit_blocking_dialog.dart';
 import '../widgets/checkin_distance_warning_dialog.dart';
+import '../widgets/checkout_confirmation_dialog.dart';
 import '../widgets/checkout_success_dialog.dart';
+import '../widgets/visit_exit_options_dialog.dart';
 import '../../../forms/presentation/screens/market_form_fill_screen.dart';
 import '../../../forms/presentation/widgets/market_form_card.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
@@ -64,6 +69,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   Future<void> _initAndCheckin() async {
     final vm = ref.read(checkInViewModelProvider.notifier);
 
+    // Đồng bộ hoặc nạp quy tắc viếng thăm từ cache
+    ref.read(mobileRulesProvider.notifier).fetchRules();
+
     // Kiểm tra xem có phiên viếng thăm khác đang mở không (§3 Luật 3)
     // Áp dụng cả khi online lẫn offline
     final currentState = ref.read(checkInViewModelProvider);
@@ -94,7 +102,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     if (currentActive != null) {
       final todayVisits = ref.read(routeViewModelProvider).todayVisits;
       final matchingServerVisit = todayVisits.where(
-        (v) => (v.id == currentActive.id && v.id > 0) || v.customerId == currentActive.customerId,
+        (v) => (v.id == currentActive.id && v.id > 0) ||
+            (currentActive.clientUuid != null &&
+                currentActive.clientUuid!.isNotEmpty &&
+                v.clientUuid == currentActive.clientUuid),
       ).firstOrNull;
       if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
         // Lượt này trên máy chủ đã check-out (hoặc huỷ) rồi!
@@ -118,6 +129,70 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       }
     }
 
+    final targetCustomerId = widget.dealer != null
+        ? (widget.dealer!.customer is CustomerEntity
+            ? (widget.dealer!.customer as CustomerEntity).id
+            : (widget.dealer!.customer is Map
+                ? int.tryParse((widget.dealer!.customer as Map)['id']?.toString() ?? '')
+                : int.tryParse(widget.dealer!.id.replaceAll(RegExp(r'[^\d]'), ''))))
+        : null;
+
+    if (activeVisit != null) {
+      if (targetCustomerId != null && targetCustomerId != activeVisit.customerId) {
+        final activeName = activeVisit.customerName.isNotEmpty
+            ? activeVisit.customerName
+            : (currentState.checkinData?.dealer.name ?? 'Điểm bán khác');
+        if (mounted) {
+          final chosenDealer = await showActiveVisitBlockingDialog(
+            context: context,
+            ref: ref,
+            activeVisit: activeVisit,
+            activeDealerName: activeName,
+            targetDealerName: widget.dealer!.name,
+            onClose: () {
+              if (mounted) _safePop();
+            },
+          );
+          if (chosenDealer != null && mounted) {
+            context.pushReplacement('/check-in', extra: chosenDealer);
+          } else if (mounted) {
+            _safePop();
+          }
+        }
+        return;
+      }
+
+      // ⚠️ Khi quay lại đúng điểm bán đang có phiên mở dở dang:
+      // Tự động phục hồi phiên và tuyệt đối KHÔNG gọi check-in mới để tránh duplicate
+      if (targetCustomerId == null || targetCustomerId == activeVisit.customerId) {
+        final dealerToInit = widget.dealer != null
+            ? (widget.dealer!.visit != null
+                ? widget.dealer!
+                : widget.dealer!.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress))
+            : DealerEntity(
+                id: activeVisit.customerId.toString(),
+                order: '01',
+                name: activeVisit.customerName,
+                address: activeVisit.customerAddress ?? '',
+                status: DealerVisitStatus.inProgress,
+                statusLabel: 'Đang ghé',
+                isVip: false,
+                visit: activeVisit,
+              );
+        vm.initCheckinWithDealer(dealerToInit);
+        await vm.restoreActiveVisitIfAvailable(activeVisit.customerId);
+
+        final cs = ref.read(checkInViewModelProvider);
+        if (_noteController.text.isEmpty && cs.visitNote.isNotEmpty) {
+          _noteController.text = cs.visitNote;
+        }
+        if (_closedNoteController.text.isEmpty && cs.closedNote.isNotEmpty) {
+          _closedNoteController.text = cs.closedNote;
+        }
+        return;
+      }
+    }
+
     if (widget.dealer != null && widget.dealer!.status == DealerVisitStatus.completed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -128,42 +203,6 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ),
         );
         _safePop();
-        return;
-      }
-    }
-
-    if (activeVisit != null && widget.dealer != null) {
-      final targetCustomerId = widget.dealer!.customer is CustomerEntity
-          ? (widget.dealer!.customer as CustomerEntity).id
-          : int.tryParse(widget.dealer!.id.replaceAll(RegExp(r'[^\d]'), ''));
-
-      if (targetCustomerId != null && targetCustomerId != activeVisit.customerId) {
-        final activeName = activeVisit.customerName.isNotEmpty
-            ? activeVisit.customerName
-            : (currentState.checkinData?.dealer.name ?? 'Điểm bán khác');
-        if (mounted) {
-          await showActiveVisitBlockingDialog(
-            context: context,
-            ref: ref,
-            activeVisit: activeVisit,
-            activeDealerName: activeName,
-            targetDealerName: widget.dealer!.name,
-            onClose: () {
-              if (mounted) _safePop();
-            },
-          );
-        }
-        return;
-      }
-
-      // ⚠️ Khi quay lại đúng điểm bán đang có phiên mở dở dang:
-      // Tự động phục hồi phiên và tuyệt đối KHÔNG gọi check-in mới để tránh duplicate
-      if (targetCustomerId != null && targetCustomerId == activeVisit.customerId) {
-        final dealerToInit = widget.dealer!.visit != null
-            ? widget.dealer!
-            : widget.dealer!.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
-        vm.initCheckinWithDealer(dealerToInit);
-        await vm.restoreActiveVisitIfAvailable(targetCustomerId);
         return;
       }
     }
@@ -232,6 +271,26 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       );
       if (!fraudCheck.isAllowed) {
         setState(() => _isCheckingIn = false);
+        final currentState = ref.read(checkInViewModelProvider);
+        if (currentState.visitId != 0) {
+          await ref.read(checkInViewModelProvider.notifier).cancelVisit();
+        } else {
+          ref.read(checkInViewModelProvider.notifier).resetSession();
+          await ref.read(visitRepositoryProvider).clearActiveVisit();
+          ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
+        }
+        if (mounted) {
+          ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã hủy lượt check-in.'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          _safePop();
+        }
         return;
       }
     }
@@ -316,8 +375,16 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
+              final currentState = ref.read(checkInViewModelProvider);
+              if (currentState.visitId != 0) {
+                await ref.read(checkInViewModelProvider.notifier).cancelVisit();
+              } else {
+                ref.read(checkInViewModelProvider.notifier).resetSession();
+                await ref.read(visitRepositoryProvider).clearActiveVisit();
+                ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
+              }
               _safePop();
             },
             child: const Text('QUAY LẠI'),
@@ -345,7 +412,11 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     } else {
       try {
         context.pop();
-      } catch (_) {}
+      } catch (_) {
+        if (mounted) {
+          context.go('/route');
+        }
+      }
     }
   }
 
@@ -477,16 +548,76 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ),
         );
         if (leave == true && mounted) {
+          vm.resetSession();
           _safePop();
         }
       } else {
+        vm.resetSession();
         _safePop();
       }
       return;
     }
 
-    // Nếu lượt đang mở (cả online lẫn offline): Rời màn hình là hủy check-in luôn
-    await _confirmAndCancelVisit(vm);
+    // Nếu lượt đang mở (cả online lẫn offline): Cho phép tạm rời giữ trạng thái viếng thăm hoặc huỷ lượt
+    await _showExitOptionsDialog(vm);
+  }
+
+  /// Hộp thoại lựa chọn khi thoát màn hình lúc đang có phiên viếng thăm mở
+  Future<void> _showExitOptionsDialog(CheckInViewModel vm) async {
+    final state = ref.read(checkInViewModelProvider);
+    final dealerName = state.checkinData?.dealer.name ??
+        state.visitEntity?.customerName ??
+        widget.dealer?.name ??
+        'Điểm bán';
+
+    final choice = await VisitExitOptionsDialog.show(
+      context: context,
+      dealerName: dealerName,
+    );
+
+    if (!mounted || choice == null || choice == 'stay') return;
+
+    if (choice == 'cancel') {
+      await _confirmAndCancelVisit(vm);
+      return;
+    }
+
+    if (choice == 'pause') {
+      vm.setVisitNote(_noteController.text.trim());
+      vm.setClosedNote(_closedNoteController.text.trim());
+      await vm.saveCurrentActiveSession();
+
+      try {
+        final isOnline = ref.read(connectivityProvider).isOnline;
+        if (isOnline) {
+          unawaited(ref.read(syncServiceProvider).syncQueue());
+        }
+      } catch (_) {}
+
+      ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.pause_circle_filled_rounded, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Đang tạm rời. Lượt viếng thăm tại $dealerName vẫn được giữ nguyên.',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0284C7),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        _safePop();
+      }
+    }
   }
 
   void _openNoteDialog() {
@@ -542,6 +673,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               setState(() {
                 _noteController.text = tempController.text;
               });
+              ref.read(checkInViewModelProvider.notifier).setVisitNote(tempController.text);
               Navigator.of(ctx).pop();
             },
             child: const Text('LƯU GHI CHÚ'),
@@ -698,6 +830,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<String?> _showPhotoTypeSelectionSheet() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isClosed = ref.read(checkInViewModelProvider).visitResult == 'closed';
     return showModalBottomSheet<String>(
       context: context,
       backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
@@ -730,16 +863,22 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Phân loại giúp chuẩn hóa báo cáo trưng bày và hình ảnh điểm bán',
+                isClosed
+                    ? 'Ghi nhận điểm bán đóng cửa - Chụp ảnh cửa hàng đóng/biển hiệu làm bằng chứng'
+                    : 'Phân loại giúp chuẩn hóa báo cáo trưng bày và hình ảnh điểm bán',
                 style: AppTypography.bodySmall(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 16),
+              if (isClosed)
+                _buildPhotoTypeTile(ctx, 'closed_store', 'Ảnh đóng cửa điểm bán', Icons.door_back_door_outlined, isDark),
               _buildPhotoTypeTile(ctx, 'store_front', 'Mặt tiền điểm bán', Icons.storefront_outlined, isDark),
-              _buildPhotoTypeTile(ctx, 'display', 'Ảnh trưng bày hàng hóa', Icons.grid_view_rounded, isDark),
-              _buildPhotoTypeTile(ctx, 'posm', 'Vật phẩm quảng cáo (POSM)', Icons.campaign_outlined, isDark),
-              _buildPhotoTypeTile(ctx, 'document', 'Hóa đơn / Giấy tờ / Sổ sách', Icons.receipt_long_outlined, isDark),
+              if (!isClosed) ...[
+                _buildPhotoTypeTile(ctx, 'display', 'Ảnh trưng bày hàng hóa', Icons.grid_view_rounded, isDark),
+                _buildPhotoTypeTile(ctx, 'posm', 'Vật phẩm quảng cáo (POSM)', Icons.campaign_outlined, isDark),
+                _buildPhotoTypeTile(ctx, 'document', 'Hóa đơn / Giấy tờ / Sổ sách', Icons.receipt_long_outlined, isDark),
+              ],
               _buildPhotoTypeTile(ctx, 'other', 'Ảnh chụp khác', Icons.photo_outlined, isDark),
             ],
           ),
@@ -1204,6 +1343,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   void _showPhotoWarningDialog(int photosMissing, CheckInViewModel vm) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isClosed = ref.read(checkInViewModelProvider).visitResult == 'closed';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1228,7 +1368,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Lượt viếng thăm này yêu cầu chụp ảnh xác thực tại điểm bán.',
+              isClosed
+                  ? 'Lượt ghi nhận điểm bán đóng cửa yêu cầu chụp ảnh xác thực cửa hàng đang đóng.'
+                  : 'Lượt viếng thăm này yêu cầu chụp ảnh xác thực tại điểm bán.',
               style: AppTypography.bodyMedium(
                 color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
               ),
@@ -1247,7 +1389,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Bạn cần chụp thêm ít nhất $photosMissing ảnh nữa (mặt tiền / trưng bày / POSM) để có thể check-out.',
+                      isClosed
+                          ? 'Bạn cần chụp thêm ít nhất $photosMissing ảnh xác nhận đóng cửa điểm bán để có thể check-out.'
+                          : 'Bạn cần chụp thêm ít nhất $photosMissing ảnh nữa (mặt tiền / trưng bày / POSM) để có thể check-out.',
                       style: const TextStyle(
                         color: Color(0xFF6D28D9),
                         fontWeight: FontWeight.w600,
@@ -1298,6 +1442,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     final req = state.requirements;
     final isClosed = state.visitResult == 'closed';
     final isTimeSatisfied = isClosed || (req != null ? req.secondsRemaining <= 0 : false);
+    final isOpenVisit = state.visitId != 0 && (state.visitEntity == null || state.visitEntity!.isOpen);
 
     return PopScope(
       canPop: false,
@@ -1314,7 +1459,32 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           showAvatar: false,
           showLogo: false,
           onBackPressed: _handleExit,
-          trailing: const SizedBox.shrink(),
+          trailing: isOpenVisit
+              ? TextButton.icon(
+                  onPressed: _handleExit,
+                  icon: const Icon(
+                    Icons.pause_circle_outline_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'Tạm rời',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.15),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: const Size(0, 32),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         body: state.checkinData == null
             ? Center(
@@ -1699,9 +1869,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       color: const Color(0xFFFEF3C7),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: const Text(
-                                      'ℹ️ Lượt đóng cửa được miễn thời gian tối thiểu và khảo sát. Cần chụp tối thiểu 1 ảnh đóng cửa làm bằng chứng.',
-                                      style: TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                                    child: Text(
+                                      'ℹ️ Lượt đóng cửa được miễn thời gian tối thiểu và khảo sát. Cần chụp tối thiểu ${ref.watch(mobileRulesProvider).visit.closedMinPhotos} ảnh đóng cửa làm bằng chứng.',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -1823,7 +1993,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                               const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF10B981)),
                                               const SizedBox(width: 4),
                                               Text(
-                                                '${state.photos.length} ảnh đã chụp',
+                                                '${state.photos.length} ảnh đã chụp${req != null && req.photosMissing > 0 ? " (còn thiếu ${req.photosMissing})" : ""}',
                                                 style: const TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w600,
@@ -1832,13 +2002,15 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                               ),
                                             ],
                                           )
-                                        : const Row(
+                                        : Row(
                                             children: [
-                                              Icon(Icons.error_outline, size: 14, color: AppColors.error),
-                                              SizedBox(width: 4),
+                                              const Icon(Icons.error_outline, size: 14, color: AppColors.error),
+                                              const SizedBox(width: 4),
                                               Text(
-                                                'Chưa có ảnh',
-                                                style: TextStyle(
+                                                isClosed
+                                                    ? 'Cần chụp ít nhất ${ref.watch(mobileRulesProvider).visit.closedMinPhotos} ảnh đóng cửa'
+                                                    : 'Chưa có ảnh (cần tối thiểu ${ref.watch(mobileRulesProvider).visit.minPhotos} ảnh)',
+                                                style: const TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w500,
                                                   color: AppColors.error,
@@ -2115,6 +2287,31 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     );
                                     if (!fraudCheck.isAllowed) return;
                                   }
+
+                                  // 🟢 XÁC NHẬN CHECK-OUT KHI ĐỦ MỌI ĐIỀU KIỆN
+                                  if (!context.mounted) return;
+                                  double? checkoutDistanceM;
+                                  if (pos != null && dealerLat != null && dealerLng != null) {
+                                    checkoutDistanceM = Geolocator.distanceBetween(
+                                      pos.latitude,
+                                      pos.longitude,
+                                      dealerLat,
+                                      dealerLng,
+                                    );
+                                  }
+
+                                  final isConfirmed = await CheckoutConfirmationDialog.show(
+                                    context: context,
+                                    dealerName: dealerName,
+                                    durationText: state.liveVisitDuration,
+                                    photoCount: state.photos.length,
+                                    surveyCompletedCount: completedSurveys,
+                                    surveyTotalCount: surveyCount,
+                                    isClosed: isClosed,
+                                    distanceMeters: checkoutDistanceM,
+                                  );
+
+                                  if (!isConfirmed || !context.mounted) return;
 
                                   final (success, errorMsg) = await vm.checkout(
                                     lat: pos?.latitude,

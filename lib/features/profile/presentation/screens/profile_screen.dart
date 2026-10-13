@@ -557,6 +557,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
                       },
                       isDark: isDark,
                     ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.shield_outlined,
+                      title: 'Ai đã xem vị trí của tôi',
+                      onTap: () {
+                        context.push('/location-access-log');
+                      },
+                      isDark: isDark,
+                    ),
                   ],
                 ),
               ),

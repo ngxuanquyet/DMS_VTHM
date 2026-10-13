@@ -129,7 +129,7 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
               _detailRow(
                 'Quãng đường đến điểm',
                 visit.travelM == null
-                    ? '— (chờ tính tác vụ đêm)'
+                    ? '— (đang tính toán)'
                     : visit.travelM == 0
                         ? '0 km (thiếu mốc để đo)'
                         : '${(visit.travelM! / 1000.0).toStringAsFixed(1)} km',

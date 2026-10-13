@@ -188,7 +188,7 @@ class TravelLegItemCard extends StatelessWidget {
                         ] else if (leg.isPending || leg.isProviderError) ...[
                           const SizedBox(width: 8),
                           Text(
-                            '(chờ tác vụ đêm tính)',
+                            '(đang tính toán)',
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark ? Colors.white38 : const Color(0xFF94A3B8),

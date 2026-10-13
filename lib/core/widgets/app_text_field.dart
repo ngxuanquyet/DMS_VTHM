@@ -21,6 +21,7 @@ class AppTextField extends StatelessWidget {
   final bool readOnly;
   final bool? enabled;
   final bool enableVoiceInput;
+  final TapRegionCallback? onTapOutside;
 
   const AppTextField({
     super.key,
@@ -40,6 +41,7 @@ class AppTextField extends StatelessWidget {
     this.readOnly = false,
     this.enabled,
     this.enableVoiceInput = false,
+    this.onTapOutside,
   });
 
   @override
@@ -97,6 +99,7 @@ class AppTextField extends StatelessWidget {
           textInputAction: textInputAction,
           autofocus: autofocus,
           focusNode: focusNode,
+          onTapOutside: onTapOutside ?? (event) => FocusManager.instance.primaryFocus?.unfocus(),
           style: AppTypography.bodyLarge(color: effectiveTextColor),
           decoration: InputDecoration(
             hintText: hintText,

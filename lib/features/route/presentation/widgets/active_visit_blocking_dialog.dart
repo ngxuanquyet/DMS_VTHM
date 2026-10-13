@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
@@ -10,7 +9,7 @@ import '../viewmodels/route_view_model.dart';
 
 /// Hộp thoại chặn check-in điểm bán mới khi đang có lượt viếng thăm chưa đóng (§3 Luật 3)
 /// Áp dụng cho cả môi trường Online và Offline
-Future<void> showActiveVisitBlockingDialog({
+Future<DealerEntity?> showActiveVisitBlockingDialog({
   required BuildContext context,
   required WidgetRef ref,
   required VisitEntity activeVisit,
@@ -18,7 +17,7 @@ Future<void> showActiveVisitBlockingDialog({
   required String targetDealerName,
   VoidCallback? onClose,
 }) {
-  return showDialog<void>(
+  return showDialog<DealerEntity>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => ActiveVisitBlockingDialog(
@@ -183,8 +182,6 @@ class ActiveVisitBlockingDialog extends ConsumerWidget {
           icon: const Icon(Icons.arrow_forward_rounded, size: 18),
           label: const Text('Vào lượt đang mở'),
           onPressed: () {
-            Navigator.of(context).pop();
-
             // Tìm DealerEntity tương ứng hoặc tạo fallback
             final routeState = ref.read(routeViewModelProvider);
             DealerEntity? targetDealer;
@@ -211,8 +208,7 @@ class ActiveVisitBlockingDialog extends ConsumerWidget {
               visit: activeVisit,
             );
 
-            ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(targetDealer);
-            context.push('/check-in', extra: targetDealer);
+            Navigator.of(context).pop(targetDealer);
           },
         ),
       ],

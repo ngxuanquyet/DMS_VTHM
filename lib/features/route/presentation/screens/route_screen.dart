@@ -25,6 +25,8 @@ import '../../domain/entities/route_entity.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
+import '../../../../core/constants/search_target.dart';
+import '../../../../core/widgets/search_target_chips.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
@@ -36,14 +38,21 @@ class RouteScreen extends ConsumerStatefulWidget {
 class _RouteScreenState extends ConsumerState<RouteScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_onSearchFocusOrTextChanged);
+    _searchController.addListener(_onSearchFocusOrTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _requestLocationPermission();
     });
+  }
+
+  void _onSearchFocusOrTextChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _requestLocationPermission() async {
@@ -61,6 +70,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -440,114 +450,126 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Title Row with Count Badge & Distance Chip
+                                    // Title Header with Subtitle on Left & Filter Button on Right
                                     Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
                                       children: [
-                                        Text(
-                                          'Tuyến',
-                                          style:
-                                              AppTypography.titleLarge(
-                                                color: isDark
-                                                    ? AppColors.darkOnSurface
-                                                    : AppColors.onSurface,
-                                              ).copyWith(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: state.hasActiveFilter
-                                                ? AppColors.primary.withValues(
-                                                    alpha: isDark ? 0.25 : 0.15,
-                                                  )
-                                                : AppColors.primary.withValues(
-                                                    alpha: 0.1,
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    'Tuyến',
+                                                    style:
+                                                        AppTypography.titleLarge(
+                                                          color: isDark
+                                                              ? AppColors.darkOnSurface
+                                                              : AppColors.onSurface,
+                                                        ).copyWith(
+                                                          fontWeight: FontWeight.w700,
+                                                        ),
                                                   ),
-                                            borderRadius: AppRadius.roundedFull,
-                                            border: Border.all(
-                                              color: state.hasActiveFilter
-                                                  ? AppColors.primary.withValues(
-                                                      alpha: 0.4,
-                                                    )
-                                                  : AppColors.primary.withValues(
-                                                      alpha: 0.2,
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
                                                     ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            state.hasActiveFilter
-                                                ? '${state.routeDetail?.dealers.length ?? 0}/${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}'
-                                                : '${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}',
-                                            style:
-                                                AppTypography.labelSmall(
+                                                    decoration: BoxDecoration(
+                                                      color: state.hasActiveFilter
+                                                          ? AppColors.primary.withValues(
+                                                              alpha: isDark ? 0.25 : 0.15,
+                                                            )
+                                                          : AppColors.primary.withValues(
+                                                              alpha: 0.1,
+                                                            ),
+                                                      borderRadius: AppRadius.roundedFull,
+                                                      border: Border.all(
+                                                        color: state.hasActiveFilter
+                                                            ? AppColors.primary.withValues(
+                                                                alpha: 0.4,
+                                                              )
+                                                            : AppColors.primary.withValues(
+                                                                alpha: 0.2,
+                                                              ),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      state.hasActiveFilter
+                                                          ? '${state.routeDetail?.dealers.length ?? 0}/${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}'
+                                                          : '${state.routeDetail?.totalDealers ?? 0} ${strings.isVietnamese ? 'điểm' : 'stops'}',
+                                                      style:
+                                                          AppTypography.labelSmall(
+                                                            color: isDark
+                                                                ? AppColors
+                                                                      .primaryFixedDim
+                                                                : AppColors.primary,
+                                                          ).copyWith(
+                                                            fontWeight: FontWeight.w700,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  if (state.isSortedByDistance) ...[
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFF0284C7)
+                                                            .withValues(alpha: 0.12),
+                                                        borderRadius:
+                                                            BorderRadius.circular(12),
+                                                        border: Border.all(
+                                                          color: const Color(0xFF0284C7)
+                                                              .withValues(alpha: 0.3),
+                                                        ),
+                                                      ),
+                                                      child: const Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Icon(
+                                                            Icons.near_me_rounded,
+                                                            size: 11,
+                                                            color: Color(0xFF0284C7),
+                                                          ),
+                                                          SizedBox(width: 3),
+                                                          Text(
+                                                            'Theo cự ly',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight: FontWeight.w600,
+                                                              color: Color(0xFF0284C7),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                state.hasActiveFilter
+                                                    ? 'Đang lọc ${state.routeDetail?.dealers.length ?? 0} trên tổng ${state.routeDetail?.totalDealers ?? 0} điểm bán'
+                                                    : (strings.isVietnamese
+                                                        ? 'Danh sách điểm bán theo tuyến được giao'
+                                                        : 'Assigned route store visit plan'),
+                                                style: AppTypography.bodySmall(
                                                   color: isDark
-                                                      ? AppColors
-                                                            .primaryFixedDim
-                                                      : AppColors.primary,
-                                                ).copyWith(
-                                                  fontWeight: FontWeight.w700,
+                                                      ? AppColors.darkOnSurfaceVariant
+                                                      : AppColors.onSurfaceVariant,
                                                 ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        if (state.isSortedByDistance) ...[
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF0284C7)
-                                                  .withValues(alpha: 0.12),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: const Color(0xFF0284C7)
-                                                    .withValues(alpha: 0.3),
-                                              ),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.near_me_rounded,
-                                                  size: 11,
-                                                  color: Color(0xFF0284C7),
-                                                ),
-                                                SizedBox(width: 3),
-                                                Text(
-                                                  'Theo cự ly',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF0284C7),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                        const Spacer(),
+                                        const SizedBox(width: 10),
                                         _buildFilterButton(context, state, isDark),
                                       ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      state.hasActiveFilter
-                                          ? 'Đang lọc ${state.routeDetail?.dealers.length ?? 0} trên tổng ${state.routeDetail?.totalDealers ?? 0} điểm bán'
-                                          : (strings.isVietnamese
-                                              ? 'Danh sách điểm bán theo tuyến được giao'
-                                              : 'Assigned route store visit plan'),
-                                      style: AppTypography.bodySmall(
-                                        color: isDark
-                                            ? AppColors.darkOnSurfaceVariant
-                                            : AppColors.onSurfaceVariant,
-                                      ),
                                     ),
                                     const SizedBox(height: 12),
                                   ],
@@ -567,12 +589,18 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                     ),
                               borderRadius: AppRadius.roundedMd,
                               border: Border.all(
-                                color: isDark
-                                    ? AppColors.darkOutlineVariant
-                                    : AppColors.outlineVariant,
+                                color: _searchFocusNode.hasFocus
+                                    ? (isDark
+                                        ? const Color(0xFF38BDF8)
+                                        : AppColors.primary)
+                                    : (isDark
+                                        ? AppColors.darkOutlineVariant
+                                        : AppColors.outlineVariant),
+                                width: _searchFocusNode.hasFocus ? 1.4 : 1.0,
                               ),
                             ),
                             child: TextField(
+                              focusNode: _searchFocusNode,
                               controller: _searchController,
                               onChanged: (val) => vm.setSearchQuery(val),
                               style: AppTypography.bodyMedium(
@@ -581,20 +609,85 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                     : AppColors.onSurface,
                               ),
                               decoration: InputDecoration(
-                                hintText:
-                                    'Tìm điểm bán, mã KH, SĐT trên tuyến...',
+                                isDense: true,
+                                hintText: state.searchTarget.hintText,
                                 hintStyle: AppTypography.bodySmall(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant
                                       : AppColors.outline,
                                 ),
-                                prefixIcon: Icon(
-                                  Icons.search_rounded,
-                                  size: 20,
-                                  color: isDark
-                                      ? AppColors.darkOnSurfaceVariant
-                                      : AppColors.outline,
+                                prefixIcon: PopupMenuButton<SearchTarget>(
+                                  tooltip: 'Chọn tiêu chí tìm kiếm',
+                                  initialValue: state.searchTarget,
+                                  onSelected: (target) => vm.setSearchTarget(target),
+                                  itemBuilder: (context) => SearchTarget.values
+                                      .map(
+                                        (target) => PopupMenuItem<SearchTarget>(
+                                          value: target,
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                target.icon,
+                                                size: 16,
+                                                color: state.searchTarget == target
+                                                    ? (isDark
+                                                        ? const Color(0xFF38BDF8)
+                                                        : const Color(0xFF006874))
+                                                    : (isDark
+                                                        ? AppColors.darkOnSurfaceVariant
+                                                        : AppColors.onSurfaceVariant),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                target.label,
+                                                style: TextStyle(
+                                                  fontWeight: state.searchTarget == target
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                  color: state.searchTarget == target
+                                                      ? (isDark
+                                                          ? const Color(0xFF38BDF8)
+                                                          : const Color(0xFF006874))
+                                                      : null,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(width: 10),
+                                      Icon(
+                                        state.searchTarget.icon,
+                                        size: 18,
+                                        color: isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.outline,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        Icons.arrow_drop_down_rounded,
+                                        size: 16,
+                                        color: isDark
+                                            ? AppColors.darkOnSurfaceVariant
+                                            : AppColors.outline,
+                                      ),
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 4, right: 6),
+                                        width: 1,
+                                        height: 18,
+                                        color: isDark
+                                            ? AppColors.darkOutlineVariant
+                                            : AppColors.outlineVariant,
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                prefixIconConstraints:
+                                    const BoxConstraints(minWidth: 40, maxHeight: 42),
                                 suffixIcon: _searchController.text.isNotEmpty
                                     ? IconButton(
                                         icon: const Icon(
@@ -607,12 +700,37 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                         },
                                       )
                                     : null,
+                                suffixIconConstraints:
+                                    const BoxConstraints(minWidth: 36, maxHeight: 42),
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                filled: false,
+                                fillColor: Colors.transparent,
                                 contentPadding: const EdgeInsets.symmetric(
                                   vertical: 10,
                                 ),
                               ),
                             ),
+                          ),
+
+                          // Options tìm kiếm dạng Filter Chips (Hiện khi gõ hoặc khi focus)
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeInOut,
+                            child: (_searchFocusNode.hasFocus || _searchController.text.isNotEmpty)
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: SearchTargetChips(
+                                      currentTarget: state.searchTarget,
+                                      onTargetChanged: (target) => vm.setSearchTarget(target),
+                                      isDark: isDark,
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                         ],
                       ),
@@ -705,11 +823,17 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                               icon: Icons.search_off_rounded,
                                               title: 'Không tìm thấy điểm bán',
                                               description:
-                                                  'Không có điểm bán nào trên tuyến khớp với từ khóa "${state.searchQuery}".',
-                                              actionText: 'Xóa tìm kiếm',
+                                                  'Không có điểm bán nào trên tuyến khớp với từ khóa "${state.searchQuery}" (${state.searchTarget.label}).',
+                                              actionText: state.searchTarget != SearchTarget.all
+                                                  ? 'Tìm trong tất cả tiêu chí'
+                                                  : 'Xóa tìm kiếm',
                                               onAction: () {
-                                                _searchController.clear();
-                                                vm.setSearchQuery('');
+                                                if (state.searchTarget != SearchTarget.all) {
+                                                  vm.setSearchTarget(SearchTarget.all);
+                                                } else {
+                                                  _searchController.clear();
+                                                  vm.setSearchQuery('');
+                                                }
                                               },
                                             )
                                           : state.hasActiveFilter
@@ -861,7 +985,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 borderRadius: BorderRadius.circular(6),
               ),
             ),
-            onPressed: () {
+            onPressed: () async {
               if (dealer != null) {
                 final dealerToInit = dealer.visit != null
                     ? dealer
@@ -872,7 +996,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 ref
                     .read(checkInViewModelProvider.notifier)
                     .initCheckinWithDealer(dealerToInit);
-                context.push('/check-in', extra: dealerToInit);
+                await context.push('/check-in', extra: dealerToInit);
               } else {
                 final fallbackDealer = DealerEntity(
                   id: visit.customerId.toString(),
@@ -887,7 +1011,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 ref
                     .read(checkInViewModelProvider.notifier)
                     .initCheckinWithDealer(fallbackDealer);
-                context.push('/check-in', extra: fallbackDealer);
+                await context.push('/check-in', extra: fallbackDealer);
+              }
+              if (context.mounted) {
+                ref.read(routeViewModelProvider.notifier).loadRouteDetail();
               }
             },
             child: const Text(
@@ -935,6 +1062,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Icon(
                 Icons.tune_rounded,
@@ -948,6 +1076,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                 'Lọc',
                 style: TextStyle(
                   fontSize: 12,
+                  height: 1.15,
                   fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w600,
                   color: hasFilters
                       ? AppColors.primary

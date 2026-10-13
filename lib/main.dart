@@ -56,6 +56,16 @@ class VthmApp extends ConsumerWidget {
       darkTheme: AppTheme.darkTheme,
       themeMode: profileState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       routerConfig: router,
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+          },
+          child: child,
+        );
+      },
     );
   }
 }

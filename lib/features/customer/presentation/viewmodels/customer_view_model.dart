@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../../core/constants/search_target.dart';
 import '../../../../core/map/goong_providers.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../route/data/services/route_api_service.dart';
@@ -24,6 +25,7 @@ class CustomerState {
   final List<CustomerDynamicColumn> dynamicColumns;
   final CustomerMetaData meta;
   final String searchQuery;
+  final SearchTarget searchTarget;
   final CustomerFilterTab selectedTab;
   final String? selectedRoute;
   final List<String> assignedRoutes;
@@ -38,6 +40,7 @@ class CustomerState {
     this.dynamicColumns = const [],
     this.meta = const CustomerMetaData(),
     this.searchQuery = '',
+    this.searchTarget = SearchTarget.all,
     this.selectedTab = CustomerFilterTab.all,
     this.selectedRoute,
     this.assignedRoutes = const [],
@@ -53,6 +56,7 @@ class CustomerState {
     List<CustomerDynamicColumn>? dynamicColumns,
     CustomerMetaData? meta,
     String? searchQuery,
+    SearchTarget? searchTarget,
     CustomerFilterTab? selectedTab,
     String? selectedRoute,
     bool clearRoute = false,
@@ -70,6 +74,7 @@ class CustomerState {
       dynamicColumns: dynamicColumns ?? this.dynamicColumns,
       meta: meta ?? this.meta,
       searchQuery: searchQuery ?? this.searchQuery,
+      searchTarget: searchTarget ?? this.searchTarget,
       selectedTab: selectedTab ?? this.selectedTab,
       selectedRoute: clearRoute ? null : (selectedRoute ?? this.selectedRoute),
       assignedRoutes: assignedRoutes ?? this.assignedRoutes,
@@ -237,6 +242,10 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
     state = state.copyWith(searchQuery: query);
   }
 
+  void setSearchTarget(SearchTarget target) {
+    state = state.copyWith(searchTarget: target);
+  }
+
   void selectTab(CustomerFilterTab tab) {
     state = state.copyWith(selectedTab: tab);
   }
@@ -356,19 +365,11 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
     list = list.where((c) => c.channelName == state.selectedChannel).toList();
   }
 
-  // 5. Lọc theo từ khóa tìm kiếm (hỗ trợ không dấu §7.4)
+  // 5. Lọc theo từ khóa tìm kiếm và tiêu chí (hỗ trợ không dấu §7.4)
   final rawQuery = state.searchQuery.trim();
   if (rawQuery.isNotEmpty) {
     final query = StringUtils.toUnaccentedLower(rawQuery);
-    list = list.where((c) {
-      return StringUtils.toUnaccentedLower(c.name).contains(query) ||
-          c.code.toLowerCase().contains(query) ||
-          c.phone.replaceAll(' ', '').contains(query) ||
-          StringUtils.toUnaccentedLower(c.address).contains(query) ||
-          StringUtils.toUnaccentedLower(c.route).contains(query) ||
-          c.routes.any((r) => StringUtils.toUnaccentedLower(r).contains(query)) ||
-          (c.contactTitle != null && StringUtils.toUnaccentedLower(c.contactTitle).contains(query));
-    }).toList();
+    list = list.where((c) => state.searchTarget.matchesCustomer(c, query)).toList();
   }
 
   // 3. Tính khoảng cách và sắp xếp từ gần đến xa khi bật isSortedByDistance

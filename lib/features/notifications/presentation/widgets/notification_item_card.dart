@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/database/database_provider.dart';
+import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/sync/sync_entity_group.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/offline_sync_badge.dart';
 import '../../domain/entities/notification_entity.dart';
 import '../viewmodels/notifications_view_model.dart';
 
@@ -18,14 +22,40 @@ class NotificationItemCard extends ConsumerWidget {
     this.onTap,
   });
 
+  /// Kiểm tra xem thông báo có phải là thông báo đồng bộ ngoại tuyến thành công không
+  static bool isOfflineSyncSuccessNotification(NotificationEntity notification) {
+    final type = notification.type.toLowerCase();
+    final title = notification.title.toLowerCase();
+    return type == 'sync_success' ||
+        title.contains('đồng bộ ngoại tuyến thành công') ||
+        title.contains('đồng bộ thành công');
+  }
+
+  /// Kiểm tra xem thông báo có phải là cảnh báo hàng đợi ngoại tuyến tồn đọng không
+  static bool isOfflineQueueWarningNotification(NotificationEntity notification) {
+    final type = notification.type.toLowerCase();
+    final title = notification.title.toLowerCase();
+    final message = notification.message.toLowerCase();
+    return type == 'offline_queue_warning' ||
+        title.contains('chưa đồng bộ') ||
+        title.contains('tồn đọng hàng đợi') ||
+        message.contains('bản ghi ngoại tuyến chưa được gửi');
+  }
+
   /// Tự động xác định màn hình đích tương ứng với từng loại thông báo
   static String? resolveNotificationRoute(NotificationEntity notification) {
     final explicitPath = notification.routePath?.trim();
-    if (explicitPath != null && explicitPath.isNotEmpty) {
+    if (explicitPath != null && explicitPath.isNotEmpty && explicitPath != '/notifications') {
       if (explicitPath == '/route' || explicitPath == '/route/check-in') {
         return '/routes';
       }
       return explicitPath;
+    }
+
+    // Các thông báo ngoại tuyến được xử lý riêng bằng Modal BottomSheet (tránh nhảy lung tung hoặc đè stack)
+    if (isOfflineSyncSuccessNotification(notification) ||
+        isOfflineQueueWarningNotification(notification)) {
+      return null;
     }
 
     final type = notification.type.toLowerCase();
@@ -79,12 +109,8 @@ class NotificationItemCard extends ConsumerWidget {
       return '/position-declaration';
     }
 
-    // 7. Báo cáo ngày / Đồng bộ ngoại tuyến
-    if (type.contains('report') ||
-        type == 'sync_success' ||
-        type == 'offline_queue_warning' ||
-        combined.contains('báo cáo ngày') ||
-        combined.contains('đồng bộ ngoại tuyến')) {
+    // 7. Báo cáo ngày
+    if (type.contains('report') || combined.contains('báo cáo ngày')) {
       return '/daily-report';
     }
 
@@ -107,6 +133,247 @@ class NotificationItemCard extends ConsumerWidget {
     if (diff.inHours < 24) return '${diff.inHours} giờ trước';
     if (diff.inDays < 7) return '${diff.inDays} ngày trước';
     return '${time.day.toString().padLeft(2, '0')}/${time.month.toString().padLeft(2, '0')}';
+  }
+
+  /// Hiển thị Modal chi tiết kết quả đồng bộ ngoại tuyến
+  void _showSyncSuccessModal(BuildContext context, WidgetRef ref, bool isDark) {
+    final pendingEntries = ref.read(allPendingQueueEntriesProvider).value ?? [];
+    final groupedPending = SyncEntityGroupHelper.groupEntries(pendingEntries);
+    final displayPendingCount = groupedPending.isNotEmpty
+        ? groupedPending.length
+        : (ref.read(pendingSyncCountProvider).value ?? 0);
+    final deadCount = ref.read(deadSyncCountProvider).value ?? 0;
+    final isOnline = ref.read(connectivityProvider).isOnline;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.cloud_done_rounded,
+                          color: Color(0xFF10B981),
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Đã tải lên máy chủ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF059669),
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                _formatTimeAgo(notification.createdAt),
+                                style: AppTypography.labelSmall(
+                                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            notification.title,
+                            style: AppTypography.titleMedium(
+                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                            ).copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Hộp nội dung chi tiết
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF262D28) : const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.25 : 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          notification.message,
+                          style: AppTypography.bodyMedium(
+                            color: isDark ? AppColors.darkOnSurface : const Color(0xFF166534),
+                          ).copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Trạng thái mạng & Hàng đợi hiện tại
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white10 : const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                        size: 18,
+                        color: isOnline ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isOnline ? 'Kết nối Internet: Trực tuyến' : 'Mạng: Ngoại tuyến',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white70 : const Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: displayPendingCount == 0 && deadCount == 0
+                              ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                              : const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          displayPendingCount == 0 && deadCount == 0
+                              ? 'Hàng đợi sạch'
+                              : '$displayPendingCount chờ gửi',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: displayPendingCount == 0 && deadCount == 0
+                                ? const Color(0xFF059669)
+                                : const Color(0xFF2563EB),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Nút hành động
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          showOfflineSyncModal(context);
+                        },
+                        icon: const Icon(Icons.list_alt_rounded, size: 18),
+                        label: const Text('Hàng đợi'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: isDark ? Colors.white70 : AppColors.onSurface,
+                          side: BorderSide(
+                            color: isDark ? Colors.white24 : AppColors.outlineVariant,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          context.push('/daily-report');
+                        },
+                        icon: const Icon(Icons.assessment_outlined, size: 18),
+                        label: const Text('Xem báo cáo ngày'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF006E15),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: TextButton.styleFrom(
+                      foregroundColor: isDark ? Colors.white60 : Colors.black54,
+                    ),
+                    child: const Text('Đóng'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showNotificationDetail(BuildContext context, bool isDark) {
@@ -206,9 +473,21 @@ class NotificationItemCard extends ConsumerWidget {
       return;
     }
 
-    // 3. Điều hướng tới màn hình tương ứng
+    // 3. Xử lý riêng cho các thông báo đồng bộ ngoại tuyến (tránh đè chồng màn hình notifications)
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isOfflineSyncSuccessNotification(notification)) {
+      _showSyncSuccessModal(context, ref, isDark);
+      return;
+    }
+
+    if (isOfflineQueueWarningNotification(notification)) {
+      showOfflineSyncModal(context);
+      return;
+    }
+
+    // 4. Điều hướng tới màn hình tương ứng (tuyệt đối không push /notifications)
     final targetRoute = resolveNotificationRoute(notification);
-    if (targetRoute != null && targetRoute.isNotEmpty) {
+    if (targetRoute != null && targetRoute.isNotEmpty && targetRoute != '/notifications') {
       if (targetRoute == '/routes' ||
           targetRoute == '/home' ||
           targetRoute == '/customers' ||
@@ -219,8 +498,7 @@ class NotificationItemCard extends ConsumerWidget {
         context.push(targetRoute);
       }
     } else {
-      // 4. Nếu là thông báo chung chưa gắn màn cụ thể, hiển thị popup nội dung chi tiết
-      final isDark = Theme.of(context).brightness == Brightness.dark;
+      // 5. Nếu là thông báo chung chưa gắn màn cụ thể, hiển thị popup nội dung chi tiết
       _showNotificationDetail(context, isDark);
     }
   }
@@ -229,6 +507,8 @@ class NotificationItemCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final targetRoute = resolveNotificationRoute(notification);
+    final isSyncSuccess = isOfflineSyncSuccessNotification(notification);
+    final isQueueWarning = isOfflineQueueWarningNotification(notification);
 
     IconData icon;
     Color iconColor;
@@ -355,11 +635,19 @@ class NotificationItemCard extends ConsumerWidget {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            targetRoute != null ? '• Nhấn để mở' : '• Xem chi tiết',
+                            isSyncSuccess
+                                ? '• Xem kết quả đồng bộ'
+                                : isQueueWarning
+                                    ? '• Xem hàng đợi ngoại tuyến'
+                                    : (targetRoute != null ? '• Nhấn để mở' : '• Xem chi tiết'),
                             style: AppTypography.labelSmall(
-                              color: targetRoute != null
-                                  ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                                  : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+                              color: isSyncSuccess
+                                  ? const Color(0xFF059669)
+                                  : isQueueWarning
+                                      ? const Color(0xFFEA580C)
+                                      : (targetRoute != null
+                                          ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
+                                          : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline)),
                             ).copyWith(fontWeight: FontWeight.w600),
                           ),
                         ],

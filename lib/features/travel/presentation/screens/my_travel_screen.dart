@@ -84,7 +84,7 @@ class _MyTravelScreenState extends ConsumerState<MyTravelScreen> {
                   icon: Icons.route_rounded,
                   title: 'Chưa có dữ liệu quãng đường',
                   description:
-                      'Chưa có dữ liệu quãng đường trong khoảng thời gian đã chọn.\nDữ liệu được tính tự động hàng đêm từ các lượt chấm công và viếng thăm.',
+                      'Chưa có dữ liệu quãng đường trong khoảng thời gian đã chọn.\nDữ liệu được tính tự động từ các lượt chấm công và hoàn thành viếng thăm.',
                 ),
               )
             else ...[
@@ -282,7 +282,7 @@ class _MyTravelScreenState extends ConsumerState<MyTravelScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Quãng đường đo theo đường bộ xe máy từ mốc Chấm công vào qua các điểm bán và DỪNG ở điểm bán cuối. Hệ thống tự động tính lúc 01:30 mỗi đêm.',
+              'Quãng đường đo theo đường bộ xe máy từ mốc Chấm công vào qua các điểm bán và DỪNG ở điểm bán cuối. Hệ thống tự động tính tức thì ngay khi hoàn thành viếng thăm.',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.4,

@@ -12,9 +12,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/string_utils.dart';
+import '../../../../core/constants/search_target.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/search_target_chips.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
@@ -38,6 +40,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
     with SingleTickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   Timer? _debounceTimer;
 
@@ -50,9 +53,15 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_onSearchFocusOrTextChanged);
+    _searchController.addListener(_onSearchFocusOrTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _requestLocationPermission();
     });
+  }
+
+  void _onSearchFocusOrTextChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _requestLocationPermission() async {
@@ -466,6 +475,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
   void dispose() {
     _debounceTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController.dispose();
     _syncAnimationController.dispose();
     super.dispose();
@@ -549,100 +559,112 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Title Row with Count Badge & Filter
+                                // Title Header with Subtitle on Left & Filter Button on Right
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      strings.customerScreenTitle,
-                                      style: AppTypography.titleLarge(
-                                        color: isDark
-                                            ? AppColors.darkOnSurface
-                                            : AppColors.onSurface,
-                                      ).copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: isFiltered
-                                              ? AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.15)
-                                              : AppColors.primary.withValues(alpha: 0.1),
-                                          borderRadius: AppRadius.roundedFull,
-                                          border: Border.all(
-                                            color: isFiltered
-                                                ? AppColors.primary.withValues(alpha: 0.4)
-                                                : AppColors.primary.withValues(alpha: 0.2),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          isFiltered
-                                              ? '${customerList.length}/${state.totalCount} điểm'
-                                              : '${state.totalCount} điểm',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: AppTypography.labelSmall(
-                                            color: isDark
-                                                ? AppColors.primaryFixedDim
-                                                : AppColors.primary,
-                                          ).copyWith(fontWeight: FontWeight.w700),
-                                        ),
-                                      ),
-                                    ),
-                                    if (state.isSortedByDistance) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF0284C7)
-                                              .withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: const Color(0xFF0284C7)
-                                                .withValues(alpha: 0.3),
-                                          ),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.near_me_rounded,
-                                              size: 11,
-                                              color: Color(0xFF0284C7),
-                                            ),
-                                            SizedBox(width: 3),
-                                            Text(
-                                              'Theo cự ly',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF0284C7),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Text(
+                                                strings.customerScreenTitle,
+                                                style: AppTypography.titleLarge(
+                                                  color: isDark
+                                                      ? AppColors.darkOnSurface
+                                                      : AppColors.onSurface,
+                                                ).copyWith(fontWeight: FontWeight.w700),
                                               ),
+                                              const SizedBox(width: 8),
+                                              Flexible(
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: isFiltered
+                                                        ? AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.15)
+                                                        : AppColors.primary.withValues(alpha: 0.1),
+                                                    borderRadius: AppRadius.roundedFull,
+                                                    border: Border.all(
+                                                      color: isFiltered
+                                                          ? AppColors.primary.withValues(alpha: 0.4)
+                                                          : AppColors.primary.withValues(alpha: 0.2),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    isFiltered
+                                                        ? '${customerList.length}/${state.totalCount} điểm'
+                                                        : '${state.totalCount} điểm',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: AppTypography.labelSmall(
+                                                      color: isDark
+                                                          ? AppColors.primaryFixedDim
+                                                          : AppColors.primary,
+                                                    ).copyWith(fontWeight: FontWeight.w700),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (state.isSortedByDistance) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF0284C7)
+                                                        .withValues(alpha: 0.12),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: const Color(0xFF0284C7)
+                                                          .withValues(alpha: 0.3),
+                                                    ),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.near_me_rounded,
+                                                        size: 11,
+                                                        color: Color(0xFF0284C7),
+                                                      ),
+                                                      SizedBox(width: 3),
+                                                      Text(
+                                                        'Theo cự ly',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: Color(0xFF0284C7),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            isFiltered
+                                                ? 'Đang hiển thị ${customerList.length} trên tổng ${state.totalCount} điểm bán'
+                                                : strings.customerSubtitle,
+                                            style: AppTypography.bodySmall(
+                                              color: isDark
+                                                  ? AppColors.darkOnSurfaceVariant
+                                                  : AppColors.onSurfaceVariant,
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                    const Spacer(),
+                                    ),
+                                    const SizedBox(width: 10),
                                     _buildFilterButton(context, state, isDark),
                                   ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  isFiltered
-                                      ? 'Đang hiển thị ${customerList.length} trên tổng ${state.totalCount} điểm bán'
-                                      : strings.customerSubtitle,
-                                  style: AppTypography.bodySmall(
-                                    color: isDark
-                                        ? AppColors.darkOnSurfaceVariant
-                                        : AppColors.onSurfaceVariant,
-                                  ),
                                 ),
                                 const SizedBox(height: 12),
                               ],
@@ -660,31 +682,101 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                               : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
                           borderRadius: AppRadius.roundedMd,
                           border: Border.all(
-                            color: isDark
-                                ? AppColors.darkOutlineVariant
-                                : AppColors.outlineVariant,
+                            color: _searchFocusNode.hasFocus
+                                ? (isDark ? const Color(0xFF38BDF8) : AppColors.primary)
+                                : (isDark
+                                    ? AppColors.darkOutlineVariant
+                                    : AppColors.outlineVariant),
+                            width: _searchFocusNode.hasFocus ? 1.4 : 1.0,
                           ),
                         ),
                         child: TextField(
+                          focusNode: _searchFocusNode,
                           controller: _searchController,
                           onChanged: _onSearchChanged,
                           style: AppTypography.bodyMedium(
                             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                           ),
                           decoration: InputDecoration(
-                            hintText: strings.customerSearchHint,
+                            isDense: true,
+                            hintText: state.searchTarget.hintText,
                             hintStyle: AppTypography.bodySmall(
                               color: isDark
                                   ? AppColors.darkOnSurfaceVariant
                                   : AppColors.outline,
                             ),
-                            prefixIcon: Icon(
-                              Icons.search_rounded,
-                              size: 20,
-                              color: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.outline,
+                            prefixIcon: PopupMenuButton<SearchTarget>(
+                              tooltip: 'Chọn tiêu chí tìm kiếm',
+                              initialValue: state.searchTarget,
+                              onSelected: (target) => vm.setSearchTarget(target),
+                              itemBuilder: (context) => SearchTarget.values
+                                  .map(
+                                    (target) => PopupMenuItem<SearchTarget>(
+                                      value: target,
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            target.icon,
+                                            size: 16,
+                                            color: state.searchTarget == target
+                                                ? (isDark
+                                                    ? const Color(0xFF38BDF8)
+                                                    : const Color(0xFF006874))
+                                                : (isDark
+                                                    ? AppColors.darkOnSurfaceVariant
+                                                    : AppColors.onSurfaceVariant),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            target.label,
+                                            style: TextStyle(
+                                              fontWeight: state.searchTarget == target
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                              color: state.searchTarget == target
+                                                  ? (isDark
+                                                      ? const Color(0xFF38BDF8)
+                                                      : const Color(0xFF006874))
+                                                  : null,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(width: 10),
+                                  Icon(
+                                    state.searchTarget.icon,
+                                    size: 18,
+                                    color: isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.outline,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    size: 16,
+                                    color: isDark
+                                        ? AppColors.darkOnSurfaceVariant
+                                        : AppColors.outline,
+                                  ),
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 4, right: 6),
+                                    width: 1,
+                                    height: 18,
+                                    color: isDark
+                                        ? AppColors.darkOutlineVariant
+                                        : AppColors.outlineVariant,
+                                  ),
+                                ],
+                              ),
                             ),
+                            prefixIconConstraints:
+                                const BoxConstraints(minWidth: 40, maxHeight: 42),
                             suffixIcon: _searchController.text.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear_rounded, size: 16),
@@ -695,10 +787,35 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                     },
                                   )
                                 : null,
+                            suffixIconConstraints:
+                                const BoxConstraints(minWidth: 36, maxHeight: 42),
                             border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            filled: false,
+                            fillColor: Colors.transparent,
                             contentPadding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                         ),
+                      ),
+
+                      // Options tìm kiếm dạng Filter Chips (Hiện khi gõ hoặc khi focus)
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeInOut,
+                        child: (_searchFocusNode.hasFocus || _searchController.text.isNotEmpty)
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: SearchTargetChips(
+                                  currentTarget: state.searchTarget,
+                                  onTargetChanged: (target) => vm.setSearchTarget(target),
+                                  isDark: isDark,
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                     ],
                   ),
@@ -824,13 +941,19 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                               icon: Icons.search_off_rounded,
                                               title: 'Không tìm thấy điểm bán phù hợp',
                                               description: state.searchQuery.trim().isNotEmpty
-                                                  ? 'Không có điểm bán nào khớp với từ khóa "${state.searchQuery}".'
+                                                  ? 'Không có điểm bán nào khớp với từ khóa "${state.searchQuery}" (${state.searchTarget.label}).'
                                                   : 'Không có điểm bán nào khớp với bộ lọc đang chọn.',
-                                              actionText: 'Đặt lại bộ lọc',
+                                              actionText: state.searchQuery.trim().isNotEmpty && state.searchTarget != SearchTarget.all
+                                                  ? 'Tìm trong tất cả tiêu chí'
+                                                  : 'Đặt lại bộ lọc',
                                               onAction: () {
-                                                _debounceTimer?.cancel();
-                                                _searchController.clear();
-                                                vm.resetFilters();
+                                                if (state.searchQuery.trim().isNotEmpty && state.searchTarget != SearchTarget.all) {
+                                                  vm.setSearchTarget(SearchTarget.all);
+                                                } else {
+                                                  _debounceTimer?.cancel();
+                                                  _searchController.clear();
+                                                  vm.resetFilters();
+                                                }
                                               },
                                             )
                                           : AppEmptyState(
@@ -939,6 +1062,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Icon(
                 Icons.tune_rounded,
@@ -952,6 +1076,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                 'Lọc',
                 style: TextStyle(
                   fontSize: 12,
+                  height: 1.15,
                   fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w600,
                   color: hasFilters
                       ? AppColors.primary

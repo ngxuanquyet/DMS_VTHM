@@ -11,6 +11,7 @@ import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 import 'offline_sync_badge.dart';
+import '../../features/employee_tracking/presentation/widgets/location_sharing_badge.dart';
 
 class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -150,6 +151,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const LocationSharingBadge(),
               const OfflineSyncBadge(),
               Padding(
                 padding: const EdgeInsets.only(right: 8.0),

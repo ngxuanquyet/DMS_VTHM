@@ -27,6 +27,7 @@ import '../../features/route/presentation/screens/route_screen.dart';
 import '../../features/travel/domain/entities/travel_day_entity.dart';
 import '../../features/travel/presentation/screens/my_travel_screen.dart';
 import '../../features/travel/presentation/screens/travel_leg_detail_screen.dart';
+import '../../features/employee_tracking/presentation/screens/location_access_log_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../services/route_restoration_service.dart';
 import 'branch_animated_slide_container.dart';
@@ -334,6 +335,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: TravelLegDetailScreen(day: day),
           );
         },
+      ),
+      GoRoute(
+        path: '/location-access-log',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const LocationAccessLogScreen(),
+        ),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

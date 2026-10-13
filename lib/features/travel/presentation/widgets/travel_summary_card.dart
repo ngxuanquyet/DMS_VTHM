@@ -166,7 +166,7 @@ class TravelSummaryCard extends StatelessWidget {
                     child: _MiniMetric(
                       icon: Icons.schedule_rounded,
                       iconColor: const Color(0xFF93C5FD),
-                      title: 'Chờ tính đêm',
+                      title: 'Đang xử lý',
                       value: '${state.totalErrorLegsCount} chặng',
                     ),
                   ),

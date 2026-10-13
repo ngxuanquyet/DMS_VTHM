@@ -33,6 +33,7 @@ import '../widgets/greeting_header.dart';
 import '../widgets/home_quick_actions.dart';
 import '../../../daily_report/domain/entities/daily_activity_entity.dart';
 import '../../../daily_report/presentation/widgets/daily_activity_timeline_card.dart';
+import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -51,6 +52,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndAutoSync();
+      ref.read(employeeTrackingProvider.notifier).startService();
     });
   }
 

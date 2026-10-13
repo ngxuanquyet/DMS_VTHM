@@ -3,6 +3,7 @@ import '../../../forms/domain/entities/market_form_entity.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
+import '../../../../core/constants/search_target.dart';
 
 enum RouteStatus { initial, loading, loaded, error }
 
@@ -19,6 +20,7 @@ class RouteState {
   final List<String> availableCustomerStatuses;
   final int? selectedDayOfWeek;
   final String searchQuery;
+  final SearchTarget searchTarget;
   final int selectedTab; // 0: Danh sách, 1: Bản đồ
   final String? selectedDealerId;
   final String? errorMessage;
@@ -41,6 +43,7 @@ class RouteState {
     this.availableCustomerStatuses = const [],
     this.selectedDayOfWeek,
     this.searchQuery = '',
+    this.searchTarget = SearchTarget.all,
     this.selectedTab = 0,
     this.selectedDealerId,
     this.errorMessage,
@@ -99,6 +102,7 @@ class RouteState {
     int? selectedDayOfWeek,
     bool clearSelectedDayOfWeek = false,
     String? searchQuery,
+    SearchTarget? searchTarget,
     int? selectedTab,
     String? selectedDealerId,
     String? errorMessage,
@@ -132,6 +136,7 @@ class RouteState {
           ? null
           : (selectedDayOfWeek ?? this.selectedDayOfWeek),
       searchQuery: searchQuery ?? this.searchQuery,
+      searchTarget: searchTarget ?? this.searchTarget,
       selectedTab: selectedTab ?? this.selectedTab,
       selectedDealerId: selectedDealerId ?? this.selectedDealerId,
       errorMessage: errorMessage,
@@ -164,6 +169,7 @@ class CheckInState {
   final bool isRefreshingRequirements;
   final String visitResult; // 'visited' | 'closed'
   final String closedNote;
+  final String visitNote;
 
   const CheckInState({
     this.status = CheckInStatus.initial,
@@ -183,6 +189,7 @@ class CheckInState {
     this.isRefreshingRequirements = false,
     this.visitResult = 'visited',
     this.closedNote = '',
+    this.visitNote = '',
   });
 
   /// Danh sách các biểu mẫu khảo sát bắt buộc chưa hoàn thành
@@ -221,6 +228,7 @@ class CheckInState {
     bool? isRefreshingRequirements,
     String? visitResult,
     String? closedNote,
+    String? visitNote,
   }) {
     return CheckInState(
       status: status ?? this.status,
@@ -242,6 +250,7 @@ class CheckInState {
           isRefreshingRequirements ?? this.isRefreshingRequirements,
       visitResult: visitResult ?? this.visitResult,
       closedNote: closedNote ?? this.closedNote,
+      visitNote: visitNote ?? this.visitNote,
     );
   }
 }

@@ -342,6 +342,13 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
                                   )
                                 : null,
                             border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            filled: false,
+                            fillColor: Colors.transparent,
                             contentPadding:
                                 const EdgeInsets.symmetric(vertical: 10),
                           ),

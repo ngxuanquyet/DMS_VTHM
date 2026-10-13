@@ -110,6 +110,30 @@ void main() {
         category: 'system',
       );
       expect(NotificationItemCard.resolveNotificationRoute(notifSys), isNull);
+
+      const notifSync = NotificationEntity(
+        id: '7',
+        type: 'sync_success',
+        title: 'Đồng bộ ngoại tuyến thành công',
+        message: 'Đã gửi thành công 3 tác vụ lên máy chủ.',
+        timeAgo: 'Vừa xong',
+        isRead: false,
+        category: 'system',
+        routePath: '/notifications',
+      );
+      expect(NotificationItemCard.resolveNotificationRoute(notifSync), isNull);
+
+      const notifQueue = NotificationEntity(
+        id: '8',
+        type: 'offline_queue_warning',
+        title: 'Cảnh báo dữ liệu chưa đồng bộ',
+        message: 'Bạn đang có 2 bản ghi ngoại tuyến chưa được gửi lên máy chủ.',
+        timeAgo: '1 giờ trước',
+        isRead: false,
+        category: 'system',
+        routePath: '/notifications',
+      );
+      expect(NotificationItemCard.resolveNotificationRoute(notifQueue), isNull);
     });
   });
 
@@ -221,6 +245,59 @@ void main() {
 
       final readIds = await notifService.getReadNotificationIds();
       expect(readIds.contains(notifId), isTrue);
+    });
+
+    testWidgets('Clicking sync_success notification opens sync success modal with actions and marks read', (tester) async {
+      const syncNotif = NotificationEntity(
+        id: 'sync_101',
+        type: 'sync_success',
+        title: 'Đồng bộ ngoại tuyến thành công',
+        message: 'Đã gửi thành công 3 tác vụ lên hệ thống máy chủ.',
+        timeAgo: 'Vừa xong',
+        isRead: false,
+        category: 'system',
+      );
+
+      final fakeRepo = FakeNotificationsRepository(
+        const NotificationDataEntity(today: [syncNotif], earlier: []),
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          notificationsRepositoryProvider.overrideWithValue(fakeRepo),
+        ],
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (context, ref, child) {
+                  final state = ref.watch(notificationsViewModelProvider);
+                  final current = state.data?.today.firstOrNull ?? syncNotif;
+                  return NotificationItemCard(notification: current);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('• Xem kết quả đồng bộ'), findsOneWidget);
+
+      await tester.tap(find.byType(NotificationItemCard));
+      await tester.pumpAndSettle();
+
+      // Modal bottom sheet should be shown
+      expect(find.text('Đã tải lên máy chủ'), findsOneWidget);
+      expect(find.text('Xem báo cáo ngày'), findsOneWidget);
+      expect(find.text('Hàng đợi'), findsOneWidget);
+
+      container.dispose();
     });
   });
 }

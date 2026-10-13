@@ -174,7 +174,10 @@ class RouteDealerTimeline extends ConsumerWidget {
           : dealer.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
       ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
-        context.push('/check-in', extra: dealerWithVisit);
+        await context.push('/check-in', extra: dealerWithVisit);
+        if (context.mounted) {
+          ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+        }
       }
       return;
     }
@@ -186,7 +189,10 @@ class RouteDealerTimeline extends ConsumerWidget {
           : (activeVisit != null ? dealer.copyWith(visit: activeVisit) : dealer);
       ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
-        context.push('/check-in', extra: dealerWithVisit);
+        await context.push('/check-in', extra: dealerWithVisit);
+        if (context.mounted) {
+          ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+        }
       }
       return;
     }
@@ -197,13 +203,20 @@ class RouteDealerTimeline extends ConsumerWidget {
           ? activeVisit.customerName
           : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');
       if (context.mounted) {
-        await showActiveVisitBlockingDialog(
+        final chosenDealer = await showActiveVisitBlockingDialog(
           context: context,
           ref: ref,
           activeVisit: activeVisit,
           activeDealerName: activeDealerName,
           targetDealerName: dealer.name,
         );
+        if (chosenDealer != null && context.mounted) {
+          ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(chosenDealer);
+          await context.push('/check-in', extra: chosenDealer);
+          if (context.mounted) {
+            ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+          }
+        }
       }
       return;
     }
@@ -275,7 +288,10 @@ class RouteDealerTimeline extends ConsumerWidget {
     // 3. Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
-      context.push('/check-in', extra: dealer);
+      await context.push('/check-in', extra: dealer);
+      if (context.mounted) {
+        ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+      }
     }
   }
 }

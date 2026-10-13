@@ -14,11 +14,13 @@ import '../network/connectivity_provider.dart';
 import '../services/app_notification_service.dart';
 import '../utils/image_upload_helper.dart';
 import '../utils/system_clock.dart';
+import 'sync_entity_group.dart';
 import '../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 import '../../features/customer/data/utils/customer_payload_helper.dart';
 import '../../features/position_declaration/data/repositories/position_declaration_repository_impl.dart';
 import '../../features/route/presentation/viewmodels/route_view_model.dart';
+import '../../features/travel/presentation/viewmodels/travel_view_model.dart';
 import '../../features/visit/data/repositories/visit_repository_impl.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
@@ -120,10 +122,13 @@ class SyncService {
 
     // 4. Cảnh báo tồn đọng hàng đợi ngoại tuyến khi khởi động
     try {
-      final pendingCount = await _db.countPendingSync();
-      if (pendingCount >= 3) {
+      final pendingEntries = await _db.getPendingQueueEntries(limit: 50);
+      final grouped = SyncEntityGroupHelper.groupEntries(pendingEntries);
+      if (grouped.length >= 3) {
+        final summary = SyncEntityGroupHelper.buildSummaryText(pendingEntries);
         _ref.read(appNotificationServiceProvider).notifyOfflineQueuePending(
-              pendingCount: pendingCount,
+              pendingCount: grouped.length,
+              summaryText: summary,
             );
         _ref.invalidate(unreadNotificationCountProvider);
       }
@@ -180,6 +185,8 @@ class SyncService {
 
       debugPrint('[SyncService] Bắt đầu đồng bộ ${entries.length} mục trong hàng đợi (force: $force)...');
 
+      final List<SyncQueueEntry> succeededEntries = [];
+
       for (final entry in entries) {
         // Kiểm tra lại kết nối trước mỗi mục (trừ khi force)
         if (!_ref.read(connectivityProvider).isOnline && !force) {
@@ -190,6 +197,7 @@ class SyncService {
         final status = await _processEntry(entry, currentDeadErrors);
         if (status == _SyncItemStatus.success) {
           successCount++;
+          succeededEntries.add(entry);
         } else if (status == _SyncItemStatus.dead) {
           // currentDeadErrors already populated
         } else if (status == _SyncItemStatus.retryable) {
@@ -199,8 +207,10 @@ class SyncService {
 
       if (successCount > 0) {
         try {
+          final summary = SyncEntityGroupHelper.buildSummaryText(succeededEntries);
           _ref.read(appNotificationServiceProvider).notifyOfflineSyncSuccess(
                 successCount: successCount,
+                summaryText: summary,
               );
           _ref.invalidate(unreadNotificationCountProvider);
         } catch (_) {}
@@ -208,10 +218,13 @@ class SyncService {
 
       if (retryableCount > 0) {
         try {
-          final pending = await _db.countPendingSync();
-          if (pending > 0) {
+          final remainingEntries = await _db.getPendingQueueEntries(limit: 50);
+          final grouped = SyncEntityGroupHelper.groupEntries(remainingEntries);
+          if (grouped.isNotEmpty) {
+            final summary = SyncEntityGroupHelper.buildSummaryText(remainingEntries);
             _ref.read(appNotificationServiceProvider).notifyOfflineQueuePending(
-                  pendingCount: pending,
+                  pendingCount: grouped.length,
+                  summaryText: summary,
                 );
             _ref.invalidate(unreadNotificationCountProvider);
           }
@@ -243,6 +256,9 @@ class SyncService {
         } catch (_) {}
         try {
           _ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+        } catch (_) {}
+        try {
+          _ref.read(travelViewModelProvider.notifier).loadMyTravel(refresh: true);
         } catch (_) {}
       }
     }
@@ -548,7 +564,17 @@ class SyncService {
         }
         final active = await visitRepo.getActiveVisit();
         if (active != null && (active.clientUuid == entry.clientUuid || active.id < 0)) {
-          await visitRepo.saveActiveVisit(active.copyWith(id: serverId));
+          final updatedActive = active.copyWith(id: serverId);
+          await visitRepo.saveActiveVisit(updatedActive);
+
+          try {
+            _ref.read(routeViewModelProvider.notifier).setActiveVisit(updatedActive);
+          } catch (_) {}
+          try {
+            _ref
+                .read(checkInViewModelProvider.notifier)
+                .syncServerVisitId(serverId, clientUuid: entry.clientUuid);
+          } catch (_) {}
         }
       } catch (err) {
         debugPrint('[SyncService] Cập nhật local visit serverId lỗi: $err');
@@ -657,6 +683,9 @@ class SyncService {
       );
       await _db.markDone(entry.id);
       debugPrint('[SyncService] Đồng bộ Check-out thành công cho lượt #$visitId');
+      try {
+        _ref.read(travelViewModelProvider.notifier).loadMyTravel(refresh: true);
+      } catch (_) {}
     } catch (e) {
       final raw = e.toString();
       // Nếu server trả về 422 "đã check-out rồi" / "đã đóng", coi là thành công theo §9
