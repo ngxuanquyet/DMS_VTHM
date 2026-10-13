@@ -1,29 +1,41 @@
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../../../core/location/location_provider.dart';
-import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/map/goong_config.dart';
-import '../../../../core/map/goong_map_view.dart';
+import '../../../../core/map/goong_models.dart';
 import '../../../../core/map/goong_providers.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
-import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
 import '../../domain/entities/route_entity.dart';
 import '../viewmodels/route_view_model.dart';
 import 'active_visit_blocking_dialog.dart';
 import 'checkin_distance_warning_dialog.dart';
 
+/// Chế độ xem bản đồ tuyến bán hàng Goong Maps v2.
+///
+/// Hiển thị toàn bộ điểm bán theo ghim màu trạng thái:
+/// - Chưa ghé: Vàng cam (#F59E0B)
+/// - Đang ghé: Xanh dương (#0284C7)
+/// - Đã xong: Xanh lá cây (#10B981)
+///
+/// Vị trí nhân viên hiển thị dạng chấm phát sóng (pulsing radar beacon).
+/// Chạm ghim để xem tóm tắt thông tin điểm bán & mở ứng dụng chỉ đường.
+/// Tự động gọi Goong Trip v2 API (/v2/trip) để vẽ lộ trình vòng lặp tối ưu tránh quay đầu xe.
 class RouteMapView extends ConsumerStatefulWidget {
   final List<DealerEntity> dealers;
 
@@ -34,14 +46,337 @@ class RouteMapView extends ConsumerStatefulWidget {
 }
 
 class _RouteMapViewState extends ConsumerState<RouteMapView> {
+  MapLibreMapController? _controller;
   GoongMapStyle _currentStyle = GoongMapStyle.standard;
-  int _selectedDealerIndex = 0;
+  bool _styleLoaded = false;
+  bool _isLoadingTrip = false;
+
+  DealerEntity? _selectedDealer;
+  GoongTrip? _currentTrip;
+  List<LatLng> _tripPoints = [];
+
+  List<DealerEntity> get _dealersWithCoords =>
+      widget.dealers.where((d) => d.lat != null && d.lng != null).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    if (_dealersWithCoords.isNotEmpty) {
+      _selectedDealer = _dealersWithCoords.first;
+    }
+  }
 
   @override
   void didUpdateWidget(covariant RouteMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_selectedDealerIndex >= widget.dealers.length) {
-      _selectedDealerIndex = 0;
+    if (_selectedDealer != null &&
+        !widget.dealers.any((d) => d.id == _selectedDealer!.id)) {
+      _selectedDealer = _dealersWithCoords.isNotEmpty ? _dealersWithCoords.first : null;
+    }
+
+    final oldCoordsCount = oldWidget.dealers.where((d) => d.lat != null && d.lng != null).length;
+    final newCoordsCount = _dealersWithCoords.length;
+    if (oldCoordsCount != newCoordsCount && _styleLoaded) {
+      _drawOverlays();
+      _fetchAndDrawTrip();
+    }
+  }
+
+  Future<void> _fetchAndDrawTrip() async {
+    final dealersWithCoords = _dealersWithCoords;
+    if (dealersWithCoords.isEmpty) return;
+
+    final goongApi = ref.read(goongApiServiceProvider);
+    final livePoint = ref.read(currentPointProvider).value;
+
+    final origin = livePoint != null
+        ? GoongLatLng(livePoint.lat, livePoint.lng)
+        : GoongLatLng(dealersWithCoords.first.lat!, dealersWithCoords.first.lng!);
+
+    final waypoints = dealersWithCoords
+        .map((d) => GoongLatLng(d.lat!, d.lng!))
+        .toList();
+
+    setState(() => _isLoadingTrip = true);
+    try {
+      final trip = await goongApi.getTripRoute(
+        origin: origin,
+        waypoints: waypoints,
+        vehicle: 'bike',
+        roundtrip: true,
+      );
+
+      if (!mounted) return;
+      if (trip != null && trip.polyline.isNotEmpty) {
+        _currentTrip = trip;
+        _tripPoints = _decodePolyline(trip.polyline);
+        await _drawTripPolyline();
+      }
+    } catch (_) {
+      // Bỏ qua lỗi mạng, bản đồ vẫn vẽ ghim bình thường
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingTrip = false);
+      }
+    }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    final List<LatLng> points = [];
+    int index = 0;
+    final int len = encoded.length;
+    int lat = 0;
+    int lng = 0;
+
+    while (index < len) {
+      int b;
+      int shift = 0;
+      int result = 0;
+      do {
+        if (index >= len) break;
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      final int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        if (index >= len) break;
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      final int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return points;
+  }
+
+  Future<void> _drawTripPolyline() async {
+    final controller = _controller;
+    if (controller == null || _tripPoints.isEmpty) return;
+
+    try {
+      await controller.clearLines();
+      await controller.addLine(
+        LineOptions(
+          geometry: _tripPoints,
+          lineColor: '#0284C7',
+          lineWidth: 4.5,
+          lineOpacity: 0.85,
+          lineJoin: 'round',
+        ),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _drawOverlays() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    try {
+      await controller.clearCircles();
+
+      // 1. Chấm phát sóng vị trí nhân viên (Broadcasting Beacon)
+      final livePoint = ref.read(currentPointProvider).value;
+      if (livePoint != null) {
+        final empLatLng = LatLng(livePoint.lat, livePoint.lng);
+
+        // Vòng sóng radar mở rộng ngoài cùng
+        await controller.addCircle(
+          CircleOptions(
+            geometry: empLatLng,
+            circleRadius: 26,
+            circleColor: '#0284C7',
+            circleOpacity: 0.16,
+            circleStrokeWidth: 1.5,
+            circleStrokeColor: '#0284C7',
+            circleStrokeOpacity: 0.45,
+          ),
+        );
+
+        // Vòng sóng giữa
+        await controller.addCircle(
+          CircleOptions(
+            geometry: empLatLng,
+            circleRadius: 15,
+            circleColor: '#0284C7',
+            circleOpacity: 0.30,
+            circleStrokeWidth: 1.0,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeOpacity: 0.7,
+          ),
+        );
+
+        // Chấm beacon chính
+        await controller.addCircle(
+          CircleOptions(
+            geometry: empLatLng,
+            circleRadius: 8.5,
+            circleColor: '#0284C7',
+            circleOpacity: 1.0,
+            circleStrokeWidth: 2.5,
+            circleStrokeColor: '#FFFFFF',
+          ),
+        );
+
+        // Điểm sáng trắng trung tâm
+        await controller.addCircle(
+          CircleOptions(
+            geometry: empLatLng,
+            circleRadius: 3.5,
+            circleColor: '#FFFFFF',
+            circleOpacity: 1.0,
+          ),
+        );
+      }
+
+      // 2. Toàn bộ điểm bán theo màu sắc trạng thái
+      for (final dealer in _dealersWithCoords) {
+        final dealerLatLng = LatLng(dealer.lat!, dealer.lng!);
+        final isSelected = _selectedDealer?.id == dealer.id;
+
+        final String pinColorHex;
+        switch (dealer.status) {
+          case DealerVisitStatus.completed:
+            pinColorHex = '#10B981'; // Đã xong (Xanh lá)
+            break;
+          case DealerVisitStatus.inProgress:
+            pinColorHex = '#0284C7'; // Đang ghé (Xanh dương)
+            break;
+          case DealerVisitStatus.pending:
+            pinColorHex = '#F59E0B'; // Chưa ghé (Cam hổ phách)
+            break;
+        }
+
+        // Vòng highlight nếu đang chọn
+        if (isSelected) {
+          await controller.addCircle(
+            CircleOptions(
+              geometry: dealerLatLng,
+              circleRadius: 17,
+              circleColor: pinColorHex,
+              circleOpacity: 0.32,
+              circleStrokeWidth: 2.0,
+              circleStrokeColor: pinColorHex,
+              circleStrokeOpacity: 0.9,
+            ),
+          );
+        }
+
+        // Ghim điểm bán
+        await controller.addCircle(
+          CircleOptions(
+            geometry: dealerLatLng,
+            circleRadius: isSelected ? 11 : 9,
+            circleColor: pinColorHex,
+            circleOpacity: 1.0,
+            circleStrokeWidth: 2.2,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeOpacity: 1.0,
+          ),
+        );
+
+        // Tâm ghim
+        await controller.addCircle(
+          CircleOptions(
+            geometry: dealerLatLng,
+            circleRadius: isSelected ? 4.5 : 3.5,
+            circleColor: '#FFFFFF',
+            circleOpacity: 1.0,
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  void _handleMapClick(LatLng tappedPoint) {
+    DealerEntity? closest;
+    double minDistance = 300; // ngưỡng chạm trong bán kính 300 mét
+
+    for (final dealer in _dealersWithCoords) {
+      final dist = Geolocator.distanceBetween(
+        tappedPoint.latitude,
+        tappedPoint.longitude,
+        dealer.lat!,
+        dealer.lng!,
+      );
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = dealer;
+      }
+    }
+
+    if (closest != null) {
+      setState(() => _selectedDealer = closest);
+      _drawOverlays();
+      _controller?.animateCamera(
+        CameraUpdate.newLatLng(LatLng(closest.lat!, closest.lng!)),
+      );
+    }
+  }
+
+  void _fitAllStops() {
+    final controller = _controller;
+    if (controller == null) return;
+
+    final points = <LatLng>[];
+    final livePoint = ref.read(currentPointProvider).value;
+    if (livePoint != null) {
+      points.add(LatLng(livePoint.lat, livePoint.lng));
+    }
+    for (final d in _dealersWithCoords) {
+      points.add(LatLng(d.lat!, d.lng!));
+    }
+
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      controller.animateCamera(CameraUpdate.newLatLngZoom(points.first, 15.5));
+      return;
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        left: 40,
+        top: 60,
+        right: 40,
+        bottom: 220,
+      ),
+    );
+  }
+
+  void _flyToMyLocation() {
+    final livePoint = ref.read(currentPointProvider).value;
+    if (livePoint != null) {
+      _controller?.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(livePoint.lat, livePoint.lng),
+          16.0,
+        ),
+      );
+    } else {
+      ref.read(locationServiceProvider).checkAndGetLocation(context);
     }
   }
 
@@ -87,127 +422,242 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final livePoint = ref.watch(currentPointProvider).value;
 
-    final dealersWithCoords = widget.dealers.where((d) => d.lat != null && d.lng != null).toList();
+    final dealersWithCoords = _dealersWithCoords;
 
-    // Map Center
+    // Tính tâm bản đồ
     LatLng center;
-    if (widget.dealers.isNotEmpty &&
-        _selectedDealerIndex < widget.dealers.length &&
-        widget.dealers[_selectedDealerIndex].lat != null &&
-        widget.dealers[_selectedDealerIndex].lng != null) {
-      final cur = widget.dealers[_selectedDealerIndex];
-      center = LatLng(cur.lat!, cur.lng!);
+    if (_selectedDealer?.lat != null && _selectedDealer?.lng != null) {
+      center = LatLng(_selectedDealer!.lat!, _selectedDealer!.lng!);
     } else if (livePoint != null) {
       center = LatLng(livePoint.lat, livePoint.lng);
     } else if (dealersWithCoords.isNotEmpty) {
       center = LatLng(dealersWithCoords.first.lat!, dealersWithCoords.first.lng!);
     } else {
-      center = const LatLng(21.3120, 105.6010);
+      center = const LatLng(21.028511, 105.804817);
     }
 
-    final markers = dealersWithCoords.map((d) => LatLng(d.lat!, d.lng!)).toList();
-
-    DealerEntity? selectedDealer;
-    if (widget.dealers.isNotEmpty && _selectedDealerIndex < widget.dealers.length) {
-      selectedDealer = widget.dealers[_selectedDealerIndex];
-    }
-
+    // Khoảng cách tới điểm bán đang chọn
     double? selectedDistance;
-    if (livePoint != null && selectedDealer?.lat != null && selectedDealer?.lng != null) {
+    if (livePoint != null && _selectedDealer?.lat != null && _selectedDealer?.lng != null) {
       selectedDistance = Geolocator.distanceBetween(
         livePoint.lat,
         livePoint.lng,
-        selectedDealer!.lat!,
-        selectedDealer.lng!,
+        _selectedDealer!.lat!,
+        _selectedDealer!.lng!,
       );
     }
 
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          // Map Container
-          SizedBox(
-            height: 380,
-            width: double.infinity,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(AppRadius.md),
-                topRight: Radius.circular(AppRadius.md),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  GoongMapView(
-                    center: center,
-                    markers: markers,
-                    zoom: 14.5,
-                    mapStyle: _currentStyle,
-                    interactive: true,
-                    showZoomControls: true,
-                    showMyLocation: true,
-                    showMyLocationButton: true,
-                  ),
+    final pendingCount = widget.dealers.where((d) => d.status == DealerVisitStatus.pending).length;
+    final inProgressCount = widget.dealers.where((d) => d.status == DealerVisitStatus.inProgress).length;
+    final completedCount = widget.dealers.where((d) => d.status == DealerVisitStatus.completed).length;
 
-                  // Layer switch buttons
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.95),
-                        borderRadius: AppRadius.roundedFull,
-                        boxShadow: AppShadows.level2,
+    return Stack(
+      children: [
+        // 1. Bản đồ Goong Vector MapLibre
+        MapLibreMap(
+          key: ValueKey('maplibre_route_${_currentStyle.styleName}'),
+          styleString: _currentStyle.url,
+          initialCameraPosition: CameraPosition(
+            target: center,
+            zoom: 14.5,
+          ),
+          onMapCreated: (controller) => _controller = controller,
+          onStyleLoadedCallback: () {
+            _styleLoaded = true;
+            _drawOverlays();
+            _fetchAndDrawTrip();
+          },
+          onMapClick: (_, latLng) => _handleMapClick(latLng),
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(
+              EagerGestureRecognizer.new,
+            ),
+          },
+          myLocationEnabled: false,
+          trackCameraPosition: true,
+          compassEnabled: true,
+          rotateGesturesEnabled: true,
+          scrollGesturesEnabled: true,
+          zoomGesturesEnabled: true,
+          attributionButtonMargins: const math.Point(-1000, -1000),
+          logoViewMargins: const math.Point(-1000, -1000),
+        ),
+
+        // 2. Thanh điều khiển lớp bản đồ & thông tin lộ trình ở trên cùng
+        Positioned(
+          top: 10,
+          left: 12,
+          right: 12,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Nút chuyển lớp bản đồ (Chuẩn / Vệ tinh / Giao thông)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.darkSurface.withValues(alpha: 0.95)
+                          : Colors.white.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: AppShadows.level2,
+                      border: Border.all(
+                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _layerButton(
-                            title: 'Chuẩn',
-                            isSelected: _currentStyle == GoongMapStyle.standard,
-                            onTap: () => setState(() => _currentStyle = GoongMapStyle.standard),
-                          ),
-                          _layerButton(
-                            title: 'Vệ tinh',
-                            isSelected: _currentStyle == GoongMapStyle.satellite,
-                            onTap: () => setState(() => _currentStyle = GoongMapStyle.satellite),
-                          ),
-                          _layerButton(
-                            title: 'Điều hướng',
-                            isSelected: _currentStyle == GoongMapStyle.navigation,
-                            onTap: () => setState(() => _currentStyle = GoongMapStyle.navigation),
-                          ),
-                        ],
-                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _layerButton(
+                          title: 'Chuẩn',
+                          isSelected: _currentStyle == GoongMapStyle.standard,
+                          onTap: () => setState(() => _currentStyle = GoongMapStyle.standard),
+                        ),
+                        _layerButton(
+                          title: 'Vệ tinh',
+                          isSelected: _currentStyle == GoongMapStyle.satellite,
+                          onTap: () => setState(() => _currentStyle = GoongMapStyle.satellite),
+                        ),
+                        _layerButton(
+                          title: 'Giao thông',
+                          isSelected: _currentStyle == GoongMapStyle.navigation,
+                          onTap: () => setState(() => _currentStyle = GoongMapStyle.navigation),
+                        ),
+                      ],
                     ),
                   ),
 
-                  // Route Stops Pill
-                  Positioned(
-                    bottom: 10,
-                    left: 10,
-                    right: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurfaceContainer : Colors.white.withValues(alpha: 0.95),
-                        borderRadius: AppRadius.roundedMd,
-                        boxShadow: AppShadows.level2,
+                  // Nút tiện ích: Xem toàn cảnh & Bay về vị trí GPS
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _actionCircleButton(
+                        icon: Icons.fullscreen_rounded,
+                        tooltip: 'Toàn cảnh lộ trình',
+                        onTap: _fitAllStops,
+                        isDark: isDark,
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.location_on, color: AppColors.primaryContainer, size: 16),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              '${dealersWithCoords.length}/${widget.dealers.length} điểm bán có toạ độ GPS',
-                              style: AppTypography.labelSmall(
-                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 8),
+                      _actionCircleButton(
+                        icon: Icons.my_location_rounded,
+                        tooltip: 'Vị trí của tôi',
+                        onTap: _flyToMyLocation,
+                        isDark: isDark,
+                        iconColor: const Color(0xFF0284C7),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // Chip hiển thị Lộ trình tối ưu Goong Trip v2
+              if (_currentTrip != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.darkSurface.withValues(alpha: 0.92)
+                        : Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: AppShadows.level2,
+                    border: Border.all(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF0284C7)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: _fetchAndDrawTrip,
+                        child: _isLoadingTrip
+                            ? const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF0284C7)),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 6),
+
+              // Chip chú thích màu sắc ghim (Status Legend)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkSurface.withValues(alpha: 0.90)
+                      : Colors.white.withValues(alpha: 0.90),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: AppShadows.level1,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _legendItem(color: const Color(0xFFF59E0B), label: 'Chưa ghé ($pendingCount)'),
+                    const SizedBox(width: 8),
+                    _legendItem(color: const Color(0xFF0284C7), label: 'Đang ghé ($inProgressCount)'),
+                    const SizedBox(width: 8),
+                    _legendItem(color: const Color(0xFF10B981), label: 'Đã xong ($completedCount)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 3. Card tóm tắt điểm bán được chọn ở dưới cùng
+        if (_selectedDealer != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
+            child: _buildDealerSummaryCard(
+              context,
+              _selectedDealer!,
+              selectedDistance,
+              dealersWithCoords,
+              isDark,
+            ),
+          )
+        else
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: AppShadows.level2,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.touch_app_rounded, color: AppColors.primary, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Chạm vào một ghim để xem tóm tắt điểm bán & mở chỉ đường',
+                      style: AppTypography.bodySmall(
+                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -215,141 +665,240 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               ),
             ),
           ),
+      ],
+    );
+  }
 
-          // Selected Dealer Card under the Map
-          if (selectedDealer != null)
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.gutter),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildDealerSummaryCard(
+    BuildContext context,
+    DealerEntity dealer,
+    double? selectedDistance,
+    List<DealerEntity> dealersWithCoords,
+    bool isDark,
+  ) {
+    final currentIndex = dealersWithCoords.indexWhere((d) => d.id == dealer.id);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F000000),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: Số thứ tự + Mã KH + Trạng thái + Nút đóng
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                borderRadius: AppRadius.roundedSm,
-                              ),
-                              child: Text(
-                                '${selectedDealer.order} - ${selectedDealer.code ?? "KH"}',
-                                style: AppTypography.labelSmall(
-                                  color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                                ).copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                selectedDealer.name,
-                                style: AppTypography.titleMedium(
-                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                ).copyWith(fontWeight: FontWeight.w700),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      StatusBadge(
-                        label: selectedDealer.statusLabel,
-                        type: selectedDealer.status == DealerVisitStatus.completed
-                            ? StatusBadgeType.success
-                            : (selectedDealer.status == DealerVisitStatus.inProgress
-                                ? StatusBadgeType.warning
-                                : StatusBadgeType.neutral),
-                      ),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '#${dealer.order} • ${dealer.code ?? "KH"}',
+                      style: AppTypography.labelSmall(
+                        color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                      ).copyWith(fontWeight: FontWeight.w700),
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.place_outlined, size: 14, color: AppColors.outline),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          selectedDealer.address,
-                          style: AppTypography.bodySmall(
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.near_me_rounded, size: 12, color: AppColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Cách bạn ${_formatDistance(selectedDistance)}',
-                        style: AppTypography.labelSmall(
-                          color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      // Prev button
-                      IconButton(
-                        onPressed: _selectedDealerIndex > 0
-                            ? () => setState(() => _selectedDealerIndex--)
-                            : null,
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      ),
-                      Text(
-                        '${_selectedDealerIndex + 1}/${widget.dealers.length}',
-                        style: AppTypography.labelSmall(
-                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                        ).copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      // Next button
-                      IconButton(
-                        onPressed: _selectedDealerIndex < widget.dealers.length - 1
-                            ? () => setState(() => _selectedDealerIndex++)
-                            : null,
-                        icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      ),
-                      const Spacer(),
-                      AppButton(
-                        text: 'Chỉ đường',
-                        height: 36,
-                        icon: Icons.directions_outlined,
-                        onPressed: () => _openDirections(context, selectedDealer!),
-                      ),
-                      const SizedBox(width: 8),
-                      AppButton(
-                        text: 'Check-in',
-                        height: 36,
-                        icon: Icons.login_rounded,
-                        onPressed: () => _handleCheckin(context, selectedDealer!),
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  StatusBadge(
+                    label: dealer.statusLabel,
+                    type: dealer.status == DealerVisitStatus.completed
+                        ? StatusBadgeType.success
+                        : (dealer.status == DealerVisitStatus.inProgress
+                            ? StatusBadgeType.warning
+                            : StatusBadgeType.neutral),
                   ),
                 ],
               ),
-            ),
+              InkWell(
+                onTap: () => setState(() => _selectedDealer = null),
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 6),
+
+          // Tên điểm bán
+          Text(
+            dealer.name,
+            style: AppTypography.titleMedium(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w700),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+
+          const SizedBox(height: 4),
+
+          // Địa chỉ
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.place_outlined, size: 14, color: AppColors.outline),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  dealer.address,
+                  style: AppTypography.bodySmall(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 4),
+
+          // Khoảng cách từ vị trí nhân viên
+          Row(
+            children: [
+              const Icon(Icons.near_me_rounded, size: 13, color: Color(0xFF0284C7)),
+              const SizedBox(width: 4),
+              Text(
+                'Cách bạn ${_formatDistance(selectedDistance)}',
+                style: AppTypography.labelSmall(
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+              if (dealer.phone != null && dealer.phone!.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => launchUrl(Uri.parse('tel:${dealer.phone}')),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_rounded, size: 12, color: AppColors.primary),
+                      const SizedBox(width: 3),
+                      Text(
+                        dealer.phone!,
+                        style: AppTypography.labelSmall(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Action buttons: Điều hướng vòng lặp (Next/Prev) + Chỉ đường + Check-in
+          Row(
+            children: [
+              // Nút lùi điểm bán
+              IconButton(
+                onPressed: currentIndex > 0
+                    ? () {
+                        setState(() => _selectedDealer = dealersWithCoords[currentIndex - 1]);
+                        _drawOverlays();
+                        _controller?.animateCamera(
+                          CameraUpdate.newLatLng(LatLng(
+                            _selectedDealer!.lat!,
+                            _selectedDealer!.lng!,
+                          )),
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 15),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+              Text(
+                '${currentIndex + 1}/${dealersWithCoords.length}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                ),
+              ),
+              // Nút tiến điểm bán
+              IconButton(
+                onPressed: currentIndex < dealersWithCoords.length - 1
+                    ? () {
+                        setState(() => _selectedDealer = dealersWithCoords[currentIndex + 1]);
+                        _drawOverlays();
+                        _controller?.animateCamera(
+                          CameraUpdate.newLatLng(LatLng(
+                            _selectedDealer!.lat!,
+                            _selectedDealer!.lng!,
+                          )),
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 15),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+
+              const Spacer(),
+
+              // Nút Mở Chỉ đường
+              OutlinedButton.icon(
+                onPressed: () => _openDirections(context, dealer),
+                icon: const Icon(Icons.directions_rounded, size: 16),
+                label: const Text('Chỉ đường'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0284C7),
+                  side: const BorderSide(color: Color(0xFF0284C7)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // Nút Vào viếng thăm / Check-in
+              ElevatedButton.icon(
+                onPressed: () => _handleCheckin(context, dealer),
+                icon: const Icon(Icons.login_rounded, size: 16),
+                label: Text(dealer.status == DealerVisitStatus.inProgress ? 'Tiếp tục' : 'Check-in'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
   Future<void> _handleCheckin(BuildContext context, DealerEntity dealer) async {
-    // 0. Nếu điểm bán đã hoàn thành viếng thăm hôm nay (§3 Luật 2)
     if (dealer.status == DealerVisitStatus.completed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -361,7 +910,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    // 0.1. Kiểm tra phiên viếng thăm đang mở (§3 Luật 3)
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
     VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
@@ -381,7 +929,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         ? (dealer.customer as CustomerEntity).id
         : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
 
-    // Nếu chính là điểm bán đang có phiên viếng thăm mở -> Vào tiếp tục ngay (§3 Luật 3)
     if (activeVisit != null && targetCustomerId != null && activeVisit.customerId == targetCustomerId) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
@@ -396,7 +943,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    // Nếu điểm bán đang có phiên viếng thăm mở (§3 Luật 3) -> Vào tiếp tục ngay
     if (dealer.status == DealerVisitStatus.inProgress) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
@@ -411,7 +957,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    // Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
     if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
       final activeDealerName = activeVisit.customerName.isNotEmpty
           ? activeVisit.customerName
@@ -435,17 +980,13 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    // 1. Kiểm tra nhanh quyền vị trí & trạng thái GPS từ RAM (0ms)
     final locState = ref.read(locationProvider);
     if (!locState.isReady) {
-      // Chưa cấp quyền hoặc chưa bật GPS -> Mở dialog yêu cầu cấp quyền ngay
       if (!context.mounted) return;
       await ref.read(locationServiceProvider).checkAndGetLocation(context);
       return;
     }
 
-    // 2. Tính khoảng cách ngay lập tức (< 1ms) từ dữ liệu sẵn có
-    // ⚠️ Theo đặc tả 01/10/2026: Điểm bán chưa có toạ độ (lat/lng = null) -> Server luôn cho qua, app cũng cho qua, đừng chặn!
     if (dealer.lat != null && dealer.lng != null) {
       double actualDistance;
       final livePoint = ref.read(currentPointProvider).value;
@@ -467,16 +1008,14 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           );
         } else {
           final lastKnown = await Geolocator.getLastKnownPosition();
-          if (lastKnown != null) {
-            actualDistance = Geolocator.distanceBetween(
-              lastKnown.latitude,
-              lastKnown.longitude,
-              dealer.lat!,
-              dealer.lng!,
-            );
-          } else {
-            actualDistance = 0;
-          }
+          actualDistance = lastKnown != null
+              ? Geolocator.distanceBetween(
+                  lastKnown.latitude,
+                  lastKnown.longitude,
+                  dealer.lat!,
+                  dealer.lng!,
+                )
+              : 0;
         }
       }
 
@@ -487,7 +1026,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               : null) ??
           mobileRules.visit.defaultRadiusM;
 
-      // 3. Nếu yêu cầu geofence và khoảng cách > bán kính cho phép -> Hiển thị popup cảnh báo
       if (mobileRules.visit.requireGeofence && actualDistance > allowedRadius) {
         if (context.mounted) {
           showCheckinDistanceWarningDialog(
@@ -504,7 +1042,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       }
     }
 
-    // 4. Hợp lệ -> Khởi tạo sẵn dữ liệu điểm bán và vào màn check-in tức thì (<5ms, không giật lag)
     ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
     if (context.mounted) {
       await context.push('/check-in', extra: dealer);
@@ -521,12 +1058,12 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
           title,
@@ -537,6 +1074,59 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _actionCircleButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    required bool isDark,
+    Color? iconColor,
+  }) {
+    return Material(
+      color: isDark ? AppColors.darkSurface.withValues(alpha: 0.95) : Colors.white.withValues(alpha: 0.95),
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor ?? (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _legendItem({required Color color, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -652,8 +652,18 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async {
-    return _apiService.uploadCustomerPhoto(filePath);
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  }) async {
+    return _apiService.uploadCustomerPhoto(
+      filePath,
+      locationName: locationName,
+      lat: lat,
+      lng: lng,
+    );
   }
 
   @override

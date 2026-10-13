@@ -150,9 +150,19 @@ class CustomerApiService {
   /// Tải ảnh điểm bán lên server
   /// POST /crm/customer-photos (multipart/form-data, khóa 'file')
   /// Trả về Map chứa token (chuỗi 32-hex) và url công khai
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async {
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  }) async {
     final originalFile = File(filePath);
-    final preparedFile = await ImageUploadHelper.prepareImageForUpload(originalFile);
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(
+      originalFile,
+      locationName: locationName,
+      latitude: lat,
+      longitude: lng,
+    );
     final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),

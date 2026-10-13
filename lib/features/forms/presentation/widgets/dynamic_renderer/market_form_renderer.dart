@@ -13,6 +13,7 @@ import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
+import '../../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
 
 /// Mục ảnh quản lý trạng thái tải lên và hiển thị cục bộ
@@ -1316,8 +1317,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       );
       if (photo == null) return;
 
+      final watermarked = await PhotoWatermarkHelper.addWatermark(
+        imageFile: File(photo.path),
+        locationName: block.resolved.label,
+      );
+
       final entry = FormPhotoEntry(
-        localPath: photo.path,
+        localPath: watermarked.path,
         isUploading: widget.onUploadPhoto != null,
       );
 
@@ -1332,7 +1338,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Nếu có callback upload, thực hiện upload ngay lập tức (§2: Tải ảnh lên TRƯỚC)
       if (widget.onUploadPhoto != null) {
         try {
-          final result = await widget.onUploadPhoto!(File(photo.path));
+          final result = await widget.onUploadPhoto!(watermarked);
           if (mounted) {
             setState(() {
               entry.token = result.token;

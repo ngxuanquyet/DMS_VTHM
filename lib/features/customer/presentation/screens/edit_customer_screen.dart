@@ -8,6 +8,7 @@ import '../../../../core/map/app_map_location_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
@@ -1995,9 +1996,15 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       imageQuality: 85,
     );
     if (picked != null) {
+      final watermarked = await PhotoWatermarkHelper.addWatermark(
+        imageFile: File(picked.path),
+        locationName: _nameController.text.trim().isNotEmpty
+            ? _nameController.text.trim()
+            : widget.customer.name,
+      );
       setState(() {
         if (_photos.length < 10) {
-          _photos.add(picked.path);
+          _photos.add(watermarked.path);
           _photosChanged = true;
         }
       });

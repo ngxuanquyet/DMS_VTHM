@@ -26,7 +26,12 @@ abstract class CustomerRepository {
 
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false});
 
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath);
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  });
 
   Future<bool> deleteCustomer(int id);
 

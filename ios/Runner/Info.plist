@@ -58,6 +58,11 @@
 		<string>vi</string>
 		<string>en</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>DMS VTHM cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

@@ -162,6 +162,42 @@ class GoongApiService {
     return overview?['points'] as String?;
   }
 
+  /// Tính toán lộ trình vòng lặp tối ưu và chỉ đường qua nhiều điểm dừng bằng Goong Trip v2 API (/v2/trip).
+  Future<GoongTrip?> getTripRoute({
+    required GoongLatLng origin,
+    required List<GoongLatLng> waypoints,
+    GoongLatLng? destination,
+    String vehicle = 'bike',
+    bool roundtrip = true,
+  }) async {
+    final query = <String, String>{
+      'origin': origin.toString(),
+      'destination': (destination ?? origin).toString(),
+      'vehicle': vehicle,
+      'roundtrip': roundtrip.toString(),
+    };
+    if (waypoints.isNotEmpty) {
+      // Giới hạn tối đa 25 waypoints để không vượt quá trần request Goong
+      final clampedWaypoints =
+          waypoints.length > 25 ? waypoints.sublist(0, 25) : waypoints;
+      query['waypoints'] = clampedWaypoints.map((w) => w.toString()).join(';');
+    }
+
+    try {
+      final data = await _get('/v2/trip', query);
+      final trips = data['trips'] as List<dynamic>?;
+      if (trips == null || trips.isEmpty) {
+        return null;
+      }
+      final firstTrip = trips.first as Map<String, dynamic>?;
+      if (firstTrip == null) return null;
+
+      return GoongTrip.fromJson(firstTrip);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Đường dẫn ảnh **bản đồ tĩnh** — dùng thẳng cho `Image.network`, không phải gọi qua [_get].
   ///
   /// 🔴 Goong chỉ có MỘT endpoint ảnh tĩnh: `/staticmap/route`, và nó vẽ TUYẾN. Muốn bản đồ một điểm thì

@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'photo_watermark_helper.dart';
 
 /// Helper chuẩn hoá và kiểm soát ảnh trước khi tải lên máy chủ
 /// Tuân thủ quy chuẩn §1.1 & §3 API-THAY-DOI-CHO-MOBILE-2026-10-01.md:
 /// - Server chỉ nhận: jpg, jpeg, png, gif, webp, bmp (KHÔNG nhận heic/heif)
 /// - Trần kích thước: 10 MB (10240 KB)
 /// - Bắt buộc xử lý/convert sang JPEG/PNG trước khi tải lên để không bị chặn trên iOS
+/// - Bắt buộc có Watermark (Toạ độ GPS, Thời gian, Tên nhân sự) trước khi upload
 class ImageUploadHelper {
   ImageUploadHelper._();
 
@@ -43,32 +45,56 @@ class ImageUploadHelper {
   }
 
   /// Chuẩn bị tệp ảnh trước khi tải lên:
-  /// - Nếu là HEIC/HEIF hoặc dung lượng > 10MB hoặc đuôi không hợp lệ:
-  ///   Tự động giải mã bằng Flutter engine và xuất sang PNG/JPEG
-  static Future<File> prepareImageForUpload(File file) async {
+  /// 1. Tự động kiểm tra & đóng dấu Watermark (GPS, thời gian, nhân sự) nếu chưa có
+  /// 2. Chuyển đổi HEIC/HEIF sang PNG/JPEG và nén nếu kích thước vượt trần 10MB
+  static Future<File> prepareImageForUpload(
+    File file, {
+    double? latitude,
+    double? longitude,
+    String? locationName,
+    String? staffName,
+  }) async {
+    File targetFile = file;
+
+    // 1. Đảm bảo toàn bộ ảnh tải lên qua API đều có Watermark
     try {
-      final path = file.path;
+      if (!PhotoWatermarkHelper.isWatermarked(targetFile)) {
+        targetFile = await PhotoWatermarkHelper.addWatermark(
+          imageFile: targetFile,
+          latitude: latitude,
+          longitude: longitude,
+          locationName: locationName,
+          staffName: staffName,
+        );
+      }
+    } catch (e) {
+      debugPrint('[ImageUploadHelper] Lỗi khi gắn watermark tự động: $e');
+    }
+
+    // 2. Kiểm tra định dạng & dung lượng
+    try {
+      final path = targetFile.path;
       final lower = path.toLowerCase();
       final isHeic = lower.endsWith('.heic') || lower.endsWith('.heif');
-      final fileSize = await file.length();
+      final fileSize = await targetFile.length();
 
       // Nếu ảnh hợp lệ và <= 10MB, trả về ngay
       if (!isHeic && fileSize <= maxFileSizeBytes && hasValidExtension(path)) {
-        return file;
+        return targetFile;
       }
 
       // Cần decode và re-encode
-      final bytes = await file.readAsBytes();
+      final bytes = await targetFile.readAsBytes();
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       final byteData =
           await frame.image.toByteData(format: ui.ImageByteFormat.png);
 
       if (byteData != null) {
-        final dir = file.parent;
+        final dir = targetFile.parent;
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final convertedPath =
-            '${dir.path}${Platform.pathSeparator}converted_$timestamp.png';
+            '${dir.path}${Platform.pathSeparator}wm_converted_$timestamp.png';
         final convertedFile = File(convertedPath);
         await convertedFile.writeAsBytes(byteData.buffer.asUint8List());
         return convertedFile;
@@ -76,6 +102,6 @@ class ImageUploadHelper {
     } catch (e) {
       debugPrint('[ImageUploadHelper] Không thể convert ảnh: $e');
     }
-    return file;
+    return targetFile;
   }
 }

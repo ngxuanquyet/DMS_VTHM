@@ -310,7 +310,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                   tokens.add(itemStr);
                 } else {
                   try {
-                    final uploadRes = await repo.uploadCustomerPhoto(itemStr);
+                    final uploadRes = await repo.uploadCustomerPhoto(
+                      itemStr,
+                      locationName: payload['name']?.toString() ?? 'Điểm bán mới',
+                      lat: payload['lat'] is num ? (payload['lat'] as num).toDouble() : null,
+                      lng: payload['lng'] is num ? (payload['lng'] as num).toDouble() : null,
+                    );
                     if (uploadRes['token'] != null) {
                       tokens.add(uploadRes['token'].toString());
                     } else {
@@ -346,7 +351,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               }
             } else if (valStr.endsWith('.jpg') || valStr.endsWith('.png') || valStr.endsWith('.jpeg') || valStr.contains('/') || valStr.contains(r'\')) {
               try {
-                final uploadRes = await repo.uploadCustomerPhoto(valStr);
+                final uploadRes = await repo.uploadCustomerPhoto(
+                  valStr,
+                  locationName: payload['name']?.toString() ?? 'Điểm bán mới',
+                  lat: payload['lat'] is num ? (payload['lat'] as num).toDouble() : null,
+                  lng: payload['lng'] is num ? (payload['lng'] as num).toDouble() : null,
+                );
                 if (uploadRes['token'] != null) {
                   final token = uploadRes['token'].toString();
                   if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {

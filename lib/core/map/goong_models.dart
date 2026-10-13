@@ -148,3 +148,41 @@ class GoongDistance {
     );
   }
 }
+
+/// Kết quả lộ trình vòng lặp tối ưu từ Goong Trip v2 API (/v2/trip).
+class GoongTrip {
+  final double distanceMeters;
+  final double durationSeconds;
+  final String polyline;
+  final List<int> waypointOrder;
+  final List<dynamic> legs;
+
+  const GoongTrip({
+    required this.distanceMeters,
+    required this.durationSeconds,
+    required this.polyline,
+    this.waypointOrder = const [],
+    this.legs = const [],
+  });
+
+  factory GoongTrip.fromJson(Map<String, dynamic> json) {
+    final distance = (json['distance'] as num?)?.toDouble() ?? 0.0;
+    final duration = (json['duration'] as num?)?.toDouble() ?? 0.0;
+    final geometry = (json['geometry'] as String?) ??
+        ((json['overview_polyline'] as Map<String, dynamic>?)?['points'] as String?) ??
+        '';
+    final rawOrder = json['waypoint_order'] as List<dynamic>?;
+    final waypointOrder =
+        rawOrder?.map((e) => (e as num).toInt()).toList() ?? <int>[];
+    final legs = json['legs'] as List<dynamic>? ?? [];
+
+    return GoongTrip(
+      distanceMeters: distance,
+      durationSeconds: duration,
+      polyline: geometry,
+      waypointOrder: waypointOrder,
+      legs: legs,
+    );
+  }
+}
+

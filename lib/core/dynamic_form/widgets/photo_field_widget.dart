@@ -6,6 +6,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../utils/photo_watermark_helper.dart';
 import '../../widgets/camera_permission_dialog.dart';
 import '../models/dynamic_form_field.dart';
 import 'dynamic_form_field_wrapper.dart';
@@ -94,16 +95,22 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
           maxHeight: 1920,
         );
 
-        if (image != null && context.mounted) {
-          final updated = List<String>.from(photoPaths)..add(image.path);
-          onChanged(updated);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đã chụp và lưu ảnh thành công!'),
-              backgroundColor: AppColors.primary,
-              duration: Duration(seconds: 2),
-            ),
+        if (image != null) {
+          final watermarked = await PhotoWatermarkHelper.addWatermark(
+            imageFile: File(image.path),
+            locationName: field.label,
           );
+          final updated = List<String>.from(photoPaths)..add(watermarked.path);
+          onChanged(updated);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Đã chụp, đóng dấu toạ độ và lưu ảnh thành công!'),
+                backgroundColor: AppColors.primary,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
         }
       } else {
         // Cho phép chọn nhiều ảnh cùng lúc từ Thư viện thiết bị
@@ -113,25 +120,35 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
           maxHeight: 1920,
         );
 
-        if (images.isNotEmpty && context.mounted) {
+        if (images.isNotEmpty) {
           final remaining = field.maxPhotos - photoPaths.length;
-          final selected = images.take(remaining).map((e) => e.path).toList();
-          final updated = List<String>.from(photoPaths)..addAll(selected);
+          final selected = images.take(remaining).toList();
+          final watermarkedList = <String>[];
+          for (final img in selected) {
+            final wm = await PhotoWatermarkHelper.addWatermark(
+              imageFile: File(img.path),
+              locationName: field.label,
+            );
+            watermarkedList.add(wm.path);
+          }
+          final updated = List<String>.from(photoPaths)..addAll(watermarkedList);
           onChanged(updated);
 
           final count = selected.length;
           final isExceeded = images.length > remaining;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isExceeded
-                    ? 'Đã thêm $count ảnh (đạt giới hạn tối đa ${field.maxPhotos} ảnh).'
-                    : 'Đã chọn $count ảnh thành công!',
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  isExceeded
+                      ? 'Đã thêm $count ảnh (đạt giới hạn tối đa ${field.maxPhotos} ảnh).'
+                      : 'Đã chọn $count ảnh thành công!',
+                ),
+                backgroundColor: AppColors.primary,
+                duration: const Duration(seconds: 2),
               ),
-              backgroundColor: AppColors.primary,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+            );
+          }
         }
       }
     } catch (e) {

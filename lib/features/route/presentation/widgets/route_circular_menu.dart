@@ -29,7 +29,9 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onSendOfflineData;
   final VoidCallback onAddCustomer;
   final VoidCallback onRefreshGps;
+  final VoidCallback? onToggleMapView;
   final bool isSortedByDistance;
+  final bool isMapView;
   final int pendingOfflineCount;
   final bool isSyncing;
 
@@ -40,7 +42,9 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
     required this.onSendOfflineData,
     required this.onAddCustomer,
     required this.onRefreshGps,
+    this.onToggleMapView,
     this.isSortedByDistance = false,
+    this.isMapView = false,
     this.pendingOfflineCount = 0,
     this.isSyncing = false,
   });
@@ -185,6 +189,19 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
           widget.onSortByDistance();
         },
       ),
+      if (widget.onToggleMapView != null)
+        CircularMenuItem(
+          label: widget.isMapView ? 'Xem Danh sách' : 'Xem Bản đồ',
+          icon: widget.isMapView
+              ? Icons.format_list_bulleted_rounded
+              : Icons.map_rounded,
+          color: const Color(0xFF0D9488), // Teal
+          isActive: widget.isMapView,
+          onTap: () {
+            _close();
+            widget.onToggleMapView!();
+          },
+        ),
       CircularMenuItem(
         label: 'Định vị GPS',
         icon: Icons.my_location_rounded,

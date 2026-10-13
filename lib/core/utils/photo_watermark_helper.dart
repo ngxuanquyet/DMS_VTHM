@@ -1,14 +1,25 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_assets.dart';
+import '../constants/app_constants.dart';
+import '../services/location_service.dart';
 
 /// Tiện ích đóng dấu toạ độ GPS, thời gian và thông tin điểm bán lên ảnh chụp thực địa
 /// Đảm bảo tính minh bạch, chuyên nghiệp và chống gian lận ảnh cho đội ngũ thị trường
 class PhotoWatermarkHelper {
   PhotoWatermarkHelper._();
+
+  /// Kiểm tra xem tệp ảnh đã được đóng dấu watermark hay chưa
+  static bool isWatermarked(File file) {
+    final name = file.path.split(Platform.pathSeparator).last.split('/').last;
+    return name.startsWith('wm_') || name.contains('_wm_') || name.contains('watermarked');
+  }
 
   /// Đóng dấu toạ độ, thời gian và thông tin điểm bán lên tệp ảnh [imageFile]
   /// Ở góc dưới bên phải hiển thị logo xác thực thương hiệu từ [logoAsset]
@@ -39,14 +50,46 @@ class PhotoWatermarkHelper {
       // 1. Vẽ ảnh gốc
       canvas.drawImage(image, Offset.zero, Paint());
 
-      // 2. Chuẩn bị nội dung đóng dấu
+      // 2. Tự động lấy GPS nếu không được truyền vào
+      double? lat = latitude;
+      double? lng = longitude;
+      if (lat == null || lng == null) {
+        final cached = LocationService.currentCachedPosition;
+        if (cached != null) {
+          lat = cached.latitude;
+          lng = cached.longitude;
+        } else {
+          try {
+            final last = await Geolocator.getLastKnownPosition();
+            if (last != null) {
+              lat = last.latitude;
+              lng = last.longitude;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 3. Tự động lấy tên nhân viên từ phiên đăng nhập nếu không được truyền vào
+      String? staff = staffName;
+      if (staff == null || staff.isEmpty) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final userRaw = prefs.getString(AppConstants.keyUserData);
+          if (userRaw != null) {
+            final userJson = jsonDecode(userRaw) as Map<String, dynamic>;
+            staff = userJson['name']?.toString() ?? userJson['full_name']?.toString();
+          }
+        } catch (_) {}
+      }
+
+      // 4. Chuẩn bị nội dung đóng dấu
       final timeStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp ?? DateTime.now());
       final List<String> watermarkLines = [];
 
-      watermarkLines.add('🕒 $timeStr${staffName != null && staffName.isNotEmpty ? '  •  👤 $staffName' : ''}');
+      watermarkLines.add('🕒 $timeStr${staff != null && staff.isNotEmpty ? '  •  👤 $staff' : ''}');
 
-      if (latitude != null && longitude != null) {
-        watermarkLines.add('📍 GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}');
+      if (lat != null && lng != null) {
+        watermarkLines.add('📍 GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}');
       }
 
       if (locationName != null && locationName.isNotEmpty) {

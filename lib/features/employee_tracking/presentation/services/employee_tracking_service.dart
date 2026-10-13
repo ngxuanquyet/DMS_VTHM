@@ -37,6 +37,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
   final AppNotificationService _notifService;
 
   Timer? _periodicTimer;
+  StreamSubscription<Position>? _positionStreamSubscription;
   bool _isDisposed = false;
   int _lastHandledRequestId = -1;
   Position? _lastKnownPosition;
@@ -66,8 +67,8 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     // 3. Hỏi trạng thái từ server & kiểm tra lệnh chờ (§3: GET /dms/locations/pending)
     await refreshPendingRequest();
 
-    // 4. Nếu app đang ở foreground và có quyền -> Bắt đầu hẹn giờ gửi (§0 & §2)
-    _startOrRestartPeriodicTimer();
+    // 4. Bắt đầu dịch vụ theo dõi vị trí nền & hẹn giờ gửi (§0 & §2)
+    _startOrRestartTracking();
   }
 
   @override
@@ -76,45 +77,120 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
 
     switch (lifecycleState) {
       case AppLifecycleState.resumed:
-        // App mở lại foreground -> khôi phục timer & kiểm tra lệnh chờ
-        _startOrRestartPeriodicTimer();
+        // App mở lại foreground -> đảm bảo tracking vẫn chạy và kiểm tra lệnh chờ
+        if (_periodicTimer == null || _positionStreamSubscription == null) {
+          _startOrRestartTracking();
+        }
         refreshPendingRequest();
         break;
 
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
-        // App chuyển nền hoặc thoát:
-        // 1. DỪNG timer (§0: Tuyệt đối KHÔNG chạy nền ngầm cả ngày)
-        _stopPeriodicTimer();
-        // 2. Gửi MỘT điểm cuối source=app_exit (§0 & §2)
-        _sendAppExitPoint();
-        break;
       case AppLifecycleState.hidden:
-        _stopPeriodicTimer();
+        // App chuyển nền (ấn Home, khoá màn hình, chuyển app khác):
+        // KHÔNG DỪNG TRACKING!
+        // Duy trì chạy nền qua Foreground Service / Background Location và gửi GPS định kỳ bình thường.
+        debugPrint('[EmployeeTracking] App ở trạng thái nền (${lifecycleState.name}) - Duy trì gửi GPS định kỳ');
+        break;
+
+      case AppLifecycleState.detached:
+        // App bị kill hoàn toàn (thoát ứng dụng):
+        // Cố gắng gửi 1 điểm cuối cùng source=app_exit và dừng dịch vụ
+        debugPrint('[EmployeeTracking] App bị đóng (detached) - Gửi điểm cuối và dừng dịch vụ');
+        _sendAppExitPoint();
+        _stopTracking();
         break;
     }
   }
 
-  /// Bắt đầu hoặc khởi động lại Timer gửi định kỳ theo nhịp next_interval_sec của server
-  void _startOrRestartPeriodicTimer() {
-    _stopPeriodicTimer();
+  /// Cấu hình cài đặt vị trí nền cho Android (Foreground Service) và iOS
+  LocationSettings _buildLocationSettings(int intervalSec) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+        forceLocationManager: false,
+        intervalDuration: Duration(seconds: intervalSec),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'DMS VTHM - Chia sẻ vị trí',
+          notificationText: 'Ứng dụng đang duy trì cập nhật vị trí công tác',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        activityType: ActivityType.other,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+        allowBackgroundLocationUpdates: true,
+      );
+    } else {
+      return const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+      );
+    }
+  }
+
+  /// Khởi chạy Stream vị trí nền kèm Foreground Service để giữ tiến trình sống trong nền
+  void _startLocationStream(int intervalSec) {
+    _positionStreamSubscription?.cancel();
+
+    try {
+      final locationSettings = _buildLocationSettings(intervalSec);
+      _positionStreamSubscription = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (Position position) {
+          _lastKnownPosition = position;
+          LocationService.updateCachedPosition(position);
+        },
+        onError: (e) {
+          debugPrint('[EmployeeTracking] Lỗi stream vị trí nền: $e');
+        },
+      );
+    } catch (e) {
+      debugPrint('[EmployeeTracking] Không thể khởi động stream vị trí: $e');
+    }
+  }
+
+  /// Bắt đầu hoặc khởi động lại tiến trình gửi vị trí định kỳ (foreground + background)
+  void _startOrRestartTracking() {
+    _stopTracking();
 
     if (!state.isSharing) {
       return;
     }
 
     final intervalSec = state.nextIntervalSec > 0 ? state.nextIntervalSec : 180;
-    debugPrint('[EmployeeTracking] Hẹn giờ gửi vị trí định kỳ mỗi $intervalSec giây');
+    debugPrint('[EmployeeTracking] Bắt đầu theo dõi vị trí (chu kỳ $intervalSec giây, hỗ trợ chạy nền)');
 
+    // 1. Khởi chạy vị trí nền với Foreground Service
+    _startLocationStream(intervalSec);
+
+    // 2. Hẹn giờ gửi vị trí định kỳ
     _periodicTimer = Timer.periodic(Duration(seconds: intervalSec), (timer) {
       _onPeriodicTick();
     });
   }
 
-  void _stopPeriodicTimer() {
+  void _stopTracking() {
     _periodicTimer?.cancel();
     _periodicTimer = null;
+    _positionStreamSubscription?.cancel();
+    _positionStreamSubscription = null;
+  }
+
+  void _startOrRestartPeriodicTimer() {
+    _startOrRestartTracking();
+  }
+
+  void _stopPeriodicTimer() {
+    _stopTracking();
   }
 
   /// Xử lý mỗi nhịp hẹn giờ foreground (source: 'auto')
@@ -152,8 +228,10 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       try {
         // Cố gắng đo nhanh với timeout 2.5s, nếu không kịp dùng tọa độ gần nhất
         pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(milliseconds: 2500),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(milliseconds: 2500),
+          ),
         );
       } catch (_) {
         pos = _lastKnownPosition ?? LocationService.currentCachedPosition;
@@ -421,21 +499,34 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     }
   }
 
-  /// Đo GPS hiện tại an toàn, không ném ngoại lệ làm crash app
+  /// Đo GPS hiện tại an toàn, tối ưu cho cả foreground và background
   Future<Position?> _getCurrentPosition() async {
     try {
+      // 1. Nếu toạ độ từ stream nền còn tươi mới (< 60s), ưu tiên dùng ngay để không delay
+      if (_lastKnownPosition != null) {
+        final age = DateTime.now().difference(_lastKnownPosition!.timestamp);
+        if (age.inSeconds < 60) {
+          return _lastKnownPosition;
+        }
+      }
+
       final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!isServiceEnabled) return null;
+      if (!isServiceEnabled) return _lastKnownPosition ?? LocationService.currentCachedPosition;
 
       final perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         return null;
       }
 
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
+      _lastKnownPosition = pos;
+      LocationService.updateCachedPosition(pos);
+      return pos;
     } catch (e) {
       debugPrint('[EmployeeTracking] Đo GPS thất bại: $e');
       return _lastKnownPosition ?? LocationService.currentCachedPosition;
@@ -445,7 +536,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
   @override
   void dispose() {
     _isDisposed = true;
-    _stopPeriodicTimer();
+    _stopTracking();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

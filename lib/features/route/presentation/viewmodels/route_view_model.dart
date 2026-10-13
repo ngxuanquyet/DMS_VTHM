@@ -206,6 +206,24 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
+  void selectDayOfWeek(int? day) {
+    if (state.selectedDayOfWeek == day) {
+      state = state.copyWith(clearSelectedDayOfWeek: true);
+    } else {
+      state = state.copyWith(
+        selectedDayOfWeek: day,
+        clearSelectedDayOfWeek: day == null,
+      );
+    }
+    _recomputeRouteDetail();
+  }
+
+  /// Đếm số điểm bán theo từng thứ trong tuần
+  int getDealerCountForDay(int? day) {
+    if (day == null) return _rawCustomers.length;
+    return _rawCustomers.where((c) => _matchesCustomerDayOfWeek(c, day)).length;
+  }
+
   void applyFilters({
     String? route,
     String? visitStatus,
@@ -408,12 +426,14 @@ class RouteViewModel extends StateNotifier<RouteState> {
       // 3. Trích xuất danh sách tuyến từ API tuyến của tài khoản (getMyRoutes) và khách hàng
       final Set<String> routeSet = {'Tất cả tuyến'};
       final routeMap = <int, String>{};
+      List<UserRouteEntity> loadedUserRoutes = [];
 
       if (routeApiService != null) {
         try {
           final myRoutes = await routeApiService!.getMyRoutes(
             forceRefresh: isRefresh,
           );
+          loadedUserRoutes = myRoutes;
           for (final r in myRoutes) {
             final trimmed = r.name.trim();
             if (trimmed.isNotEmpty &&
@@ -524,6 +544,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
         availableRoutes: availableRoutes,
         availableCustomerTypes: customerTypes,
         availableCustomerStatuses: customerStatuses,
+        userRoutes: loadedUserRoutes,
         selectedRoute: selectedRoute,
         todayVisits: todayVisits,
         activeVisit: activeVisit,
@@ -573,6 +594,14 @@ class RouteViewModel extends StateNotifier<RouteState> {
       final targetType = state.selectedCustomerType!.toLowerCase().trim();
       filtered = filtered.where((c) {
         return c.type.toLowerCase().trim() == targetType;
+      }).toList();
+    }
+
+    // 4. Lọc tuyến theo ngày trong tuần (selectedDayOfWeek: 1 = Thứ 2 ... 7 = Chủ nhật)
+    if (state.selectedDayOfWeek != null) {
+      final targetDay = state.selectedDayOfWeek!;
+      filtered = filtered.where((c) {
+        return _matchesCustomerDayOfWeek(c, targetDay);
       }).toList();
     }
 
@@ -807,6 +836,114 @@ class RouteViewModel extends StateNotifier<RouteState> {
     } catch (_) {
       return false;
     }
+  }
+
+  int? _extractDayOfWeekFromName(String? text) {
+    if (text == null || text.trim().isEmpty) return null;
+    final lower = text.toLowerCase().trim();
+
+    if (lower.contains('chủ nhật') ||
+        lower.contains('chu nhat') ||
+        RegExp(r'\bcn\b').hasMatch(lower)) {
+      return 7;
+    }
+    if (lower.contains('thứ 2') ||
+        lower.contains('thu 2') ||
+        lower.contains('thứ hai') ||
+        lower.contains('thu hai') ||
+        RegExp(r'\bt2\b').hasMatch(lower) ||
+        RegExp(r'\bt-2\b').hasMatch(lower)) {
+      return 1;
+    }
+    if (lower.contains('thứ 3') ||
+        lower.contains('thu 3') ||
+        lower.contains('thứ ba') ||
+        lower.contains('thu ba') ||
+        RegExp(r'\bt3\b').hasMatch(lower) ||
+        RegExp(r'\bt-3\b').hasMatch(lower)) {
+      return 2;
+    }
+    if (lower.contains('thứ 4') ||
+        lower.contains('thu 4') ||
+        lower.contains('thứ tư') ||
+        lower.contains('thu tu') ||
+        RegExp(r'\bt4\b').hasMatch(lower) ||
+        RegExp(r'\bt-4\b').hasMatch(lower)) {
+      return 3;
+    }
+    if (lower.contains('thứ 5') ||
+        lower.contains('thu 5') ||
+        lower.contains('thứ năm') ||
+        lower.contains('thu nam') ||
+        RegExp(r'\bt5\b').hasMatch(lower) ||
+        RegExp(r'\bt-5\b').hasMatch(lower)) {
+      return 4;
+    }
+    if (lower.contains('thứ 6') ||
+        lower.contains('thu 6') ||
+        lower.contains('thứ sáu') ||
+        lower.contains('thu sau') ||
+        RegExp(r'\bt6\b').hasMatch(lower) ||
+        RegExp(r'\bt-6\b').hasMatch(lower)) {
+      return 5;
+    }
+    if (lower.contains('thứ 7') ||
+        lower.contains('thu 7') ||
+        lower.contains('thứ bảy') ||
+        lower.contains('thu bay') ||
+        RegExp(r'\bt7\b').hasMatch(lower) ||
+        RegExp(r'\bt-7\b').hasMatch(lower)) {
+      return 6;
+    }
+    return null;
+  }
+
+  bool _matchesCustomerDayOfWeek(CustomerEntity c, int targetDay) {
+    final todayWeekday = DateTime.now().weekday;
+    if (targetDay == todayWeekday && c.isToday) {
+      return true;
+    }
+
+    // 1. Kiểm tra qua routeIds với state.userRoutes
+    for (final id in c.routeIds) {
+      for (final ur in state.userRoutes) {
+        if (ur.id == id) {
+          if (ur.visitDayOfWeek == targetDay) return true;
+          if (_extractDayOfWeekFromName(ur.name) == targetDay) return true;
+          if (_extractDayOfWeekFromName(ur.code) == targetDay) return true;
+        }
+      }
+    }
+
+    // 2. Kiểm tra qua danh sách routes của khách hàng
+    for (final rName in c.routes) {
+      if (_extractDayOfWeekFromName(rName) == targetDay) return true;
+      for (final ur in state.userRoutes) {
+        if (ur.name.trim() == rName.trim()) {
+          if (ur.visitDayOfWeek == targetDay) return true;
+          if (_extractDayOfWeekFromName(ur.name) == targetDay) return true;
+        }
+      }
+    }
+
+    // 3. Kiểm tra qua chuỗi c.route
+    if (c.route.isNotEmpty) {
+      final parts = c.route.split(',').map((e) => e.trim());
+      for (final p in parts) {
+        if (_extractDayOfWeekFromName(p) == targetDay) return true;
+      }
+    }
+
+    // 4. Kiểm tra dynamicFields
+    final dynDay = c.dynamicFields['visit_day_of_week'] ??
+        c.dynamicFields['thu'] ??
+        c.dynamicFields['ngay_tuan'];
+    if (dynDay != null) {
+      if (dynDay is int && dynDay == targetDay) return true;
+      if (_extractDayOfWeekFromName(dynDay.toString()) == targetDay) return true;
+    }
+
+    return false;
   }
 }
 
