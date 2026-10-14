@@ -294,46 +294,53 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         throw Exception('Quyền truy cập vị trí bị từ chối vĩnh viễn. Vui lòng bật trong Cài đặt.');
       }
 
-      // 3. Lấy vị trí độ chính xác cao, MỚI (không dùng cache cũ) (§2)
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
+      // 1. Thử lấy vị trí đã biết gần nhất từ hệ thống (< 5ms) để phản hồi tức thì
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        final lat = double.parse(lastKnown.latitude.toStringAsFixed(7));
+        final lng = double.parse(lastKnown.longitude.toStringAsFixed(7));
+        final accuracy = double.parse(lastKnown.accuracy.toStringAsFixed(1));
+        final isMock = lastKnown.isMocked;
 
-      final lat = double.parse(position.latitude.toStringAsFixed(7));
-      final lng = double.parse(position.longitude.toStringAsFixed(7));
-      final accuracy = double.parse(position.accuracy.toStringAsFixed(1));
-      final isMock = position.isMocked;
-
-      // 4. Tự động gợi ý địa chỉ qua reverse-geocoding nếu ô địa chỉ đang trống (§2)
-      String currentAddr = _addressController.text.trim();
-      if (currentAddr.isEmpty) {
-        try {
-          final goongService = ref.read(goongApiServiceProvider);
-          final place = await goongService.reverseGeocode(lat, lng);
-          if (place != null && place.formattedAddress.isNotEmpty) {
-            currentAddr = place.formattedAddress;
-            _addressController.text = currentAddr;
-          }
-        } catch (_) {}
+        _notifyChange(
+          lat: lat,
+          lng: lng,
+          accuracy: accuracy,
+          mock: isMock,
+        );
+        _reverseGeocodeAndUpdate(lat, lng);
+        LocationService.updateCachedPosition(lastKnown);
+        setState(() => _isLocating = false);
       }
 
-      if (mounted) {
-        setState(() {
-          _isLocating = false;
-          _resolvedAddress = currentAddr.isNotEmpty ? currentAddr : _resolvedAddress;
-        });
-      }
+      // 2. Lấy vị trí mới với accuracy medium (nhanh < 1s, timeout 4s)
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
+          ),
+        );
 
-      _notifyChange(
-        address: currentAddr,
-        lat: lat,
-        lng: lng,
-        accuracy: accuracy,
-        mock: isMock,
-      );
+        final lat = double.parse(position.latitude.toStringAsFixed(7));
+        final lng = double.parse(position.longitude.toStringAsFixed(7));
+        final accuracy = double.parse(position.accuracy.toStringAsFixed(1));
+        final isMock = position.isMocked;
+
+        _notifyChange(
+          lat: lat,
+          lng: lng,
+          accuracy: accuracy,
+          mock: isMock,
+        );
+        _reverseGeocodeAndUpdate(lat, lng);
+        LocationService.updateCachedPosition(position);
+        if (mounted) {
+          setState(() => _isLocating = false);
+        }
+      } catch (_) {
+        if (lastKnown == null) rethrow;
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

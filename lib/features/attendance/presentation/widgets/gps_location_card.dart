@@ -10,6 +10,7 @@ import '../../../../core/map/goong_providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../domain/entities/attendance_entity.dart';
@@ -40,7 +41,14 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
       _lastKnownPoint = currentPoint;
     }
 
-    final livePoint = currentPoint ?? _lastKnownPoint;
+    final cached = LocationService.currentCachedPosition;
+    final fallbackPoint = (cached != null)
+        ? GoongLatLng(cached.latitude, cached.longitude)
+        : (widget.location.latitude != 0 && widget.location.longitude != 0
+            ? GoongLatLng(widget.location.latitude, widget.location.longitude)
+            : null);
+
+    final livePoint = currentPoint ?? _lastKnownPoint ?? fallbackPoint;
 
     // Lấy địa chỉ thật từ Goong Maps Reverse Geocoding
     final liveAddress = livePoint != null

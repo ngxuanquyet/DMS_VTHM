@@ -255,15 +255,37 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         }
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      // 1. Lấy ngay vị trí đã biết gần nhất từ hệ thống (< 5ms) để phản hồi tức thì
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        setState(() {
+          _currentLat = double.parse(lastKnown.latitude.toStringAsFixed(6));
+          _currentLng = double.parse(lastKnown.longitude.toStringAsFixed(6));
+          _isLocating = false;
+        });
+        LocationService.updateCachedPosition(lastKnown);
+      }
 
-      setState(() {
-        _currentLat = double.parse(position.latitude.toStringAsFixed(6));
-        _currentLng = double.parse(position.longitude.toStringAsFixed(6));
-        _isLocating = false;
-      });
+      // 2. Lấy vị trí tươi mới với accuracy medium (timeout 4s)
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
+          ),
+        );
+
+        if (mounted) {
+          setState(() {
+            _currentLat = double.parse(position.latitude.toStringAsFixed(6));
+            _currentLng = double.parse(position.longitude.toStringAsFixed(6));
+            _isLocating = false;
+          });
+        }
+        LocationService.updateCachedPosition(position);
+      } catch (_) {
+        if (lastKnown == null) rethrow;
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

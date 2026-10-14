@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_loading.dart';
+import '../services/location_service.dart';
 import 'goong_api_service.dart';
 import 'goong_config.dart';
 import 'goong_map_view.dart';
@@ -182,32 +183,56 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      // 1. Thử lấy ngay vị trí đã biết gần nhất từ hệ thống (< 5ms) để phản hồi tức thì
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        final lat = double.parse(lastKnown.latitude.toStringAsFixed(6));
+        final lng = double.parse(lastKnown.longitude.toStringAsFixed(6));
+        widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        setState(() => _isLocating = false);
+        _fetchAddress(lat, lng);
+        LocationService.updateCachedPosition(lastKnown);
+      }
 
-      final lat = double.parse(position.latitude.toStringAsFixed(6));
-      final lng = double.parse(position.longitude.toStringAsFixed(6));
-
-      widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
-      setState(() => _isLocating = false);
-
-      _fetchAddress(lat, lng);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Đã xác định vị trí trên bản đồ!'),
-              ],
-            ),
-            backgroundColor: AppColors.primary,
-            behavior: SnackBarBehavior.floating,
+      // 2. Lấy vị trí mới bằng medium accuracy với timeout nhanh (4 giây)
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
           ),
         );
+
+        final lat = double.parse(position.latitude.toStringAsFixed(6));
+        final lng = double.parse(position.longitude.toStringAsFixed(6));
+
+        widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        LocationService.updateCachedPosition(position);
+
+        if (mounted) {
+          setState(() => _isLocating = false);
+        }
+
+        _fetchAddress(lat, lng);
+
+        if (mounted && lastKnown == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Text('Đã xác định vị trí trên bản đồ!'),
+                ],
+              ),
+              backgroundColor: AppColors.primary,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (_) {
+        // Nếu timeout nhưng đã lấy được lastKnown thì vẫn thành công
+        if (lastKnown == null) rethrow;
       }
     } catch (e) {
       setState(() => _isLocating = false);

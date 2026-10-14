@@ -43,7 +43,7 @@ final currentPointProvider = FutureProvider<GoongLatLng?>((ref) async {
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,
-        timeLimit: Duration(seconds: 2),
+        timeLimit: Duration(seconds: 4),
       ),
     );
     LocationService.updateCachedPosition(position);
