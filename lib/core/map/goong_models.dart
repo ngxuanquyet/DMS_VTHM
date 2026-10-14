@@ -165,15 +165,36 @@ class GoongTrip {
     this.legs = const [],
   });
 
-  factory GoongTrip.fromJson(Map<String, dynamic> json) {
+  factory GoongTrip.fromJson(
+    Map<String, dynamic> json, {
+    List<dynamic>? rawWaypoints,
+  }) {
     final distance = (json['distance'] as num?)?.toDouble() ?? 0.0;
     final duration = (json['duration'] as num?)?.toDouble() ?? 0.0;
     final geometry = (json['geometry'] as String?) ??
         ((json['overview_polyline'] as Map<String, dynamic>?)?['points'] as String?) ??
         '';
-    final rawOrder = json['waypoint_order'] as List<dynamic>?;
-    final waypointOrder =
+    final rawOrder = (json['waypoint_order'] as List<dynamic>?) ??
+        (json['waypoints_order'] as List<dynamic>?);
+    List<int> waypointOrder =
         rawOrder?.map((e) => (e as num).toInt()).toList() ?? <int>[];
+
+    // Nếu json không có waypoint_order mà có rawWaypoints (chuẩn OSRM của Goong)
+    if (waypointOrder.isEmpty && rawWaypoints != null && rawWaypoints.isNotEmpty) {
+      try {
+        final indexedList = <MapEntry<int, int>>[];
+        for (int i = 0; i < rawWaypoints.length; i++) {
+          final wp = rawWaypoints[i];
+          if (wp is Map<String, dynamic>) {
+            final visitIndex = (wp['waypoint_index'] as num?)?.toInt() ?? i;
+            indexedList.add(MapEntry(i, visitIndex));
+          }
+        }
+        indexedList.sort((a, b) => a.value.compareTo(b.value));
+        waypointOrder = indexedList.map((e) => e.key).toList();
+      } catch (_) {}
+    }
+
     final legs = json['legs'] as List<dynamic>? ?? [];
 
     return GoongTrip(

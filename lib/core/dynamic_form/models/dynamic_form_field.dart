@@ -128,6 +128,10 @@ enum DynamicFormFieldType {
         return DynamicFormFieldType.rating;
 
       case 'location':
+      case 'address':
+      case 'dia_chi':
+      case 'map_location':
+      case 'vitri':
         return DynamicFormFieldType.location;
 
       case 'gps':

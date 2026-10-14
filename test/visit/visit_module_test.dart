@@ -47,7 +47,7 @@ class FakeCustomerRepository implements CustomerRepository {
   @override
   Future<CustomerEntity> updateCustomer({required int id, required Map<String, dynamic> changes, String? clientUuid}) => throw UnimplementedError();
   @override
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) => throw UnimplementedError();
+  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath, {String? locationName, double? lat, double? lng}) => throw UnimplementedError();
 }
 
 class FakeRouteRepository implements RouteRepository {

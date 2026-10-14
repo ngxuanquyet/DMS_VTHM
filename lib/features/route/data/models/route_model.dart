@@ -173,8 +173,8 @@ class CheckinDealerModel {
       isVip: json['isVip'] as bool? ?? false,
       distanceMeters: (json['distanceMeters'] as num?)?.toInt() ?? 0,
       visitDuration: json['visitDuration'] as String? ?? '00:00:00',
-      lat: (json['lat'] as num?)?.toDouble() ?? 21.3508,
-      lng: (json['lng'] as num?)?.toDouble() ?? 105.6592,
+      lat: (json['lat'] as num?)?.toDouble(),
+      lng: (json['lng'] as num?)?.toDouble(),
       geofenceRadiusM: (json['geofence_radius_m'] ?? json['geofenceRadiusM']) is num
           ? (json['geofence_radius_m'] ?? json['geofenceRadiusM'] as num).toInt()
           : int.tryParse((json['geofence_radius_m'] ?? json['geofenceRadiusM'])?.toString() ?? ''),

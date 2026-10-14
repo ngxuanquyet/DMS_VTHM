@@ -3,16 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../map/goong_config.dart';
+import '../map/goong_map_view.dart';
 import '../map/goong_models.dart';
 import '../map/goong_providers.dart';
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
+import '../widgets/voice_input_mic_button.dart';
 
 /// Widget nhập và hiển thị ô Địa chỉ + Tọa độ GPS (`input_type = "location"`)
+/// Tích hợp đầy đủ bản đồ Goong Map tương tác, 3 chế độ xem (Đường phố / Vệ tinh / Giao thông),
+/// nút phóng to thu nhỏ, vuốt xem bản đồ và tra cứu địa chỉ tự động.
 /// Đặc tả kỹ thuật theo tài liệu API-O-VI-TRI-BIEU-MAU-2026-10-13.md
 class LocationFieldWidget extends ConsumerStatefulWidget {
   final String label;
@@ -45,6 +50,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
   final FocusNode _addressFocusNode = FocusNode();
   bool _isLocating = false;
   String? _locationError;
+  String? _resolvedAddress;
+  bool _isLoadingAddress = false;
+  GoongMapStyle _currentMapStyle = GoongMapStyle.standard;
 
   Timer? _debounceTimer;
   List<GoongPrediction> _suggestions = [];
@@ -55,6 +63,11 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     super.initState();
     final initialAddress = widget.value?['address']?.toString() ?? '';
     _addressController = TextEditingController(text: initialAddress);
+    _resolvedAddress = initialAddress.isNotEmpty ? initialAddress : null;
+
+    if (_lat != null && _lng != null && (_resolvedAddress == null || _resolvedAddress!.isEmpty)) {
+      _reverseGeocodeAndUpdate(_lat!, _lng!);
+    }
   }
 
   @override
@@ -64,6 +77,22 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     // Không ghi đè controller khi đang focus gõ phím để không làm mất dấu cách (space)
     if (!_addressFocusNode.hasFocus && !_isLocating && newAddress != _addressController.text) {
       _addressController.text = newAddress;
+      if (newAddress.isNotEmpty) {
+        _resolvedAddress = newAddress;
+      }
+    }
+
+    final oldLat = (oldWidget.value?['lat'] as num?)?.toDouble() ??
+        double.tryParse(oldWidget.value?['lat']?.toString() ?? '');
+    final oldLng = (oldWidget.value?['lng'] as num?)?.toDouble() ??
+        double.tryParse(oldWidget.value?['lng']?.toString() ?? '');
+
+    if (_lat != oldLat || _lng != oldLng) {
+      if (_lat != null && _lng != null) {
+        _reverseGeocodeAndUpdate(_lat!, _lng!);
+      } else {
+        setState(() => _resolvedAddress = null);
+      }
     }
   }
 
@@ -197,13 +226,45 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         if (finalAddr != _addressController.text) {
           _addressController.text = finalAddr;
         }
+        final pLat = double.parse(place.location!.lat.toStringAsFixed(7));
+        final pLng = double.parse(place.location!.lng.toStringAsFixed(7));
+        setState(() {
+          _resolvedAddress = finalAddr;
+        });
         _notifyChange(
           address: finalAddr,
-          lat: place.location!.lat,
-          lng: place.location!.lng,
+          lat: pLat,
+          lng: pLng,
         );
       }
     } catch (_) {}
+  }
+
+  Future<void> _reverseGeocodeAndUpdate(double lat, double lng) async {
+    setState(() => _isLoadingAddress = true);
+    try {
+      final goongService = ref.read(goongApiServiceProvider);
+      final place = await goongService.reverseGeocode(lat, lng);
+      if (place != null && place.formattedAddress.isNotEmpty && mounted) {
+        final addr = place.formattedAddress;
+        setState(() {
+          _resolvedAddress = addr;
+          if (_addressController.text.trim().isEmpty) {
+            _addressController.text = addr;
+          }
+          _isLoadingAddress = false;
+        });
+        _notifyChange(
+          address: _addressController.text.isNotEmpty ? _addressController.text : addr,
+          lat: lat,
+          lng: lng,
+        );
+      } else {
+        if (mounted) setState(() => _isLoadingAddress = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingAddress = false);
+    }
   }
 
   Future<void> _fetchFreshLocation() async {
@@ -262,6 +323,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
       if (mounted) {
         setState(() {
           _isLocating = false;
+          _resolvedAddress = currentAddr.isNotEmpty ? currentAddr : _resolvedAddress;
         });
       }
 
@@ -298,6 +360,49 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     }
   }
 
+  Widget _buildStyleOption(GoongMapStyle style, String label, IconData icon) {
+    final isSelected = _currentMapStyle == style;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (!isSelected) {
+            setState(() {
+              _currentMapStyle = style;
+            });
+          }
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 12,
+                color: isSelected ? Colors.white : Colors.white70,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white70,
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -313,7 +418,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         color: isDark
             ? AppColors.darkSurfaceContainerLowest
             : AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: widget.errorText != null
               ? AppColors.error
@@ -324,7 +429,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tiêu đề trường + Badge
+          // Tiêu đề trường + Badge Trạng thái
           Row(
             children: [
               Expanded(
@@ -347,7 +452,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.primaryContainer.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(4),
@@ -394,8 +499,19 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 prefixIcon: const Icon(Icons.edit_location_alt_outlined, size: 18),
-                suffixIcon: _addressController.text.isNotEmpty
-                    ? IconButton(
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    VoiceInputMicButton(
+                      fieldName: widget.label,
+                      size: 20,
+                      onTextRecognized: (text) {
+                        _addressController.text = text;
+                        _onAddressChanged(text);
+                      },
+                    ),
+                    if (_addressController.text.isNotEmpty)
+                      IconButton(
                         icon: const Icon(Icons.clear_rounded, size: 16),
                         onPressed: () {
                           _debounceTimer?.cancel();
@@ -406,8 +522,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                           });
                           _notifyChange(address: '');
                         },
-                      )
-                    : null,
+                      ),
+                  ],
+                ),
                 counterText: '', // Ẩn counter để giao diện gọn gàng
                 filled: true,
                 fillColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
@@ -570,7 +687,190 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
             const SizedBox(height: 10),
           ],
 
-          // 2. Nút Lấy vị trí + Hiển thị Tọa độ GPS đã lấy (§2)
+          // 2. Khung Bản Đồ Tương Tác Goong Map (Đủ 3 chế độ xem, phóng to thu nhỏ, vuốt xem bản đồ)
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.darkSurfaceContainerLowest
+                  : AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasCoords
+                    ? AppColors.primary.withValues(alpha: 0.35)
+                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+                width: hasCoords ? 1.5 : 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: hasCoords
+                      ? AppColors.primary.withValues(alpha: 0.06)
+                      : const Color(0x06000000),
+                  offset: const Offset(0, 2),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      height: 230,
+                      width: double.infinity,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                        child: GoongMapView(
+                          key: ValueKey('loc_field_map_${lat ?? 0}_${lng ?? 0}_${_currentMapStyle.styleName}'),
+                          center: hasCoords
+                              ? LatLng(lat!, lng!)
+                              : LatLng(
+                                  _getNearAnchor().lat,
+                                  _getNearAnchor().lng,
+                                ),
+                          zoom: hasCoords ? 16.5 : 14.5,
+                          mapStyle: _currentMapStyle,
+                          showMyLocation: true,
+                          showMyLocationButton: !widget.isReadOnly,
+                          showZoomControls: true, // Nút phóng to / thu nhỏ (+ / -)
+                          interactive: true, // Cho phép vuốt, kéo, cuộn, xoay bản đồ
+                          onMyLocationTap: _isLocating ? null : _fetchFreshLocation,
+                          onTap: widget.isReadOnly
+                              ? null
+                              : (point) {
+                                  final newLat = double.parse(point.latitude.toStringAsFixed(7));
+                                  final newLng = double.parse(point.longitude.toStringAsFixed(7));
+                                  _notifyChange(lat: newLat, lng: newLng);
+                                  _reverseGeocodeAndUpdate(newLat, newLng);
+                                },
+                        ),
+                      ),
+                    ),
+
+                    // Chip Switcher: Đủ 3 chế độ xem (Đường phố, Vệ tinh, Giao thông)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x26000000),
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildStyleOption(GoongMapStyle.standard, 'Đường phố', Icons.map_rounded),
+                            const SizedBox(width: 2),
+                            _buildStyleOption(GoongMapStyle.satellite, 'Vệ tinh', Icons.satellite_alt_rounded),
+                            const SizedBox(width: 2),
+                            _buildStyleOption(GoongMapStyle.navigation, 'Giao thông', Icons.traffic_rounded),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Nhãn chỉ dẫn khi chưa ghim vị trí
+                    if (!hasCoords)
+                      Positioned(
+                        bottom: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.touch_app_rounded, size: 14, color: Colors.white),
+                              const SizedBox(width: 6),
+                              Text(
+                                widget.isReadOnly
+                                    ? 'Chưa có vị trí ghim trên bản đồ'
+                                    : 'Chạm bản đồ hoặc bấm nút để ghim vị trí',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                // Thông tin địa chỉ giải mã bên dưới bản đồ
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.my_location_rounded,
+                          size: 14,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isLoadingAddress
+                                  ? 'Đang nhận diện địa chỉ vị trí...'
+                                  : (_resolvedAddress != null &&
+                                          _resolvedAddress!.isNotEmpty &&
+                                          _resolvedAddress != _addressController.text
+                                      ? _resolvedAddress!
+                                      : (hasCoords
+                                          ? 'Vị trí đã được xác thực trên bản đồ'
+                                          : 'Chưa xác định toạ độ trên bản đồ')),
+                              style: AppTypography.bodySmall(
+                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                              ).copyWith(fontWeight: FontWeight.w600, height: 1.3),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí',
+                              style: AppTypography.bodySmall(
+                                color: isDark
+                                    ? AppColors.darkOnSurfaceVariant
+                                    : AppColors.onSurfaceVariant,
+                              ).copyWith(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // 3. Nút Lấy vị trí + Hiển thị Tọa độ GPS đã lấy (§2)
           Wrap(
             spacing: 10,
             runSpacing: 8,
@@ -658,8 +958,8 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       InkWell(
                         onTap: () => _openGoogleMaps(lat, lng),
                         borderRadius: BorderRadius.circular(4),
-                        child: Padding(
-                          padding: const EdgeInsets.all(2.0),
+                        child: const Padding(
+                          padding: EdgeInsets.all(2.0),
                           child: Icon(
                             Icons.map_outlined,
                             size: 16,

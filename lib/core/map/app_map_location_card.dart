@@ -119,11 +119,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
     }
     if (widget.lat != oldWidget.lat || widget.lng != oldWidget.lng) {
       if (widget.lat != null && widget.lng != null) {
-        if (widget.initialAddress != null && widget.initialAddress!.isNotEmpty) {
-          setState(() => _resolvedAddress = widget.initialAddress);
-        } else {
-          _fetchAddress(widget.lat!.toDouble(), widget.lng!.toDouble());
-        }
+        _fetchAddress(widget.lat!.toDouble(), widget.lng!.toDouble());
       } else {
         setState(() => _resolvedAddress = null);
       }
@@ -139,6 +135,9 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
           _resolvedAddress = place?.formattedAddress;
           _isLoadingAddress = false;
         });
+        if (_resolvedAddress != null && _resolvedAddress!.isNotEmpty) {
+          widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        }
       }
     } catch (_) {
       if (mounted) {

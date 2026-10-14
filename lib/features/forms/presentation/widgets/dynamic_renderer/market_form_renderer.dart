@@ -452,6 +452,19 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     bool isDark,
   ) {
     final type = block.resolved.inputType.toLowerCase();
+    final code = block.resolved.code.toLowerCase();
+
+    // Tự động nhận diện trường Địa chỉ / Vị trí / GPS từ schema API (Bỏ fix cứng)
+    if (type == 'location' ||
+        type == 'address' ||
+        type == 'dia_chi' ||
+        type == 'gps' ||
+        code == 'address' ||
+        code == 'dia_chi' ||
+        code == 'dia_chi_giao_dich' ||
+        code == 'location') {
+      return _buildLocationField(block, isDark);
+    }
 
     switch (type) {
       case 'heading':
@@ -489,6 +502,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'file':
         return _buildImageField(context, block, isDark);
       case 'location':
+      case 'address':
+      case 'dia_chi':
+      case 'gps':
         return _buildLocationField(block, isDark);
       case 'ref_customer':
         final currentVal = _answers[block.resolved.code];
@@ -523,9 +539,27 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final val = _answers[code];
     Map<String, dynamic>? locMap;
     if (val is Map<String, dynamic>) {
-      locMap = val;
+      locMap = Map<String, dynamic>.from(val);
     } else if (val is Map) {
       locMap = Map<String, dynamic>.from(val);
+    } else if (val is String && val.trim().isNotEmpty) {
+      locMap = {'address': val.trim()};
+    }
+
+    // Nếu trường chưa có toạ độ nhưng context điểm bán có toạ độ, tự điền khởi tạo
+    if (locMap != null && locMap['lat'] == null) {
+      final custLat = widget.customerContext['lat'];
+      final custLng = widget.customerContext['lng'];
+      if (custLat != null && custLng != null) {
+        locMap['lat'] = custLat;
+        locMap['lng'] = custLng;
+      }
+    } else if (locMap == null && widget.defaultCustomerAddress != null && widget.defaultCustomerAddress!.isNotEmpty) {
+      locMap = {
+        'address': widget.defaultCustomerAddress,
+        if (widget.customerContext['lat'] != null) 'lat': widget.customerContext['lat'],
+        if (widget.customerContext['lng'] != null) 'lng': widget.customerContext['lng'],
+      };
     }
 
     return LocationFieldWidget(

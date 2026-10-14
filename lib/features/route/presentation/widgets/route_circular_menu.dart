@@ -34,6 +34,7 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
   final bool isMapView;
   final int pendingOfflineCount;
   final bool isSyncing;
+  final double bottomOffset;
 
   const RouteCircularMenu({
     super.key,
@@ -47,6 +48,7 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
     this.isMapView = false,
     this.pendingOfflineCount = 0,
     this.isSyncing = false,
+    this.bottomOffset = 88.0,
   });
 
   @override
@@ -250,8 +252,10 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
           }),
 
           // 3. Center Trigger Floating Action Button
-          Positioned(
-            bottom: 88,
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            bottom: widget.bottomOffset,
             right: 16,
             child: _buildMainFab(isDark),
           ),
@@ -275,18 +279,19 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
         }
 
         // Bố trí các nút theo hình cung quạt (radial arc) với khoảng cách dọc đều đặn
-        // Đặt baseBottom = 158.0 (88 + 56 + 14) để nổi hoàn toàn phía trên thanh Bottom Nav Bar
+        // Đặt baseBottom = widget.bottomOffset + 70.0 để nổi hoàn toàn phía trên FAB chính
         final int invertedIndex = (totalItems - 1) - index;
         const double verticalStep = 56.0;
-        const double baseBottom = 158.0; // Vị trí ngay phía trên FAB chính (88 + 56 + 14)
+        final double baseBottom = widget.bottomOffset + 70.0;
         final double targetBottom = baseBottom + (invertedIndex * verticalStep);
 
         // Độ cong hình cung (arc) vươn sang trái ở các nút giữa
         final double arcCurve = math.sin(invertedIndex / (totalItems - 1) * math.pi);
         final double targetRight = 21.0 + (arcCurve * 22.0);
 
-        // Hiệu ứng mở rộng từ FAB chính (bottom: 88 + 5 = 93) ra vị trí đích
-        final double bottomPos = 93.0 + ((targetBottom - 93.0) * progress);
+        // Hiệu ứng mở rộng từ FAB chính ra vị trí đích
+        final double fabCenterBottom = widget.bottomOffset + 5.0;
+        final double bottomPos = fabCenterBottom + ((targetBottom - fabCenterBottom) * progress);
         final double rightPos = 21.0 + ((targetRight - 21.0) * progress);
 
         return Positioned(

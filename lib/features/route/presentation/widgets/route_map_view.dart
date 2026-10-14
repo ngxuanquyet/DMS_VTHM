@@ -38,8 +38,13 @@ import 'checkin_distance_warning_dialog.dart';
 /// Tự động gọi Goong Trip v2 API (/v2/trip) để vẽ lộ trình vòng lặp tối ưu tránh quay đầu xe.
 class RouteMapView extends ConsumerStatefulWidget {
   final List<DealerEntity> dealers;
+  final ValueChanged<DealerEntity?>? onSelectedDealerChanged;
 
-  const RouteMapView({super.key, required this.dealers});
+  const RouteMapView({
+    super.key,
+    required this.dealers,
+    this.onSelectedDealerChanged,
+  });
 
   @override
   ConsumerState<RouteMapView> createState() => _RouteMapViewState();
@@ -54,16 +59,31 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   DealerEntity? _selectedDealer;
   GoongTrip? _currentTrip;
   List<LatLng> _tripPoints = [];
+  List<DealerEntity> _orderedDealers = [];
 
   List<DealerEntity> get _dealersWithCoords =>
       widget.dealers.where((d) => d.lat != null && d.lng != null).toList();
+
+  List<DealerEntity> get _displayDealers =>
+      _orderedDealers.isNotEmpty ? _orderedDealers : _dealersWithCoords;
 
   @override
   void initState() {
     super.initState();
     if (_dealersWithCoords.isNotEmpty) {
       _selectedDealer = _dealersWithCoords.first;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onSelectedDealerChanged?.call(_selectedDealer);
+        }
+      });
     }
+  }
+
+  @override
+  void dispose() {
+    _controller?.onCircleTapped.remove(_handleCircleTapped);
+    super.dispose();
   }
 
   @override
@@ -71,7 +91,8 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     super.didUpdateWidget(oldWidget);
     if (_selectedDealer != null &&
         !widget.dealers.any((d) => d.id == _selectedDealer!.id)) {
-      _selectedDealer = _dealersWithCoords.isNotEmpty ? _dealersWithCoords.first : null;
+      _selectedDealer = _displayDealers.isNotEmpty ? _displayDealers.first : null;
+      widget.onSelectedDealerChanged?.call(_selectedDealer);
     }
 
     final oldCoordsCount = oldWidget.dealers.where((d) => d.lat != null && d.lng != null).length;
@@ -107,10 +128,22 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       );
 
       if (!mounted) return;
-      if (trip != null && trip.polyline.isNotEmpty) {
+      if (trip != null) {
         _currentTrip = trip;
-        _tripPoints = _decodePolyline(trip.polyline);
-        await _drawTripPolyline();
+        if (trip.polyline.isNotEmpty) {
+          _tripPoints = _decodePolyline(trip.polyline);
+          await _drawTripPolyline();
+        }
+        if (trip.waypointOrder.isNotEmpty) {
+          _orderedDealers = _buildSortedDealers(dealersWithCoords, trip.waypointOrder);
+          if (_selectedDealer != null) {
+            final found = _orderedDealers.where((d) => d.id == _selectedDealer!.id).firstOrNull;
+            if (found != null) {
+              _selectedDealer = found;
+            }
+          }
+          await _drawOverlays();
+        }
       }
     } catch (_) {
       // Bỏ qua lỗi mạng, bản đồ vẫn vẽ ghim bình thường
@@ -119,6 +152,32 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         setState(() => _isLoadingTrip = false);
       }
     }
+  }
+
+  List<DealerEntity> _buildSortedDealers(List<DealerEntity> original, List<int> order) {
+    if (order.isEmpty || original.isEmpty) return original;
+
+    final hasOriginShift = order.contains(original.length) ||
+        (order.length == original.length + 1 && order.first == 0);
+
+    final List<DealerEntity> sorted = [];
+    final used = <int>{};
+
+    for (final rawIdx in order) {
+      final idx = hasOriginShift ? rawIdx - 1 : rawIdx;
+      if (idx >= 0 && idx < original.length && !used.contains(idx)) {
+        sorted.add(original[idx]);
+        used.add(idx);
+      }
+    }
+
+    for (int i = 0; i < original.length; i++) {
+      if (!used.contains(i)) {
+        sorted.add(original[i]);
+      }
+    }
+
+    return sorted;
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -237,9 +296,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       }
 
       // 2. Toàn bộ điểm bán theo màu sắc trạng thái
-      for (final dealer in _dealersWithCoords) {
+      for (final dealer in _displayDealers) {
         final dealerLatLng = LatLng(dealer.lat!, dealer.lng!);
         final isSelected = _selectedDealer?.id == dealer.id;
+        final circleData = <String, dynamic>{'dealerId': dealer.id};
 
         final String pinColorHex;
         switch (dealer.status) {
@@ -266,6 +326,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               circleStrokeColor: pinColorHex,
               circleStrokeOpacity: 0.9,
             ),
+            circleData,
           );
         }
 
@@ -280,6 +341,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
             circleStrokeColor: '#FFFFFF',
             circleStrokeOpacity: 1.0,
           ),
+          circleData,
         );
 
         // Tâm ghim
@@ -290,16 +352,41 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
             circleColor: '#FFFFFF',
             circleOpacity: 1.0,
           ),
+          circleData,
         );
       }
     } catch (_) {}
   }
 
+  void _selectDealer(DealerEntity dealer) {
+    setState(() => _selectedDealer = dealer);
+    widget.onSelectedDealerChanged?.call(dealer);
+    _drawOverlays();
+    _controller?.animateCamera(
+      CameraUpdate.newLatLng(LatLng(dealer.lat!, dealer.lng!)),
+    );
+  }
+
+  void _handleCircleTapped(Circle circle) {
+    final dealerId = circle.data?['dealerId'] as String?;
+    if (dealerId != null) {
+      final found = _displayDealers.where((d) => d.id == dealerId).firstOrNull;
+      if (found != null) {
+        _selectDealer(found);
+        return;
+      }
+    }
+    final geom = circle.options.geometry;
+    if (geom != null) {
+      _handleMapClick(geom);
+    }
+  }
+
   void _handleMapClick(LatLng tappedPoint) {
     DealerEntity? closest;
-    double minDistance = 300; // ngưỡng chạm trong bán kính 300 mét
+    double minDistance = 500; // ngưỡng chạm trong bán kính 500 mét
 
-    for (final dealer in _dealersWithCoords) {
+    for (final dealer in _displayDealers) {
       final dist = Geolocator.distanceBetween(
         tappedPoint.latitude,
         tappedPoint.longitude,
@@ -313,11 +400,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     }
 
     if (closest != null) {
-      setState(() => _selectedDealer = closest);
-      _drawOverlays();
-      _controller?.animateCamera(
-        CameraUpdate.newLatLng(LatLng(closest.lat!, closest.lng!)),
-      );
+      _selectDealer(closest);
     }
   }
 
@@ -461,7 +544,11 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
             target: center,
             zoom: 14.5,
           ),
-          onMapCreated: (controller) => _controller = controller,
+          onMapCreated: (controller) {
+            _controller?.onCircleTapped.remove(_handleCircleTapped);
+            _controller = controller;
+            controller.onCircleTapped.add(_handleCircleTapped);
+          },
           onStyleLoadedCallback: () {
             _styleLoaded = true;
             _drawOverlays();
@@ -574,7 +661,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                       const Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF0284C7)),
                       const SizedBox(width: 6),
                       Text(
-                        'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p',
+                        _orderedDealers.isNotEmpty
+                            ? 'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p (Đã xếp theo đường ngắn nhất)'
+                            : 'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -633,7 +722,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               context,
               _selectedDealer!,
               selectedDistance,
-              dealersWithCoords,
+              _displayDealers,
               isDark,
             ),
           )
@@ -711,7 +800,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '#${dealer.order} • ${dealer.code ?? "KH"}',
+                      '#${currentIndex >= 0 ? (currentIndex + 1).toString().padLeft(2, '0') : dealer.order} • ${dealer.code ?? "KH"}',
                       style: AppTypography.labelSmall(
                         color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                       ).copyWith(fontWeight: FontWeight.w700),
@@ -729,7 +818,11 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 ],
               ),
               InkWell(
-                onTap: () => setState(() => _selectedDealer = null),
+                onTap: () {
+                  setState(() => _selectedDealer = null);
+                  widget.onSelectedDealerChanged?.call(null);
+                  _drawOverlays();
+                },
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
                   padding: const EdgeInsets.all(4.0),
@@ -818,23 +911,14 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               // Nút lùi điểm bán
               IconButton(
                 onPressed: currentIndex > 0
-                    ? () {
-                        setState(() => _selectedDealer = dealersWithCoords[currentIndex - 1]);
-                        _drawOverlays();
-                        _controller?.animateCamera(
-                          CameraUpdate.newLatLng(LatLng(
-                            _selectedDealer!.lat!,
-                            _selectedDealer!.lng!,
-                          )),
-                        );
-                      }
+                    ? () => _selectDealer(dealersWithCoords[currentIndex - 1])
                     : null,
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 15),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
               Text(
-                '${currentIndex + 1}/${dealersWithCoords.length}',
+                '${currentIndex >= 0 ? currentIndex + 1 : 1}/${dealersWithCoords.length}',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -843,17 +927,8 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               ),
               // Nút tiến điểm bán
               IconButton(
-                onPressed: currentIndex < dealersWithCoords.length - 1
-                    ? () {
-                        setState(() => _selectedDealer = dealersWithCoords[currentIndex + 1]);
-                        _drawOverlays();
-                        _controller?.animateCamera(
-                          CameraUpdate.newLatLng(LatLng(
-                            _selectedDealer!.lat!,
-                            _selectedDealer!.lng!,
-                          )),
-                        );
-                      }
+                onPressed: currentIndex >= 0 && currentIndex < dealersWithCoords.length - 1
+                    ? () => _selectDealer(dealersWithCoords[currentIndex + 1])
                     : null,
                 icon: const Icon(Icons.arrow_forward_ios_rounded, size: 15),
                 padding: EdgeInsets.zero,

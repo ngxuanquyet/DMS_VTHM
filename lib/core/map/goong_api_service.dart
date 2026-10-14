@@ -191,8 +191,8 @@ class GoongApiService {
       }
       final firstTrip = trips.first as Map<String, dynamic>?;
       if (firstTrip == null) return null;
-
-      return GoongTrip.fromJson(firstTrip);
+      final rawWaypoints = data['waypoints'] as List<dynamic>?;
+      return GoongTrip.fromJson(firstTrip, rawWaypoints: rawWaypoints);
     } catch (_) {
       return null;
     }

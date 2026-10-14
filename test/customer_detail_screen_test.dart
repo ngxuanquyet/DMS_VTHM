@@ -69,7 +69,12 @@ class MockCustomerRepository implements CustomerRepository {
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async => {};
 
   @override
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async => {};
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  }) async => {};
 
   @override
   Future<bool> deleteCustomer(int id) async => true;

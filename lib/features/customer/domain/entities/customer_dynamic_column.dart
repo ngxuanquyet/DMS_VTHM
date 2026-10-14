@@ -21,7 +21,11 @@ class CustomerDynamicColumn {
     this.options = const [],
   });
 
-  bool get isLocation => inputType.toLowerCase() == 'location';
+  bool get isLocation =>
+      inputType.toLowerCase() == 'location' ||
+      inputType.toLowerCase() == 'address' ||
+      inputType.toLowerCase() == 'dia_chi' ||
+      inputType.toLowerCase() == 'gps';
 
   factory CustomerDynamicColumn.fromJson(Map<String, dynamic> json) {
     List<DynamicFormOption> opts = [];

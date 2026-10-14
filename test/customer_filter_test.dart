@@ -61,7 +61,12 @@ class FakeCustomerRepository implements CustomerRepository {
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async => {};
 
   @override
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async => {};
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  }) async => {};
 
   @override
   Future<bool> deleteCustomer(int id) async => true;
@@ -621,7 +626,8 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Ban đầu chưa lọc: hiển thị tổng số '3 điểm'
       expect(find.text('3 điểm'), findsOneWidget);
@@ -631,7 +637,8 @@ void main() {
       final element = tester.element(find.byType(CustomerScreen));
       final container = ProviderScope.containerOf(element);
       container.read(customerViewModelProvider.notifier).selectRoute('Tuyến Thứ 2 (T2)');
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Đã lọc xong: badge cạnh tiêu đề cập nhật thành '2/3 điểm' và subtitle cập nhật
       expect(find.text('2/3 điểm'), findsOneWidget);
@@ -639,13 +646,15 @@ void main() {
 
       // Tiếp tục lọc sang Tuyến Thứ 3 (T3): cập nhật thành '1/3 điểm'
       container.read(customerViewModelProvider.notifier).selectRoute('Tuyến Thứ 3 (T3)');
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('1/3 điểm'), findsOneWidget);
       expect(find.text('Đang hiển thị 1 trên tổng 3 điểm bán'), findsOneWidget);
 
       // Thiết lập lại bộ lọc: trở lại ban đầu '3 điểm'
       container.read(customerViewModelProvider.notifier).resetFilters();
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('3 điểm'), findsOneWidget);
       expect(find.text('Danh sách phụ trách & định vị'), findsOneWidget);
     });

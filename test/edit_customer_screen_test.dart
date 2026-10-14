@@ -43,7 +43,12 @@ class MockCustomerRepository implements CustomerRepository {
   Future<CustomerEntity> createCustomer(Map<String, dynamic> data) async => mockCustomer;
 
   @override
-  Future<Map<String, dynamic>> uploadCustomerPhoto(String filePath) async =>
+  Future<Map<String, dynamic>> uploadCustomerPhoto(
+    String filePath, {
+    String? locationName,
+    double? lat,
+    double? lng,
+  }) async =>
       {'token': 'test_token'};
 
   @override

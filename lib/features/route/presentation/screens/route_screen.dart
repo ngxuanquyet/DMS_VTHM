@@ -42,6 +42,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   bool _isMapView = false;
+  DealerEntity? _selectedDealerOnMap;
 
   @override
   void initState() {
@@ -805,6 +806,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                       : _isMapView
                           ? RouteMapView(
                               dealers: state.routeDetail?.dealers ?? [],
+                              onSelectedDealerChanged: (dealer) {
+                                if (_selectedDealerOnMap?.id != dealer?.id) {
+                                  setState(() => _selectedDealerOnMap = dealer);
+                                }
+                              },
                             )
                           : RefreshIndicator(
                           color: AppColors.primaryContainer,
@@ -909,11 +915,15 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               onSendOfflineData: _handleSendOfflineData,
               onAddCustomer: _handleAddCustomer,
               onRefreshGps: _handleRefreshGps,
-              onToggleMapView: () => setState(() => _isMapView = !_isMapView),
+              onToggleMapView: () => setState(() {
+                _isMapView = !_isMapView;
+                if (!_isMapView) _selectedDealerOnMap = null;
+              }),
               isSortedByDistance: state.isSortedByDistance,
               isMapView: _isMapView,
               pendingOfflineCount: pendingOfflineCount,
               isSyncing: state.status == RouteStatus.loading,
+              bottomOffset: (_isMapView && _selectedDealerOnMap != null) ? 202.0 : 88.0,
             ),
           ),
         ],
@@ -1048,6 +1058,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
         onTap: () {
           setState(() {
             _isMapView = !_isMapView;
+            if (!_isMapView) _selectedDealerOnMap = null;
           });
         },
         borderRadius: BorderRadius.circular(10),
