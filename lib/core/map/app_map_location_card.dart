@@ -83,7 +83,7 @@ class AppMapLocationCard extends StatefulWidget {
     this.markers = const [],
     this.geofenceRadiusMeters,
     this.showStyleSwitcher = true,
-    this.showCoordinates = true,
+    this.showCoordinates = false,
     this.locateButtonText = 'LẤY VỊ TRÍ HIỆN TẠI',
     this.updateButtonText = 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
     this.onLocationChanged,
@@ -426,17 +426,6 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                                 ).copyWith(fontWeight: FontWeight.w600, height: 1.3),
                               ),
-                              if (widget.showCoordinates && widget.lat != null && widget.lng != null) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Tọa độ: ${widget.lat!.toStringAsFixed(6)}, ${widget.lng!.toStringAsFixed(6)}${widget.accuracyM != null ? ' (±${widget.accuracyM!.toStringAsFixed(1)}m)' : ''}',
-                                  style: AppTypography.bodySmall(
-                                    color: isDark
-                                        ? AppColors.darkOnSurfaceVariant
-                                        : AppColors.onSurfaceVariant,
-                                  ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
-                                ),
-                              ],
                               const SizedBox(height: 2),
                               Text(
                                 'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí',

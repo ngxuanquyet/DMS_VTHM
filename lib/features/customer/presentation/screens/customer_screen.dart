@@ -289,8 +289,8 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
               const Icon(Icons.my_location_rounded, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  'Đã cập nhật vị trí GPS: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}',
+                child: const Text(
+                  'Đã cập nhật vị trí GPS thành công',
                 ),
               ),
             ],

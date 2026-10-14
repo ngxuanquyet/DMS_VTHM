@@ -124,8 +124,7 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
               _detailRow('Số ảnh chụp thực địa', '${visit.photoCount} ảnh'),
               _detailRow('Số biểu mẫu nộp', '${visit.formCount} phiếu'),
               if (visit.checkoutLat != null && visit.checkoutLng != null)
-                _detailRow('Toạ độ Check-out',
-                    '${visit.checkoutLat!.toStringAsFixed(6)}, ${visit.checkoutLng!.toStringAsFixed(6)}'),
+                _detailRow('Vị trí Check-out', 'Đã xác thực vị trí GPS'),
               _detailRow(
                 'Quãng đường đến điểm',
                 visit.travelM == null

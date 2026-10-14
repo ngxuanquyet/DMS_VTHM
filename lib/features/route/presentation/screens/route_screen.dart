@@ -366,8 +366,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Đã định vị thành công: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}',
+          content: const Text(
+            'Đã định vị vị trí hiện tại thành công',
           ),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,

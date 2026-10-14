@@ -295,12 +295,9 @@ class _MarketFormSubmissionDetailScreenState
     final addr = value['address']?.toString();
     final lat = value['lat'];
     final lng = value['lng'];
-    final accuracy = value['accuracy'];
     final isMock = value['mock'] == true;
-
     final numLat = lat is num ? lat.toDouble() : double.tryParse(lat?.toString() ?? '');
     final numLng = lng is num ? lng.toDouble() : double.tryParse(lng?.toString() ?? '');
-    final numAcc = accuracy is num ? accuracy.toDouble() : double.tryParse(accuracy?.toString() ?? '');
 
     return Container(
       width: double.infinity,
@@ -351,20 +348,11 @@ class _MarketFormSubmissionDetailScreenState
                       const Icon(Icons.my_location_rounded, size: 14, color: AppColors.primary),
                       const SizedBox(width: 4),
                       Text(
-                        '${numLat.toStringAsFixed(6)}, ${numLng.toStringAsFixed(6)}',
+                        'Đã xác thực vị trí GPS',
                         style: AppTypography.bodySmall(
                           color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                         ).copyWith(fontWeight: FontWeight.w600),
                       ),
-                      if (numAcc != null) ...[
-                        const SizedBox(width: 4),
-                        Text(
-                          '(±${numAcc.toStringAsFixed(1)} m)',
-                          style: AppTypography.bodySmall(
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                          ).copyWith(fontSize: 11),
-                        ),
-                      ],
                     ],
                   ),
                 ),

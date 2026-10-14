@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/entities/daily_activity_entity.dart';
 
 /// Bottom Sheet hiển thị chi tiết của một hoạt động trong ngày khi bấm vào timeline
@@ -136,10 +137,10 @@ class ActivityDetailSheet extends StatelessWidget {
               ],
 
               if (activity.lat != null && activity.lng != null) ...[
-                _DetailRow(
+                const _DetailRow(
                   icon: Icons.my_location_rounded,
-                  label: 'Toạ độ GPS',
-                  value: '${activity.lat!.toStringAsFixed(6)}, ${activity.lng!.toStringAsFixed(6)} (±5m)',
+                  label: 'Vị trí GPS',
+                  value: 'Đã xác thực vị trí GPS',
                 ),
                 const SizedBox(height: 10),
               ],
@@ -167,60 +168,28 @@ class ActivityDetailSheet extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     itemCount: activity.photos.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) {
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          width: 90,
-                          height: 90,
-                          color: isDark ? Colors.white10 : Colors.black12,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              activity.photos[i].startsWith('http')
-                                  ? Image.network(
-                                      activity.photos[i],
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Center(
-                                        child: Icon(Icons.image_outlined, color: Colors.grey),
-                                      ),
-                                    )
-                                  : Image.file(
-                                      File(activity.photos[i]),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Center(
-                                        child: Icon(Icons.image_outlined, color: Colors.grey),
-                                      ),
-                                    ),
-                              Positioned(
-                                bottom: 4,
-                                left: 4,
-                                right: 4,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'Đóng dấu GPS',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                    itemBuilder: (context, i) => _buildThumbnail(context, activity.photos[i], isDark),
                   ),
                 ),
                 const SizedBox(height: 10),
+              ] else if (activity.type == DailyActivityType.attendanceIn ||
+                  activity.type == DailyActivityType.attendanceOut) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.photo_camera_outlined, size: 16, color: isDark ? Colors.white38 : Colors.black38),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Lượt chấm công này chưa có ảnh chụp',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
               ],
 
               const SizedBox(height: 8),
@@ -271,6 +240,147 @@ class ActivityDetailSheet extends StatelessWidget {
       case DailyActivityType.formSubmission:
         return Icons.assignment_turned_in_rounded;
     }
+  }
+
+  static String _resolvePhotoUrl(String path) {
+    if (path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    try {
+      if (File(path).existsSync()) {
+        return path;
+      }
+    } catch (_) {}
+    final cleanBase = AppConstants.baseUrl.endsWith('/')
+        ? AppConstants.baseUrl.substring(0, AppConstants.baseUrl.length - 1)
+        : AppConstants.baseUrl;
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return '$cleanBase$cleanPath';
+  }
+
+  static void _showFullPhoto(BuildContext context, String rawUrl) {
+    final fullUrl = _resolvePhotoUrl(rawUrl);
+    final isLocal = !fullUrl.startsWith('http://') && !fullUrl.startsWith('https://');
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                color: Colors.black,
+                constraints: const BoxConstraints(maxHeight: 500),
+                child: isLocal
+                    ? Image.file(
+                        File(fullUrl),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+                        ),
+                      )
+                    : Image.network(
+                        fullUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return const SizedBox(
+                            height: 250,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildThumbnail(BuildContext context, String path, bool isDark) {
+    final fullUrl = _resolvePhotoUrl(path);
+    final isLocal = !fullUrl.startsWith('http://') && !fullUrl.startsWith('https://');
+
+    return InkWell(
+      onTap: () => _showFullPhoto(context, path),
+      borderRadius: BorderRadius.circular(10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 90,
+          height: 90,
+          color: isDark ? Colors.white10 : Colors.black12,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              isLocal
+                  ? Image.file(
+                      File(fullUrl),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(Icons.image_outlined, color: Colors.grey),
+                      ),
+                    )
+                  : Image.network(
+                      fullUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(Icons.image_outlined, color: Colors.grey),
+                      ),
+                    ),
+              Positioned(
+                bottom: 4,
+                left: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Đóng dấu GPS',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

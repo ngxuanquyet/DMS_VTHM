@@ -1238,8 +1238,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
                       const SizedBox(height: 3),
                       Text(
                         _currentLat != null
-                            ? _currentLat!.toStringAsFixed(6)
-                            : '(Chưa có vĩ độ)',
+                            ? 'Đã xác thực vị trí'
+                            : '(Chưa có vị trí)',
                         style: AppTypography.bodyMedium(
                           color: _currentLat != null
                               ? (isDark
@@ -1298,8 +1298,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
                       const SizedBox(height: 3),
                       Text(
                         _currentLng != null
-                            ? _currentLng!.toStringAsFixed(6)
-                            : '(Chưa có kinh độ)',
+                            ? 'Đã xác thực vị trí'
+                            : '(Chưa có vị trí)',
                         style: AppTypography.bodyMedium(
                           color: _currentLng != null
                               ? (isDark

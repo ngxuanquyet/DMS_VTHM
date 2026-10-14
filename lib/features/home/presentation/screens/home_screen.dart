@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
@@ -34,6 +35,7 @@ import '../widgets/home_quick_actions.dart';
 import '../../../daily_report/domain/entities/daily_activity_entity.dart';
 import '../../../daily_report/presentation/widgets/daily_activity_timeline_card.dart';
 import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
+import '../../../visit/domain/entities/visit_entity.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -381,41 +383,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                             builder: (context) {
                               final now = DateTime.now();
                               final todayStr = DateFormat('yyyy-MM-dd').format(now);
+                              final routeState = ref.watch(routeViewModelProvider);
 
-                              final activityItems = homeState.dashboard!.recentActivities.map((e) {
-                                final isAttOut = e.title.contains('Ra') || e.title.toLowerCase().contains('ra');
-                                final isVisitIn = e.title.contains('Check-in');
-                                final isVisitOut = e.title.contains('Hoàn thành');
-                                final isPosDecl = e.title.contains('vị trí');
+                              // Bắt đầu từ các hoạt động gần đây của dashboard (nếu có)
+                              final activityItems = <DailyActivityEntity>[];
 
-                                final DailyActivityType type;
-                                if (e.title.contains('Chấm công')) {
-                                  type = isAttOut ? DailyActivityType.attendanceOut : DailyActivityType.attendanceIn;
-                                } else if (isVisitIn) {
-                                  type = DailyActivityType.checkIn;
-                                } else if (isVisitOut) {
-                                  type = DailyActivityType.checkOut;
-                                } else if (isPosDecl) {
-                                  type = DailyActivityType.positionDeclaration;
-                                } else {
-                                  type = DailyActivityType.formSubmission;
+                              if (homeState.dashboard?.recentActivities != null) {
+                                for (final e in homeState.dashboard!.recentActivities) {
+                                  final isAttOut = e.title.contains('Ra') || e.title.toLowerCase().contains('ra');
+                                  final isVisitIn = e.title.contains('Check-in');
+                                  final isVisitOut = e.title.contains('Hoàn thành');
+                                  final isPosDecl = e.title.contains('vị trí');
+
+                                  final DailyActivityType type;
+                                  if (e.title.contains('Chấm công')) {
+                                    type = isAttOut ? DailyActivityType.attendanceOut : DailyActivityType.attendanceIn;
+                                  } else if (isVisitIn) {
+                                    type = DailyActivityType.checkIn;
+                                  } else if (isVisitOut) {
+                                    type = DailyActivityType.checkOut;
+                                  } else if (isPosDecl) {
+                                    type = DailyActivityType.positionDeclaration;
+                                  } else {
+                                    type = DailyActivityType.formSubmission;
+                                  }
+
+                                  activityItems.add(
+                                    DailyActivityEntity(
+                                      id: e.id,
+                                      time: e.time,
+                                      title: e.title,
+                                      subtitle: '${e.highlight} ${e.suffix}'.trim(),
+                                      type: type,
+                                      customerName: e.highlight,
+                                      photos: e.photos,
+                                      lat: e.lat,
+                                      lng: e.lng,
+                                      isHighlight: e.isPrimary,
+                                    ),
+                                  );
                                 }
+                              }
 
-                                return DailyActivityEntity(
-                                  id: e.id,
-                                  time: e.time,
-                                  title: e.title,
-                                  subtitle: '${e.highlight} ${e.suffix}'.trim(),
-                                  type: type,
-                                  customerName: e.highlight,
-                                  photos: e.photos,
-                                  lat: e.lat,
-                                  lng: e.lng,
-                                  isHighlight: e.isPrimary,
-                                );
-                              }).toList();
-
-                              // Hợp nhất tức thời lượt chấm mới từ attendanceState nếu chưa có trong timeline
+                              // 1. Hợp nhất tức thời các lượt chấm công trong ngày từ attState.history
                               for (int i = 0; i < attState.history.length; i++) {
                                 final p = attState.history[i];
                                 final punchAt = p.punchAt;
@@ -425,23 +435,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
                                 if (isToday) {
                                   final punchId = 'att_${p.id > 0 ? p.id : (p.clientUuid.isNotEmpty ? p.clientUuid : i)}';
-                                  final alreadyExists = activityItems.any((a) =>
+                                  String directionLabel = p.directionLabel ?? '';
+                                  if (directionLabel.isEmpty) {
+                                    directionLabel = (p.direction == 'in' || p.directionLabel == 'Vào') ? 'Vào' : 'Ra';
+                                  }
+                                  final isOut = directionLabel == 'Ra' || p.direction == 'out';
+                                  final formattedTime = p.punchAtDateTime != null
+                                      ? DateFormat('HH:mm').format(p.punchAtDateTime!.toLocal())
+                                      : p.timeFormatted;
+                                  final photoUrls = p.photos.map((ph) => ph.getFullUrl(AppConstants.baseUrl)).toList();
+
+                                  final existingIdx = activityItems.indexWhere((a) =>
                                       a.id == punchId ||
-                                      (a.type == DailyActivityType.attendanceIn && a.time == p.timeFormatted) ||
-                                      (a.type == DailyActivityType.attendanceOut && a.time == p.timeFormatted));
+                                      (a.type == DailyActivityType.attendanceIn && a.time == formattedTime) ||
+                                      (a.type == DailyActivityType.attendanceOut && a.time == formattedTime));
 
-                                  if (!alreadyExists) {
-                                    String directionLabel = p.directionLabel ?? '';
-                                    if (directionLabel.isEmpty) {
-                                      directionLabel = (p.direction == 'in' || p.directionLabel == 'Vào') ? 'Vào' : 'Ra';
+                                  if (existingIdx >= 0) {
+                                    // Cập nhật lại ảnh chụp để không bị mất khi xem chi tiết
+                                    if (photoUrls.isNotEmpty) {
+                                      final old = activityItems[existingIdx];
+                                      activityItems[existingIdx] = DailyActivityEntity(
+                                        id: old.id,
+                                        time: formattedTime,
+                                        title: old.title,
+                                        subtitle: old.subtitle,
+                                        type: old.type,
+                                        customerName: old.customerName,
+                                        customerAddress: old.customerAddress,
+                                        photos: photoUrls,
+                                        notes: old.notes,
+                                        lat: old.lat,
+                                        lng: old.lng,
+                                        isHighlight: old.isHighlight,
+                                      );
                                     }
-                                    final isOut = directionLabel == 'Ra' || p.direction == 'out';
-                                    final photoUrls = p.photos.map((ph) => ph.url).whereType<String>().toList();
-
+                                  } else {
                                     activityItems.add(
                                       DailyActivityEntity(
                                         id: punchId,
-                                        time: p.timeFormatted,
+                                        time: formattedTime,
                                         title: 'Chấm công $directionLabel',
                                         subtitle: '${p.geofenceName ?? 'Địa bàn làm việc'} ${p.isOutsideGeofence ? '(Ngoài vùng)' : '(Trong vùng)'}'.trim(),
                                         type: isOut ? DailyActivityType.attendanceOut : DailyActivityType.attendanceIn,
@@ -456,7 +488,153 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                 }
                               }
 
-                              activityItems.sort((a, b) => b.time.compareTo(a.time));
+                              // 2. Hợp nhất tức thời các lượt viếng thăm trong ngày từ routeState (theo từng mốc check-in / check-out)
+                              final visitsToProcess = <VisitEntity>[];
+                              for (final v in routeState.todayVisits) {
+                                if (!v.isCancelled) {
+                                  final vDate = v.visitDate ?? (v.checkinAt != null ? DateFormat('yyyy-MM-dd').format(v.checkinAt!.toLocal()) : '');
+                                  if (vDate.isEmpty || vDate == todayStr) {
+                                    visitsToProcess.add(v);
+                                  }
+                                }
+                              }
+                              if (routeState.activeVisit != null && !routeState.activeVisit!.isCancelled) {
+                                if (!visitsToProcess.any((v) => v.id == routeState.activeVisit!.id)) {
+                                  visitsToProcess.add(routeState.activeVisit!);
+                                }
+                              }
+
+                              for (final v in visitsToProcess) {
+                                // Mốc Check-in của lượt viếng thăm
+                                if (v.checkinAt != null) {
+                                  final checkinTime = DateFormat('HH:mm').format(v.checkinAt!.toLocal());
+                                  final inId = 'visit_in_${v.id > 0 ? v.id : (v.clientUuid ?? v.customerId)}_$checkinTime';
+
+                                  final existingInIdx = activityItems.indexWhere((a) =>
+                                      a.id == inId ||
+                                      (a.type == DailyActivityType.checkIn &&
+                                          (a.customerName == v.customerName || a.title.contains(v.customerName)) &&
+                                          a.time == checkinTime));
+
+                                  if (existingInIdx >= 0) {
+                                    if (v.photoUrls.isNotEmpty) {
+                                      final old = activityItems[existingInIdx];
+                                      activityItems[existingInIdx] = DailyActivityEntity(
+                                        id: old.id,
+                                        time: old.time,
+                                        title: old.title,
+                                        subtitle: old.subtitle,
+                                        type: old.type,
+                                        customerName: v.customerName,
+                                        customerAddress: v.customerAddress ?? old.customerAddress,
+                                        photos: v.photoUrls,
+                                        notes: v.closedNote ?? old.notes,
+                                        lat: v.checkoutLat ?? old.lat,
+                                        lng: v.checkoutLng ?? old.lng,
+                                        isHighlight: old.isHighlight,
+                                      );
+                                    }
+                                  } else {
+                                    activityItems.add(
+                                      DailyActivityEntity(
+                                        id: inId,
+                                        time: checkinTime,
+                                        title: v.isOpen ? 'Đang viếng thăm: ${v.customerName}' : 'Check-in: ${v.customerName}',
+                                        subtitle: v.customerAddress ?? (v.isOnRoute ? '(Trong tuyến)' : '(Ngoài tuyến)'),
+                                        type: DailyActivityType.checkIn,
+                                        customerName: v.customerName,
+                                        customerAddress: v.customerAddress,
+                                        photos: v.photoUrls,
+                                        notes: v.closedNote,
+                                        lat: v.checkoutLat,
+                                        lng: v.checkoutLng,
+                                        isHighlight: v.isOpen,
+                                      ),
+                                    );
+                                  }
+                                }
+
+                                // Mốc Hoàn thành (Check-out) của lượt viếng thăm
+                                if (v.checkoutAt != null) {
+                                  final checkoutTime = DateFormat('HH:mm').format(v.checkoutAt!.toLocal());
+                                  final outId = 'visit_out_${v.id > 0 ? v.id : (v.clientUuid ?? v.customerId)}_$checkoutTime';
+
+                                  final existingOutIdx = activityItems.indexWhere((a) =>
+                                      a.id == outId ||
+                                      (a.type == DailyActivityType.checkOut &&
+                                          (a.customerName == v.customerName || a.title.contains(v.customerName)) &&
+                                          a.time == checkoutTime));
+
+                                  final durationText = v.durationSeconds != null ? ' • ${(v.durationSeconds! / 60).round()}p' : '';
+                                  final resultText = v.visitResult == 'closed' ? '(Đóng cửa)' : '(Mở cửa)';
+
+                                  if (existingOutIdx >= 0) {
+                                    if (v.photoUrls.isNotEmpty) {
+                                      final old = activityItems[existingOutIdx];
+                                      activityItems[existingOutIdx] = DailyActivityEntity(
+                                        id: old.id,
+                                        time: old.time,
+                                        title: old.title,
+                                        subtitle: old.subtitle,
+                                        type: old.type,
+                                        customerName: v.customerName,
+                                        customerAddress: v.customerAddress ?? old.customerAddress,
+                                        photos: v.photoUrls,
+                                        notes: v.closedNote ?? old.notes,
+                                        lat: v.checkoutLat ?? old.lat,
+                                        lng: v.checkoutLng ?? old.lng,
+                                        isHighlight: false,
+                                      );
+                                    }
+                                  } else {
+                                    activityItems.add(
+                                      DailyActivityEntity(
+                                        id: outId,
+                                        time: checkoutTime,
+                                        title: 'Hoàn thành: ${v.customerName}',
+                                        subtitle: 'Kết quả: $resultText$durationText',
+                                        type: DailyActivityType.checkOut,
+                                        customerName: v.customerName,
+                                        customerAddress: v.customerAddress,
+                                        photos: v.photoUrls,
+                                        notes: v.closedNote,
+                                        lat: v.checkoutLat,
+                                        lng: v.checkoutLng,
+                                        isHighlight: false,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+
+                              // 3. Sắp xếp toàn bộ hoạt động theo đúng tiến trình mốc thời gian trong ngày (chronological order)
+                              int parseTimeToMinutes(String timeStr) {
+                                try {
+                                  final clean = timeStr.trim();
+                                  final parts = clean.split(':');
+                                  if (parts.length >= 2) {
+                                    final h = int.tryParse(parts[0]) ?? 0;
+                                    final m = int.tryParse(parts[1]) ?? 0;
+                                    return h * 60 + m;
+                                  }
+                                } catch (_) {}
+                                return 0;
+                              }
+
+                              activityItems.sort((a, b) {
+                                final mA = parseTimeToMinutes(a.time);
+                                final mB = parseTimeToMinutes(b.time);
+                                if (mA != mB) {
+                                  return mA.compareTo(mB);
+                                }
+                                if (a.type == DailyActivityType.checkIn && b.type == DailyActivityType.checkOut) {
+                                  return -1;
+                                }
+                                if (a.type == DailyActivityType.checkOut && b.type == DailyActivityType.checkIn) {
+                                  return 1;
+                                }
+                                return 0;
+                              });
 
                               return DailyActivityTimelineCard(
                                 title: 'Dòng thời gian hôm nay',

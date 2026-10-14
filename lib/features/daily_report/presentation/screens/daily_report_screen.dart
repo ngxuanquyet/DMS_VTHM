@@ -544,8 +544,7 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
                 id: 'decl-${dec.clientUuid}',
                 time: DateFormat('HH:mm').format(dt),
                 title: 'Khai báo vị trí: ${dec.reasonDisplay}',
-                subtitle: dec.address ??
-                    'Toạ độ: ${dec.lat.toStringAsFixed(4)}, ${dec.lng.toStringAsFixed(4)}',
+                subtitle: dec.address ?? 'Đã xác thực vị trí GPS',
                 type: DailyActivityType.positionDeclaration,
                 notes: dec.note,
                 lat: dec.lat,

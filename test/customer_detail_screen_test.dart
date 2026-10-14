@@ -159,7 +159,7 @@ void main() {
     expect(find.text('Số 123 Đường Cầu Diễn, Bắc Từ Liêm, Hà Nội'), findsOneWidget);
     expect(find.text('Phúc Diễn'), findsOneWidget);
     expect(find.text('Hà Nội'), findsOneWidget);
-    expect(find.text('21.04560, 105.76540'), findsOneWidget);
+    expect(find.text('Đã ghim vị trí'), findsOneWidget);
     expect(find.text('Bán kính: 60m'), findsOneWidget);
 
     // Verify Dynamic fields

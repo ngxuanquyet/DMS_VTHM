@@ -38,7 +38,7 @@ class EditCustomerScreen extends ConsumerStatefulWidget {
     this.onSave,
   });
 
-  /// Phương thức điều hướng mở màn hình EditCustomerScreen
+  /// Phương thức điều hướng mở màn hình EditCustomerScreen (Ẩn bottom bar nav bằng rootNavigator: true)
   static Future<bool?> open(
     BuildContext context, {
     required CustomerEntity customer,
@@ -46,7 +46,7 @@ class EditCustomerScreen extends ConsumerStatefulWidget {
     List<CustomerDynamicColumn> dynamicColumns = const [],
     Future<void> Function(Map<String, dynamic> changes)? onSave,
   }) {
-    return Navigator.of(context).push<bool>(
+    return Navigator.of(context, rootNavigator: true).push<bool>(
       MaterialPageRoute(
         builder: (_) => EditCustomerScreen(
           customer: customer,
@@ -727,23 +727,16 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // 4. Trường mở rộng động (Dynamic Fields) - Chỉ hiển thị khi có trường tùy biến thực sự
-                  if (_dynamicControllers.isNotEmpty) ...[
-                    _buildSectionHeader(
-                      icon: Icons.dynamic_feed_rounded,
-                      title: '4. Trường thông tin mở rộng',
-                      badge: '${_dynamicControllers.length} trường',
-                      isDark: isDark,
-                    ),
-                    const SizedBox(height: 12),
+                  // Các trường mở rộng động (Dynamic Fields) - Vẽ trực tiếp ra ngoài layout, bỏ hẳn card
+                  if (_dynamicControllers.isNotEmpty || _dynamicLocationValues.isNotEmpty) ...[
                     _buildDynamicFieldsCard(isDark),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
                   ],
 
-                  // 5. Hình ảnh điểm bán (photo_tokens)
+                  // 4. Hình ảnh điểm bán (photo_tokens)
                   _buildSectionHeader(
                     icon: Icons.photo_library_outlined,
-                    title: _dynamicControllers.isNotEmpty ? '5. Hình ảnh điểm bán' : '4. Hình ảnh điểm bán',
+                    title: '4. Hình ảnh điểm bán',
                     badge: '${_photos.length}/10 ảnh',
                     isDark: isDark,
                   ),
@@ -753,30 +746,33 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
               ),
             ),
 
-            // Bottom Sticky Action Button
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurface : Colors.white,
-                border: Border(
-                  top: BorderSide(
-                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                    width: 0.8,
+            // Bottom Sticky Action Button (Ẩn bottom bar nav nên dùng SafeArea để tránh sát mép màn hình)
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurface : Colors.white,
+                  border: Border(
+                    top: BorderSide(
+                      color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                      width: 0.8,
+                    ),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      offset: const Offset(0, -2),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    offset: const Offset(0, -2),
-                    blurRadius: 6,
-                  ),
-                ],
-              ),
-              child: AppButton(
-                text: 'CẬP NHẬT THÔNG TIN ĐIỂM BÁN',
-                isLoading: _isSaving,
-                icon: Icons.check_circle_rounded,
-                onPressed: _isSaving ? null : _handleSave,
+                child: AppButton(
+                  text: 'CẬP NHẬT THÔNG TIN ĐIỂM BÁN',
+                  isLoading: _isSaving,
+                  icon: Icons.check_circle_rounded,
+                  onPressed: _isSaving ? null : _handleSave,
+                ),
               ),
             ),
           ],
@@ -1320,48 +1316,12 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         .toList();
 
     if (_dynamicControllers.isEmpty && _dynamicLocationValues.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.darkSurfaceContainerLowest
-              : AppColors.surfaceContainerLowest,
-          borderRadius: AppRadius.roundedMd,
-          border: Border.all(
-            color: isDark
-                ? AppColors.darkOutlineVariant
-                : AppColors.outlineVariant,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            'Không có trường thông tin mở rộng.',
-            style: AppTypography.bodySmall(
-              color: isDark
-                  ? AppColors.darkOnSurfaceVariant
-                  : AppColors.onSurfaceVariant,
-            ),
-          ),
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.darkSurfaceContainerLowest
-            : AppColors.surfaceContainerLowest,
-        borderRadius: AppRadius.roundedMd,
-        border: Border.all(
-          color: isDark
-              ? AppColors.darkOutlineVariant
-              : AppColors.outlineVariant,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           ..._dynamicLocationValues.entries.map((entry) {
             final key = entry.key;
             final locVal = entry.value;
@@ -1577,20 +1537,27 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
             );
           }
 
+          final isPhone = key.toLowerCase().contains('phone') ||
+              key.toLowerCase().contains('dien_thoai') ||
+              key.toLowerCase().contains('sdt') ||
+              label.toLowerCase().contains('điện thoại') ||
+              label.toLowerCase().contains('sđt');
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: AppTextField(
               label: label,
               hintText: 'Nhập $label...',
               controller: controller,
+              keyboardType: isPhone ? TextInputType.phone : null,
+              prefixIcon: isPhone ? const Icon(Icons.phone_outlined, size: 20) : null,
               enableVoiceInput: true,
             ),
           );
         }),
       ],
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildPhotosSection(bool isDark) {
     return Container(

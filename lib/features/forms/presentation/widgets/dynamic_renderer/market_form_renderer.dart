@@ -686,6 +686,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final initial = _answers[code]?.toString() ?? '';
     final controller = _getController(code, initial);
 
+    final isPhone = !isMultiline && (code.toLowerCase().contains('phone') ||
+        code.toLowerCase().contains('dien_thoai') ||
+        code.toLowerCase().contains('sdt') ||
+        block.resolved.label.toLowerCase().contains('điện thoại') ||
+        block.resolved.label.toLowerCase().contains('sđt'));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -696,7 +702,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           readOnly: isLocked,
           maxLines: isMultiline ? 4 : 1,
           minLines: isMultiline ? 3 : 1,
-          keyboardType: isMultiline ? TextInputType.multiline : TextInputType.text,
+          keyboardType: isMultiline
+              ? TextInputType.multiline
+              : (isPhone ? TextInputType.phone : TextInputType.text),
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
           ),

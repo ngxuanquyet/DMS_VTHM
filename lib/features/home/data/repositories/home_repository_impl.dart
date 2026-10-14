@@ -271,8 +271,11 @@ class HomeRepositoryImpl implements HomeRepository {
       final rawPhotos = punch['photos'];
       if (rawPhotos is List) {
         for (final p in rawPhotos) {
-          if (p is Map && p['url'] != null) {
-            photoUrls.add(p['url'].toString());
+          if (p is Map) {
+            final u = p['url']?.toString() ?? p['file_path']?.toString() ?? p['path']?.toString();
+            if (u != null && u.isNotEmpty) photoUrls.add(u);
+          } else if (p is String && p.isNotEmpty) {
+            photoUrls.add(p);
           }
         }
       }
@@ -329,6 +332,9 @@ class HomeRepositoryImpl implements HomeRepository {
             highlight: v.customerName,
             suffix: v.isOnRoute ? '(Trong tuyến)' : '(Ngoài tuyến)',
             isPrimary: false,
+            photos: v.photoUrls,
+            lat: v.checkoutLat,
+            lng: v.checkoutLng,
           ),
         );
       }
@@ -341,6 +347,9 @@ class HomeRepositoryImpl implements HomeRepository {
             highlight: v.customerName,
             suffix: v.visitResult == 'closed' ? '(Đóng cửa)' : '(Mở cửa)',
             isPrimary: true,
+            photos: v.photoUrls,
+            lat: v.checkoutLat,
+            lng: v.checkoutLng,
           ),
         );
       }

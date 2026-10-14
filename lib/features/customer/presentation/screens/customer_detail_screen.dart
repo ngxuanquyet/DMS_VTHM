@@ -904,7 +904,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Tọa độ GPS',
+                    'Vị trí GPS',
                     style: AppTypography.bodySmall(
                       color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                     ),
@@ -912,10 +912,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   const SizedBox(height: 3),
                   Text(
                     hasGps
-                        ? '${_customer.lat!.toStringAsFixed(5)}, ${_customer.lng!.toStringAsFixed(5)}'
+                        ? 'Đã ghim vị trí'
                         : 'Chưa cập nhật GPS',
                     style: TextStyle(
-                      fontFamily: 'monospace',
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                       color: hasGps

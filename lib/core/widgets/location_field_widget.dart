@@ -409,7 +409,6 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     final hasCoords = _hasCoords;
     final lat = _lat;
     final lng = _lng;
-    final accuracy = _accuracy;
 
     return Container(
       width: double.infinity,
@@ -921,20 +920,11 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       const Icon(Icons.location_on, size: 16, color: AppColors.primary),
                       const SizedBox(width: 4),
                       Text(
-                        '${lat!.toStringAsFixed(6)}, ${lng!.toStringAsFixed(6)}',
+                        'Đã định vị vị trí',
                         style: AppTypography.bodySmall(
                           color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                         ).copyWith(fontWeight: FontWeight.w600),
                       ),
-                      if (accuracy != null) ...[
-                        const SizedBox(width: 4),
-                        Text(
-                          '(±${accuracy.toStringAsFixed(1)} m)',
-                          style: AppTypography.bodySmall(
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                          ).copyWith(fontSize: 11),
-                        ),
-                      ],
                       if (_isMock) ...[
                         const SizedBox(width: 6),
                         Container(
@@ -956,7 +946,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       const SizedBox(width: 6),
                       // Nút mở Google Maps (§5)
                       InkWell(
-                        onTap: () => _openGoogleMaps(lat, lng),
+                        onTap: () => _openGoogleMaps(lat!, lng!),
                         borderRadius: BorderRadius.circular(4),
                         child: const Padding(
                           padding: EdgeInsets.all(2.0),

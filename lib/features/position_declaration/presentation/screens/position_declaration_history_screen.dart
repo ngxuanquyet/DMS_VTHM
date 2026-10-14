@@ -518,7 +518,7 @@ class _PositionDeclarationHistoryScreenState
                       child: Text(
                         (item.address != null && item.address!.isNotEmpty)
                             ? item.address!
-                            : 'Toạ độ: ${item.lat.toStringAsFixed(6)}, ${item.lng.toStringAsFixed(6)}',
+                            : 'Đã xác thực vị trí GPS',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -826,7 +826,7 @@ class _PositionDeclarationHistoryScreenState
               if (item.note != null && item.note!.isNotEmpty)
                 _buildDetailRow('Ghi chú', item.note!),
               _buildDetailRow(
-                  'Toạ độ GPS', '${item.lat.toStringAsFixed(6)}, ${item.lng.toStringAsFixed(6)}'),
+                  'Vị trí GPS', 'Đã xác thực vị trí GPS'),
               if (item.accuracyM != null)
                 _buildDetailRow(
                     'Độ chính xác GPS', '±${item.accuracyM!.toStringAsFixed(1)} mét'),

@@ -123,13 +123,21 @@ class VisitEntity {
   factory VisitEntity.fromJson(Map<String, dynamic> json) {
     DateTime? parseDateTime(dynamic val) {
       if (val == null) return null;
-      final str = val.toString().trim();
-      if (str.isEmpty) return null;
+      var str = val.toString().trim();
+      if (str.isEmpty || str == 'null') return null;
       try {
-        final normalized = str.replaceAllMapped(RegExp(r'\s+([\+\-]\d{2})'), (m) => m[1]!);
-        return DateTime.parse(normalized).toLocal();
+        str = str.replaceAll(' ', 'T');
+        if (RegExp(r'[\+\-]\d{2}$').hasMatch(str)) {
+          str = '$str:00';
+        }
+        return DateTime.parse(str).toLocal();
       } catch (_) {
-        return null;
+        try {
+          final cleanIso = str.replaceAll('+07', '+07:00').replaceAll('-07', '-07:00');
+          return DateTime.parse(cleanIso).toLocal();
+        } catch (_) {
+          return null;
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/map/goong_api_service.dart';
 import '../../../core/map/goong_config.dart';
 import '../../../core/map/goong_models.dart';
@@ -47,6 +48,32 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
       widget.field.code == 'address' ||
       widget.field.code == 'delivery_address' ||
       widget.field.label.toLowerCase().contains('địa chỉ');
+
+  bool get _isPhoneField {
+    final code = widget.field.code.toLowerCase();
+    final label = widget.field.label.toLowerCase();
+    return code == 'phone' ||
+        code == 'sdt' ||
+        code == 'tel' ||
+        code == 'telephone' ||
+        code == 'mobile' ||
+        code == 'contact_phone' ||
+        code.contains('phone') ||
+        code.contains('dien_thoai') ||
+        code.contains('so_dien_thoai') ||
+        label.contains('điện thoại') ||
+        label.contains('sđt') ||
+        label.contains('số điện thoại') ||
+        label.contains('phone');
+  }
+
+  bool get _isEmailField {
+    final code = widget.field.code.toLowerCase();
+    final label = widget.field.label.toLowerCase();
+    return code == 'email' ||
+        code.contains('email') ||
+        label.contains('email');
+  }
 
   @override
   void initState() {
@@ -192,6 +219,19 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
               focusNode: _focusNode,
               controller: _controller,
               readOnly: widget.field.isReadOnly,
+              keyboardType: _isPhoneField
+                  ? TextInputType.phone
+                  : (_isEmailField
+                      ? TextInputType.emailAddress
+                      : (_isAddressField
+                          ? TextInputType.streetAddress
+                          : TextInputType.text)),
+              inputFormatters: _isPhoneField
+                  ? [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d+ ()-]')),
+                    ]
+                  : null,
+              textInputAction: TextInputAction.next,
               onChanged: (val) {
                 // Không gọi trim() ở đây để cho phép người dùng gõ dấu space bình thường
                 widget.onChanged(val.isNotEmpty ? val : null);
@@ -201,13 +241,20 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
                 color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
               ),
               decoration: InputDecoration(
-                hintText: widget.field.placeholder ?? 'Nhập ${widget.field.label.toLowerCase()}...',
+                hintText: widget.field.placeholder ??
+                    (_isPhoneField
+                        ? 'Nhập số điện thoại...'
+                        : 'Nhập ${widget.field.label.toLowerCase()}...'),
                 hintStyle: AppTypography.bodySmall(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
                 ),
                 prefixText: widget.field.prefixText != null ? '${widget.field.prefixText} ' : null,
                 suffixText: widget.field.suffixText,
-                prefixIcon: const Icon(Icons.edit_note_rounded, size: 18),
+                prefixIcon: _isPhoneField
+                    ? const Icon(Icons.phone_outlined, size: 18)
+                    : (_isEmailField
+                        ? const Icon(Icons.email_outlined, size: 18)
+                        : const Icon(Icons.edit_note_rounded, size: 18)),
                 suffixIcon: !widget.field.isReadOnly
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
