@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/map/app_map_location_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -86,13 +85,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   late final TextEditingController _emailController;
   late final TextEditingController _addressController;
 
-  // 3. GPS Location State (Được quản lý qua bản đồ tương tác AppMapLocationCard)
-  // GHI CHÚ: Bán kính Geofence đã được loại bỏ hoàn toàn theo yêu cầu nghiệp vụ
-  // Nhân viên không được phép can thiệp / chỉnh sửa giá trị này
-  double? _currentLat;
-  double? _currentLng;
-
-  // 4. Dynamic fields controllers
+  // 3. Dynamic fields controllers
   final Map<String, TextEditingController> _dynamicControllers = {};
   // 4b. Dynamic location values (Spec 13/10/2026: input_type = "location")
   final Map<String, Map<String, dynamic>?> _dynamicLocationValues = {};
@@ -170,9 +163,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     );
     _emailController = TextEditingController(text: c.email ?? '');
     _addressController = TextEditingController(text: c.address);
-
-    _currentLat = c.lat;
-    _currentLng = c.lng;
 
     // Initialize photo list from existing customer entity
     _photos = List<String>.from(c.photoUrls);
@@ -702,41 +692,16 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     maxLines: 2,
                     prefixIcon: const Icon(Icons.place_outlined, size: 18),
                   ),
-                  const SizedBox(height: 24),
-
-                  // 3. Bản đồ vị trí điểm bán (Chỉ xem vị trí, hiện tại bỏ sửa lat và lng)
-                  _buildSectionHeader(
-                    icon: Icons.map_rounded,
-                    title: '3. Vị trí trên bản đồ',
-                    badge: 'Chỉ xem',
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  AppMapLocationCard(
-                    title: 'Vị trí điểm bán trên bản đồ',
-                    lat: _currentLat,
-                    lng: _currentLng,
-                    isReadOnly: true, // 🔴 Hiện tại bỏ sửa lat và lng: chỉ xem bản đồ, không sửa tọa độ
-                    initialAddress: _addressController.text.trim().isNotEmpty
-                        ? _addressController.text.trim()
-                        : null,
-                    showCoordinates: false, // Ẩn thông số kinh / vĩ độ dạng chữ text
-                    showStyleSwitcher: true, // Cho phép chuyển đổi xem Vệ tinh / Đường phố
-                    mapHeight: 250,
-                    zoom: 16.5,
-                  ),
-                  const SizedBox(height: 24),
-
                   // Các trường mở rộng động (Dynamic Fields) - Vẽ trực tiếp ra ngoài layout, bỏ hẳn card
                   if (_dynamicControllers.isNotEmpty || _dynamicLocationValues.isNotEmpty) ...[
                     _buildDynamicFieldsCard(isDark),
                     const SizedBox(height: 12),
                   ],
 
-                  // 4. Hình ảnh điểm bán (photo_tokens)
+                  // 3. Hình ảnh điểm bán (photo_tokens)
                   _buildSectionHeader(
                     icon: Icons.photo_library_outlined,
-                    title: '4. Hình ảnh điểm bán',
+                    title: '3. Hình ảnh điểm bán',
                     badge: '${_photos.length}/10 ảnh',
                     isDark: isDark,
                   ),
