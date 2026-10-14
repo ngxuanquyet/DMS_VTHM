@@ -323,14 +323,37 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final lngVal = val['lng'];
         final addrVal = val['address']?.toString();
 
-        // Chỉ có address hoặc chỉ một nửa toạ độ (chưa có toạ độ GPS)
+        final inputType = block.resolved.inputType.toLowerCase();
+        final isPureAddressField = inputType == 'address' ||
+            inputType == 'dia_chi' ||
+            code == 'address' ||
+            code == 'dia_chi' ||
+            code == 'dia_chi_giao_dich' ||
+            label.toLowerCase().contains('địa chỉ');
+
+        // Chỉ có address hoặc chỉ một nửa toạ độ
         if (latVal == null || lngVal == null) {
-          if (addrVal != null && addrVal.trim().isNotEmpty) {
-            newErrors[code] = '$label cần có toạ độ GPS — bấm "Lấy vị trí".';
-          } else if (block.required) {
-            newErrors[code] = '$label không được để trống.';
+          if (isPureAddressField) {
+            // Đối với field địa chỉ trong form động: luôn cho phép nhập/sửa địa chỉ mà không bắt buộc toạ độ GPS
+            if (addrVal != null && addrVal.trim().isNotEmpty) {
+              final maxLen = block.resolved.validation?.maxLength ?? 500;
+              if (addrVal.trim().length > maxLen) {
+                newErrors[code] = '$label không được vượt quá $maxLen ký tự.';
+              }
+              continue;
+            } else if (block.required) {
+              newErrors[code] = '$label không được để trống.';
+              continue;
+            }
+          } else {
+            // Đối với trường vị trí / toạ độ kho / GPS
+            if (addrVal != null && addrVal.trim().isNotEmpty) {
+              newErrors[code] = '$label cần có toạ độ GPS — bấm "Lấy vị trí".';
+            } else if (block.required) {
+              newErrors[code] = '$label không được để trống.';
+            }
+            continue;
           }
-          continue;
         }
 
         final numLat = latVal is num ? latVal : double.tryParse(latVal.toString());

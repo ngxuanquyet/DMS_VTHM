@@ -105,8 +105,11 @@ void main() {
     expect(find.text('Sửa thông tin điểm bán'), findsOneWidget);
     expect(find.text('VTHM-001 • Đại lý Tạp Hóa Minh Anh'), findsOneWidget);
 
-    // 2. Phải có AppMapLocationCard
-    expect(find.byType(AppMapLocationCard), findsOneWidget);
+    // 2. Phải có AppMapLocationCard và ở chế độ isReadOnly (hiện tại bỏ sửa lat và lng)
+    final mapCard = tester.widget<AppMapLocationCard>(find.byType(AppMapLocationCard));
+    expect(mapCard.isReadOnly, isTrue);
+    expect(find.text('LẤY VỊ TRÍ HIỆN TẠI'), findsNothing);
+    expect(find.text('CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI'), findsNothing);
 
     // 3. Không được hiển thị chuỗi text thông số tọa độ kinh/vĩ độ dạng chữ
     expect(find.textContaining('Tọa độ:'), findsNothing);

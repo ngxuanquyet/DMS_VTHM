@@ -896,6 +896,34 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             }
           }
 
+          // 🔴 Bổ sung các trường thông tin mở rộng (động) từ meta.dynamicColumns nếu schema chưa có
+          if (meta.dynamicColumns.isNotEmpty) {
+            for (final col in meta.dynamicColumns) {
+              final colCode = col.code.toLowerCase().trim();
+              if (colCode == 'region_name' || colCode == 'status' || colCode == 'is_active' || colCode == 'code' || colCode == 'id') {
+                continue;
+              }
+              final exists = fields.any((f) =>
+                  f.code.toLowerCase() == colCode ||
+                  (col.legacyKey != null && f.code.toLowerCase() == col.legacyKey!.toLowerCase()) ||
+                  f.code.toLowerCase() == 'mw_$colCode' ||
+                  f.code.toLowerCase().replaceFirst('mw_', '') == colCode.replaceFirst('mw_', ''));
+              if (!exists) {
+                fields.add(
+                  DynamicFormField(
+                    code: col.code,
+                    label: col.label,
+                    type: DynamicFormFieldType.fromString(col.inputType),
+                    isRequired: col.required,
+                    isReadOnly: col.readOnly,
+                    options: col.options,
+                    section: 'Thông tin mở rộng (Động)',
+                  ),
+                );
+              }
+            }
+          }
+
           // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
           for (int i = 0; i < fields.length; i++) {
             final cleaned = fields[i].label

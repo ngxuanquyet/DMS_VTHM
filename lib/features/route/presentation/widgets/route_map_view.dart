@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -91,11 +92,15 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     super.didUpdateWidget(oldWidget);
     if (_selectedDealer != null &&
         !widget.dealers.any((d) => d.id == _selectedDealer!.id)) {
-      _selectedDealer = _displayDealers.isNotEmpty ? _displayDealers.first : null;
+      _selectedDealer = _displayDealers.isNotEmpty
+          ? _displayDealers.first
+          : null;
       widget.onSelectedDealerChanged?.call(_selectedDealer);
     }
 
-    final oldCoordsCount = oldWidget.dealers.where((d) => d.lat != null && d.lng != null).length;
+    final oldCoordsCount = oldWidget.dealers
+        .where((d) => d.lat != null && d.lng != null)
+        .length;
     final newCoordsCount = _dealersWithCoords.length;
     if (oldCoordsCount != newCoordsCount && _styleLoaded) {
       _drawOverlays();
@@ -112,7 +117,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
 
     final origin = livePoint != null
         ? GoongLatLng(livePoint.lat, livePoint.lng)
-        : GoongLatLng(dealersWithCoords.first.lat!, dealersWithCoords.first.lng!);
+        : GoongLatLng(
+            dealersWithCoords.first.lat!,
+            dealersWithCoords.first.lng!,
+          );
 
     final waypoints = dealersWithCoords
         .map((d) => GoongLatLng(d.lat!, d.lng!))
@@ -135,9 +143,14 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           await _drawTripPolyline();
         }
         if (trip.waypointOrder.isNotEmpty) {
-          _orderedDealers = _buildSortedDealers(dealersWithCoords, trip.waypointOrder);
+          _orderedDealers = _buildSortedDealers(
+            dealersWithCoords,
+            trip.waypointOrder,
+          );
           if (_selectedDealer != null) {
-            final found = _orderedDealers.where((d) => d.id == _selectedDealer!.id).firstOrNull;
+            final found = _orderedDealers
+                .where((d) => d.id == _selectedDealer!.id)
+                .firstOrNull;
             if (found != null) {
               _selectedDealer = found;
             }
@@ -154,10 +167,14 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     }
   }
 
-  List<DealerEntity> _buildSortedDealers(List<DealerEntity> original, List<int> order) {
+  List<DealerEntity> _buildSortedDealers(
+    List<DealerEntity> original,
+    List<int> order,
+  ) {
     if (order.isEmpty || original.isEmpty) return original;
 
-    final hasOriginShift = order.contains(original.length) ||
+    final hasOriginShift =
+        order.contains(original.length) ||
         (order.length == original.length + 1 && order.first == 0);
 
     final List<DealerEntity> sorted = [];
@@ -453,24 +470,26 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     final livePoint = ref.read(currentPointProvider).value;
     if (livePoint != null) {
       _controller?.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(livePoint.lat, livePoint.lng),
-          16.0,
-        ),
+        CameraUpdate.newLatLngZoom(LatLng(livePoint.lat, livePoint.lng), 16.0),
       );
     } else {
       ref.read(locationServiceProvider).checkAndGetLocation(context);
     }
   }
 
-  Future<void> _openDirections(BuildContext context, DealerEntity dealer) async {
+  Future<void> _openDirections(
+    BuildContext context,
+    DealerEntity dealer,
+  ) async {
     final hasGps = dealer.lat != null && dealer.lng != null;
     final hasAddress = dealer.address.trim().isNotEmpty;
 
     if (!hasGps && !hasAddress) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Điểm bán chưa cập nhật toạ độ GPS hoặc địa chỉ để chỉ đường'),
+          content: Text(
+            'Điểm bán chưa cập nhật toạ độ GPS hoặc địa chỉ để chỉ đường',
+          ),
           backgroundColor: AppColors.error,
         ),
       );
@@ -514,14 +533,19 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     } else if (livePoint != null) {
       center = LatLng(livePoint.lat, livePoint.lng);
     } else if (dealersWithCoords.isNotEmpty) {
-      center = LatLng(dealersWithCoords.first.lat!, dealersWithCoords.first.lng!);
+      center = LatLng(
+        dealersWithCoords.first.lat!,
+        dealersWithCoords.first.lng!,
+      );
     } else {
       center = const LatLng(21.028511, 105.804817);
     }
 
     // Khoảng cách tới điểm bán đang chọn
     double? selectedDistance;
-    if (livePoint != null && _selectedDealer?.lat != null && _selectedDealer?.lng != null) {
+    if (livePoint != null &&
+        _selectedDealer?.lat != null &&
+        _selectedDealer?.lng != null) {
       selectedDistance = Geolocator.distanceBetween(
         livePoint.lat,
         livePoint.lng,
@@ -530,9 +554,15 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       );
     }
 
-    final pendingCount = widget.dealers.where((d) => d.status == DealerVisitStatus.pending).length;
-    final inProgressCount = widget.dealers.where((d) => d.status == DealerVisitStatus.inProgress).length;
-    final completedCount = widget.dealers.where((d) => d.status == DealerVisitStatus.completed).length;
+    final pendingCount = widget.dealers
+        .where((d) => d.status == DealerVisitStatus.pending)
+        .length;
+    final inProgressCount = widget.dealers
+        .where((d) => d.status == DealerVisitStatus.inProgress)
+        .length;
+    final completedCount = widget.dealers
+        .where((d) => d.status == DealerVisitStatus.completed)
+        .length;
 
     return Stack(
       children: [
@@ -540,10 +570,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         MapLibreMap(
           key: ValueKey('maplibre_route_${_currentStyle.styleName}'),
           styleString: _currentStyle.url,
-          initialCameraPosition: CameraPosition(
-            target: center,
-            zoom: 14.5,
-          ),
+          initialCameraPosition: CameraPosition(target: center, zoom: 14.5),
           onMapCreated: (controller) {
             _controller?.onCircleTapped.remove(_handleCircleTapped);
             _controller = controller;
@@ -556,9 +583,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           },
           onMapClick: (_, latLng) => _handleMapClick(latLng),
           gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
-            Factory<OneSequenceGestureRecognizer>(
-              EagerGestureRecognizer.new,
-            ),
+            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
           },
           myLocationEnabled: false,
           trackCameraPosition: true,
@@ -583,7 +608,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 children: [
                   // Nút chuyển lớp bản đồ (Chuẩn / Vệ tinh / Giao thông)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark
                           ? AppColors.darkSurface.withValues(alpha: 0.95)
@@ -591,7 +619,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: AppShadows.level2,
                       border: Border.all(
-                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                        color: isDark
+                            ? AppColors.darkOutlineVariant
+                            : AppColors.outlineVariant,
                       ),
                     ),
                     child: Row(
@@ -600,17 +630,23 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                         _layerButton(
                           title: 'Chuẩn',
                           isSelected: _currentStyle == GoongMapStyle.standard,
-                          onTap: () => setState(() => _currentStyle = GoongMapStyle.standard),
+                          onTap: () => setState(
+                            () => _currentStyle = GoongMapStyle.standard,
+                          ),
                         ),
                         _layerButton(
                           title: 'Vệ tinh',
                           isSelected: _currentStyle == GoongMapStyle.satellite,
-                          onTap: () => setState(() => _currentStyle = GoongMapStyle.satellite),
+                          onTap: () => setState(
+                            () => _currentStyle = GoongMapStyle.satellite,
+                          ),
                         ),
                         _layerButton(
                           title: 'Giao thông',
                           isSelected: _currentStyle == GoongMapStyle.navigation,
-                          onTap: () => setState(() => _currentStyle = GoongMapStyle.navigation),
+                          onTap: () => setState(
+                            () => _currentStyle = GoongMapStyle.navigation,
+                          ),
                         ),
                       ],
                     ),
@@ -644,7 +680,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               // Chip hiển thị Lộ trình tối ưu Goong Trip v2
               if (_currentTrip != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: isDark
                         ? AppColors.darkSurface.withValues(alpha: 0.92)
@@ -658,16 +697,22 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF0284C7)),
+                      const Icon(
+                        Icons.alt_route_rounded,
+                        size: 15,
+                        color: Color(0xFF0284C7),
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         _orderedDealers.isNotEmpty
-                            ? 'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p (Đã xếp theo đường ngắn nhất)'
-                            : 'Lộ trình tối ưu Goong: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p',
+                            ? 'Lộ trình tối ưu: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p'
+                            : 'Lộ trình tối ưu: ${(_currentTrip!.distanceMeters / 1000).toStringAsFixed(1)} km • ${(_currentTrip!.durationSeconds / 60).round()}p',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          color: isDark
+                              ? AppColors.darkOnSurface
+                              : AppColors.onSurface,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -677,9 +722,15 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                             ? const SizedBox(
                                 width: 12,
                                 height: 12,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF0284C7)),
+                            : const Icon(
+                                Icons.refresh_rounded,
+                                size: 14,
+                                color: Color(0xFF0284C7),
+                              ),
                       ),
                     ],
                   ),
@@ -689,7 +740,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
 
               // Chip chú thích màu sắc ghim (Status Legend)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: isDark
                       ? AppColors.darkSurface.withValues(alpha: 0.90)
@@ -700,11 +754,20 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _legendItem(color: const Color(0xFFF59E0B), label: 'Chưa ghé ($pendingCount)'),
+                    _legendItem(
+                      color: const Color(0xFFF59E0B),
+                      label: 'Chưa ghé ($pendingCount)',
+                    ),
                     const SizedBox(width: 8),
-                    _legendItem(color: const Color(0xFF0284C7), label: 'Đang ghé ($inProgressCount)'),
+                    _legendItem(
+                      color: const Color(0xFF0284C7),
+                      label: 'Đang ghé ($inProgressCount)',
+                    ),
                     const SizedBox(width: 8),
-                    _legendItem(color: const Color(0xFF10B981), label: 'Đã xong ($completedCount)'),
+                    _legendItem(
+                      color: const Color(0xFF10B981),
+                      label: 'Đã xong ($completedCount)',
+                    ),
                   ],
                 ),
               ),
@@ -740,13 +803,19 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.touch_app_rounded, color: AppColors.primary, size: 18),
+                  const Icon(
+                    Icons.touch_app_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Chạm vào một ghim để xem tóm tắt điểm bán & mở chỉ đường',
                       style: AppTypography.bodySmall(
-                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                        color: isDark
+                            ? AppColors.darkOnSurfaceVariant
+                            : AppColors.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -780,7 +849,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           ),
         ],
         border: Border.all(
-          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+          color: isDark
+              ? AppColors.darkOutlineVariant
+              : AppColors.outlineVariant,
         ),
       ),
       child: Column(
@@ -794,7 +865,10 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
@@ -802,7 +876,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                     child: Text(
                       '#${currentIndex >= 0 ? (currentIndex + 1).toString().padLeft(2, '0') : dealer.order} • ${dealer.code ?? "KH"}',
                       style: AppTypography.labelSmall(
-                        color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                        color: isDark
+                            ? AppColors.primaryFixedDim
+                            : AppColors.primary,
                       ).copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -812,8 +888,8 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                     type: dealer.status == DealerVisitStatus.completed
                         ? StatusBadgeType.success
                         : (dealer.status == DealerVisitStatus.inProgress
-                            ? StatusBadgeType.warning
-                            : StatusBadgeType.neutral),
+                              ? StatusBadgeType.warning
+                              : StatusBadgeType.neutral),
                   ),
                 ],
               ),
@@ -829,7 +905,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                   child: Icon(
                     Icons.close_rounded,
                     size: 18,
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                    color: isDark
+                        ? AppColors.darkOnSurfaceVariant
+                        : AppColors.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -854,13 +932,19 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.place_outlined, size: 14, color: AppColors.outline),
+              const Icon(
+                Icons.place_outlined,
+                size: 14,
+                color: AppColors.outline,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   dealer.address,
                   style: AppTypography.bodySmall(
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                    color: isDark
+                        ? AppColors.darkOnSurfaceVariant
+                        : AppColors.onSurfaceVariant,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -874,12 +958,18 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           // Khoảng cách từ vị trí nhân viên
           Row(
             children: [
-              const Icon(Icons.near_me_rounded, size: 13, color: Color(0xFF0284C7)),
+              const Icon(
+                Icons.near_me_rounded,
+                size: 13,
+                color: Color(0xFF0284C7),
+              ),
               const SizedBox(width: 4),
               Text(
                 'Cách bạn ${_formatDistance(selectedDistance)}',
                 style: AppTypography.labelSmall(
-                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                  color: isDark
+                      ? const Color(0xFF38BDF8)
+                      : const Color(0xFF0284C7),
                 ).copyWith(fontWeight: FontWeight.w600),
               ),
               if (dealer.phone != null && dealer.phone!.isNotEmpty) ...[
@@ -888,7 +978,11 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                   onTap: () => launchUrl(Uri.parse('tel:${dealer.phone}')),
                   child: Row(
                     children: [
-                      const Icon(Icons.phone_rounded, size: 12, color: AppColors.primary),
+                      const Icon(
+                        Icons.phone_rounded,
+                        size: 12,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 3),
                       Text(
                         dealer.phone!,
@@ -922,12 +1016,16 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  color: isDark
+                      ? AppColors.darkOnSurfaceVariant
+                      : AppColors.onSurfaceVariant,
                 ),
               ),
               // Nút tiến điểm bán
               IconButton(
-                onPressed: currentIndex >= 0 && currentIndex < dealersWithCoords.length - 1
+                onPressed:
+                    currentIndex >= 0 &&
+                        currentIndex < dealersWithCoords.length - 1
                     ? () => _selectDealer(dealersWithCoords[currentIndex + 1])
                     : null,
                 icon: const Icon(Icons.arrow_forward_ios_rounded, size: 15),
@@ -945,9 +1043,17 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0284C7),
                   side: const BorderSide(color: Color(0xFF0284C7)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
 
@@ -957,13 +1063,25 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
               ElevatedButton.icon(
                 onPressed: () => _handleCheckin(context, dealer),
                 icon: const Icon(Icons.login_rounded, size: 16),
-                label: Text(dealer.status == DealerVisitStatus.inProgress ? 'Tiếp tục' : 'Check-in'),
+                label: Text(
+                  dealer.status == DealerVisitStatus.inProgress
+                      ? 'Tiếp tục'
+                      : 'Check-in',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],
@@ -977,7 +1095,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     if (dealer.status == DealerVisitStatus.completed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.'),
+          content: Text(
+            'Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.',
+          ),
           backgroundColor: Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
         ),
@@ -987,9 +1107,12 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
 
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
-    VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
+    VisitEntity? activeVisit =
+        checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
         ? checkInState.visitEntity
-        : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
+        : (routeState.activeVisit?.isOpen == true
+              ? routeState.activeVisit
+              : null);
 
     if (activeVisit == null) {
       try {
@@ -1004,11 +1127,18 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         ? (dealer.customer as CustomerEntity).id
         : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
 
-    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId == targetCustomerId) {
+    if (activeVisit != null &&
+        targetCustomerId != null &&
+        activeVisit.customerId == targetCustomerId) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
-          : dealer.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
-      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
+          : dealer.copyWith(
+              visit: activeVisit,
+              status: DealerVisitStatus.inProgress,
+            );
+      ref
+          .read(checkInViewModelProvider.notifier)
+          .initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
         await context.push('/check-in', extra: dealerWithVisit);
         if (context.mounted) {
@@ -1021,8 +1151,12 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     if (dealer.status == DealerVisitStatus.inProgress) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
-          : (activeVisit != null ? dealer.copyWith(visit: activeVisit) : dealer);
-      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealerWithVisit);
+          : (activeVisit != null
+                ? dealer.copyWith(visit: activeVisit)
+                : dealer);
+      ref
+          .read(checkInViewModelProvider.notifier)
+          .initCheckinWithDealer(dealerWithVisit);
       if (context.mounted) {
         await context.push('/check-in', extra: dealerWithVisit);
         if (context.mounted) {
@@ -1032,7 +1166,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
+    if (activeVisit != null &&
+        targetCustomerId != null &&
+        activeVisit.customerId != targetCustomerId) {
       final activeDealerName = activeVisit.customerName.isNotEmpty
           ? activeVisit.customerName
           : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');
@@ -1045,7 +1181,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           targetDealerName: dealer.name,
         );
         if (chosenDealer != null && context.mounted) {
-          ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(chosenDealer);
+          ref
+              .read(checkInViewModelProvider.notifier)
+              .initCheckinWithDealer(chosenDealer);
           await context.push('/check-in', extra: chosenDealer);
           if (context.mounted) {
             ref.read(routeViewModelProvider.notifier).loadRouteDetail();
@@ -1095,7 +1233,8 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       }
 
       final mobileRules = ref.read(mobileRulesProvider);
-      final allowedRadius = dealer.geofenceRadiusM ??
+      final allowedRadius =
+          dealer.geofenceRadiusM ??
           (dealer.customer is CustomerEntity
               ? (dealer.customer as CustomerEntity).geofenceRadiusM
               : null) ??
@@ -1160,7 +1299,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     Color? iconColor,
   }) {
     return Material(
-      color: isDark ? AppColors.darkSurface.withValues(alpha: 0.95) : Colors.white.withValues(alpha: 0.95),
+      color: isDark
+          ? AppColors.darkSurface.withValues(alpha: 0.95)
+          : Colors.white.withValues(alpha: 0.95),
       shape: const CircleBorder(),
       elevation: 2,
       child: Tooltip(
@@ -1173,7 +1314,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
             child: Icon(
               icon,
               size: 20,
-              color: iconColor ?? (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+              color:
+                  iconColor ??
+                  (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
             ),
           ),
         ),
@@ -1188,18 +1331,12 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
         ),
       ],
     );

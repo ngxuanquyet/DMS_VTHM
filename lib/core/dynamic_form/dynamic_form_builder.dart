@@ -201,29 +201,45 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         }
       }
 
-      // 2. Kiểm tra trường Vị trí GPS (Location check theo Spec 13/10/2026)
+      // 2. Kiểm tra trường Vị trí GPS / Địa chỉ
       if (field.type == DynamicFormFieldType.location) {
-        if (field.isRequired) {
-          if (value == null || (value is Map && (value['lat'] == null || value['lng'] == null))) {
-            if (value is Map && value['address'] != null && value['address'].toString().trim().isNotEmpty) {
-              newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
-            } else {
-              newErrors[field.code] = '${field.label} không được để trống.';
-            }
-            isValid = false;
-            firstInvalidCode ??= field.code;
-            continue;
-          }
-        } else if (value is Map) {
+        final isPureAddress = field.code == 'address' ||
+            field.code == 'delivery_address' ||
+            field.code.contains('dia_chi') ||
+            field.label.toLowerCase().contains('địa chỉ');
+
+        if (value is Map) {
           final latVal = value['lat'];
           final lngVal = value['lng'];
           final addrVal = value['address']?.toString();
-          if ((latVal == null || lngVal == null) && addrVal != null && addrVal.trim().isNotEmpty) {
-            newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
-            isValid = false;
-            firstInvalidCode ??= field.code;
-            continue;
+
+          if (isPureAddress) {
+            // Đối với field địa chỉ trong form động: luôn cho phép nhập/sửa địa chỉ mà không bắt buộc toạ độ GPS
+            if (field.isRequired && (addrVal == null || addrVal.trim().isEmpty)) {
+              newErrors[field.code] = '${field.label} không được để trống.';
+              isValid = false;
+              firstInvalidCode ??= field.code;
+              continue;
+            }
+          } else {
+            // Đối với trường toạ độ GPS
+            if (field.isRequired && (latVal == null || lngVal == null)) {
+              if (addrVal != null && addrVal.trim().isNotEmpty) {
+                newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
+              } else {
+                newErrors[field.code] = '${field.label} không được để trống.';
+              }
+              isValid = false;
+              firstInvalidCode ??= field.code;
+              continue;
+            } else if (!field.isRequired && (latVal == null || lngVal == null) && addrVal != null && addrVal.trim().isNotEmpty) {
+              newErrors[field.code] = '${field.label} cần có toạ độ GPS — bấm "Lấy vị trí".';
+              isValid = false;
+              firstInvalidCode ??= field.code;
+              continue;
+            }
           }
+
           if (latVal != null && lngVal != null) {
             final numLat = latVal is num ? latVal : double.tryParse(latVal.toString());
             final numLng = lngVal is num ? lngVal : double.tryParse(lngVal.toString());
@@ -234,6 +250,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               continue;
             }
           }
+        } else if (field.isRequired) {
+          newErrors[field.code] = '${field.label} không được để trống.';
+          isValid = false;
+          firstInvalidCode ??= field.code;
+          continue;
         }
       }
 
@@ -306,6 +327,14 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return Icons.folder_open_rounded;
   }
 
+  bool _isDynamicSection(String title) {
+    final lower = title.toLowerCase().trim();
+    return lower.contains('mở rộng') ||
+        lower.contains('động') ||
+        lower.contains('dynamic') ||
+        lower.isEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -323,6 +352,18 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         ...sections.entries.map((secEntry) {
           final sectionTitle = secEntry.key;
           final sectionFields = secEntry.value;
+
+          // 🔴 Bỏ hẳn card thông tin mở rộng (động): không vẽ Card container và không vẽ Header bar,
+          // các field được vẽ trực tiếp ra ngoài layout form
+          if (_isDynamicSection(sectionTitle)) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _buildSectionFieldWidgets(sectionFields),
+              ),
+            );
+          }
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),

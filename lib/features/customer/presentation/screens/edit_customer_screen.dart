@@ -363,12 +363,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       changes['address'] = newAddress;
     }
 
-    // 4. GPS Coordinates: Gửi theo cặp lat/lng khi có thay đổi
-    // TUYỆT ĐỐI KHÔNG gửi geofence_radius_m: nhân viên không có quyền thay đổi thông số này
-    if (_currentLat != c.lat || _currentLng != c.lng) {
-      changes['lat'] = _currentLat;
-      changes['lng'] = _currentLng;
-    }
+    // 4. GPS Coordinates: Hiện tại bỏ sửa lat và lng -> Không gửi thay đổi lat/lng lên server
+    // (Giữ nguyên tọa độ ban đầu của điểm bán trên hệ thống)
 
     // 5. Dynamic Editable Fields (Cho phép sửa được mọi trường, không quan tâm hệ cũ)
     final dynamicChanges = <String, dynamic>{};
@@ -708,11 +704,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // 3. Bản đồ vị trí điểm bán (Bản đồ tương tác, bỏ bán kính geofence, không hiện chữ lat/lng)
+                  // 3. Bản đồ vị trí điểm bán (Chỉ xem vị trí, hiện tại bỏ sửa lat và lng)
                   _buildSectionHeader(
                     icon: Icons.map_rounded,
                     title: '3. Vị trí trên bản đồ',
-                    badge: 'Bản đồ tương tác',
+                    badge: 'Chỉ xem',
                     isDark: isDark,
                   ),
                   const SizedBox(height: 12),
@@ -720,6 +716,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     title: 'Vị trí điểm bán trên bản đồ',
                     lat: _currentLat,
                     lng: _currentLng,
+                    isReadOnly: true, // 🔴 Hiện tại bỏ sửa lat và lng: chỉ xem bản đồ, không sửa tọa độ
                     initialAddress: _addressController.text.trim().isNotEmpty
                         ? _addressController.text.trim()
                         : null,
@@ -727,26 +724,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     showStyleSwitcher: true, // Cho phép chuyển đổi xem Vệ tinh / Đường phố
                     mapHeight: 250,
                     zoom: 16.5,
-                    locateButtonText: 'LẤY VỊ TRÍ HIỆN TẠI',
-                    updateButtonText: 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
-                    onLocationChanged: (lat, lng, address) {
-                      setState(() {
-                        _currentLat = lat;
-                        _currentLng = lng;
-                        if ((_addressController.text.trim().isEmpty ||
-                                _addressController.text.trim() == 'Chưa cập nhật') &&
-                            address != null &&
-                            address.isNotEmpty) {
-                          _addressController.text = address;
-                        }
-                      });
-                    },
-                    onCleared: () {
-                      setState(() {
-                        _currentLat = null;
-                        _currentLng = null;
-                      });
-                    },
                   ),
                   const SizedBox(height: 24),
 
