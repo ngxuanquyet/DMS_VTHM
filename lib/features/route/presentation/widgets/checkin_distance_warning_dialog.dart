@@ -84,22 +84,22 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
   }
 
   Future<void> _openDirections(BuildContext context) async {
+    final hasAddress = address != null && address!.trim().isNotEmpty && address!.trim() != 'Chưa cập nhật';
     final hasGps = lat != null && lng != null;
-    final hasAddress = address != null && address!.trim().isNotEmpty;
 
-    if (!hasGps && !hasAddress) {
+    if (!hasAddress && !hasGps) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Điểm bán chưa có tọa độ hoặc địa chỉ để chỉ đường'),
+          content: Text('Điểm bán chưa có địa chỉ hoặc tọa độ GPS để chỉ đường'),
           backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    final destination = hasGps
-        ? '$lat,$lng'
-        : Uri.encodeComponent(address!.trim());
+    final destination = hasAddress
+        ? Uri.encodeComponent(address!.trim())
+        : '$lat,$lng';
 
     // 1. Android Google Maps navigation intent
     final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
@@ -626,22 +626,22 @@ class CheckoutDistanceWarningDialog extends StatelessWidget {
   }
 
   Future<void> _openDirections(BuildContext context) async {
+    final hasAddress = address != null && address!.trim().isNotEmpty && address!.trim() != 'Chưa cập nhật';
     final hasGps = lat != null && lng != null;
-    final hasAddress = address != null && address!.trim().isNotEmpty;
 
-    if (!hasGps && !hasAddress) {
+    if (!hasAddress && !hasGps) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Điểm bán chưa có tọa độ hoặc địa chỉ để chỉ đường'),
+          content: Text('Điểm bán chưa có địa chỉ hoặc tọa độ GPS để chỉ đường'),
           backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    final destination = hasGps
-        ? '$lat,$lng'
-        : Uri.encodeComponent(address!.trim());
+    final destination = hasAddress
+        ? Uri.encodeComponent(address!.trim())
+        : '$lat,$lng';
 
     final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
     final iosGmapsUri = Uri.parse('comgooglemaps://?daddr=$destination&directionsmode=driving');

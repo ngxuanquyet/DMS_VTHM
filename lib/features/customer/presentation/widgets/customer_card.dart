@@ -403,28 +403,66 @@ class CustomerCard extends StatelessWidget {
     }
   }
 
+  /// Trích xuất trường địa chỉ động từ dynamicFields (nếu có)
+  static String? extractDynamicAddress(Map<String, dynamic>? dynamicFields, [String? fallbackAddress]) {
+    if (dynamicFields != null && dynamicFields.isNotEmpty) {
+      for (final entry in dynamicFields.entries) {
+        final k = entry.key.toLowerCase().trim();
+        if (k == 'address' ||
+            k == 'delivery_address' ||
+            k == 'dia_chi' ||
+            k == 'dia_chi_giao_hang' ||
+            k == 'dia_chi_dong' ||
+            k == 'location' ||
+            k.contains('dia_chi') ||
+            k.contains('address')) {
+          final val = entry.value;
+          if (val is String && val.trim().isNotEmpty && val.trim() != 'Chưa cập nhật') {
+            return val.trim();
+          } else if (val is Map) {
+            final addr = val['address']?.toString().trim();
+            if (addr != null && addr.isNotEmpty && addr != 'Chưa cập nhật') {
+              return addr;
+            }
+          }
+        }
+      }
+    }
+
+    if (fallbackAddress != null &&
+        fallbackAddress.trim().isNotEmpty &&
+        fallbackAddress.trim() != 'Chưa cập nhật') {
+      return fallbackAddress.trim();
+    }
+
+    return null;
+  }
+
   static Future<void> defaultOpenDirections(
     BuildContext context, {
     double? lat,
     double? lng,
     required String address,
+    Map<String, dynamic>? dynamicFields,
   }) async {
+    // 🔴 Quy tắc: button chỉ đường dùng field địa chỉ động, nếu null thì dùng lat lng
+    final effectiveAddress = extractDynamicAddress(dynamicFields, address);
+    final hasAddress = effectiveAddress != null && effectiveAddress.isNotEmpty;
     final hasGps = lat != null && lng != null;
-    final hasAddress = address.trim().isNotEmpty;
 
-    if (!hasGps && !hasAddress) {
+    if (!hasAddress && !hasGps) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Điểm bán chưa cập nhật tọa độ GPS hoặc địa chỉ để chỉ đường'),
+          content: Text('Điểm bán chưa cập nhật địa chỉ hoặc tọa độ GPS để chỉ đường'),
           backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    final destination = hasGps
-        ? '$lat,$lng'
-        : Uri.encodeComponent(address.trim());
+    final destination = hasAddress
+        ? Uri.encodeComponent(effectiveAddress)
+        : '$lat,$lng';
 
     final googleMapsUrl = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
@@ -830,6 +868,7 @@ class CustomerCard extends StatelessWidget {
                                 lat: effectiveLat,
                                 lng: effectiveLng,
                                 address: effectiveAddress,
+                                dynamicFields: effectiveCustomer?.dynamicFields,
                               ),
                       borderRadius: BorderRadius.circular(8),
                       child: Container(

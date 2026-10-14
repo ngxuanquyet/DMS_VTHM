@@ -20,6 +20,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
+import '../../../customer/presentation/widgets/customer_card.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../domain/entities/route_entity.dart';
@@ -481,14 +482,23 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     BuildContext context,
     DealerEntity dealer,
   ) async {
-    final hasGps = dealer.lat != null && dealer.lng != null;
-    final hasAddress = dealer.address.trim().isNotEmpty;
+    Map<String, dynamic>? dynFields;
+    if (dealer.customer is CustomerEntity) {
+      dynFields = (dealer.customer as CustomerEntity).dynamicFields;
+    } else if (dealer.customer is Map<String, dynamic>) {
+      dynFields = dealer.customer as Map<String, dynamic>;
+    }
 
-    if (!hasGps && !hasAddress) {
+    // 🔴 Quy tắc: button chỉ đường dùng field địa chỉ động, nếu null thì dùng lat lng
+    final effectiveAddress = CustomerCard.extractDynamicAddress(dynFields, dealer.address);
+    final hasAddress = effectiveAddress != null && effectiveAddress.isNotEmpty;
+    final hasGps = dealer.lat != null && dealer.lng != null;
+
+    if (!hasAddress && !hasGps) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Điểm bán chưa cập nhật toạ độ GPS hoặc địa chỉ để chỉ đường',
+            'Điểm bán chưa cập nhật địa chỉ hoặc toạ độ GPS để chỉ đường',
           ),
           backgroundColor: AppColors.error,
         ),
@@ -496,9 +506,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       return;
     }
 
-    final destination = hasGps
-        ? '${dealer.lat},${dealer.lng}'
-        : Uri.encodeComponent(dealer.address.trim());
+    final destination = hasAddress
+        ? Uri.encodeComponent(effectiveAddress)
+        : '${dealer.lat},${dealer.lng}';
 
     final googleMapsUrl = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',

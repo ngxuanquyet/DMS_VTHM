@@ -26,7 +26,7 @@ class GoongMapView extends StatefulWidget {
   /// Mức zoom (mặc định 16.0 cho độ chi tiết mặt đường/số nhà rõ nét).
   final double zoom;
 
-  /// Hiện chấm GPS vị trí người dùng.
+  /// Hiện chấm GPS vị trí người dùng (mặc định false để chỉ hiển thị duy nhất 1 điểm trên bản đồ).
   final bool showMyLocation;
 
   /// Hiện nút bấm bay về vị trí GPS hiện tại.
@@ -53,7 +53,7 @@ class GoongMapView extends StatefulWidget {
     this.markers = const [],
     this.geofenceRadiusMeters,
     this.zoom = GoongConfig.defaultZoom,
-    this.showMyLocation = true,
+    this.showMyLocation = false,
     this.showMyLocationButton = true,
     this.showZoomControls = false,
     this.interactive = true,

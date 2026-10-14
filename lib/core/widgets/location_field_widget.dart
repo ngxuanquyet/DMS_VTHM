@@ -731,7 +731,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                                 ),
                           zoom: hasCoords ? 16.5 : 14.5,
                           mapStyle: _currentMapStyle,
-                          showMyLocation: true,
+                          showMyLocation: false,
                           showMyLocationButton: !widget.isReadOnly,
                           showZoomControls: true, // Nút phóng to / thu nhỏ (+ / -)
                           interactive: true, // Cho phép vuốt, kéo, cuộn, xoay bản đồ

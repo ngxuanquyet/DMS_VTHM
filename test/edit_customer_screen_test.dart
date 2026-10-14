@@ -105,10 +105,10 @@ void main() {
     expect(find.text('Sửa thông tin điểm bán'), findsOneWidget);
     expect(find.text('VTHM-001 • Đại lý Tạp Hóa Minh Anh'), findsOneWidget);
 
-    // 2. Bản đồ cố định bên trên đã được xóa bỏ để chỉ giữ lại bản đồ của trường động ở dưới
-    expect(find.byType(AppMapLocationCard), findsNothing);
-    expect(find.text('LẤY VỊ TRÍ HIỆN TẠI'), findsNothing);
-    expect(find.text('CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI'), findsNothing);
+    // 2. Phải có AppMapLocationCard và cho phép sửa lat/lng (isReadOnly: false)
+    final mapCard = tester.widget<AppMapLocationCard>(find.byType(AppMapLocationCard));
+    expect(mapCard.isReadOnly, isFalse);
+    expect(find.text('CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI'), findsOneWidget);
 
     // 3. Không được hiển thị chuỗi text thông số tọa độ kinh/vĩ độ dạng chữ
     expect(find.textContaining('Tọa độ:'), findsNothing);

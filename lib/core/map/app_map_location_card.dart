@@ -345,7 +345,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                             mapStyle: _currentMapStyle,
                             markers: widget.markers,
                             geofenceRadiusMeters: widget.geofenceRadiusMeters,
-                            showMyLocation: true,
+                            showMyLocation: false,
                             showMyLocationButton: true,
                             showZoomControls: true,
                             interactive: true,

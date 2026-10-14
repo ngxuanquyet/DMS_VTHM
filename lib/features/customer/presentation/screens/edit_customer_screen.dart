@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/map/app_map_location_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -85,7 +86,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   late final TextEditingController _emailController;
   late final TextEditingController _addressController;
 
-  // 3. Dynamic fields controllers
+  // 3. GPS Location State (Được quản lý qua bản đồ tương tác AppMapLocationCard)
+  double? _currentLat;
+  double? _currentLng;
+
+  // 4. Dynamic fields controllers
   final Map<String, TextEditingController> _dynamicControllers = {};
   // 4b. Dynamic location values (Spec 13/10/2026: input_type = "location")
   final Map<String, Map<String, dynamic>?> _dynamicLocationValues = {};
@@ -163,6 +168,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     );
     _emailController = TextEditingController(text: c.email ?? '');
     _addressController = TextEditingController(text: c.address);
+
+    _currentLat = c.lat;
+    _currentLng = c.lng;
 
     // Initialize photo list from existing customer entity
     _photos = List<String>.from(c.photoUrls);
@@ -353,8 +361,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       changes['address'] = newAddress;
     }
 
-    // 4. GPS Coordinates: Hiện tại bỏ sửa lat và lng -> Không gửi thay đổi lat/lng lên server
-    // (Giữ nguyên tọa độ ban đầu của điểm bán trên hệ thống)
+    // 4. GPS Coordinates: Gửi theo cặp lat/lng khi có thay đổi (Vẫn cho sửa lat và lng)
+    if (_currentLat != c.lat || _currentLng != c.lng) {
+      changes['lat'] = _currentLat;
+      changes['lng'] = _currentLng;
+    }
 
     // 5. Dynamic Editable Fields (Cho phép sửa được mọi trường, không quan tâm hệ cũ)
     final dynamicChanges = <String, dynamic>{};
@@ -692,16 +703,61 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     maxLines: 2,
                     prefixIcon: const Icon(Icons.place_outlined, size: 18),
                   ),
+                  const SizedBox(height: 24),
+
+                  // 3. Bản đồ vị trí điểm bán (Bản đồ tương tác, cho phép sửa lat và lng)
+                  _buildSectionHeader(
+                    icon: Icons.map_rounded,
+                    title: '3. Vị trí trên bản đồ',
+                    badge: 'Có thể sửa',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  AppMapLocationCard(
+                    title: 'Vị trí điểm bán trên bản đồ',
+                    lat: _currentLat,
+                    lng: _currentLng,
+                    isReadOnly: false, // 🟢 Vẫn cho sửa lat và lng theo yêu cầu
+                    initialAddress: _addressController.text.trim().isNotEmpty
+                        ? _addressController.text.trim()
+                        : null,
+                    showCoordinates: false, // Ẩn thông số kinh / vĩ độ dạng chữ text
+                    showStyleSwitcher: true, // Cho phép chuyển đổi xem Vệ tinh / Đường phố
+                    mapHeight: 250,
+                    zoom: 16.5,
+                    locateButtonText: 'LẤY VỊ TRÍ HIỆN TẠI',
+                    updateButtonText: 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
+                    onLocationChanged: (lat, lng, address) {
+                      setState(() {
+                        _currentLat = lat;
+                        _currentLng = lng;
+                        if ((_addressController.text.trim().isEmpty ||
+                                _addressController.text.trim() == 'Chưa cập nhật') &&
+                            address != null &&
+                            address.isNotEmpty) {
+                          _addressController.text = address;
+                        }
+                      });
+                    },
+                    onCleared: () {
+                      setState(() {
+                        _currentLat = null;
+                        _currentLng = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
                   // Các trường mở rộng động (Dynamic Fields) - Vẽ trực tiếp ra ngoài layout, bỏ hẳn card
                   if (_dynamicControllers.isNotEmpty || _dynamicLocationValues.isNotEmpty) ...[
                     _buildDynamicFieldsCard(isDark),
                     const SizedBox(height: 12),
                   ],
 
-                  // 3. Hình ảnh điểm bán (photo_tokens)
+                  // 4. Hình ảnh điểm bán (photo_tokens)
                   _buildSectionHeader(
                     icon: Icons.photo_library_outlined,
-                    title: '3. Hình ảnh điểm bán',
+                    title: '4. Hình ảnh điểm bán',
                     badge: '${_photos.length}/10 ảnh',
                     isDark: isDark,
                   ),

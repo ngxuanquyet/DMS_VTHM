@@ -222,7 +222,7 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
         key: const ValueKey('attendance_goong_map'),
         center: LatLng(livePoint.lat, livePoint.lng),
         zoom: 16.5,
-        showMyLocation: true,
+        showMyLocation: false,
         showMyLocationButton: true,
         showZoomControls: true,
         interactive: true,
