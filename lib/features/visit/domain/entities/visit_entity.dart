@@ -45,6 +45,17 @@ class VisitEntity {
   /// true = trong vùng · false = ngoài vùng (gắn cờ) · null = chưa tính được
   final bool? isCheckoutWithinGeofence;
 
+  /// Cờ Check-out sang ngày hôm sau (§4 SPEC-2026-10-15).
+  /// true = ngày bấm check-out (giờ VN) khác visit_date. Lượt còn mở luôn false. Không bao giờ null.
+  final bool isCheckoutOtherDay;
+
+  /// Trạng thái phê duyệt của điểm bán gắn với lượt viếng thăm này (§5 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15).
+  /// 'pending' | 'approved' | 'rejected'
+  final String customerApprovalStatus;
+
+  /// Lý do từ chối điểm bán (nếu có) gắn với lượt viếng thăm này (§3c SPEC-2026-10-15 chốt 16/10/2026).
+  final String? customerApprovalNote;
+
   const VisitEntity({
     required this.id,
     this.visitDate,
@@ -76,7 +87,12 @@ class VisitEntity {
     this.isWithinGeofence,
     this.checkoutDistanceM,
     this.isCheckoutWithinGeofence,
+    this.isCheckoutOtherDay = false,
+    this.customerApprovalStatus = 'approved',
+    this.customerApprovalNote,
   });
+
+  bool get isCustomerApproved => customerApprovalStatus == 'approved';
 
   /// Chuỗi hiển thị km tuân thủ 3 trạng thái (§3 SPEC-2026-10-08):
   /// - null: "—" (chưa tính)
@@ -230,6 +246,9 @@ class VisitEntity {
       isWithinGeofence: parseNullableBool(json['is_within_geofence']),
       checkoutDistanceM: parseNullableDouble(json['checkout_distance_m']),
       isCheckoutWithinGeofence: parseNullableBool(json['is_checkout_within_geofence']),
+      isCheckoutOtherDay: json['is_checkout_other_day'] == true,
+      customerApprovalStatus: json['customer_approval_status']?.toString() ?? 'approved',
+      customerApprovalNote: json['customer_approval_note']?.toString(),
     );
   }
 
@@ -261,6 +280,9 @@ class VisitEntity {
         'is_within_geofence': isWithinGeofence,
         'checkout_distance_m': checkoutDistanceM,
         'is_checkout_within_geofence': isCheckoutWithinGeofence,
+        'is_checkout_other_day': isCheckoutOtherDay,
+        'customer_approval_status': customerApprovalStatus,
+        'customer_approval_note': customerApprovalNote,
       };
 
   VisitEntity copyWith({
@@ -294,6 +316,9 @@ class VisitEntity {
     bool? isWithinGeofence,
     double? checkoutDistanceM,
     bool? isCheckoutWithinGeofence,
+    bool? isCheckoutOtherDay,
+    String? customerApprovalStatus,
+    String? customerApprovalNote,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -326,6 +351,9 @@ class VisitEntity {
       isWithinGeofence: isWithinGeofence ?? this.isWithinGeofence,
       checkoutDistanceM: checkoutDistanceM ?? this.checkoutDistanceM,
       isCheckoutWithinGeofence: isCheckoutWithinGeofence ?? this.isCheckoutWithinGeofence,
+      isCheckoutOtherDay: isCheckoutOtherDay ?? this.isCheckoutOtherDay,
+      customerApprovalStatus: customerApprovalStatus ?? this.customerApprovalStatus,
+      customerApprovalNote: customerApprovalNote ?? this.customerApprovalNote,
     );
   }
 }

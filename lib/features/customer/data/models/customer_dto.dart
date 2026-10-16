@@ -22,9 +22,14 @@ class CustomerDto {
   final String? email;
   final double? lat;
   final double? lng;
+  final bool? coordsMock;
   final int? geofenceRadiusM;
   final String status;
   final String approvalStatus;
+  final String? approvalLabel;
+  final String? approvalColor;
+  final String? approvalNote;
+  final String? approvalAt;
   final String? clientUuid;
   final String? createdByName;
   final String? updatedByName;
@@ -61,9 +66,14 @@ class CustomerDto {
     this.email,
     this.lat,
     this.lng,
+    this.coordsMock,
     this.geofenceRadiusM,
     this.status = 'active',
     this.approvalStatus = 'approved',
+    this.approvalLabel,
+    this.approvalColor,
+    this.approvalNote,
+    this.approvalAt,
     this.clientUuid,
     this.createdByName,
     this.updatedByName,
@@ -113,7 +123,7 @@ class CustomerDto {
       parsedTypeName = customerTypeMap[rawCustomerTypeId];
     }
 
-    // Safely parse latitude & longitude (can be string "21.322", num 21.322, or null)
+    // Safely parse latitude & longitude & coords (Theo spec 15/10/2026: coords: {lat, lng, mock})
     double? parseCoord(dynamic value) {
       if (value == null) return null;
       if (value is num) return value.toDouble();
@@ -123,8 +133,12 @@ class CustomerDto {
       return null;
     }
 
-    final lat = parseCoord(json['lat']);
-    final lng = parseCoord(json['lng']);
+    final rawCoords = json['coords'] is Map ? json['coords'] as Map : null;
+    final lat = parseCoord(rawCoords?['lat']) ?? parseCoord(json['lat']);
+    final lng = parseCoord(rawCoords?['lng']) ?? parseCoord(json['lng']);
+    final coordsMock = rawCoords?['mock'] is bool
+        ? rawCoords!['mock'] as bool
+        : (json['coords_mock'] == true ? true : null);
 
     // Safely parse assignees
     List<CustomerAssigneeEntity> assigneesList = [];
@@ -157,6 +171,16 @@ class CustomerDto {
       parsedRouteName = json['route_name'].toString().trim();
     } else if (json['route'] != null && json['route'] is String && json['route'].toString().trim().isNotEmpty) {
       parsedRouteName = json['route'].toString().trim();
+    } else if (json['route'] != null && json['route'] is Map) {
+      final rMap = json['route'] as Map;
+      final name = (rMap['name'] ?? rMap['route_name'] ?? rMap['title'] ?? rMap['code'])?.toString().trim();
+      if (name != null && name.isNotEmpty) {
+        parsedRouteName = name;
+      }
+      final rId = rMap['id'] is int ? rMap['id'] as int : int.tryParse(rMap['id']?.toString() ?? '');
+      if (rId != null && !parsedRouteIds.contains(rId)) {
+        parsedRouteIds.add(rId);
+      }
     } else if (json['routeName'] != null && json['routeName'].toString().trim().isNotEmpty) {
       parsedRouteName = json['routeName'].toString().trim();
     }
@@ -206,9 +230,30 @@ class CustomerDto {
     }
 
     if (parsedRoutes.isEmpty && parsedRouteName == null) {
-      final dynTuyen = dynamicMap['tuyen'] ?? dynamicMap['route'] ?? dynamicMap['tuyen_ban_hang'] ?? dynamicMap['mw_tuyen'];
-      if (dynTuyen != null && dynTuyen.toString().trim().isNotEmpty) {
-        parsedRouteName = dynTuyen.toString().trim();
+      final dynTuyen = dynamicMap['tuyen'] ??
+          dynamicMap['route'] ??
+          dynamicMap['tuyen_ban_hang'] ??
+          dynamicMap['mw_tuyen'] ??
+          dynamicMap['route_name'] ??
+          dynamicMap['routes'];
+      if (dynTuyen is String && dynTuyen.trim().isNotEmpty) {
+        parsedRouteName = dynTuyen.trim();
+      } else if (dynTuyen is Map) {
+        final name = (dynTuyen['name'] ?? dynTuyen['route_name'] ?? dynTuyen['title'])?.toString().trim();
+        if (name != null && name.isNotEmpty) parsedRouteName = name;
+        final id = dynTuyen['id'] is int ? dynTuyen['id'] as int : int.tryParse(dynTuyen['id']?.toString() ?? '');
+        if (id != null && !parsedRouteIds.contains(id)) parsedRouteIds.add(id);
+      } else if (dynTuyen is List) {
+        for (final item in dynTuyen) {
+          if (item is String && item.trim().isNotEmpty && !parsedRoutes.contains(item.trim())) {
+            parsedRoutes.add(item.trim());
+          } else if (item is Map) {
+            final name = (item['name'] ?? item['route_name'] ?? item['title'])?.toString().trim();
+            if (name != null && name.isNotEmpty && !parsedRoutes.contains(name)) parsedRoutes.add(name);
+            final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
+            if (id != null && !parsedRouteIds.contains(id)) parsedRouteIds.add(id);
+          }
+        }
       }
     }
 
@@ -221,10 +266,38 @@ class CustomerDto {
         .where((r) => !CustomerEntity.isInvalidOrProvinceRoute(r, provinceName: rawProvinceName))
         .toList();
 
+    final effectiveRoutes = validRoutes.isNotEmpty
+        ? validRoutes
+        : parsedRoutes.where((r) => r.trim() != 'Chưa phân tuyến' && r.trim() != 'Tất cả tuyến').toList();
+
     final validRouteName = (parsedRouteName != null &&
             !CustomerEntity.isInvalidOrProvinceRoute(parsedRouteName, provinceName: rawProvinceName))
         ? parsedRouteName
-        : (validRoutes.isNotEmpty ? validRoutes.first : null);
+        : (effectiveRoutes.isNotEmpty ? effectiveRoutes.first : (parsedRouteName?.trim() != 'Chưa phân tuyến' ? parsedRouteName : null));
+
+    final rawCreatedByName = json['created_by_name']?.toString().trim() ??
+        json['creator_name']?.toString().trim() ??
+        dynamicMap['created_by_name']?.toString().trim();
+    final rawCreatedByCode = json['created_by_code']?.toString().trim() ??
+        json['created_by']?.toString().trim() ??
+        dynamicMap['created_by_code']?.toString().trim();
+    final String? resolvedCreatedBy = (rawCreatedByName != null && rawCreatedByName.isNotEmpty)
+        ? ((rawCreatedByCode != null && rawCreatedByCode.isNotEmpty && !rawCreatedByName.contains(rawCreatedByCode))
+            ? '$rawCreatedByName ($rawCreatedByCode)'
+            : rawCreatedByName)
+        : (rawCreatedByCode != null && rawCreatedByCode.isNotEmpty ? rawCreatedByCode : null);
+
+    final rawUpdatedByName = json['updated_by_name']?.toString().trim() ??
+        json['updater_name']?.toString().trim() ??
+        dynamicMap['updated_by_name']?.toString().trim();
+    final rawUpdatedByCode = json['updated_by_code']?.toString().trim() ??
+        json['updated_by']?.toString().trim() ??
+        dynamicMap['updated_by_code']?.toString().trim();
+    final String? resolvedUpdatedBy = (rawUpdatedByName != null && rawUpdatedByName.isNotEmpty)
+        ? ((rawUpdatedByCode != null && rawUpdatedByCode.isNotEmpty && !rawUpdatedByName.contains(rawUpdatedByCode))
+            ? '$rawUpdatedByName ($rawUpdatedByCode)'
+            : rawUpdatedByName)
+        : (rawUpdatedByCode != null && rawUpdatedByCode.isNotEmpty ? rawUpdatedByCode : null);
 
     return CustomerDto(
       id: id,
@@ -255,14 +328,19 @@ class CustomerDto {
       email: json['email']?.toString(),
       lat: lat,
       lng: lng,
+      coordsMock: coordsMock,
       geofenceRadiusM: json['geofence_radius_m'] is int
           ? json['geofence_radius_m'] as int
           : int.tryParse(json['geofence_radius_m']?.toString() ?? ''),
       status: json['status']?.toString() ?? 'active',
       approvalStatus: json['approval_status']?.toString() ?? 'approved',
+      approvalLabel: json['approval_label']?.toString(),
+      approvalColor: json['approval_color']?.toString(),
+      approvalNote: json['approval_note']?.toString(),
+      approvalAt: json['approval_at']?.toString(),
       clientUuid: json['client_uuid']?.toString(),
-      createdByName: json['created_by_name']?.toString(),
-      updatedByName: json['updated_by_name']?.toString(),
+      createdByName: resolvedCreatedBy,
+      updatedByName: resolvedUpdatedBy,
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
       dynamicFields: dynamicMap,
@@ -302,11 +380,11 @@ class CustomerDto {
             ? channelName!.trim()
             : 'Đại lý');
 
-    final resolvedRoute = routes.isNotEmpty
-        ? routes.first
-        : (route != null && route!.trim().isNotEmpty
-            ? route!.trim()
-            : (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : 'Chưa phân tuyến'));
+    final resolvedRoute = (route != null && route!.trim().isNotEmpty && route!.trim() != 'Chưa phân tuyến')
+        ? route!.trim()
+        : (routes.isNotEmpty
+            ? routes.first
+            : (routeIds.isNotEmpty ? 'Tuyến ${routeIds.join(', ')}' : 'Chưa phân tuyến'));
 
     return CustomerEntity(
       id: id,
@@ -331,11 +409,18 @@ class CustomerDto {
       email: email,
       lat: lat,
       lng: lng,
+      coordsMock: coordsMock,
       geofenceRadiusM: geofenceRadiusM,
       status: status,
       approvalStatus: approvalStatus,
+      approvalLabel: approvalLabel,
+      approvalColor: approvalColor,
+      approvalNote: approvalNote,
+      approvalAt: approvalAt,
       syncStatus: 'synced',
       clientUuid: clientUuid,
+      createdByName: createdByName,
+      updatedByName: updatedByName,
       createdAt: createdAt,
       updatedAt: updatedAt,
       isToday: true,

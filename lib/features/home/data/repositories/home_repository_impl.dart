@@ -11,7 +11,8 @@ import '../../domain/repositories/home_repository.dart';
 import '../services/home_api_service.dart';
 
 class HomeRepositoryImpl implements HomeRepository {
-  final HomeApiService _apiService;
+  // ignore: unused_field
+  final HomeApiService? _apiService;
   final AppDatabase? _database;
 
   static const String _activeVisitKey = 'dms_active_visit_session_v1';
@@ -19,31 +20,14 @@ class HomeRepositoryImpl implements HomeRepository {
   static const String _attendanceStorageKey = 'dms_local_attendance_session_v1';
   static const String _declarationsListKey = 'pos_declarations_local_list';
 
-  HomeRepositoryImpl(this._apiService, [this._database]);
+  HomeRepositoryImpl([this._apiService, this._database]);
 
   @override
   Future<DashboardEntity> getDashboardData() async {
-    // 1. Thử gọi API nếu server backend có triển khai /dashboard
-    try {
-      final model = await _apiService.getDashboardData();
-      return await _enrichDashboard(model.toEntity());
-    } catch (_) {
-      // 2. Khi backend chưa có /dashboard hoặc thiết bị đang ngoại tuyến:
-      // Xây dựng DashboardEntity hoàn toàn từ dữ liệu thực tế của phiên đăng nhập và SQLite/Cache cục bộ.
-      return _buildRealLocalDashboard();
-    }
-  }
-
-  /// Làm giàu dữ liệu dashboard từ thông tin người dùng và hoạt động thực tế
-  Future<DashboardEntity> _enrichDashboard(DashboardEntity remote) async {
-    final real = await _buildRealLocalDashboard();
-    return DashboardEntity(
-      greeting: real.greeting,
-      attendance: real.attendance.isCheckedIn ? real.attendance : remote.attendance,
-      routeSummary: real.routeSummary.totalCount > 0 ? real.routeSummary : remote.routeSummary,
-      formSummary: remote.formSummary,
-      recentActivities: real.recentActivities.isNotEmpty ? real.recentActivities : remote.recentActivities,
-    );
+    // Xây dựng DashboardEntity hoàn toàn từ dữ liệu thực tế của phiên đăng nhập và SQLite/Cache cục bộ.
+    // Hệ thống backend DMS VTHM quản lý dữ liệu phân tán theo từng phân hệ (chấm công, viếng thăm, điểm bán)
+    // và không cung cấp endpoint /dashboard riêng lẻ, tránh phát sinh request 404 không cần thiết khi mở ứng dụng.
+    return _buildRealLocalDashboard();
   }
 
   /// Xây dựng toàn bộ Dashboard từ dữ liệu thực tế trên máy, không dùng bất kỳ mock data nào

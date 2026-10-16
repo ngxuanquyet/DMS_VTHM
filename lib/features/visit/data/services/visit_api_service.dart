@@ -7,6 +7,7 @@ import '../../domain/entities/visit_photo_entity.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
 import '../models/checkin_request_model.dart';
 import '../models/checkout_request_model.dart';
+import '../../domain/entities/visit_history_entity.dart';
 
 class VisitApiService {
   final ApiClient _apiClient;
@@ -187,5 +188,42 @@ class VisitApiService {
       return response;
     }
     return {'id': visitId};
+  }
+
+  /// Lấy danh sách lịch sử viếng thăm của một điểm bán (§2.4 SPEC 16/10/2026)
+  /// GET /dms/customers/{customerId}/visit-history?page=1&per-page=20
+  Future<CustomerVisitHistoryResponse> getCustomerVisitHistory(
+    int customerId, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final response = await _apiClient.get(
+      '/dms/customers/$customerId/visit-history?page=$page&per-page=$perPage',
+    );
+
+    if (response is Map<String, dynamic>) {
+      return CustomerVisitHistoryResponse.fromJson(response);
+    }
+    return const CustomerVisitHistoryResponse();
+  }
+
+  /// Lấy chi tiết một lượt viếng thăm lịch sử của điểm bán (§2.4 SPEC 16/10/2026)
+  /// GET /dms/customers/{customerId}/visit-history/{visitId}
+  Future<VisitHistoryDetailEntity> getCustomerVisitHistoryDetail(
+    int customerId,
+    int visitId,
+  ) async {
+    final response = await _apiClient.get(
+      '/dms/customers/$customerId/visit-history/$visitId',
+    );
+
+    if (response is Map<String, dynamic>) {
+      final data = response['data'] is Map<String, dynamic>
+          ? response['data'] as Map<String, dynamic>
+          : response;
+      return VisitHistoryDetailEntity.fromJson(data);
+    }
+
+    throw Exception('Không tìm thấy chi tiết lượt viếng thăm lịch sử');
   }
 }

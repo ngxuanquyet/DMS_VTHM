@@ -48,16 +48,21 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
 
     // Lấy label của item đang chọn (nếu có)
     final selectedOption = options.cast<DynamicFormOption?>().firstWhere(
-          (o) => o?.value == value || o?.value.toString() == value?.toString(),
+          (o) => (o?.value == value || o?.value.toString() == value?.toString()) &&
+              value != null &&
+              value.toString().trim().isNotEmpty,
           orElse: () => null,
         );
 
-    // 🔴 Hiển thị dạng Dropdown nếu là trường tuyến bán hàng (route_ids/route_id) hoặc được cấu hình dropdown
+    // 🔴 Hiển thị dạng Dropdown nếu là trường tuyến bán hàng (route_ids/route_id) hoặc được cấu hình dropdown/badge Danh sách chọn
     final isDropdown = field.code == 'route_ids' ||
         field.code == 'route_id' ||
         field.catalog == 'dropdown' ||
         field.catalog == 'route' ||
-        field.source == 'dropdown';
+        field.source == 'dropdown' ||
+        field.badge == 'Danh sách chọn' ||
+        field.code.startsWith('nhan_') ||
+        field.code == 'khach_hang_vthm';
 
     if (isDropdown) {
       final isRoute = field.code.contains('route');

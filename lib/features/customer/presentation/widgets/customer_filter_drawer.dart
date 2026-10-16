@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../viewmodels/customer_view_model.dart';
@@ -181,6 +182,62 @@ class _CustomerFilterDrawerState extends State<CustomerFilterDrawer> {
                         tab: CustomerFilterTab.pending,
                         isDark: isDark,
                       ),
+                      if (widget.state.pendingApprovalCount > 0)
+                        _buildTabChip(
+                          label: 'Chờ duyệt (${widget.state.pendingApprovalCount})',
+                          tab: CustomerFilterTab.pendingApproval,
+                          activeColor: const Color(0xFFD97706),
+                          icon: Icons.hourglass_top_rounded,
+                          isDark: isDark,
+                        ),
+                      () {
+                        final rejectedCount = widget.state.rejectedCount;
+                        if (rejectedCount <= 0) return const SizedBox.shrink();
+                        return InkWell(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            context.push('/customers/rejected');
+                          },
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0x33DC2626)
+                                  : const Color(0xFFFEE2E2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: const Color(0xFFEF4444),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.cancel_outlined,
+                                  size: 13,
+                                  color: Color(0xFFDC2626),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Bị từ chối ($rejectedCount)',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? const Color(0xFFFCA5A5)
+                                        : const Color(0xFFB91C1C),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }(),
                     ],
                   ),
                   const SizedBox(height: 22),

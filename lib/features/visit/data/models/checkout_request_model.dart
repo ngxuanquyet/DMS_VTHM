@@ -1,6 +1,7 @@
 class CheckoutRequestModel {
   final String visitResult; // 'visited' | 'closed'
   final String? closedNote;
+  final String? note;
   final double? lat;
   final double? lng;
   final double? accuracyM;
@@ -12,6 +13,7 @@ class CheckoutRequestModel {
   const CheckoutRequestModel({
     required this.visitResult,
     this.closedNote,
+    this.note,
     this.lat,
     this.lng,
     this.accuracyM,
@@ -27,6 +29,9 @@ class CheckoutRequestModel {
     };
     if (visitResult == 'closed' && closedNote != null && closedNote!.isNotEmpty) {
       data['closed_note'] = closedNote;
+    }
+    if (note != null && note!.isNotEmpty) {
+      data['note'] = note;
     }
     if (lat != null) data['lat'] = lat;
     if (lng != null) data['lng'] = lng;

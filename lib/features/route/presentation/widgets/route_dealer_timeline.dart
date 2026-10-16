@@ -135,18 +135,6 @@ class RouteDealerTimeline extends ConsumerWidget {
     double? distance, {
     int? allowedRadius,
   }) async {
-    // 0. Nếu điểm bán đã hoàn thành viếng thăm hôm nay (§3 Luật 2)
-    if (dealer.status == DealerVisitStatus.completed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.'),
-          backgroundColor: Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
     // 0.1. Kiểm tra phiên viếng thăm đang mở (§3 Luật 3)
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);

@@ -18,6 +18,7 @@ enum CustomerFilterTab {
   today,
   visited,
   pending,
+  pendingApproval,
 }
 
 class CustomerState {
@@ -86,11 +87,13 @@ class CustomerState {
     );
   }
 
-  int get totalCount => allCustomers.length;
-  int get pendingSyncCount => allCustomers.where((c) => c.syncStatus == 'pending' || c.syncStatus == 'error').length;
-  int get todayCount => allCustomers.where((c) => c.isToday).length;
-  int get visitedCount => allCustomers.where((c) => c.visitStatus == CustomerVisitStatus.visited).length;
-  int get pendingCount => allCustomers.where((c) => c.visitStatus == CustomerVisitStatus.pending).length;
+  int get totalCount => allCustomers.where((c) => !c.isRejectedApproval).length;
+  int get pendingSyncCount => allCustomers.where((c) => !c.isRejectedApproval && (c.syncStatus == 'pending' || c.syncStatus == 'error')).length;
+  int get todayCount => allCustomers.where((c) => !c.isRejectedApproval && c.isToday).length;
+  int get visitedCount => allCustomers.where((c) => !c.isRejectedApproval && c.visitStatus == CustomerVisitStatus.visited).length;
+  int get pendingCount => allCustomers.where((c) => !c.isRejectedApproval && c.visitStatus == CustomerVisitStatus.pending).length;
+  int get pendingApprovalCount => allCustomers.where((c) => c.isPendingApproval).length;
+  int get rejectedCount => allCustomers.where((c) => c.isRejectedApproval).length;
 
   int get activeFiltersCount {
     int count = 0;
@@ -110,8 +113,9 @@ class CustomerState {
         set.add(trimmed);
       }
     }
-    // 2. Tuyến thực tế của khách hàng
+    // 2. Tuyến thực tế của khách hàng (loại trừ điểm bán bị từ chối)
     for (final c in allCustomers) {
+      if (c.isRejectedApproval) continue;
       if (c.routes.isNotEmpty) {
         for (final r in c.routes) {
           final trimmed = r.trim();
@@ -132,6 +136,7 @@ class CustomerState {
       if (ct.name.trim().isNotEmpty) set.add(ct.name.trim());
     }
     for (final c in allCustomers) {
+      if (c.isRejectedApproval) continue;
       if (c.type.trim().isNotEmpty) set.add(c.type.trim());
     }
     return set.toList();
@@ -143,6 +148,7 @@ class CustomerState {
       if (ch.name.trim().isNotEmpty) set.add(ch.name.trim());
     }
     for (final c in allCustomers) {
+      if (c.isRejectedApproval) continue;
       if (c.channelName != null && c.channelName!.trim().isNotEmpty) {
         set.add(c.channelName!.trim());
       }
@@ -329,8 +335,8 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
   final state = ref.watch(customerViewModelProvider);
   final livePoint = ref.watch(currentPointProvider).value;
 
-  // 1. Lọc theo tab
-  var list = state.allCustomers.where((c) {
+  // 1. Loại trừ điểm bán bị từ chối duyệt (hiển thị riêng tại RejectedCustomersScreen) và lọc theo tab
+  var list = state.allCustomers.where((c) => !c.isRejectedApproval).where((c) {
     switch (state.selectedTab) {
       case CustomerFilterTab.all:
         return true;
@@ -342,6 +348,8 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
         return c.visitStatus == CustomerVisitStatus.visited;
       case CustomerFilterTab.pending:
         return c.visitStatus == CustomerVisitStatus.pending;
+      case CustomerFilterTab.pendingApproval:
+        return c.isPendingApproval;
     }
   }).toList();
 

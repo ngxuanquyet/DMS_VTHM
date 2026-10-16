@@ -18,7 +18,7 @@ class VisitRules {
     this.minPhotos = 2,
     this.closedMinPhotos = 1,
     this.routeScope = 'assigned',
-    this.autoCloseAfterHours = 12,
+    this.autoCloseAfterHours = 0,
   });
 
   factory VisitRules.fromJson(Map<String, dynamic> json) {
@@ -33,7 +33,7 @@ class VisitRules {
       closedMinPhotos: (json['closed_min_photos'] as num?)?.toInt() ?? 1,
       routeScope: json['route_scope']?.toString() ?? 'assigned',
       autoCloseAfterHours:
-          (json['auto_close_after_hours'] as num?)?.toInt() ?? 12,
+          (json['auto_close_after_hours'] as num?)?.toInt() ?? 0,
     );
   }
 

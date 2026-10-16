@@ -28,6 +28,8 @@ class LocationFieldWidget extends ConsumerStatefulWidget {
   final String? errorText;
   final Map<String, dynamic>? value;
   final ValueChanged<Map<String, dynamic>?> onChanged;
+  final bool showAddressInput;
+  final bool? showBorderContainer;
 
   const LocationFieldWidget({
     super.key,
@@ -39,6 +41,8 @@ class LocationFieldWidget extends ConsumerStatefulWidget {
     this.errorText,
     required this.value,
     required this.onChanged,
+    this.showAddressInput = true,
+    this.showBorderContainer,
   });
 
   @override
@@ -51,6 +55,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
   bool _isLocating = false;
   String? _locationError;
   String? _resolvedAddress;
+
+  bool get _effectiveShowBorderContainer =>
+      widget.showBorderContainer ?? widget.showAddressInput;
   bool _isLoadingAddress = false;
   GoongMapStyle _currentMapStyle = GoongMapStyle.standard;
 
@@ -65,7 +72,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     _addressController = TextEditingController(text: initialAddress);
     _resolvedAddress = initialAddress.isNotEmpty ? initialAddress : null;
 
-    if (_lat != null && _lng != null && (_resolvedAddress == null || _resolvedAddress!.isEmpty)) {
+    if (widget.showAddressInput && _lat != null && _lng != null && (_resolvedAddress == null || _resolvedAddress!.isEmpty)) {
       _reverseGeocodeAndUpdate(_lat!, _lng!);
     }
   }
@@ -89,7 +96,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
 
     if (_lat != oldLat || _lng != oldLng) {
       if (_lat != null && _lng != null) {
-        _reverseGeocodeAndUpdate(_lat!, _lng!);
+        if (widget.showAddressInput) {
+          _reverseGeocodeAndUpdate(_lat!, _lng!);
+        }
       } else {
         setState(() => _resolvedAddress = null);
       }
@@ -417,24 +426,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     final lat = _lat;
     final lng = _lng;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.darkSurfaceContainerLowest
-            : AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.errorText != null
-              ? AppColors.error
-              : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-          width: widget.errorText != null ? 1.5 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           // Tiêu đề trường + Badge Trạng thái
           Row(
             children: [
@@ -466,10 +460,14 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.location_on_outlined, size: 12, color: AppColors.primary),
+                    Icon(
+                      widget.showAddressInput ? Icons.location_on_outlined : Icons.gps_fixed_rounded,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 3),
                     Text(
-                      'Vị trí & GPS',
+                      widget.showAddressInput ? 'Vị trí & GPS' : 'Toạ độ GPS',
                       style: AppTypography.labelSmall(
                         color: AppColors.primary,
                       ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
@@ -493,8 +491,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
           const SizedBox(height: 10),
 
           // 1. Ô gõ địa chỉ (tuỳ chọn, ≤ 500 ký tự) (§2)
-          if (!widget.isReadOnly) ...[
-            TextField(
+          if (widget.showAddressInput) ...[
+            if (!widget.isReadOnly) ...[
+              TextField(
               focusNode: _addressFocusNode,
               controller: _addressController,
               maxLength: widget.maxLength,
@@ -692,6 +691,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
             ),
             const SizedBox(height: 10),
           ],
+        ],
 
           // 2. Khung Bản Đồ Tương Tác Goong Map (Đủ 3 chế độ xem, phóng to thu nhỏ, vuốt xem bản đồ)
           Container(
@@ -927,11 +927,20 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       const Icon(Icons.location_on, size: 16, color: AppColors.primary),
                       const SizedBox(width: 4),
                       Text(
-                        'Đã định vị vị trí',
+                        '${lat!.toStringAsFixed(6)}, ${lng!.toStringAsFixed(6)}',
                         style: AppTypography.bodySmall(
                           color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                         ).copyWith(fontWeight: FontWeight.w600),
                       ),
+                      if (_accuracy != null) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(±${_accuracy!.toStringAsFixed(1)} m)',
+                          style: AppTypography.bodySmall(
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                          ).copyWith(fontSize: 11),
+                        ),
+                      ],
                       if (_isMock) ...[
                         const SizedBox(width: 6),
                         Container(
@@ -953,7 +962,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       const SizedBox(width: 6),
                       // Nút mở Google Maps (§5)
                       InkWell(
-                        onTap: () => _openGoogleMaps(lat!, lng!),
+                        onTap: () => _openGoogleMaps(lat, lng),
                         borderRadius: BorderRadius.circular(4),
                         child: const Padding(
                           padding: EdgeInsets.all(2.0),
@@ -1007,7 +1016,31 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
             ),
           ],
         ],
+      );
+
+    if (!_effectiveShowBorderContainer) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: body,
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.darkSurfaceContainerLowest
+            : AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.errorText != null
+              ? AppColors.error
+              : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+          width: widget.errorText != null ? 1.5 : 1,
+        ),
       ),
+      child: body,
     );
   }
 }

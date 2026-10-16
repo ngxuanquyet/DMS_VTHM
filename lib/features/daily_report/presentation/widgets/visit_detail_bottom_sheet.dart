@@ -110,6 +110,27 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                     : 'Ngoài tuyến',
               ),
               _detailRow(
+                'Trạng thái điểm bán',
+                visit.customerApprovalStatus == 'rejected'
+                    ? 'Bị từ chối duyệt'
+                    : (visit.customerApprovalStatus == 'pending'
+                        ? 'Chờ duyệt điểm bán'
+                        : 'Đã duyệt'),
+                valueColor: visit.customerApprovalStatus == 'rejected'
+                    ? const Color(0xFFDC2626)
+                    : (visit.customerApprovalStatus == 'pending'
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFF006E15)),
+              ),
+              if (visit.customerApprovalStatus == 'rejected' &&
+                  visit.customerApprovalNote != null &&
+                  visit.customerApprovalNote!.isNotEmpty)
+                _detailRow(
+                  'Lý do từ chối ĐB',
+                  visit.customerApprovalNote!,
+                  valueColor: const Color(0xFFDC2626),
+                ),
+              _detailRow(
                 'Kết quả viếng thăm',
                 visit.visitResult == 'closed'
                     ? 'Cửa hàng đóng cửa'
@@ -147,6 +168,12 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                       ? '— (chưa tính)'
                       : '${visit.checkoutDistanceFormatted}${visit.isCheckoutWithinGeofence != null ? (visit.isCheckoutWithinGeofence == true ? ' (Trong vùng)' : ' (Ngoài vùng - Đã gắn cờ)') : ''}',
                   valueColor: visit.isCheckoutWithinGeofence == false ? const Color(0xFFDC2626) : null,
+                ),
+              if (visit.isCheckoutOtherDay)
+                _detailRow(
+                  'Ngày Check-out',
+                  'Khác ngày check-in (Đã gắn cờ "Ra khác ngày")',
+                  valueColor: const Color(0xFFD97706),
                 ),
 
               // Hiển thị ảnh nếu có photoUrls

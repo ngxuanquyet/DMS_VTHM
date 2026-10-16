@@ -69,12 +69,18 @@ class CustomerLocalDataSource {
     final route = (data['route'] ?? (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : 'Tuyến 1')).toString().trim();
 
     double? lat;
-    if (data['lat'] != null) {
-      lat = double.tryParse(data['lat'].toString());
-    }
     double? lng;
-    if (data['lng'] != null) {
-      lng = double.tryParse(data['lng'].toString());
+    if (data['coords'] is Map) {
+      final cMap = data['coords'] as Map;
+      lat = (cMap['lat'] as num?)?.toDouble() ?? double.tryParse(cMap['lat']?.toString() ?? '');
+      lng = (cMap['lng'] as num?)?.toDouble() ?? double.tryParse(cMap['lng']?.toString() ?? '');
+    } else {
+      if (data['lat'] != null) {
+        lat = double.tryParse(data['lat'].toString());
+      }
+      if (data['lng'] != null) {
+        lng = double.tryParse(data['lng'].toString());
+      }
     }
 
     // 🔴 Trích xuất toàn bộ ảnh điểm bán (token 32-hex hoặc đường dẫn tệp cục bộ)
@@ -375,11 +381,17 @@ class CustomerLocalDataSource {
           syncStatus: const Value('synced'),
           dynamicFieldsJson: Value(jsonEncode({
             ...remote.dynamicFields,
+            if (remote.createdByName != null) 'created_by_name': remote.createdByName,
+            if (remote.updatedByName != null) 'updated_by_name': remote.updatedByName,
             if (remote.regionName != null) 'region_name': remote.regionName,
             if (remote.routes.isNotEmpty) 'routes': remote.routes,
             if (remote.routeIds.isNotEmpty) 'route_ids': remote.routeIds,
             if (remote.photoUrl != null) 'photo_url': remote.photoUrl,
             if (remote.photoUrls.isNotEmpty) 'photo_urls': remote.photoUrls,
+            if (remote.approvalLabel != null) 'approval_label': remote.approvalLabel,
+            if (remote.approvalColor != null) 'approval_color': remote.approvalColor,
+            if (remote.approvalNote != null) 'approval_note': remote.approvalNote,
+            if (remote.approvalAt != null) 'approval_at': remote.approvalAt,
           })),
           createdAt: Value(remote.createdAt),
           updatedAt: Value(remote.updatedAt),
@@ -462,12 +474,16 @@ class CustomerLocalDataSource {
         ? changes['email']?.toString()
         : existing.email;
     final address = changes['address']?.toString() ?? existing.address;
-    final lat = changes.containsKey('lat')
-        ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
-        : existing.lat;
-    final lng = changes.containsKey('lng')
-        ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
-        : existing.lng;
+    final lat = changes.containsKey('coords')
+        ? (changes['coords'] is Map ? (changes['coords']['lat'] as num?)?.toDouble() : null)
+        : (changes.containsKey('lat')
+            ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
+            : existing.lat);
+    final lng = changes.containsKey('coords')
+        ? (changes['coords'] is Map ? (changes['coords']['lng'] as num?)?.toDouble() : null)
+        : (changes.containsKey('lng')
+            ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
+            : existing.lng);
     final route = changes.containsKey('route')
         ? (changes['route']?.toString() ?? existing.route)
         : existing.route;
@@ -725,8 +741,22 @@ class CustomerLocalDataSource {
       geofenceRadiusM: row.geofenceRadiusM,
       status: row.status,
       approvalStatus: row.approvalStatus,
+      approvalLabel: dynFields['approval_label']?.toString(),
+      approvalColor: dynFields['approval_color']?.toString(),
+      approvalNote: dynFields['approval_note']?.toString(),
+      approvalAt: dynFields['approval_at']?.toString(),
       syncStatus: row.syncStatus,
       clientUuid: row.clientUuid,
+      createdByName: dynFields['created_by_name']?.toString() ??
+          dynFields['created_by_code']?.toString() ??
+          dynFields['created_by']?.toString() ??
+          dynFields['creator_name']?.toString() ??
+          (dynFields['data'] is Map ? (dynFields['data']['created_by_name'] ?? dynFields['data']['created_by'])?.toString() : null),
+      updatedByName: dynFields['updated_by_name']?.toString() ??
+          dynFields['updated_by_code']?.toString() ??
+          dynFields['updated_by']?.toString() ??
+          dynFields['updater_name']?.toString() ??
+          (dynFields['data'] is Map ? (dynFields['data']['updated_by_name'] ?? dynFields['data']['updated_by'])?.toString() : null),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       accentColor: accent,

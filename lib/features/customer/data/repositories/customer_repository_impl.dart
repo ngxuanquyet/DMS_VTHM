@@ -385,12 +385,19 @@ class CustomerRepositoryImpl implements CustomerRepository {
           ? changes['email']?.toString()
           : current.email,
       address: changes['address']?.toString() ?? current.address,
-      lat: changes.containsKey('lat')
-          ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
-          : current.lat,
-      lng: changes.containsKey('lng')
-          ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
-          : current.lng,
+      lat: changes.containsKey('coords')
+          ? (changes['coords'] is Map ? (changes['coords']['lat'] as num?)?.toDouble() : null)
+          : (changes.containsKey('lat')
+              ? (changes['lat'] is num ? (changes['lat'] as num).toDouble() : null)
+              : current.lat),
+      lng: changes.containsKey('coords')
+          ? (changes['coords'] is Map ? (changes['coords']['lng'] as num?)?.toDouble() : null)
+          : (changes.containsKey('lng')
+              ? (changes['lng'] is num ? (changes['lng'] as num).toDouble() : null)
+              : current.lng),
+      coordsMock: changes.containsKey('coords')
+          ? (changes['coords'] is Map ? changes['coords']['mock'] as bool? : null)
+          : current.coordsMock,
       geofenceRadiusM: changes.containsKey('geofence_radius_m')
           ? (changes['geofence_radius_m'] as int?)
           : current.geofenceRadiusM,
@@ -542,9 +549,17 @@ class CustomerRepositoryImpl implements CustomerRepository {
     final channelName = (data['channel_name'] ?? '').toString().trim();
 
     double? lat;
-    if (cleanPayload['lat'] != null) lat = double.tryParse(cleanPayload['lat'].toString());
     double? lng;
-    if (cleanPayload['lng'] != null) lng = double.tryParse(cleanPayload['lng'].toString());
+    bool? coordsMock;
+    if (cleanPayload['coords'] is Map) {
+      final cMap = cleanPayload['coords'] as Map;
+      lat = (cMap['lat'] as num?)?.toDouble() ?? double.tryParse(cMap['lat']?.toString() ?? '');
+      lng = (cMap['lng'] as num?)?.toDouble() ?? double.tryParse(cMap['lng']?.toString() ?? '');
+      coordsMock = cMap['mock'] as bool?;
+    } else {
+      if (cleanPayload['lat'] != null) lat = double.tryParse(cleanPayload['lat'].toString());
+      if (cleanPayload['lng'] != null) lng = double.tryParse(cleanPayload['lng'].toString());
+    }
 
     final now = DateTime.now();
     final clientTimeIso = '${now.toIso8601String()}+07:00';
@@ -567,8 +582,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
       phone: phone,
       lat: lat,
       lng: lng,
+      coordsMock: coordsMock,
       status: 'active',
-      approvalStatus: 'approved',
+      approvalStatus: 'pending',
+      approvalLabel: 'Chờ duyệt',
+      approvalColor: 'warning',
       syncStatus: 'synced',
       clientUuid: clientUuid,
       photoUrl: photoToken,
@@ -788,11 +806,11 @@ const Map<String, dynamic> kDefaultCustomerFormSchema = {
         'section': 'Địa chỉ & Vị trí',
       },
       {
-        'code': 'lat_lng',
-        'label': 'Tọa độ GPS điểm bán',
-        'type': 'gps',
-        'is_required': false,
-        'section': 'Địa chỉ & Vị trí',
+        'code': 'coords',
+        'label': 'Vị trí điểm bán trên bản đồ',
+        'type': 'location',
+        'is_required': true,
+        'section': 'Vị trí trên bản đồ',
       },
       {
         'code': 'photo_file_id',

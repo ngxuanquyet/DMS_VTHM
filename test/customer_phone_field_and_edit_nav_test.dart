@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
 import 'package:vthm_dms/core/dynamic_form/widgets/text_field_widget.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
+import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/edit_customer_screen.dart';
 import 'package:vthm_dms/features/customer/presentation/widgets/customer_card.dart';
 
@@ -89,8 +90,11 @@ void main() {
       );
 
       await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
+        ProviderScope(
+          overrides: [
+            customerFormSchemaProvider.overrideWith((ref) => Future.value({})),
+          ],
+          child: const MaterialApp(
             home: EditCustomerScreen(
               customer: customer,
             ),

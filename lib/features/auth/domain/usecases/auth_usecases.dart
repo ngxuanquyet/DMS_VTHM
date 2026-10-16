@@ -48,3 +48,13 @@ class GetSavedUsernameUseCase {
     return _repository.getSavedUsername();
   }
 }
+
+class CheckAppAccessUseCase {
+  final AuthRepository _repository;
+
+  CheckAppAccessUseCase(this._repository);
+
+  Future<bool> call() {
+    return _repository.checkAppAccess();
+  }
+}

@@ -14,6 +14,7 @@ import 'package:vthm_dms/features/visit/data/models/checkout_request_model.dart'
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_photo_entity.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_requirements_entity.dart';
+import 'package:vthm_dms/features/visit/domain/entities/visit_history_entity.dart';
 import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
 import 'package:vthm_dms/features/visit/domain/repositories/visit_repository.dart';
 import 'package:vthm_dms/features/forms/domain/repositories/forms_repository.dart';
@@ -71,6 +72,14 @@ class FakeVisitRepository implements VisitRepository {
   final List<VisitEntity> todayVisits;
   VisitEntity? activeVisit;
   FakeVisitRepository(this.todayVisits, {this.activeVisit});
+
+  @override
+  Future<CustomerVisitHistoryResponse> getCustomerVisitHistory(int customerId, {int page = 1, int perPage = 20}) async =>
+      const CustomerVisitHistoryResponse();
+
+  @override
+  Future<VisitHistoryDetailEntity> getCustomerVisitHistoryDetail(int customerId, int visitId) async =>
+      throw UnimplementedError();
 
   @override
   Future<List<VisitEntity>> getTodayVisits() async => todayVisits;

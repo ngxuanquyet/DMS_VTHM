@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
@@ -295,8 +296,21 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
       payload['route_ids'] = finalRouteIds;
 
+      // 🔴 Theo spec 15/10/2026: Tránh gửi CẢ coords lẫn lat/lng phẳng gây lỗi 422
+      if (payload['coords'] != null) {
+        payload.remove('lat');
+        payload.remove('lng');
+      }
+
       // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)
       if (isOnline) {
+        final photoLat = payload['coords'] is Map
+            ? (payload['coords']['lat'] as num?)?.toDouble()
+            : (payload['lat'] is num ? (payload['lat'] as num).toDouble() : null);
+        final photoLng = payload['coords'] is Map
+            ? (payload['coords']['lng'] as num?)?.toDouble()
+            : (payload['lng'] is num ? (payload['lng'] as num).toDouble() : null);
+
         for (final key in payload.keys.toList()) {
           if (!_isCustomerPhotoKey(key)) continue;
 
@@ -313,8 +327,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                     final uploadRes = await repo.uploadCustomerPhoto(
                       itemStr,
                       locationName: payload['name']?.toString() ?? 'Điểm bán mới',
-                      lat: payload['lat'] is num ? (payload['lat'] as num).toDouble() : null,
-                      lng: payload['lng'] is num ? (payload['lng'] as num).toDouble() : null,
+                      lat: photoLat,
+                      lng: photoLng,
                     );
                     if (uploadRes['token'] != null) {
                       tokens.add(uploadRes['token'].toString());
@@ -354,8 +368,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 final uploadRes = await repo.uploadCustomerPhoto(
                   valStr,
                   locationName: payload['name']?.toString() ?? 'Điểm bán mới',
-                  lat: payload['lat'] is num ? (payload['lat'] as num).toDouble() : null,
-                  lng: payload['lng'] is num ? (payload['lng'] as num).toDouble() : null,
+                  lat: photoLat,
+                  lng: photoLng,
                 );
                 if (uploadRes['token'] != null) {
                   final token = uploadRes['token'].toString();
@@ -449,7 +463,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      final newCustomer = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -459,6 +473,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
 
       if (mounted) {
+        // Làm mới danh sách tuyến và khách hàng trong nền
+        ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+        ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+
         final pendingCount = await ref.read(appDatabaseProvider).countPendingSync();
         if (!mounted) return;
         final hasPending = pendingCount > 0;
@@ -474,18 +492,41 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 Expanded(
                   child: Text(
                     !hasPending
-                        ? 'Đã tạo và đồng bộ điểm bán lên hệ thống thành công!'
-                        : 'Đã lưu trên máy! Điểm bán sẽ tự động đồng bộ khi có mạng.',
+                        ? 'Đã tạo điểm bán thành công! Đang chuyển vào màn viếng thăm...'
+                        : 'Đã lưu điểm bán ngoại tuyến! Đang chuyển vào màn viếng thăm...',
                   ),
                 ),
               ],
             ),
             backgroundColor: !hasPending ? AppColors.primary : const Color(0xFFD97706),
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
           ),
         );
 
-        Navigator.pop(context, true);
+        final dealer = DealerEntity(
+          id: newCustomer.id.toString(),
+          order: '01',
+          name: newCustomer.name,
+          code: newCustomer.code.isNotEmpty ? newCustomer.code : null,
+          phone: newCustomer.phone.isNotEmpty ? newCustomer.phone : null,
+          contactPerson: newCustomer.contactPerson.isNotEmpty ? newCustomer.contactPerson : null,
+          type: newCustomer.type.isNotEmpty ? newCustomer.type : null,
+          address: newCustomer.address,
+          status: DealerVisitStatus.pending,
+          statusLabel: 'Chưa ghé',
+          isVip: false,
+          lat: newCustomer.lat,
+          lng: newCustomer.lng,
+          geofenceRadiusM: newCustomer.geofenceRadiusM,
+          customer: newCustomer,
+        );
+
+        ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
+
+        // 🔴 Theo nghiệp vụ: Khi tạo điểm bán mới xong là navigate vào màn viếng thăm luôn,
+        // chứ không phải là ghi nhận viếng thăm luôn, nhân viên vẫn phải thực hiện đầy đủ các bước viếng thăm thông thường.
+        context.pushReplacement('/check-in', extra: dealer);
       }
     } catch (e) {
       if (mounted) {
@@ -563,51 +604,78 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         backgroundColor: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Tải lại cấu hình form',
-            onPressed: () async {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Row(
-                    children: [
-                      AppLoading(size: 24),
-                      SizedBox(width: 8),
-                      Text('Đang đồng bộ...'),
-                    ],
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkSurfaceContainer
+                      : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark
+                        ? AppColors.darkOutlineVariant
+                        : AppColors.outlineVariant,
+                    width: 1,
                   ),
-                  duration: Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
                 ),
-              );
-              try {
-                final repo = ref.read(customerRepositoryProvider);
-                await Future.wait([
-                  repo.getCustomerFormSchema(forceRefresh: true),
-                  repo.getCustomerMeta(forceRefresh: true),
-                ]);
-              } catch (_) {}
-              ref.invalidate(customerFormSchemaProvider);
-              ref.invalidate(customerMetaProvider);
-              ref.invalidate(userAssignedRoutesProvider);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(Icons.check_circle_rounded, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text('Đồng bộ thành công!'),
-                      ],
-                    ),
-                    backgroundColor: Color(0xFF10B981),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.refresh_rounded,
+                    size: 20,
+                    color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                   ),
-                );
-              }
-            },
+                  padding: EdgeInsets.zero,
+                  splashRadius: 20,
+                  tooltip: 'Tải lại cấu hình form',
+                  onPressed: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Row(
+                          children: [
+                            AppLoading(size: 24),
+                            SizedBox(width: 8),
+                            Text('Đang đồng bộ...'),
+                          ],
+                        ),
+                        duration: Duration(seconds: 1),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    try {
+                      final repo = ref.read(customerRepositoryProvider);
+                      await Future.wait([
+                        repo.getCustomerFormSchema(forceRefresh: true),
+                        repo.getCustomerMeta(forceRefresh: true),
+                      ]);
+                    } catch (_) {}
+                    ref.invalidate(customerFormSchemaProvider);
+                    ref.invalidate(customerMetaProvider);
+                    ref.invalidate(userAssignedRoutesProvider);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(Icons.check_circle_rounded, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text('Đồng bộ thành công!'),
+                            ],
+                          ),
+                          backgroundColor: Color(0xFF10B981),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
           ),
         ],
         bottom: PreferredSize(
@@ -892,6 +960,32 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 allowGallery: false,
                 helperText: fields[i].helperText?.replaceAll('hoặc tải lên ', '') ??
                     'Chụp tối đa ${fields[i].maxPhotos} ảnh thực tế điểm bán từ máy ảnh',
+              );
+            }
+          }
+
+          // 🔴 Đảm bảo có ô cứng coords (Toạ độ GPS) theo spec 15/10/2026 thay thế cho lat/lng cũ,
+          // định dạng giống form sửa điểm bán (EditCustomerScreen)
+          if (!fields.any((f) => f.code == 'coords')) {
+            fields.removeWhere((f) => f.code == 'lat' || f.code == 'lng');
+            final insertIdx = fields.indexWhere((f) => f.code == 'address');
+            fields.insert(
+              insertIdx != -1 ? insertIdx + 1 : fields.length,
+              const DynamicFormField(
+                code: 'coords',
+                label: 'Vị trí điểm bán trên bản đồ',
+                type: DynamicFormFieldType.location,
+                isRequired: true,
+                section: 'Vị trí trên bản đồ',
+              ),
+            );
+          } else {
+            final coordsIdx = fields.indexWhere((f) => f.code == 'coords');
+            if (coordsIdx != -1) {
+              fields[coordsIdx] = fields[coordsIdx].copyWith(
+                label: 'Vị trí điểm bán trên bản đồ',
+                section: 'Vị trí trên bản đồ',
+                isRequired: true,
               );
             }
           }

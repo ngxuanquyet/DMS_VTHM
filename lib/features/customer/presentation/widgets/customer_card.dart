@@ -29,9 +29,13 @@ class CustomerCard extends StatelessWidget {
   final bool isInProgress;
   final String? visitedTime;
   final String? syncStatus;
+  final String? approvalStatus;
+  final String? approvalLabel;
+  final String? approvalColor;
   final String? photoUrl;
   final List<String> photoUrls;
   final int? geofenceRadiusM;
+  final Map<String, dynamic>? dynamicFields;
 
   /// Tham số button duy nhất của template:
   /// - Màn tuyến: nút Check-in
@@ -72,9 +76,13 @@ class CustomerCard extends StatelessWidget {
     this.isInProgress = false,
     this.visitedTime,
     this.syncStatus,
+    this.approvalStatus,
+    this.approvalLabel,
+    this.approvalColor,
     this.photoUrl,
     this.photoUrls = const [],
     this.geofenceRadiusM,
+    this.dynamicFields,
     this.actionButton,
     this.showBorder = true,
     this.isCheckInDisabled = false,
@@ -105,16 +113,40 @@ class CustomerCard extends StatelessWidget {
     VoidCallback? onCallPhone,
   }) {
     final isCompleted = dealer.status == DealerVisitStatus.completed;
+    final isInProgress = dealer.status == DealerVisitStatus.inProgress;
     final resolvedButton = actionButton ??
         (isCompleted
-            ? CustomerCard.buildVisitedTimeChip(visitedTime: dealer.visitedTime)
-            : (onCheckIn != null
+            ? (onCheckIn != null
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (dealer.visitedTime != null && dealer.visitedTime!.isNotEmpty) ...[
+                        CustomerCard.buildVisitedTimeChip(visitedTime: dealer.visitedTime),
+                        const SizedBox(width: 6),
+                      ],
+                      CustomerCard.buildCheckInButton(
+                        onTap: onCheckIn,
+                        isDisabled: isCheckInDisabled,
+                        disabledReason: checkInDisabledReason,
+                        label: 'Ghé lại',
+                        icon: Icons.replay_rounded,
+                      ),
+                    ],
+                  )
+                : CustomerCard.buildVisitedTimeChip(visitedTime: dealer.visitedTime))
+            : (isInProgress && onCheckIn != null
                 ? CustomerCard.buildCheckInButton(
                     onTap: onCheckIn,
-                    isDisabled: isCheckInDisabled,
-                    disabledReason: checkInDisabledReason,
+                    label: 'Tiếp tục',
+                    icon: Icons.play_arrow_rounded,
                   )
-                : null));
+                : (onCheckIn != null
+                    ? CustomerCard.buildCheckInButton(
+                        onTap: onCheckIn,
+                        isDisabled: isCheckInDisabled,
+                        disabledReason: checkInDisabledReason,
+                      )
+                    : null)));
 
     final resolvedType = dealer.type?.isNotEmpty == true
         ? dealer.type
@@ -124,6 +156,18 @@ class CustomerCard extends StatelessWidget {
 
     final resolvedSyncStatus = dealer.customer is CustomerEntity
         ? (dealer.customer as CustomerEntity).syncStatus
+        : null;
+
+    final resolvedApprovalStatus = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).approvalStatus
+        : null;
+
+    final resolvedApprovalLabel = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).displayApprovalLabel
+        : null;
+
+    final resolvedApprovalColor = dealer.customer is CustomerEntity
+        ? (dealer.customer as CustomerEntity).approvalColor
         : null;
 
     final resolvedPhotoUrl = dealer.customer is CustomerEntity
@@ -155,9 +199,17 @@ class CustomerCard extends StatelessWidget {
       isInProgress: dealer.status == DealerVisitStatus.inProgress,
       visitedTime: dealer.visitedTime,
       syncStatus: resolvedSyncStatus,
+      approvalStatus: resolvedApprovalStatus,
+      approvalLabel: resolvedApprovalLabel,
+      approvalColor: resolvedApprovalColor,
       photoUrl: resolvedPhotoUrl,
       photoUrls: resolvedPhotoUrls,
       geofenceRadiusM: resolvedGeofenceRadius,
+      dynamicFields: dealer.customer is CustomerEntity
+          ? (dealer.customer as CustomerEntity).dynamicFields
+          : (dealer.customer is Map<String, dynamic>
+              ? dealer.customer as Map<String, dynamic>
+              : null),
       actionButton: resolvedButton,
       showBorder: showBorder,
       isCheckInDisabled: isCheckInDisabled,
@@ -179,7 +231,7 @@ class CustomerCard extends StatelessWidget {
     VoidCallback? onCallPhone,
   }) {
     final resolvedButton = actionButton ??
-        (onEdit != null
+        (onEdit != null && !item.customer.isRejectedApproval
             ? CustomerCard.buildEditButton(onTap: onEdit)
             : null);
 
@@ -201,9 +253,13 @@ class CustomerCard extends StatelessWidget {
       isCompleted: item.customer.visitStatus == CustomerVisitStatus.visited,
       isInProgress: false,
       syncStatus: item.customer.syncStatus,
+      approvalStatus: item.customer.approvalStatus,
+      approvalLabel: item.customer.displayApprovalLabel,
+      approvalColor: item.customer.approvalColor,
       photoUrl: item.customer.fullPhotoUrl,
       photoUrls: item.customer.fullPhotoUrls,
       geofenceRadiusM: item.customer.geofenceRadiusM,
+      dynamicFields: item.customer.dynamicFields,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -226,11 +282,15 @@ class CustomerCard extends StatelessWidget {
   }) {
     final isCompleted = customer.visitStatus == CustomerVisitStatus.visited;
     final resolvedButton = actionButton ??
-        (onEdit != null
+        (onEdit != null && !customer.isRejectedApproval
             ? CustomerCard.buildEditButton(onTap: onEdit)
             : (onCheckIn != null
                 ? (isCompleted
-                    ? CustomerCard.buildVisitedTimeChip()
+                    ? CustomerCard.buildCheckInButton(
+                        onTap: onCheckIn,
+                        label: 'Ghé lại',
+                        icon: Icons.replay_rounded,
+                      )
                     : CustomerCard.buildCheckInButton(onTap: onCheckIn))
                 : null));
 
@@ -251,9 +311,13 @@ class CustomerCard extends StatelessWidget {
       isCompleted: isCompleted,
       isInProgress: false,
       syncStatus: customer.syncStatus,
+      approvalStatus: customer.approvalStatus,
+      approvalLabel: customer.displayApprovalLabel,
+      approvalColor: customer.approvalColor,
       photoUrl: customer.fullPhotoUrl,
       photoUrls: customer.fullPhotoUrls,
       geofenceRadiusM: customer.geofenceRadiusM,
+      dynamicFields: customer.dynamicFields,
       actionButton: resolvedButton,
       onTap: onTap,
       onDirections: onDirections,
@@ -266,6 +330,8 @@ class CustomerCard extends StatelessWidget {
     required VoidCallback onTap,
     bool isDisabled = false,
     String? disabledReason,
+    String label = 'Check-in',
+    IconData icon = Icons.how_to_reg,
   }) {
     return Material(
       color: isDisabled ? const Color(0xFFB0BEC5) : const Color(0xFF47B347),
@@ -281,13 +347,13 @@ class CustomerCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.how_to_reg,
+                icon,
                 size: 16,
                 color: isDisabled ? Colors.white70 : Colors.white,
               ),
               const SizedBox(width: 4),
               Text(
-                'Check-in',
+                label,
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 13,
@@ -438,6 +504,75 @@ class CustomerCard extends StatelessWidget {
     return null;
   }
 
+  /// Trích xuất toạ độ GPS từ lat/lng hoặc dynamicFields (nếu có)
+  static (double, double)? extractCoordinates({
+    double? lat,
+    double? lng,
+    Map<String, dynamic>? dynamicFields,
+  }) {
+    double? parseCoord(dynamic value) {
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      if (value is String && value.trim().isNotEmpty) {
+        return double.tryParse(value.trim());
+      }
+      return null;
+    }
+
+    if (lat != null && lng != null && (lat != 0 || lng != 0)) {
+      return (lat, lng);
+    }
+
+    if (dynamicFields != null && dynamicFields.isNotEmpty) {
+      // 1. Kiểm tra dynamicFields['coords']
+      final rawCoords = dynamicFields['coords'];
+      if (rawCoords is Map) {
+        final dLat = parseCoord(rawCoords['lat'] ?? rawCoords['latitude']);
+        final dLng = parseCoord(rawCoords['lng'] ?? rawCoords['longitude']);
+        if (dLat != null && dLng != null && (dLat != 0 || dLng != 0)) {
+          return (dLat, dLng);
+        }
+      }
+
+      // 2. Kiểm tra các khoá phẳng lat / lng / latitude / longitude
+      final dLat = parseCoord(dynamicFields['lat'] ?? dynamicFields['latitude']);
+      final dLng = parseCoord(dynamicFields['lng'] ?? dynamicFields['longitude']);
+      if (dLat != null && dLng != null && (dLat != 0 || dLng != 0)) {
+        return (dLat, dLng);
+      }
+
+      // 3. Quét các trường toạ độ khác như 'toa_do', 'toado'
+      for (final entry in dynamicFields.entries) {
+        final k = entry.key.toLowerCase().trim();
+        if (k == 'coords' || k == 'toa_do' || k == 'toado' || k.contains('coord')) {
+          final val = entry.value;
+          if (val is Map) {
+            final eLat = parseCoord(val['lat'] ?? val['latitude']);
+            final eLng = parseCoord(val['lng'] ?? val['longitude']);
+            if (eLat != null && eLng != null && (eLat != 0 || eLng != 0)) {
+              return (eLat, eLng);
+            }
+          } else if (val is String && val.contains(',')) {
+            final parts = val.split(',');
+            if (parts.length >= 2) {
+              final eLat = double.tryParse(parts[0].trim());
+              final eLng = double.tryParse(parts[1].trim());
+              if (eLat != null && eLng != null && (eLat != 0 || eLng != 0)) {
+                return (eLat, eLng);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (lat != null && lng != null) {
+      return (lat, lng);
+    }
+
+    return null;
+  }
+
   static Future<void> defaultOpenDirections(
     BuildContext context, {
     double? lat,
@@ -445,32 +580,68 @@ class CustomerCard extends StatelessWidget {
     required String address,
     Map<String, dynamic>? dynamicFields,
   }) async {
-    // 🔴 Quy tắc: button chỉ đường dùng field địa chỉ động, nếu null thì dùng lat lng
+    // 🔴 Quy tắc: button chỉ đường ưu tiên lấy từ field toạ độ (lat, lng hoặc coords),
+    // nếu toạ độ null/trống mới fallback sang field địa chỉ.
+    final coords = extractCoordinates(
+      lat: lat,
+      lng: lng,
+      dynamicFields: dynamicFields,
+    );
+    final hasGps = coords != null;
+
     final effectiveAddress = extractDynamicAddress(dynamicFields, address);
     final hasAddress = effectiveAddress != null && effectiveAddress.isNotEmpty;
-    final hasGps = lat != null && lng != null;
 
-    if (!hasAddress && !hasGps) {
+    if (!hasGps && !hasAddress) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Điểm bán chưa cập nhật địa chỉ hoặc tọa độ GPS để chỉ đường'),
+          content: Text('Điểm bán chưa cập nhật tọa độ GPS hoặc địa chỉ để chỉ đường'),
           backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    final destination = hasAddress
-        ? Uri.encodeComponent(effectiveAddress)
-        : '$lat,$lng';
+    final destination = hasGps
+        ? '${coords.$1},${coords.$2}'
+        : Uri.encodeComponent(effectiveAddress!);
 
+    // Hỗ trợ mở chỉ đường đa nền tảng:
+    // 1. Android Google Maps navigation intent
+    final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
+    // 2. iOS Google Maps app scheme
+    final iosGmapsUri = Uri.parse('comgooglemaps://?daddr=$destination&directionsmode=driving');
+    // 3. Official Google Maps universal URL
     final googleMapsUrl = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
     );
+    // 4. Apple Maps fallback
+    final appleMapsUri = Uri.parse('maps://?daddr=$destination&dirflg=d');
+
+    try {
+      if (await canLaunchUrl(androidNavUri)) {
+        await launchUrl(androidNavUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {}
+
+    try {
+      if (await canLaunchUrl(iosGmapsUri)) {
+        await launchUrl(iosGmapsUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {}
 
     try {
       if (await canLaunchUrl(googleMapsUrl)) {
         await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {}
+
+    try {
+      if (await canLaunchUrl(appleMapsUri)) {
+        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {}
   }
@@ -494,6 +665,10 @@ class CustomerCard extends StatelessWidget {
     final effectiveLng = lng ?? effectiveCustomer?.lng;
     final effectiveDistance = distance ?? item?.distanceMeters;
     final effectiveSyncStatus = syncStatus ?? effectiveCustomer?.syncStatus;
+    final effectiveDynamicFields = dynamicFields ?? effectiveCustomer?.dynamicFields;
+    final effectiveApprovalStatus = approvalStatus ?? effectiveCustomer?.approvalStatus ?? 'approved';
+    final effectiveApprovalLabel = approvalLabel ?? effectiveCustomer?.displayApprovalLabel ??
+        (effectiveApprovalStatus == 'pending' ? 'Chờ duyệt' : (effectiveApprovalStatus == 'rejected' ? 'Bị từ chối' : 'Đã duyệt'));
     final effectiveIsCompleted = isCompleted || effectiveCustomer?.visitStatus == CustomerVisitStatus.visited;
     final effectiveType = (type?.trim().isNotEmpty == true)
         ? type!.trim()
@@ -646,7 +821,50 @@ class CustomerCard extends StatelessWidget {
                                 ],
                               ),
                             ),
-                          ] else if (effectiveIsCompleted) ...[
+                          ],
+
+                          // Trạng thái duyệt điểm bán (§3 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+                          if (effectiveApprovalStatus != 'approved') ...[
+                            () {
+                              final isRejected = effectiveApprovalStatus == 'rejected';
+                              final badgeBg = isRejected
+                                  ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2))
+                                  : (isDark ? const Color(0x33D97706) : const Color(0xFFFEF3C7));
+                              final badgeBorder = isRejected
+                                  ? const Color(0xFFEF4444)
+                                  : const Color(0xFFF59E0B);
+                              final badgeText = isRejected
+                                  ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C))
+                                  : (isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309));
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: badgeBg,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(color: badgeBorder, width: 1),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+                                      size: 11,
+                                      color: badgeText,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      effectiveApprovalLabel,
+                                      style: AppTypography.labelSmall(
+                                        color: badgeText,
+                                      ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }(),
+                          ],
+
+                          if (effectiveIsCompleted) ...[
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
@@ -868,7 +1086,7 @@ class CustomerCard extends StatelessWidget {
                                 lat: effectiveLat,
                                 lng: effectiveLng,
                                 address: effectiveAddress,
-                                dynamicFields: effectiveCustomer?.dynamicFields,
+                                dynamicFields: effectiveDynamicFields,
                               ),
                       borderRadius: BorderRadius.circular(8),
                       child: Container(

@@ -345,8 +345,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   }
 
   Future<void> _handleAddCustomer() async {
-    final result = await context.push<bool>('/customers/add');
-    if (result == true && mounted) {
+    await context.push('/customers/add');
+    if (mounted) {
       ref
           .read(routeViewModelProvider.notifier)
           .loadRouteDetail(isRefresh: true);
@@ -914,6 +914,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
               onSync: _handleSync,
               onSendOfflineData: _handleSendOfflineData,
               onAddCustomer: _handleAddCustomer,
+              onOpenRejected: () => context.push('/customers/rejected'),
               onRefreshGps: _handleRefreshGps,
               onToggleMapView: () => setState(() {
                 _isMapView = !_isMapView;

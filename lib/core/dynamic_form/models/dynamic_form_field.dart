@@ -246,6 +246,9 @@ class DynamicFormField {
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
+  /// Huy hiệu / Badge hiển thị bên cạnh label (ví dụ: 'Danh sách chọn')
+  final String? badge;
+
   /// Thứ tự sắp xếp
   final int order;
 
@@ -270,6 +273,7 @@ class DynamicFormField {
     this.source,
     this.catalog,
     this.section,
+    this.badge,
     this.order = 0,
   });
 
@@ -304,6 +308,8 @@ class DynamicFormField {
     // Đảm bảo photo_file_id hoặc các trường ảnh nhận diện đúng DynamicFormFieldType.photo
     if (code == 'photo_file_id' || code == 'photo_token' || code == 'photo') {
       type = DynamicFormFieldType.photo;
+    } else if (code == 'coords') {
+      type = DynamicFormFieldType.location;
     }
 
     // Đọc số lượng ảnh tối đa từ max_files, max_photos, max hoặc max_count
@@ -329,6 +335,8 @@ class DynamicFormField {
         '';
     if (label.isEmpty && code == 'photo_file_id') {
       label = 'Ảnh điểm bán';
+    } else if (label.isEmpty && code == 'coords') {
+      label = 'Vị trí điểm bán trên bản đồ';
     }
 
     String? helperText = json['description']?.toString() ?? json['helper_text']?.toString();
@@ -346,8 +354,10 @@ class DynamicFormField {
         section = 'Thông tin chung';
       } else if (['phone', 'email', 'contact_name', 'contact_title', 'birthday'].contains(code)) {
         section = 'Thông tin liên hệ';
-      } else if (['address', 'delivery_address', 'province_name', 'ward_name', 'lat', 'lng'].contains(code)) {
-        section = 'Địa chỉ & Vị trí';
+      } else if (['address', 'delivery_address', 'province_name', 'ward_name'].contains(code)) {
+        section = 'Địa chỉ giao dịch';
+      } else if (['lat', 'lng', 'coords'].contains(code)) {
+        section = 'Vị trí trên bản đồ';
       } else if (['photo_file_id', 'photo', 'photo_token'].contains(code) || type == DynamicFormFieldType.photo) {
         section = 'Hình ảnh điểm bán';
       } else {
@@ -384,6 +394,7 @@ class DynamicFormField {
       source: json['source']?.toString(),
       catalog: json['catalog']?.toString(),
       section: section,
+      badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
     );
   }
@@ -410,6 +421,7 @@ class DynamicFormField {
     String? source,
     String? catalog,
     String? section,
+    String? badge,
     int? order,
   }) {
     return DynamicFormField(
@@ -433,7 +445,11 @@ class DynamicFormField {
       source: source ?? this.source,
       catalog: catalog ?? this.catalog,
       section: section ?? this.section,
+      badge: badge ?? this.badge,
       order: order ?? this.order,
     );
   }
+
+  /// Kiểm tra xem có phải ô cứng toạ độ GPS (coords) theo spec 15/10/2026 không
+  bool get isCoordsField => code.toLowerCase() == 'coords';
 }

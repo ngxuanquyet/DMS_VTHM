@@ -66,6 +66,9 @@ class AppMapLocationCard extends StatefulWidget {
   /// Callback khi lấy hoặc cập nhật thành công tọa độ & địa chỉ
   final void Function(double lat, double lng, String? address)? onLocationChanged;
 
+  /// Callback khi lấy hoặc cập nhật thành công tọa độ & địa chỉ kèm độ chính xác & cờ mock (spec 15/10/2026)
+  final void Function(double lat, double lng, String? address, double? accuracy, bool? isMock)? onCoordinatesDetailsChanged;
+
   /// Callback khi xóa tọa độ
   final VoidCallback? onCleared;
 
@@ -88,6 +91,7 @@ class AppMapLocationCard extends StatefulWidget {
     this.locateButtonText = 'LẤY VỊ TRÍ HIỆN TẠI',
     this.updateButtonText = 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
     this.onLocationChanged,
+    this.onCoordinatesDetailsChanged,
     this.onCleared,
   });
 
@@ -189,6 +193,13 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
         final lat = double.parse(lastKnown.latitude.toStringAsFixed(6));
         final lng = double.parse(lastKnown.longitude.toStringAsFixed(6));
         widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        widget.onCoordinatesDetailsChanged?.call(
+          lat,
+          lng,
+          _resolvedAddress,
+          lastKnown.accuracy,
+          lastKnown.isMocked,
+        );
         setState(() => _isLocating = false);
         _fetchAddress(lat, lng);
         LocationService.updateCachedPosition(lastKnown);
@@ -207,6 +218,13 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
         final lng = double.parse(position.longitude.toStringAsFixed(6));
 
         widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        widget.onCoordinatesDetailsChanged?.call(
+          lat,
+          lng,
+          _resolvedAddress,
+          position.accuracy,
+          position.isMocked,
+        );
         LocationService.updateCachedPosition(position);
 
         if (mounted) {
@@ -381,6 +399,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                                     final lat = double.parse(point.latitude.toStringAsFixed(6));
                                     final lng = double.parse(point.longitude.toStringAsFixed(6));
                                     widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+                                    widget.onCoordinatesDetailsChanged?.call(lat, lng, _resolvedAddress, null, false);
                                     _fetchAddress(lat, lng);
                                   },
                           ),

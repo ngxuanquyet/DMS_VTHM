@@ -25,30 +25,51 @@ class DynamicFormFieldWrapper extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label Row with Required marker & ReadOnly badge
+          // Label Row with Required marker & ReadOnly/custom badge
           Row(
             children: [
               Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    text: field.label,
-                    style: AppTypography.labelLarge(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ).copyWith(fontWeight: FontWeight.w600),
-                    children: [
-                      if (field.isRequired)
-                        const TextSpan(
-                          text: ' *',
-                          style: TextStyle(
-                            color: AppColors.error,
-                            fontWeight: FontWeight.bold,
-                          ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        field.label,
+                        style: AppTypography.labelLarge(
+                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (field.isRequired)
+                      const Text(
+                        ' *',
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.bold,
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
-              if (field.isReadOnly)
+              if (field.badge != null && field.badge!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.darkSurfaceContainer
+                        : AppColors.surfaceContainerHigh,
+                    borderRadius: AppRadius.roundedSm,
+                  ),
+                  child: Text(
+                    field.badge!,
+                    style: AppTypography.labelSmall(
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.onSurfaceVariant,
+                    ).copyWith(fontSize: 10),
+                  ),
+                )
+              else if (field.isReadOnly)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(

@@ -7,10 +7,12 @@ class AppConstants {
   static const String appVersionBuild = 'Phiên bản 1.0.0 (Build 1)';
   static const String appVersionSimple = 'Phiên bản 1.0.0';
 
-  // API Endpoints
+  // API Endpoints & Headers
   static const String baseUrl = 'https://api-app.vthmgroup.vn';
   static const int connectTimeout = 15000;
   static const int receiveTimeout = 15000;
+  static const String headerClientKey = 'X-Client';
+  static const String headerClientValue = 'dms-app';
 
   // Storage Keys
   static const String keyAuthToken = 'vthm_auth_token';
@@ -21,6 +23,15 @@ class AppConstants {
   static const String keyLanguage = 'vthm_app_language';
   static const String keyRememberLogin = 'vthm_remember_login';
   static const String keySavedUsername = 'vthm_saved_username';
+  static const String keyTelegramBotToken = 'vthm_telegram_bot_token';
+  static const String keyTelegramChatId = 'vthm_telegram_chat_id';
+  static const String keyTelegramLogEnabled = 'vthm_telegram_log_enabled';
+  static const String keyRecentErrorLogs = 'vthm_recent_error_logs';
+
+  // Telegram Default Config (Có thể cấu hình trực tiếp hoặc qua màn hình cài đặt lỗi)
+  static const String defaultTelegramBotToken =
+      '8634007836:AAE5R6XcaeIn5CEDXRzUpY-lUf8U8JENlAI';
+  static const String defaultTelegramChatId = '6112749268';
 
   // Remote placeholder assets matching design_reference
   static const String logoUrl =

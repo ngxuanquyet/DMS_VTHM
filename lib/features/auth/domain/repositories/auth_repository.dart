@@ -14,4 +14,7 @@ abstract class AuthRepository {
   Future<void> logout();
 
   Future<String?> getSavedUsername();
+
+  /// Kiểm tra tài khoản có quyền truy cập app DMS không (GET /dms/app-access)
+  Future<bool> checkAppAccess();
 }

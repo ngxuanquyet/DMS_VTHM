@@ -4,8 +4,14 @@ import '../../data/models/checkout_request_model.dart';
 import '../entities/visit_entity.dart';
 import '../entities/visit_photo_entity.dart';
 import '../entities/visit_requirements_entity.dart';
+import '../entities/visit_history_entity.dart';
 
 abstract class VisitRepository {
+  /// Lấy danh sách lịch sử viếng thăm của một điểm bán (§2.4 SPEC 16/10/2026)
+  Future<CustomerVisitHistoryResponse> getCustomerVisitHistory(int customerId, {int page = 1, int perPage = 20});
+
+  /// Lấy chi tiết một lượt viếng thăm lịch sử của điểm bán (§2.4 SPEC 16/10/2026)
+  Future<VisitHistoryDetailEntity> getCustomerVisitHistoryDetail(int customerId, int visitId);
   /// Lấy danh sách lượt viếng thăm hôm nay (§2.3)
   Future<List<VisitEntity>> getTodayVisits();
 

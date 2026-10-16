@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:go_router/go_router.dart';
 import '../../features/notifications/domain/entities/notification_entity.dart';
 import '../../features/notifications/data/models/notification_model.dart';
+import '../router/app_router.dart';
 
 final appNotificationServiceProvider = Provider<AppNotificationService>((ref) {
   final service = AppNotificationService();
@@ -54,6 +56,7 @@ class AppNotificationService {
         settings: initSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
           debugPrint('[NotificationService] Người dùng chạm thông báo: ${response.payload}');
+          _handleNotificationTapPayload(response.payload);
         },
       );
 
@@ -96,8 +99,34 @@ class AppNotificationService {
       _isInitialized = true;
       debugPrint('[NotificationService] Khởi tạo thành công');
     } catch (e) {
-      debugPrint('[NotificationService] Khởi tạo notification plugin thất bại (fallback in-app only): $e');
       _isInitialized = true;
+    }
+  }
+
+  /// Xử lý điều hướng khi người dùng chạm vào thông báo (hỗ trợ FCM link `/crm/customers?open=<id>`)
+  void _handleNotificationTapPayload(String? payload) {
+    if (payload == null || payload.trim().isEmpty) return;
+    try {
+      String targetPath = payload.trim();
+      if (targetPath.startsWith('{') && targetPath.endsWith('}')) {
+        try {
+          final decoded = jsonDecode(targetPath) as Map<String, dynamic>;
+          final link = decoded['link'] ?? decoded['routePath'] ?? decoded['url'];
+          if (link != null) targetPath = link.toString().trim();
+        } catch (_) {}
+      }
+
+      final context = rootNavigatorKey.currentContext;
+      if (context != null) {
+        if (targetPath.startsWith('/')) {
+          context.push(targetPath);
+        } else if (targetPath.contains('/crm/customers')) {
+          final idx = targetPath.indexOf('/crm/customers');
+          context.push(targetPath.substring(idx));
+        }
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi điều hướng từ thông báo: $e');
     }
   }
 

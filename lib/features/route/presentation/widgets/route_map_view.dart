@@ -489,36 +489,13 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       dynFields = dealer.customer as Map<String, dynamic>;
     }
 
-    // 🔴 Quy tắc: button chỉ đường dùng field địa chỉ động, nếu null thì dùng lat lng
-    final effectiveAddress = CustomerCard.extractDynamicAddress(dynFields, dealer.address);
-    final hasAddress = effectiveAddress != null && effectiveAddress.isNotEmpty;
-    final hasGps = dealer.lat != null && dealer.lng != null;
-
-    if (!hasAddress && !hasGps) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Điểm bán chưa cập nhật địa chỉ hoặc toạ độ GPS để chỉ đường',
-          ),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    final destination = hasAddress
-        ? Uri.encodeComponent(effectiveAddress)
-        : '${dealer.lat},${dealer.lng}';
-
-    final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    await CustomerCard.defaultOpenDirections(
+      context,
+      lat: dealer.lat,
+      lng: dealer.lng,
+      address: dealer.address,
+      dynamicFields: dynFields,
     );
-
-    try {
-      if (await canLaunchUrl(googleMapsUrl)) {
-        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
   }
 
   String _formatDistance(double? distanceMeters) {
@@ -901,6 +878,48 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                               ? StatusBadgeType.warning
                               : StatusBadgeType.neutral),
                   ),
+                  if (dealer.customer is CustomerEntity) ...[
+                    () {
+                      final cust = dealer.customer as CustomerEntity;
+                      if (cust.approvalStatus == 'approved') return const SizedBox.shrink();
+                      final isRejected = cust.isRejectedApproval;
+                      final badgeBg = isRejected
+                          ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2))
+                          : (isDark ? const Color(0x33D97706) : const Color(0xFFFEF3C7));
+                      final badgeBorder = isRejected ? const Color(0xFFEF4444) : const Color(0xFFF59E0B);
+                      final badgeText = isRejected
+                          ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C))
+                          : (isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309));
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeBg,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: badgeBorder, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+                                size: 11,
+                                color: badgeText,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                cust.displayApprovalLabel,
+                                style: AppTypography.labelSmall(
+                                  color: badgeText,
+                                ).copyWith(fontWeight: FontWeight.w600, fontSize: 10),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }(),
+                  ],
                 ],
               ),
               InkWell(
@@ -1076,7 +1095,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
                 label: Text(
                   dealer.status == DealerVisitStatus.inProgress
                       ? 'Tiếp tục'
-                      : 'Check-in',
+                      : (dealer.status == DealerVisitStatus.completed
+                          ? 'Ghé lại'
+                          : 'Check-in'),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -1102,19 +1123,6 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   }
 
   Future<void> _handleCheckin(BuildContext context, DealerEntity dealer) async {
-    if (dealer.status == DealerVisitStatus.completed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Hôm nay bạn đã hoàn thành viếng thăm điểm bán này rồi.',
-          ),
-          backgroundColor: Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
     VisitEntity? activeVisit =

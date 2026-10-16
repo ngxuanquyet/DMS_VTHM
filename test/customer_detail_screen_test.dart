@@ -10,10 +10,22 @@ import 'package:vthm_dms/features/customer/presentation/screens/customer_detail_
 import 'package:vthm_dms/features/route/data/services/route_api_service.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
 import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model.dart';
+import 'package:vthm_dms/features/visit/domain/entities/visit_history_entity.dart';
+import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
+import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 
 class FakeRouteApiService extends Fake implements RouteApiService {
   @override
   Future<List<UserRouteEntity>> getMyRoutes({bool forceRefresh = false}) async => [];
+}
+
+class MockGetCustomerVisitHistoryUseCase implements GetCustomerVisitHistoryUseCase {
+  final Future<CustomerVisitHistoryResponse> Function(int customerId, {int page, int perPage}) handler;
+  MockGetCustomerVisitHistoryUseCase(this.handler);
+
+  @override
+  Future<CustomerVisitHistoryResponse> call(int customerId, {int page = 1, int perPage = 20}) =>
+      handler(customerId, page: page, perPage: perPage);
 }
 
 class MockCustomerRepository implements CustomerRepository {
@@ -127,6 +139,12 @@ void main() {
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
+          getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
+            MockGetCustomerVisitHistoryUseCase(
+              (customerId, {page = 1, perPage = 20}) async =>
+                  const CustomerVisitHistoryResponse(items: [], total: 0),
+            ),
+          ),
         ],
         child: const MaterialApp(
           home: CustomerDetailScreen(customer: testCustomer),
@@ -155,12 +173,15 @@ void main() {
     expect(find.text('0988776655'), findsOneWidget);
     expect(find.text('huongsen@gmail.com'), findsOneWidget);
 
-    // Verify Address & GPS
+    // Verify Address & Goong Map (bán kính và text "Đã ghim vị trí" đã được bỏ, thay bằng Goong Map với các chế độ xem)
     expect(find.text('Số 123 Đường Cầu Diễn, Bắc Từ Liêm, Hà Nội'), findsOneWidget);
     expect(find.text('Phúc Diễn'), findsOneWidget);
     expect(find.text('Hà Nội'), findsOneWidget);
-    expect(find.text('Đã ghim vị trí'), findsOneWidget);
-    expect(find.text('Bán kính: 60m'), findsOneWidget);
+    expect(find.text('Đã ghim vị trí'), findsNothing);
+    expect(find.textContaining('Bán kính:'), findsNothing);
+    expect(find.text('Đường phố'), findsOneWidget);
+    expect(find.text('Vệ tinh'), findsOneWidget);
+    expect(find.text('Giao thông'), findsOneWidget);
 
     // Verify Dynamic fields
     expect(find.text('0101234567'), findsOneWidget);
@@ -199,6 +220,12 @@ void main() {
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
+          getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
+            MockGetCustomerVisitHistoryUseCase(
+              (customerId, {page = 1, perPage = 20}) async =>
+                  const CustomerVisitHistoryResponse(items: [], total: 0),
+            ),
+          ),
         ],
         child: const MaterialApp(
           home: CustomerDetailScreen(customer: customerWithRegion),
@@ -215,6 +242,114 @@ void main() {
     // 2. TUYỆT ĐỐI không hiển thị "Khu vực (Region ID)" hoặc "#3"
     expect(find.text('Khu vực (Region ID)'), findsNothing);
     expect(find.text('#3'), findsNothing);
+  });
+
+  testWidgets('CustomerDetailScreen resolves route name from userAssignedRoutesProvider when routeIds is present', (tester) async {
+    const customerWithRouteId = CustomerEntity(
+      id: 777,
+      code: 'KH00777',
+      name: 'Đại lý Kim Quy',
+      type: 'Đại lý',
+      route: 'Chưa phân tuyến',
+      routes: [],
+      routeIds: [12],
+      channelName: 'GT',
+      address: 'Số 10 Phố Huế, Hà Nội',
+      contactPerson: 'Bác Tư',
+      phone: '0912345678',
+      lat: 21.0123,
+      lng: 105.8500,
+    );
+
+    final mockRepo = MockCustomerRepository(customerWithRouteId);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(mockRepo),
+          routeApiServiceProvider.overrideWithValue(
+            FakeRouteApiService(),
+          ),
+          userAssignedRoutesProvider.overrideWith(
+            (ref) async => [
+              const UserRouteEntity(
+                id: 12,
+                name: 'Tuyến Hoàn Kiếm - Thứ 2',
+                code: 'HK-T2',
+                visitDayOfWeek: 2,
+              ),
+            ],
+          ),
+          getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
+            MockGetCustomerVisitHistoryUseCase(
+              (customerId, {page = 1, perPage = 20}) async =>
+                  const CustomerVisitHistoryResponse(items: [], total: 0),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: CustomerDetailScreen(customer: customerWithRouteId),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Verify Tuyến bán hàng displays resolved name instead of 'Chưa phân tuyến'
+    expect(find.text('Tuyến Hoàn Kiếm - Thứ 2'), findsAtLeastNWidgets(1));
+    expect(find.text('Chưa phân tuyến'), findsNothing);
+  });
+
+  testWidgets('CustomerDetailScreen displays creator and last updater in audit card', (tester) async {
+    const customerWithAudit = CustomerEntity(
+      id: 501,
+      code: 'KH00501',
+      name: 'Đại Lý Tiến Phát',
+      type: 'Đại lý',
+      route: 'Tuyến 1',
+      address: '100 Giải Phóng, Hà Nội',
+      contactPerson: 'Nguyễn Tiến',
+      phone: '0901234567',
+      createdByName: 'Nguyễn Văn Admin (VTG001)',
+      updatedByName: 'Trần Thị Quản Lý (VTG002)',
+      createdAt: '2026-10-01T08:30:00Z',
+      updatedAt: '2026-10-15T14:20:00Z',
+    );
+
+    final mockRepo = MockCustomerRepository(customerWithAudit);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(mockRepo),
+          routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
+          getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
+            MockGetCustomerVisitHistoryUseCase(
+              (customerId, {page = 1, perPage = 20}) async =>
+                  const CustomerVisitHistoryResponse(items: [], total: 0),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: CustomerDetailScreen(customer: customerWithAudit),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Trạng thái & Lịch sử chỉnh sửa'), findsOneWidget);
+    expect(find.text('Người tạo'), findsOneWidget);
+    expect(find.text('Nguyễn Văn Admin (VTG001)'), findsOneWidget);
+    expect(find.text('Người cập nhật lần cuối'), findsOneWidget);
+    expect(find.text('Trần Thị Quản Lý (VTG002)'), findsOneWidget);
   });
 }
 

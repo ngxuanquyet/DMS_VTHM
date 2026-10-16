@@ -6,11 +6,25 @@ import 'core/localization/language_provider.dart';
 import 'core/network/connectivity_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/services/app_notification_service.dart';
+import 'core/services/error_tracker_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Khởi tạo dịch vụ theo dõi lỗi và nhật ký hệ thống
+  await ErrorTrackerService.instance.initialize();
+
+  // Bắt các ngoại lệ Flutter không bắt được
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    ErrorTrackerService.instance.trackCustomError(
+      message: details.exceptionAsString(),
+      module: 'FLUTTER',
+      stackTrace: details.stack,
+    );
+  };
 
   // Khởi tạo dịch vụ thông báo cục bộ và thiết lập lịch báo thức nền T2-T7
   try {

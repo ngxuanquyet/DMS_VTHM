@@ -13,6 +13,8 @@ class MarketFormSubmissionModel {
   final String clientTime; // ISO-8601 kèm múi giờ (+07:00)
   final String? parentUuid; // UUID của lượt viếng thăm cha nếu đi cùng lượt offline
   final bool isOfflineSync;
+  final int? queuedSeconds;
+  final String? clientBootId;
   final Map<String, List<String>>? localPhotoPaths; // §5: Đường dẫn ảnh gốc trên máy phục vụ tải lại khi cần
 
   MarketFormSubmissionModel({
@@ -27,6 +29,8 @@ class MarketFormSubmissionModel {
     String? clientUuid,
     String? clientTime,
     this.isOfflineSync = false,
+    this.queuedSeconds,
+    this.clientBootId,
     this.localPhotoPaths,
   })  : clientUuid = clientUuid ?? const Uuid().v4(),
         clientTime = clientTime ?? _formatIsoWithOffset(DateTime.now());
@@ -142,6 +146,8 @@ class MarketFormSubmissionModel {
       clientUuid: json['client_uuid']?.toString(),
       clientTime: json['client_time']?.toString(),
       isOfflineSync: json['is_offline_sync'] == true,
+      queuedSeconds: json['queued_seconds'] as int?,
+      clientBootId: json['client_boot_id']?.toString(),
       localPhotoPaths: parsedLocalPhotos,
     );
   }
@@ -159,6 +165,8 @@ class MarketFormSubmissionModel {
       'client_uuid': clientUuid,
       'client_time': clientTime,
       'is_offline_sync': isOfflineSync,
+      if (queuedSeconds != null) 'queued_seconds': queuedSeconds,
+      if (clientBootId != null && clientBootId!.isNotEmpty) 'client_boot_id': clientBootId,
       if (includeInternal && localPhotoPaths != null) '_local_photo_paths': localPhotoPaths,
     };
     return map;

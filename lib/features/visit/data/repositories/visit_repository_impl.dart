@@ -12,6 +12,7 @@ import '../../domain/repositories/visit_repository.dart';
 import '../models/checkin_request_model.dart';
 import '../models/checkout_request_model.dart';
 import '../services/visit_api_service.dart';
+import '../../domain/entities/visit_history_entity.dart';
 
 final visitApiServiceProvider = Provider<VisitApiService>((ref) {
   return VisitApiService(ref.watch(apiClientProvider));
@@ -294,5 +295,22 @@ class VisitRepositoryImpl implements VisitRepository {
     } catch (e) {
       debugPrint('[VisitRepo] Lỗi lưu danh sách lượt viếng thăm: $e');
     }
+  }
+
+  @override
+  Future<CustomerVisitHistoryResponse> getCustomerVisitHistory(
+    int customerId, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    return await _apiService.getCustomerVisitHistory(customerId, page: page, perPage: perPage);
+  }
+
+  @override
+  Future<VisitHistoryDetailEntity> getCustomerVisitHistoryDetail(
+    int customerId,
+    int visitId,
+  ) async {
+    return await _apiService.getCustomerVisitHistoryDetail(customerId, visitId);
   }
 }

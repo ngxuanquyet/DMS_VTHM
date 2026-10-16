@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/bottom_nav_bar.dart';
+import '../viewmodels/rejected_read_status_notifier.dart';
 
 class CustomerMenuItem {
   final String label;
@@ -10,6 +11,7 @@ class CustomerMenuItem {
   final Color color;
   final VoidCallback onTap;
   final int? badgeCount;
+  final bool hasBadgeDot;
   final bool isActive;
 
   const CustomerMenuItem({
@@ -18,6 +20,7 @@ class CustomerMenuItem {
     required this.color,
     required this.onTap,
     this.badgeCount,
+    this.hasBadgeDot = false,
     this.isActive = false,
   });
 }
@@ -30,6 +33,9 @@ class CustomerCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onSendOfflineData;
   final VoidCallback onRefreshGps;
   final VoidCallback onSortByDistance;
+  final VoidCallback? onOpenRejected;
+  final int? rejectedCount;
+  final bool? hasUnreadRejected;
   final bool isSortedByDistance;
   final int pendingOfflineCount;
   final bool isSyncing;
@@ -41,6 +47,9 @@ class CustomerCircularMenu extends ConsumerStatefulWidget {
     required this.onSendOfflineData,
     required this.onRefreshGps,
     required this.onSortByDistance,
+    this.onOpenRejected,
+    this.rejectedCount,
+    this.hasUnreadRejected,
     this.isSortedByDistance = false,
     this.pendingOfflineCount = 0,
     this.isSyncing = false,
@@ -144,6 +153,13 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
       _closeImmediately();
     });
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasUnreadFromProvider = ref.watch(hasUnreadRejectedProvider);
+    final unreadCountFromProvider = ref.watch(unreadRejectedCountProvider);
+    final hasUnread = widget.hasUnreadRejected ??
+        (widget.rejectedCount != null
+            ? widget.rejectedCount! > 0
+            : hasUnreadFromProvider);
+    final unreadCount = widget.rejectedCount ?? unreadCountFromProvider;
 
     final items = [
       CustomerMenuItem(
@@ -155,6 +171,20 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
           widget.onAddCustomer();
         },
       ),
+      if (widget.onOpenRejected != null)
+        CustomerMenuItem(
+          label: unreadCount > 0
+              ? 'Bị từ chối ($unreadCount)'
+              : 'Điểm bán bị từ chối',
+          icon: Icons.cancel_outlined,
+          color: const Color(0xFFDC2626), // Red
+          hasBadgeDot: hasUnread,
+          badgeCount: unreadCount > 0 ? unreadCount : null,
+          onTap: () {
+            _close();
+            widget.onOpenRejected!();
+          },
+        ),
       CustomerMenuItem(
         label: widget.pendingOfflineCount > 0
             ? 'Tải lên (${widget.pendingOfflineCount})'
@@ -240,7 +270,7 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
           Positioned(
             bottom: 88,
             right: 16,
-            child: _buildMainFab(isDark),
+            child: _buildMainFab(isDark, hasUnreadRejected: hasUnread),
           ),
         ],
       ),
@@ -264,7 +294,7 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
         // Bố trí các nút theo hình cung quạt (radial arc) với khoảng cách dọc đều đặn
         // Đặt baseBottom = 158.0 (88 + 56 + 14) để nổi hoàn toàn phía trên thanh Bottom Nav Bar
         final int invertedIndex = (totalItems - 1) - index;
-        const double verticalStep = 56.0;
+        final double verticalStep = totalItems > 5 ? 52.0 : 56.0;
         const double baseBottom = 158.0; // Vị trí ngay phía trên FAB chính (88 + 56 + 14)
         final double targetBottom = baseBottom + (invertedIndex * verticalStep);
 
@@ -357,33 +387,37 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
                           ),
                         ),
 
-                        // Optional mini badge for pending count
-                        if (item.badgeCount != null && item.badgeCount! > 0)
+                        // Optional mini badge or red dot for pending/unread count
+                        if ((item.badgeCount != null && item.badgeCount! > 0) || item.hasBadgeDot)
                           Positioned(
                             top: -3,
                             right: -3,
                             child: Container(
-                              padding: const EdgeInsets.all(4),
+                              padding: item.badgeCount != null
+                                  ? const EdgeInsets.all(4)
+                                  : EdgeInsets.zero,
                               decoration: const BoxDecoration(
                                 color: Color(0xFFDC2626), // Red
                                 shape: BoxShape.circle,
                               ),
-                              constraints: const BoxConstraints(
-                                minWidth: 18,
-                                minHeight: 18,
+                              constraints: BoxConstraints(
+                                minWidth: item.badgeCount != null ? 18 : 10,
+                                minHeight: item.badgeCount != null ? 18 : 10,
                               ),
-                              child: Center(
-                                child: Text(
-                                  item.badgeCount! > 99
-                                      ? '99+'
-                                      : '${item.badgeCount}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
+                              child: item.badgeCount != null
+                                  ? Center(
+                                      child: Text(
+                                        item.badgeCount! > 99
+                                            ? '99+'
+                                            : '${item.badgeCount}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
                       ],
@@ -398,7 +432,17 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
     );
   }
 
-  Widget _buildMainFab(bool isDark) {
+  Widget _buildMainFab(bool isDark, {required bool hasUnreadRejected}) {
+    final showOfflineBadge = widget.pendingOfflineCount > 0;
+    final showExplicitCountBadge =
+        widget.rejectedCount != null && widget.rejectedCount! > 0;
+    final totalCount =
+        widget.pendingOfflineCount + (widget.rejectedCount ?? 0);
+    final showCountBadge = showOfflineBadge || showExplicitCountBadge;
+    final showRedDot =
+        !_isOpen && hasUnreadRejected && !showCountBadge;
+    final showBadge = !_isOpen && showCountBadge;
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -447,35 +491,39 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
           ),
         ),
 
-        // Red badge on main FAB if there are pending offline items
-        if (!_isOpen && widget.pendingOfflineCount > 0)
+        // Red badge on main FAB if there are pending offline items, or red dot for unread rejected items
+        if (showBadge || showRedDot)
           Positioned(
             top: -2,
             right: -2,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              padding: showBadge
+                  ? const EdgeInsets.symmetric(horizontal: 5, vertical: 2)
+                  : EdgeInsets.zero,
               decoration: BoxDecoration(
                 color: const Color(0xFFDC2626),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: showBadge
+                    ? BorderRadius.circular(10)
+                    : BorderRadius.circular(5),
                 border: Border.all(color: Colors.white, width: 1.5),
               ),
-              constraints: const BoxConstraints(
-                minWidth: 18,
-                minHeight: 18,
+              constraints: BoxConstraints(
+                minWidth: showBadge ? 18 : 10,
+                minHeight: showBadge ? 18 : 10,
               ),
-              child: Center(
-                child: Text(
-                  widget.pendingOfflineCount > 99
-                      ? '99+'
-                      : '${widget.pendingOfflineCount}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    height: 1,
-                  ),
-                ),
-              ),
+              child: showBadge
+                  ? Center(
+                      child: Text(
+                        totalCount > 99 ? '99+' : '$totalCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          height: 1,
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
       ],

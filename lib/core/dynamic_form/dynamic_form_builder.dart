@@ -16,6 +16,7 @@ import 'widgets/rating_field_widget.dart';
 import 'widgets/single_choice_field_widget.dart';
 import 'widgets/text_field_widget.dart';
 import '../widgets/location_field_widget.dart';
+import '../map/app_map_location_card.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
   /// Danh sách đặc tả các trường form nhận từ API
@@ -203,10 +204,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
       // 2. Kiểm tra trường Vị trí GPS / Địa chỉ
       if (field.type == DynamicFormFieldType.location) {
-        final isPureAddress = field.code == 'address' ||
+        final isPureAddress = (field.code == 'address' ||
             field.code == 'delivery_address' ||
             field.code.contains('dia_chi') ||
-            field.label.toLowerCase().contains('địa chỉ');
+            field.label.toLowerCase().contains('địa chỉ')) && !field.isCoordsField;
 
         if (value is Map) {
           final latVal = value['lat'];
@@ -335,6 +336,14 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         lower.isEmpty;
   }
 
+  bool _isLocationSection(String title) {
+    final lower = title.toLowerCase().trim();
+    return lower.contains('vị trí') ||
+        lower.contains('toạ độ') ||
+        lower.contains('tọa độ') ||
+        lower == 'coords';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -342,8 +351,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     // Phân nhóm các trường theo Section (nếu có)
     final sections = <String, List<DynamicFormField>>{};
     for (final field in widget.fields) {
-      final sec = field.section ?? 'Thông tin chung';
-      sections.putIfAbsent(sec, () => []).add(field);
+      if (field.isCoordsField) {
+        sections.putIfAbsent('Vị trí trên bản đồ', () => []).add(field);
+      } else {
+        final sec = field.section ?? 'Thông tin chung';
+        sections.putIfAbsent(sec, () => []).add(field);
+      }
     }
 
     return Column(
@@ -361,6 +374,28 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: _buildSectionFieldWidgets(sectionFields),
+              ),
+            );
+          }
+
+          // 🔴 Giống form sửa điểm bán: Bỏ hẳn card bọc ở ngoài với field toạ độ / vị trí trên bản đồ,
+          // vẽ trực tiếp AppMapLocationCard ra ngoài layout form kèm header phân đoạn
+          if (_isLocationSection(sectionTitle) || sectionFields.every((f) => f.isCoordsField || f.code == 'lat' || f.code == 'lng')) {
+            final isCoordsRequired = sectionFields.any((f) => f.isRequired);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    icon: Icons.map_rounded,
+                    title: sectionTitle.toLowerCase().contains('vị trí') ? sectionTitle : 'Vị trí trên bản đồ',
+                    badge: isCoordsRequired ? 'Bắt buộc' : 'Có thể sửa',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  ..._buildSectionFieldWidgets(sectionFields),
+                ],
               ),
             );
           }
@@ -452,6 +487,49 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           ),
           const SizedBox(height: 16),
         ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    required String badge,
+    required bool isDark,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 18,
+          color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: AppTypography.titleMedium(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: isDark
+                ? AppColors.darkSurfaceContainer
+                : AppColors.surfaceContainerHigh,
+            borderRadius: AppRadius.roundedFull,
+          ),
+          child: Text(
+            badge,
+            style: AppTypography.labelSmall(
+              color: isDark
+                  ? AppColors.darkOnSurfaceVariant
+                  : AppColors.onSurfaceVariant,
+            ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+        ),
       ],
     );
   }
@@ -635,7 +713,77 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         );
 
       case DynamicFormFieldType.location:
-        final locMap = value is Map<String, dynamic>
+        if (field.isCoordsField) {
+          double? lat;
+          double? lng;
+          double? accuracy;
+          bool? isMock;
+
+          final val = _formData[field.code];
+          if (val is Map) {
+            lat = (val['lat'] as num?)?.toDouble() ?? double.tryParse(val['lat']?.toString() ?? '');
+            lng = (val['lng'] as num?)?.toDouble() ?? double.tryParse(val['lng']?.toString() ?? '');
+            accuracy = (val['accuracy'] as num?)?.toDouble() ?? double.tryParse(val['accuracy']?.toString() ?? '');
+            isMock = val['mock'] as bool?;
+          } else if (_formData['lat'] != null && _formData['lng'] != null) {
+            lat = (_formData['lat'] as num?)?.toDouble() ?? double.tryParse(_formData['lat']?.toString() ?? '');
+            lng = (_formData['lng'] as num?)?.toDouble() ?? double.tryParse(_formData['lng']?.toString() ?? '');
+          }
+
+          final initialAddr = _formData['address']?.toString() ??
+              _formData['delivery_address']?.toString();
+
+          return AppMapLocationCard(
+            title: (field.label.isEmpty || field.label == 'Toạ độ' || field.label == 'coords')
+                ? 'Vị trí điểm bán trên bản đồ'
+                : field.label,
+            lat: lat,
+            lng: lng,
+            accuracyM: accuracy,
+            isReadOnly: field.isReadOnly,
+            isRequired: field.isRequired,
+            initialAddress: initialAddr?.trim().isNotEmpty == true ? initialAddr!.trim() : null,
+            showCoordinates: false, // Ẩn thông số kinh / vĩ độ dạng text (giống form sửa điểm bán)
+            showStyleSwitcher: true, // Cho phép chuyển đổi xem Vệ tinh / Đường phố (giống form sửa điểm bán)
+            mapHeight: 250, // Chiều cao 250 (giống form sửa điểm bán)
+            zoom: 16.5, // Mức phóng 16.5 (giống form sửa điểm bán)
+            locateButtonText: 'LẤY VỊ TRÍ HIỆN TẠI',
+            updateButtonText: 'CẬP NHẬT LẠI VỊ TRÍ HIỆN TẠI',
+            errorText: errorText,
+            onLocationChanged: (newLat, newLng, newAddress) {
+              updateFieldValue(field.code, {
+                'lat': newLat,
+                'lng': newLng,
+                'accuracy': accuracy ?? 8.0,
+                'mock': isMock ?? false,
+              });
+              // Đồng bộ điền địa chỉ nếu trường address chưa có giá trị (giống form sửa điểm bán)
+              if ((_formData['address'] == null || _formData['address'].toString().trim().isEmpty) &&
+                  newAddress != null &&
+                  newAddress.isNotEmpty) {
+                updateFieldValue('address', newAddress);
+              }
+            },
+            onCoordinatesDetailsChanged: (newLat, newLng, newAddress, newAcc, newMock) {
+              updateFieldValue(field.code, {
+                'lat': newLat,
+                'lng': newLng,
+                'accuracy': newAcc != null ? double.parse(newAcc.toStringAsFixed(1)) : 8.0,
+                'mock': newMock ?? false,
+              });
+              if ((_formData['address'] == null || _formData['address'].toString().trim().isEmpty) &&
+                  newAddress != null &&
+                  newAddress.isNotEmpty) {
+                updateFieldValue('address', newAddress);
+              }
+            },
+            onCleared: () {
+              updateFieldValue(field.code, null);
+            },
+          );
+        }
+
+        Map<String, dynamic>? locMap = value is Map<String, dynamic>
             ? value
             : (value is Map ? Map<String, dynamic>.from(value) : null);
         return LocationFieldWidget(
@@ -646,6 +794,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           maxLength: field.max?.toInt() ?? 500,
           errorText: errorText,
           value: locMap,
+          showAddressInput: true,
+          showBorderContainer: true,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
 

@@ -46,8 +46,12 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     required EmployeeTrackingApiService apiService,
     required EmployeeTrackingLocalStorage storage,
     required AppNotificationService notifService,
-  })  : _apiService = apiService,
+  })  : // ignore: prefer_initializing_formals
+        // ignore: prefer_initializing_formals
+        _apiService = apiService,
+        // ignore: prefer_initializing_formals
         _storage = storage,
+        // ignore: prefer_initializing_formals
         _notifService = notifService,
         super(const EmployeeTrackingState()) {
     WidgetsBinding.instance.addObserver(this);
@@ -72,6 +76,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
   }
 
   @override
+  // ignore: avoid_renaming_method_parameters
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     if (_isDisposed) return;
 

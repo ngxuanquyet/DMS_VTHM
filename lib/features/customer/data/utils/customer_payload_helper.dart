@@ -19,6 +19,7 @@ const Set<String> kAllowedCustomerRootKeys = {
   'phone',
   'email',
   'birthday',
+  'coords',
   'lat',
   'lng',
   'geofence_radius_m',
@@ -92,6 +93,7 @@ const Set<String> kCustomerFixedKeys = {
   'phone',
   'email',
   'birthday',
+  'coords',
   'lat',
   'lng',
   'geofence_radius_m',
@@ -155,18 +157,50 @@ class CustomerPayloadHelper {
       payload['is_offline_sync'] = true;
     }
 
-    // 5. Toạ độ GPS (lat, lng) - Phải đi thành cặp theo §2 & §6
-    double? lat;
-    double? lng;
-    if (sourceData['lat'] != null) {
-      lat = double.tryParse(sourceData['lat'].toString());
-    }
-    if (sourceData['lng'] != null) {
-      lng = double.tryParse(sourceData['lng'].toString());
-    }
-    if (lat != null && lng != null) {
-      payload['lat'] = lat;
-      payload['lng'] = lng;
+    // 5. Toạ độ GPS: ô cứng 'coords' ({lat, lng, accuracy, mock}) theo spec 15/10/2026
+    // 🔴 Gửi CẢ coords lẫn lat/lng trong một lượt => 422 ở coords. Tuyệt đối chỉ gửi coords!
+    if (sourceData.containsKey('coords')) {
+      final rawCoords = sourceData['coords'];
+      if (rawCoords is Map) {
+        final cLat = rawCoords['lat'] is num
+            ? (rawCoords['lat'] as num).toDouble()
+            : double.tryParse(rawCoords['lat']?.toString() ?? '');
+        final cLng = rawCoords['lng'] is num
+            ? (rawCoords['lng'] as num).toDouble()
+            : double.tryParse(rawCoords['lng']?.toString() ?? '');
+        final cAcc = rawCoords['accuracy'] is num
+            ? (rawCoords['accuracy'] as num).toDouble()
+            : double.tryParse(rawCoords['accuracy']?.toString() ?? '');
+        final cMock = rawCoords['mock'] == true;
+
+        if (cLat != null && cLng != null) {
+          payload['coords'] = {
+            'lat': double.parse(cLat.toStringAsFixed(7)),
+            'lng': double.parse(cLng.toStringAsFixed(7)),
+            if (cAcc != null) 'accuracy': double.parse(cAcc.toStringAsFixed(1)),
+            'mock': cMock,
+          };
+        } else {
+          payload['coords'] = null;
+        }
+      } else if (rawCoords == null) {
+        payload['coords'] = null;
+      }
+      payload.remove('lat');
+      payload.remove('lng');
+    } else {
+      double? lat;
+      double? lng;
+      if (sourceData['lat'] != null) {
+        lat = double.tryParse(sourceData['lat'].toString());
+      }
+      if (sourceData['lng'] != null) {
+        lng = double.tryParse(sourceData['lng'].toString());
+      }
+      if (lat != null && lng != null) {
+        payload['lat'] = lat;
+        payload['lng'] = lng;
+      }
     }
 
     // 6. Bán kính hàng rào địa lý (geofence_radius_m)

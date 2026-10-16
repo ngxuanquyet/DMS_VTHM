@@ -13,9 +13,15 @@ import '../../../../core/widgets/location_field_widget.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
+import '../../../../core/map/goong_config.dart';
+import '../../../../core/map/goong_map_view.dart';
+import '../screens/add_customer_screen.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
 import '../widgets/pending_sync_dismissible.dart';
+import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
+import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -34,6 +40,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   late PageController _pageController;
   int _currentPhotoIndex = 0;
   bool _isLoading = false;
+  GoongMapStyle _mapStyle = GoongMapStyle.standard;
 
   @override
   void initState() {
@@ -61,7 +68,25 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           .getCustomerDetail(_customer.id);
       if (mounted) {
         setState(() {
-          _customer = updated;
+          final effectiveRoute = (updated.route.trim().isNotEmpty && updated.route.trim() != 'Chưa phân tuyến')
+              ? updated.route
+              : _customer.route;
+          final effectiveRoutes = updated.routes.isNotEmpty ? updated.routes : _customer.routes;
+          final effectiveRouteIds = updated.routeIds.isNotEmpty ? updated.routeIds : _customer.routeIds;
+          final effectiveCreatedBy = updated.createdByName?.trim().isNotEmpty == true
+              ? updated.createdByName
+              : _customer.createdByName;
+          final effectiveUpdatedBy = updated.updatedByName?.trim().isNotEmpty == true
+              ? updated.updatedByName
+              : _customer.updatedByName;
+
+          _customer = updated.copyWith(
+            route: effectiveRoute,
+            routes: effectiveRoutes,
+            routeIds: effectiveRouteIds,
+            createdByName: effectiveCreatedBy,
+            updatedByName: effectiveUpdatedBy,
+          );
         });
       }
     } catch (_) {}
@@ -76,7 +101,25 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           .getCustomerDetail(_customer.id);
       if (mounted) {
         setState(() {
-          _customer = updated;
+          final effectiveRoute = (updated.route.trim().isNotEmpty && updated.route.trim() != 'Chưa phân tuyến')
+              ? updated.route
+              : _customer.route;
+          final effectiveRoutes = updated.routes.isNotEmpty ? updated.routes : _customer.routes;
+          final effectiveRouteIds = updated.routeIds.isNotEmpty ? updated.routeIds : _customer.routeIds;
+          final effectiveCreatedBy = updated.createdByName?.trim().isNotEmpty == true
+              ? updated.createdByName
+              : _customer.createdByName;
+          final effectiveUpdatedBy = updated.updatedByName?.trim().isNotEmpty == true
+              ? updated.updatedByName
+              : _customer.updatedByName;
+
+          _customer = updated.copyWith(
+            route: effectiveRoute,
+            routes: effectiveRoutes,
+            routeIds: effectiveRouteIds,
+            createdByName: effectiveCreatedBy,
+            updatedByName: effectiveUpdatedBy,
+          );
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -300,9 +343,111 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       const SizedBox(height: 16),
                     ],
 
+                    // Approval Status Banner (§3 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+                    if (_customer.isRejectedApproval) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 22),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Điểm bán bị từ chối',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: Color(0xFF991B1B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _customer.approvalNote != null && _customer.approvalNote!.trim().isNotEmpty
+                                        ? 'Lý do: ${_customer.approvalNote}'
+                                        : 'Điểm bán không được phê duyệt. Vui lòng kiểm tra lại.',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFFB91C1C),
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Bạn vẫn có thể xem và viếng thăm bình thường (lưu vết nhưng chưa tính KPI).',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontStyle: FontStyle.italic,
+                                      color: Color(0xFFDC2626),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ] else if (_customer.isPendingApproval) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0x33D97706) : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFCD34D)),
+                        ),
+                        child: const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 22),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Điểm bán đang chờ duyệt',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: Color(0xFF92400E),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Bạn vẫn viếng thăm bình thường; các lượt ở đây được tính vào báo cáo sau khi được duyệt.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFFB45309),
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     // 2. Identity & Summary Card
                     _buildIdentityCard(isDark),
                     const SizedBox(height: 16),
+
+                    // Approval Status Banner (§3 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+                    if (_customer.approvalStatus != 'approved') ...[
+                      _buildApprovalStatusBanner(isDark),
+                      const SizedBox(height: 16),
+                    ],
 
                     // 3. Contact Info Card
                     _buildContactCard(isDark),
@@ -324,6 +469,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
                     // 7. Sync & Meta Card
                     _buildSyncStatusCard(isDark),
+
+                    // 8. Lịch sử viếng thăm của điểm bán (§2.4 SPEC 16/10/2026)
+                    if (_customer.id > 0) ...[
+                      const SizedBox(height: 16),
+                      CustomerVisitHistoryWidget(
+                        customerId: _customer.id,
+                        customerName: _customer.name,
+                        initiallyExpanded: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -724,6 +879,50 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     ],
                   ),
                 ),
+
+              // Approval Status Chip (§3 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+              if (_customer.approvalStatus != 'approved') ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _customer.isRejectedApproval
+                        ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2))
+                        : (isDark ? const Color(0x33D97706) : const Color(0xFFFEF3C7)),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _customer.isRejectedApproval
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFFF59E0B),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _customer.isRejectedApproval
+                            ? Icons.cancel_outlined
+                            : Icons.hourglass_top_rounded,
+                        size: 13,
+                        color: _customer.isRejectedApproval
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFFD97706),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _customer.displayApprovalLabel,
+                        style: TextStyle(
+                          color: _customer.isRejectedApproval
+                              ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C))
+                              : (isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309)),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -750,11 +949,75 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 ),
               _buildBadge(
                 icon: Icons.alt_route_rounded,
-                label: _customer.route,
+                label: _resolveRouteName(),
                 color: const Color(0xFF3B82F6),
                 isDark: isDark,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalStatusBanner(bool isDark) {
+    final isRejected = _customer.isRejectedApproval;
+    final bg = isRejected
+        ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEF2F2))
+        : (isDark ? const Color(0x33D97706) : const Color(0xFFFFFBEB));
+    final border = isRejected
+        ? (isDark ? const Color(0x55DC2626) : const Color(0xFFFCA5A5))
+        : (isDark ? const Color(0x55D97706) : const Color(0xFFFDE68A));
+    final iconColor = isRejected ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+    final title = isRejected ? 'Điểm bán bị từ chối duyệt' : 'Điểm bán đang chờ duyệt';
+    final note = _customer.approvalNote;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: AppRadius.roundedLg,
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+            color: iconColor,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isRejected
+                        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+                        : (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E)),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isRejected
+                      ? (note != null && note.isNotEmpty
+                          ? 'Lý do từ chối: $note'
+                          : 'Điểm bán chưa được phê duyệt. Vui lòng liên hệ quản lý hoặc cập nhật lại hồ sơ.')
+                      : 'Hồ sơ mở mới đang được gửi lên cấp quản lý để phê duyệt. Bạn vẫn có thể thực hiện viếng thăm bình thường.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isRejected
+                        ? (isDark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
+                        : (isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309)),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -892,56 +1155,160 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             isDark: isDark,
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         const Divider(height: 1),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
 
-        // GPS Coordinates Row
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Vị trí GPS',
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+        // Bản đồ Goong Map với đầy đủ tính năng: zoom (+/-), vuốt di chuyển, xem vệ tinh
+        if (hasGps) ...[
+          Container(
+            height: 250,
+            width: double.infinity,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E2420) : const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  offset: const Offset(0, 2),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                // 1. Bản đồ Goong Vector MapLibre
+                GoongMapView(
+                  key: ValueKey('customer_detail_map_${_customer.id}_${_customer.lat}_${_customer.lng}_${_mapStyle.styleName}'),
+                  center: LatLng(
+                    _customer.lat!.toDouble(),
+                    _customer.lng!.toDouble(),
+                  ),
+                  zoom: 16.5,
+                  mapStyle: _mapStyle,
+                  markers: [
+                    LatLng(_customer.lat!.toDouble(), _customer.lng!.toDouble()),
+                  ],
+                  showMyLocation: false,
+                  showMyLocationButton: true,
+                  showZoomControls: true,
+                  interactive: true,
+                ),
+
+                // 2. Chế độ xem vệ tinh / đường phố / giao thông
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x33000000),
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildMapStyleChip(GoongMapStyle.standard, 'Đường phố', Icons.map_rounded),
+                        const SizedBox(width: 2),
+                        _buildMapStyleChip(GoongMapStyle.satellite, 'Vệ tinh', Icons.satellite_alt_rounded),
+                        const SizedBox(width: 2),
+                        _buildMapStyleChip(GoongMapStyle.navigation, 'Giao thông', Icons.traffic_rounded),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    hasGps
-                        ? 'Đã ghim vị trí'
-                        : 'Chưa cập nhật GPS',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: hasGps
-                          ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                          : AppColors.error,
+                ),
+
+                // 3. Tọa độ GPS hiển thị nhỏ gọn ở góc dưới
+                Positioned(
+                  bottom: 10,
+                  left: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.pin_drop_rounded,
+                          size: 13,
+                          color: Color(0xFF4ADE80),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${_customer.lat!.toStringAsFixed(5)}, ${_customer.lng!.toStringAsFixed(5)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E2420) : const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
               ),
             ),
-            if (hasGps)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_off_outlined,
+                  size: 28,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
                 ),
-                child: Text(
-                  'Bán kính: ${_customer.geofenceRadiusM ?? 50}m',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Chưa cập nhật tọa độ GPS',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white70 : const Color(0xFF374151),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Điểm bán chưa được ghim vị trí để hiển thị bản đồ Goong',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white38 : const Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-          ],
-        ),
+              ],
+            ),
+          ),
+        ],
 
         const SizedBox(height: 14),
         SizedBox(
@@ -968,9 +1335,136 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     );
   }
 
+  Widget _buildMapStyleChip(GoongMapStyle style, String label, IconData icon) {
+    final isSelected = _mapStyle == style;
+    return InkWell(
+      onTap: () {
+        if (_mapStyle != style) {
+          setState(() => _mapStyle = style);
+        }
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF006E15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? Colors.white : Colors.white70,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ===========================================================================
   // 5. ROUTE & MANAGEMENT CARD
   // ===========================================================================
+
+  String _resolveRouteName() {
+    // 1. Kiểm tra danh sách tuyến từ userAssignedRoutesProvider
+    final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
+    final routeMap = <int, String>{};
+    for (final ur in userRoutes) {
+      if (ur.name.trim().isNotEmpty) {
+        routeMap[ur.id] = ur.name.trim();
+      }
+    }
+
+    // 2. Tra cứu từ routeIds nếu có
+    if (_customer.routeIds.isNotEmpty && routeMap.isNotEmpty) {
+      final names = _customer.routeIds
+          .map((id) => routeMap[id])
+          .whereType<String>()
+          .where((n) => n.isNotEmpty)
+          .toList();
+      if (names.isNotEmpty) {
+        return names.join(', ');
+      }
+    }
+
+    // 3. Nếu route hiện tại có giá trị hợp lệ (khác 'Chưa phân tuyến' và không rỗng)
+    if (_customer.route.trim().isNotEmpty &&
+        _customer.route.trim() != 'Chưa phân tuyến' &&
+        _customer.route.trim() != 'Tất cả tuyến') {
+      final numMatch = RegExp(r'^Tuyến\s*#?(\d+)$', caseSensitive: false).firstMatch(_customer.route.trim());
+      if (numMatch != null) {
+        final id = int.tryParse(numMatch.group(1)!);
+        if (id != null && routeMap.containsKey(id)) {
+          return routeMap[id]!;
+        }
+      }
+      return _customer.route.trim();
+    }
+
+    // 4. Tra cứu từ danh sách routes của customer
+    for (final r in _customer.routes) {
+      if (r.trim().isNotEmpty &&
+          r.trim() != 'Chưa phân tuyến' &&
+          r.trim() != 'Tất cả tuyến') {
+        final numMatch = RegExp(r'^Tuyến\s*#?(\d+)$', caseSensitive: false).firstMatch(r.trim());
+        if (numMatch != null) {
+          final id = int.tryParse(numMatch.group(1)!);
+          if (id != null && routeMap.containsKey(id)) {
+            return routeMap[id]!;
+          }
+        }
+        return r.trim();
+      }
+    }
+
+    // 5. Tra cứu từ danh sách khách hàng đã load trong CustomerViewModel
+    final allCustomers = ref.watch(customerViewModelProvider).allCustomers;
+    final matchInList = allCustomers.where((c) => c.id == _customer.id).firstOrNull;
+    if (matchInList != null &&
+        matchInList.route.trim().isNotEmpty &&
+        matchInList.route.trim() != 'Chưa phân tuyến' &&
+        matchInList.route.trim() != 'Tất cả tuyến') {
+      return matchInList.route.trim();
+    }
+
+    // 6. Tra cứu từ dynamicFields (route, route_name, tuyen, tuyen_ban_hang, mw_tuyen)
+    final dynFields = _customer.dynamicFields;
+    for (final key in ['route_name', 'route', 'tuyen', 'tuyen_ban_hang', 'mw_tuyen', 'routes', 'route_names']) {
+      final val = dynFields[key];
+      if (val is String && val.trim().isNotEmpty && val.trim() != 'Chưa phân tuyến') {
+        return val.trim();
+      } else if (val is List && val.isNotEmpty) {
+        final first = val.first?.toString().trim();
+        if (first != null && first.isNotEmpty && first != 'Chưa phân tuyến') {
+          return first;
+        }
+      } else if (val is Map) {
+        final name = (val['name'] ?? val['route_name'] ?? val['title'])?.toString().trim();
+        if (name != null && name.isNotEmpty && name != 'Chưa phân tuyến') {
+          return name;
+        }
+      }
+    }
+
+    // 7. Tra cứu từ routeIds dạng id nếu có (khi chưa map được tên từ server)
+    if (_customer.routeIds.isNotEmpty) {
+      return _customer.routeIds.map((id) => 'Tuyến #$id').join(', ');
+    }
+
+    return 'Chưa phân tuyến';
+  }
 
   String? _resolveRegionName() {
     // 1. Tên khu vực có sẵn từ đối tượng khách hàng
@@ -1016,7 +1510,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       children: [
         _buildInfoRow(
           label: 'Tuyến bán hàng',
-          value: _customer.route,
+          value: _resolveRouteName(),
           icon: Icons.alt_route_rounded,
           isDark: isDark,
         ),
@@ -1060,6 +1554,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     'routes', 'route_ids', 'route', 'region', 'region_id', 'region_name',
     'id', 'code', 'name', 'address', 'phone', 'contact_name', 'contact_title',
     'email', 'lat', 'lng', 'geofence_radius_m', 'type',
+    'created_by', 'created_by_name', 'created_by_code', 'creator_name', 'creator', 'user_create', 'user_create_name', 'created_user',
+    'updated_by', 'updated_by_name', 'updated_by_code', 'updater_name', 'updater', 'user_update', 'user_update_name', 'updated_user', 'last_modified_by',
+    'created_at', 'updated_at',
+    'approval_status', 'approval_label', 'approval_color', 'approval_note', 'approval_at',
   };
 
   bool _hasDynamicFields() {
@@ -1116,14 +1614,162 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   // 7. SYNC STATUS & AUDIT CARD
   // ===========================================================================
 
+  String _formatDateTime(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Chưa cập nhật';
+    final trimmed = raw.trim();
+    try {
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) {
+        final local = parsed.toLocal();
+        String pad2(int n) => n.toString().padLeft(2, '0');
+        return '${pad2(local.hour)}:${pad2(local.minute)} - ${pad2(local.day)}/${pad2(local.month)}/${local.year}';
+      }
+    } catch (_) {}
+    return trimmed;
+  }
+
+  String? _resolveCreatedByName() {
+    String? name = _customer.createdByName?.trim();
+    String? code;
+    final dyn = _customer.dynamicFields;
+
+    for (final k in ['created_by_code', 'creator_code', 'user_create_code']) {
+      final v = dyn[k]?.toString().trim();
+      if (v != null && v.isNotEmpty) {
+        code = v;
+        break;
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      for (final key in [
+        'created_by_name',
+        'created_by',
+        'creator_name',
+        'creator',
+        'user_create',
+        'user_create_name',
+        'created_user',
+      ]) {
+        final val = dyn[key]?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          name = val;
+          break;
+        }
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      if (dyn['data'] is Map) {
+        final sub = dyn['data'] as Map;
+        for (final key in ['created_by_name', 'created_by', 'creator_name']) {
+          final val = sub[key]?.toString().trim();
+          if (val != null && val.isNotEmpty) {
+            name = val;
+            break;
+          }
+        }
+        if (code == null) {
+          final c = sub['created_by_code']?.toString().trim();
+          if (c != null && c.isNotEmpty) code = c;
+        }
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      name = code;
+    } else if (code != null && code.isNotEmpty && !name.contains(code)) {
+      name = '$name ($code)';
+    }
+
+    if ((name == null || name.isEmpty) && _customer.syncStatus == 'pending') {
+      try {
+        final authState = ref.read(authViewModelProvider);
+        if (authState.user != null) {
+          final user = authState.user!;
+          if (user.displayName.isNotEmpty) {
+            return user.employeeCode.isNotEmpty
+                ? '${user.displayName} (${user.employeeCode})'
+                : user.displayName;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return name;
+  }
+
+  String? _resolveUpdatedByName() {
+    String? name = _customer.updatedByName?.trim();
+    String? code;
+    final dyn = _customer.dynamicFields;
+
+    for (final k in ['updated_by_code', 'updater_code', 'user_update_code']) {
+      final v = dyn[k]?.toString().trim();
+      if (v != null && v.isNotEmpty) {
+        code = v;
+        break;
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      for (final key in [
+        'updated_by_name',
+        'updated_by',
+        'updater_name',
+        'updater',
+        'user_update',
+        'user_update_name',
+        'updated_user',
+        'last_modified_by',
+      ]) {
+        final val = dyn[key]?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          name = val;
+          break;
+        }
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      if (dyn['data'] is Map) {
+        final sub = dyn['data'] as Map;
+        for (final key in ['updated_by_name', 'updated_by', 'updater_name']) {
+          final val = sub[key]?.toString().trim();
+          if (val != null && val.isNotEmpty) {
+            name = val;
+            break;
+          }
+        }
+        if (code == null) {
+          final c = sub['updated_by_code']?.toString().trim();
+          if (c != null && c.isNotEmpty) code = c;
+        }
+      }
+    }
+
+    if (name == null || name.isEmpty) {
+      name = code;
+    } else if (code != null && code.isNotEmpty && !name.contains(code)) {
+      name = '$name ($code)';
+    }
+
+    return name;
+  }
+
   Widget _buildSyncStatusCard(bool isDark) {
+    final createdBy = _resolveCreatedByName();
+    final updatedBy = _resolveUpdatedByName();
+    final hasCreatedAt = _customer.createdAt != null && _customer.createdAt!.trim().isNotEmpty;
+    final hasUpdatedAt = _customer.updatedAt != null && _customer.updatedAt!.trim().isNotEmpty;
+
     return _buildSectionCard(
-      title: 'Trạng thái dữ liệu',
-      icon: Icons.cloud_done_outlined,
+      title: 'Trạng thái & Lịch sử chỉnh sửa',
+      icon: Icons.history_rounded,
       isDark: isDark,
       children: [
         _buildInfoRow(
-          label: 'Trạng thái',
+          label: 'Trạng thái đồng bộ',
           value: _customer.syncStatus == 'synced'
               ? 'Đã gửi thành công'
               : (_customer.syncStatus == 'error'
@@ -1136,25 +1782,39 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   : Icons.cloud_queue_rounded),
           isDark: isDark,
         ),
-        if (_customer.createdAt != null) ...[
+        const SizedBox(height: 10),
+        _buildInfoRow(
+          label: 'Người tạo',
+          value: (createdBy != null && createdBy.isNotEmpty) ? createdBy : 'Chưa cập nhật',
+          icon: Icons.person_add_alt_1_outlined,
+          isDark: isDark,
+        ),
+        if (hasCreatedAt) ...[
           const SizedBox(height: 10),
           _buildInfoRow(
             label: 'Thời gian tạo',
-            value: _customer.createdAt!,
+            value: _formatDateTime(_customer.createdAt),
             icon: Icons.access_time_rounded,
             isDark: isDark,
           ),
         ],
-        if (_customer.updatedAt != null) ...[
+        const SizedBox(height: 10),
+        _buildInfoRow(
+          label: 'Người cập nhật lần cuối',
+          value: (updatedBy != null && updatedBy.isNotEmpty) ? updatedBy : 'Chưa cập nhật',
+          icon: Icons.manage_accounts_outlined,
+          isDark: isDark,
+        ),
+        if (hasUpdatedAt) ...[
           const SizedBox(height: 10),
           _buildInfoRow(
             label: 'Thời gian cập nhật',
-            value: _customer.updatedAt!,
+            value: _formatDateTime(_customer.updatedAt),
             icon: Icons.update_rounded,
             isDark: isDark,
           ),
         ],
-        if (_customer.clientUuid != null) ...[
+        if (_customer.clientUuid != null && _customer.clientUuid!.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
           _buildInfoRow(
             label: 'Mã lưu trên máy',

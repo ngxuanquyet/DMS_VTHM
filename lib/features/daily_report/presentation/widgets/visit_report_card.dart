@@ -167,6 +167,76 @@ class VisitReportCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              if (visit.customerApprovalStatus != 'approved') ...[
+                                const SizedBox(width: 6),
+                                () {
+                                  final isRejected = visit.customerApprovalStatus == 'rejected';
+                                  final badgeBg = isRejected
+                                      ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2))
+                                      : (isDark ? const Color(0x33D97706) : const Color(0xFFFEF3C7));
+                                  final badgeBorder = isRejected ? const Color(0xFFEF4444) : const Color(0xFFF59E0B);
+                                  final badgeText = isRejected
+                                      ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C))
+                                      : (isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309));
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: badgeBg,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: badgeBorder, width: 0.8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
+                                          size: 10,
+                                          color: badgeText,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          isRejected ? 'ĐB bị từ chối' : 'Chờ duyệt ĐB',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            color: badgeText,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }(),
+                              ],
+                              if (visit.isCheckoutOtherDay) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0x33F59E0B) : const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFF59E0B), width: 0.8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.next_plan_outlined,
+                                        size: 10,
+                                        color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        'Ra khác ngày',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],
@@ -250,6 +320,43 @@ class VisitReportCard extends StatelessWidget {
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+
+                // Lý do điểm bán bị từ chối (§3c SPEC-2026-10-15 chốt 16/10/2026)
+                if (visit.customerApprovalStatus == 'rejected' &&
+                    visit.customerApprovalNote != null &&
+                    visit.customerApprovalNote!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2).withValues(alpha: isDark ? 0.2 : 0.8),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFFCA5A5).withValues(alpha: isDark ? 0.4 : 1),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline, size: 14, color: Color(0xFFDC2626)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Lý do từ chối điểm bán: ${visit.customerApprovalNote!}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

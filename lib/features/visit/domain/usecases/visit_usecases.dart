@@ -6,7 +6,18 @@ import '../../data/repositories/visit_repository_impl.dart';
 import '../entities/visit_entity.dart';
 import '../entities/visit_photo_entity.dart';
 import '../entities/visit_requirements_entity.dart';
+import '../entities/visit_history_entity.dart';
 import '../repositories/visit_repository.dart';
+
+final getCustomerVisitHistoryUseCaseProvider =
+    Provider<GetCustomerVisitHistoryUseCase>((ref) {
+  return GetCustomerVisitHistoryUseCase(ref.watch(visitRepositoryProvider));
+});
+
+final getCustomerVisitHistoryDetailUseCaseProvider =
+    Provider<GetCustomerVisitHistoryDetailUseCase>((ref) {
+  return GetCustomerVisitHistoryDetailUseCase(ref.watch(visitRepositoryProvider));
+});
 
 final getTodayVisitsUseCaseProvider = Provider<GetTodayVisitsUseCase>((ref) {
   return GetTodayVisitsUseCase(ref.watch(visitRepositoryProvider));
@@ -124,5 +135,21 @@ class CancelVisitUseCase {
 
   Future<void> call(int visitId, {String? clientUuid}) =>
       _repository.cancelVisit(visitId, clientUuid: clientUuid);
+}
+
+class GetCustomerVisitHistoryUseCase {
+  final VisitRepository _repository;
+  GetCustomerVisitHistoryUseCase(this._repository);
+
+  Future<CustomerVisitHistoryResponse> call(int customerId, {int page = 1, int perPage = 20}) =>
+      _repository.getCustomerVisitHistory(customerId, page: page, perPage: perPage);
+}
+
+class GetCustomerVisitHistoryDetailUseCase {
+  final VisitRepository _repository;
+  GetCustomerVisitHistoryDetailUseCase(this._repository);
+
+  Future<VisitHistoryDetailEntity> call(int customerId, int visitId) =>
+      _repository.getCustomerVisitHistoryDetail(customerId, visitId);
 }
 

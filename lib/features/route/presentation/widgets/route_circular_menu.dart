@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/bottom_nav_bar.dart';
+import '../../../customer/presentation/viewmodels/rejected_read_status_notifier.dart';
 
 class CircularMenuItem {
   final String label;
@@ -10,6 +11,7 @@ class CircularMenuItem {
   final Color color;
   final VoidCallback onTap;
   final int? badgeCount;
+  final bool hasBadgeDot;
   final bool isActive;
 
   const CircularMenuItem({
@@ -18,6 +20,7 @@ class CircularMenuItem {
     required this.color,
     required this.onTap,
     this.badgeCount,
+    this.hasBadgeDot = false,
     this.isActive = false,
   });
 }
@@ -29,10 +32,13 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onSendOfflineData;
   final VoidCallback onAddCustomer;
   final VoidCallback onRefreshGps;
+  final VoidCallback? onOpenRejected;
   final VoidCallback? onToggleMapView;
   final bool isSortedByDistance;
   final bool isMapView;
   final int pendingOfflineCount;
+  final int? rejectedCount;
+  final bool? hasUnreadRejected;
   final bool isSyncing;
   final double bottomOffset;
 
@@ -43,10 +49,13 @@ class RouteCircularMenu extends ConsumerStatefulWidget {
     required this.onSendOfflineData,
     required this.onAddCustomer,
     required this.onRefreshGps,
+    this.onOpenRejected,
     this.onToggleMapView,
     this.isSortedByDistance = false,
     this.isMapView = false,
     this.pendingOfflineCount = 0,
+    this.rejectedCount,
+    this.hasUnreadRejected,
     this.isSyncing = false,
     this.bottomOffset = 88.0,
   });
@@ -149,6 +158,13 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
       _closeImmediately();
     });
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasUnreadFromProvider = ref.watch(hasUnreadRejectedProvider);
+    final unreadCountFromProvider = ref.watch(unreadRejectedCountProvider);
+    final hasUnread = widget.hasUnreadRejected ??
+        (widget.rejectedCount != null
+            ? widget.rejectedCount! > 0
+            : hasUnreadFromProvider);
+    final unreadCount = widget.rejectedCount ?? unreadCountFromProvider;
 
     final items = [
       CircularMenuItem(
@@ -160,6 +176,20 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
           widget.onAddCustomer();
         },
       ),
+      if (widget.onOpenRejected != null)
+        CircularMenuItem(
+          label: unreadCount > 0
+              ? 'Bị từ chối ($unreadCount)'
+              : 'Điểm bán bị từ chối',
+          icon: Icons.cancel_outlined,
+          color: const Color(0xFFDC2626), // Red
+          hasBadgeDot: hasUnread,
+          badgeCount: unreadCount > 0 ? unreadCount : null,
+          onTap: () {
+            _close();
+            widget.onOpenRejected!();
+          },
+        ),
       CircularMenuItem(
         label: widget.pendingOfflineCount > 0
             ? 'Gửi offline (${widget.pendingOfflineCount})'
@@ -257,7 +287,7 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
             curve: Curves.easeOutCubic,
             bottom: widget.bottomOffset,
             right: 16,
-            child: _buildMainFab(isDark),
+            child: _buildMainFab(isDark, hasUnreadRejected: hasUnread),
           ),
         ],
       ),
@@ -281,7 +311,7 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
         // Bố trí các nút theo hình cung quạt (radial arc) với khoảng cách dọc đều đặn
         // Đặt baseBottom = widget.bottomOffset + 70.0 để nổi hoàn toàn phía trên FAB chính
         final int invertedIndex = (totalItems - 1) - index;
-        const double verticalStep = 56.0;
+        final double verticalStep = totalItems > 5 ? 50.0 : 56.0;
         final double baseBottom = widget.bottomOffset + 70.0;
         final double targetBottom = baseBottom + (invertedIndex * verticalStep);
 
@@ -371,7 +401,7 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
                           ),
                         ),
 
-                        // Optional mini badge for pending count
+                        // Optional mini badge for pending count or unread dot
                         if (item.badgeCount != null && item.badgeCount! > 0)
                           Positioned(
                             top: -3,
@@ -397,6 +427,20 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
                                 ),
                               ),
                             ),
+                          )
+                        else if (item.hasBadgeDot)
+                          Positioned(
+                            top: -1,
+                            right: -1,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDC2626),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1.5),
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -410,7 +454,9 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
     );
   }
 
-  Widget _buildMainFab(bool isDark) {
+  Widget _buildMainFab(bool isDark, {required bool hasUnreadRejected}) {
+    final showOfflineBadge = widget.pendingOfflineCount > 0;
+    final showRedDot = !_isOpen && hasUnreadRejected && !showOfflineBadge;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -459,33 +505,41 @@ class _RouteCircularMenuState extends ConsumerState<RouteCircularMenu>
           ),
         ),
 
-        // Red badge on main FAB if there are pending offline items
-        if (!_isOpen && widget.pendingOfflineCount > 0)
+        // Red badge for offline items OR red dot for unread rejected items
+        if (!_isOpen && (showOfflineBadge || showRedDot))
           Positioned(
             top: -2,
             right: -2,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              padding: showOfflineBadge
+                  ? const EdgeInsets.symmetric(horizontal: 5, vertical: 2)
+                  : EdgeInsets.zero,
               decoration: BoxDecoration(
                 color: const Color(0xFFDC2626),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: showOfflineBadge
+                    ? BorderRadius.circular(10)
+                    : BorderRadius.circular(5),
                 border: Border.all(color: Colors.white, width: 1.5),
               ),
-              constraints: const BoxConstraints(
-                minWidth: 18,
-                minHeight: 18,
+              constraints: BoxConstraints(
+                minWidth: showOfflineBadge ? 18 : 10,
+                minHeight: showOfflineBadge ? 18 : 10,
               ),
-              child: Center(
-                child: Text(
-                  widget.pendingOfflineCount > 99 ? '99+' : '${widget.pendingOfflineCount}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    height: 1,
-                  ),
-                ),
-              ),
+              child: showOfflineBadge
+                  ? Center(
+                      child: Text(
+                        widget.pendingOfflineCount > 99
+                            ? '99+'
+                            : '${widget.pendingOfflineCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          height: 1,
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
       ],

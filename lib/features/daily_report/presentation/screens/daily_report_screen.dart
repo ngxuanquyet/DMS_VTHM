@@ -102,17 +102,30 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
               // 2. Lưới chỉ số tóm tắt ngày ("Mang lại cái nhìn tổng thể")
               Row(
                 children: [
-                  Expanded(
-                    child: _SummaryBox(
-                      label: 'Điểm viếng thăm',
-                      value: reportState.totalVisits > 0
-                          ? '${reportState.visitedCount} / ${reportState.totalVisits} điểm'
-                          : '0 điểm',
-                      color: const Color(0xFF006E15),
-                      bgColor: const Color(0xFFE8F5E9),
-                      icon: Icons.store_mall_directory_rounded,
-                    ),
-                  ),
+                  () {
+                    final apprvCust = reportState.approvedCustomerCount;
+                    final pendCust = reportState.pendingCustomerCount;
+                    final rejCust = reportState.rejectedCustomerCount;
+
+                    final subParts = <String>[];
+                    if (apprvCust > 0) subParts.add('$apprvCust hợp lệ');
+                    if (pendCust > 0) subParts.add('$pendCust chờ duyệt');
+                    if (rejCust > 0) subParts.add('$rejCust bị từ chối');
+                    final subLabel = subParts.isNotEmpty ? subParts.join(' · ') : null;
+
+                    return Expanded(
+                      child: _SummaryBox(
+                        label: 'Điểm viếng thăm',
+                        value: reportState.totalVisits > 0
+                            ? '${reportState.visitedCount} / ${reportState.totalVisits} điểm'
+                            : '0 điểm',
+                        subValue: subLabel,
+                        color: const Color(0xFF006E15),
+                        bgColor: const Color(0xFFE8F5E9),
+                        icon: Icons.store_mall_directory_rounded,
+                      ),
+                    );
+                  }(),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _SummaryBox(
@@ -149,7 +162,64 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
+              // Banner dẫn tới màn Điểm bán & Lượt viếng thăm bị từ chối
+              () {
+                final rejectedVisits = reportState.visits
+                    .where((v) => v.customerApprovalStatus == 'rejected')
+                    .length;
+                if (rejectedVisits <= 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () => context.push('/customers/rejected'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark ? const Color(0x55DC2626) : const Color(0xFFFCA5A5),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFDC2626)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Có $rejectedVisits lượt viếng thăm ở điểm bán bị từ chối (không tính KPI).',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'Xem chi tiết',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 11,
+                            color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }(),
+              const SizedBox(height: 4),
 
               // 3. Thanh lọc trạng thái viếng thăm
               SingleChildScrollView(
@@ -565,6 +635,7 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
 class _SummaryBox extends StatelessWidget {
   final String label;
   final String value;
+  final String? subValue;
   final Color color;
   final Color bgColor;
   final IconData icon;
@@ -572,6 +643,7 @@ class _SummaryBox extends StatelessWidget {
   const _SummaryBox({
     required this.label,
     required this.value,
+    this.subValue,
     required this.color,
     required this.bgColor,
     required this.icon,
@@ -614,6 +686,17 @@ class _SummaryBox extends StatelessWidget {
                     color: color,
                   ),
                 ),
+                if (subValue != null && subValue!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subValue!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

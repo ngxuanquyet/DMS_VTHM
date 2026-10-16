@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../data/repositories/customer_repository_impl.dart';
@@ -74,6 +75,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
   // 3. GPS & Geofence (read-only manual display, updated via GPS button)
   double? _currentLat;
   double? _currentLng;
+  double? _currentAccuracy;
+  bool? _isMockLocation;
   late final TextEditingController _geofenceRadiusController;
 
   // 4. Dynamic fields controllers
@@ -95,7 +98,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
     'sales_route', 'sales_routes',
     // Core fields
     'id', 'code', 'customer_code', 'name', 'customer_name', 'address', 'phone', 'contact_name', 'contact_title', 'contact_person',
-    'email', 'lat', 'lng', 'latitude', 'longitude', 'geofence_radius_m', 'geofence',
+    'email', 'lat', 'lng', 'latitude', 'longitude', 'coords', 'geofence_radius_m', 'geofence',
     'birthday', 'tax_code', 'delivery_address', 'description', 'notes',
     // Classifications & Administrative divisions
     'type', 'customer_type', 'customer_type_id', 'customer_type_name',
@@ -138,6 +141,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
 
     _currentLat = c.lat;
     _currentLng = c.lng;
+    _isMockLocation = c.coordsMock;
     _geofenceRadiusController = TextEditingController(
       text: c.geofenceRadiusM?.toString() ?? '50',
     );
@@ -261,6 +265,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         setState(() {
           _currentLat = double.parse(lastKnown.latitude.toStringAsFixed(6));
           _currentLng = double.parse(lastKnown.longitude.toStringAsFixed(6));
+          _currentAccuracy = lastKnown.accuracy;
+          _isMockLocation = lastKnown.isMocked;
           _isLocating = false;
         });
         LocationService.updateCachedPosition(lastKnown);
@@ -279,6 +285,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
           setState(() {
             _currentLat = double.parse(position.latitude.toStringAsFixed(6));
             _currentLng = double.parse(position.longitude.toStringAsFixed(6));
+            _currentAccuracy = position.accuracy;
+            _isMockLocation = position.isMocked;
             _isLocating = false;
           });
         }
@@ -379,10 +387,19 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
       changes['address'] = newAddress;
     }
 
-    // 4. GPS Coordinates (Must be sent as a pair per API 422 rule)
+    // 4. GPS Coordinates: Gửi ô cứng 'coords' ({lat, lng, mock}) theo spec 15/10/2026
+    // Gửi coords: null để xoá toạ độ. Tuyệt đối KHÔNG gửi kèm lat/lng kẻo bị lỗi 422!
     if (_currentLat != c.lat || _currentLng != c.lng) {
-      changes['lat'] = _currentLat;
-      changes['lng'] = _currentLng;
+      if (_currentLat != null && _currentLng != null) {
+        changes['coords'] = {
+          'lat': double.parse(_currentLat!.toStringAsFixed(7)),
+          'lng': double.parse(_currentLng!.toStringAsFixed(7)),
+          if (_currentAccuracy != null) 'accuracy': double.parse(_currentAccuracy!.toStringAsFixed(1)),
+          'mock': _isMockLocation ?? false,
+        };
+      } else {
+        changes['coords'] = null;
+      }
     }
 
     final newGeofence = int.tryParse(_geofenceRadiusController.text.trim());

@@ -131,4 +131,9 @@ class AuthRepositoryImpl implements AuthRepository {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(AppConstants.keySavedUsername);
   }
+
+  @override
+  Future<bool> checkAppAccess() async {
+    return await _apiService.checkAppAccess();
+  }
 }

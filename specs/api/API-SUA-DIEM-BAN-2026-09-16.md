@@ -29,11 +29,20 @@ thì không. Sửa điểm bán của người khác → **403** `FORBIDDEN`, DB
 Tuyến bị **khoá** (`is_active = false`) không còn cho quyền sửa, trừ khi điểm bán đó còn thuộc về nhân viên
 qua phân công hoặc do chính họ tạo.
 
+**Đọc hồ sơ trước khi sửa — `GET /crm/customers/{id}` (mở cho nhân viên từ 16/10/2026).** Trước ngày này
+đường đọc chỉ mở cho vai quản trị (`/crm/customer/index`), nên app gọi bằng tài khoản nhân viên nhận **403**
+(đo log prod 11–16/10: 23 lượt từ app). Nay vai `crm_customer_self` (quyền `/crm/customer/mine`) đọc được
+**đúng tập "của mình" ở trên**; điểm bán khác → **403** *"Bạn chỉ xem được điểm bán do mình phụ trách, tự
+tạo, hoặc nằm trong tuyến của mình."* Ba ô `email` · `birthday` · `delivery_address` chỉ có trong phản hồi
+khi người gọi **sửa được** đúng điểm bán đó. Danh sách toàn bộ (`GET /crm/customers`) và
+`GET /crm/customers/{id}/visits` vẫn chỉ dành cho quản trị — nhân viên xem lịch sử ghé qua
+`GET /dms/customers/{id}/visit-history` (`API-VIENG-THAM-MOBILE-2026-09-29.md` §2.4).
+
 ## Ô sửa được
 
 Thông tin: `name` · `address` · `delivery_address` · `province_name` · `ward_name` · `contact_name` ·
 `contact_title` · `phone` · `email` · `birthday`
-Vị trí: `lat` · `lng` · `geofence_radius_m`
+Vị trí: `coords` (`{lat, lng, mock}`, từ 15/10/2026 — xem `API-BIEU-MAU-DIEM-BAN-2026-09-16.md`) · `lat` · `lng` · `geofence_radius_m`
 Phân loại: `customer_type_id` · `customer_group_id` · `channel_id` · `region_id` · `status`
 Ảnh: **`photo_tokens`** (mảng token — đường chính từ 23/09/2026, một điểm bán mang nhiều ảnh) ·
 `photo_token` (một token, app đời cũ) · `photo_file_id` (id tệp, đường quản trị/di trú). Gửi nhiều đường

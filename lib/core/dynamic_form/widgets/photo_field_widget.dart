@@ -8,6 +8,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../utils/photo_watermark_helper.dart';
 import '../../widgets/camera_permission_dialog.dart';
+import '../../widgets/app_fullscreen_image_viewer.dart';
 import '../models/dynamic_form_field.dart';
 import 'dynamic_form_field_wrapper.dart';
 
@@ -292,30 +293,27 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
   }
 
   void _viewFullImage(BuildContext context, String path) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(12),
-        child: Stack(
-          alignment: Alignment.topRight,
-          children: [
-            ClipRRect(
-              borderRadius: AppRadius.roundedLg,
-              child: InteractiveViewer(
-                child: _buildImageWidget(path, fit: BoxFit.contain),
-              ),
-            ),
-            IconButton(
-              onPressed: () => Navigator.pop(ctx),
-              icon: const CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: Icon(Icons.close, color: Colors.white, size: 18),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final initialIdx = photoPaths.indexOf(path).clamp(0, photoPaths.isNotEmpty ? photoPaths.length - 1 : 0);
+    final items = photoPaths.map((p) {
+      if (p.startsWith('http://') ||
+          p.startsWith('https://') ||
+          p.startsWith('/crm/customer-photos/public/') ||
+          (p.length == 32 && !p.contains('/') && !p.contains(r'\'))) {
+        String fullUrl = p;
+        if (p.startsWith('/crm/customer-photos/public/')) {
+          fullUrl = '${AppConstants.baseUrl}$p';
+        } else if (p.length == 32 && !p.contains('/') && !p.contains(r'\')) {
+          fullUrl = '${AppConstants.baseUrl}/crm/customer-photos/public/$p';
+        }
+        return FullScreenImageItem(url: fullUrl, title: field.label);
+      }
+      return FullScreenImageItem(filePath: p, title: field.label);
+    }).toList();
+
+    AppFullScreenImageViewer.open(
+      context,
+      items: items,
+      initialIndex: initialIdx,
     );
   }
 
@@ -331,6 +329,16 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
     }
     if (path.startsWith('/crm/customer-photos/public/')) {
       final fullUrl = '${AppConstants.baseUrl}$path';
+      return Image.network(
+        fullUrl,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
+        ),
+      );
+    }
+    if (path.length == 32 && !path.contains('/') && !path.contains(r'\')) {
+      final fullUrl = '${AppConstants.baseUrl}/crm/customer-photos/public/$path';
       return Image.network(
         fullUrl,
         fit: fit,
@@ -392,6 +400,26 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (index == 0)
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            borderRadius: AppRadius.roundedSm,
+                          ),
+                          child: const Text(
+                            'Đại diện',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
                     if (!field.isReadOnly)
                       Positioned(
                         top: 2,
@@ -434,15 +462,21 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.add_a_photo_rounded,
-                          size: 24,
+                          size: 22,
                           color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Thêm ảnh',
+                          style: AppTypography.labelSmall(
+                            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                          ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
                         Text(
                           '${photoPaths.length}/${field.maxPhotos}',
                           style: AppTypography.labelSmall(
-                            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                          ).copyWith(fontSize: 10, fontWeight: FontWeight.w700),
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                          ).copyWith(fontSize: 9),
                         ),
                       ],
                     ),

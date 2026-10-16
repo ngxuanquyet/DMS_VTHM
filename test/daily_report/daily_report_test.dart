@@ -12,12 +12,21 @@ import 'package:vthm_dms/features/visit/data/repositories/visit_repository_impl.
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_photo_entity.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_requirements_entity.dart';
+import 'package:vthm_dms/features/visit/domain/entities/visit_history_entity.dart';
 import 'package:vthm_dms/features/visit/domain/repositories/visit_repository.dart';
 
 class FakeVisitRepository implements VisitRepository {
   List<VisitEntity> localVisits;
 
   FakeVisitRepository({this.localVisits = const []});
+
+  @override
+  Future<CustomerVisitHistoryResponse> getCustomerVisitHistory(int customerId, {int page = 1, int perPage = 20}) async =>
+      const CustomerVisitHistoryResponse();
+
+  @override
+  Future<VisitHistoryDetailEntity> getCustomerVisitHistoryDetail(int customerId, int visitId) async =>
+      throw UnimplementedError();
 
   @override
   Future<List<VisitEntity>> getTodayVisits() async => localVisits;

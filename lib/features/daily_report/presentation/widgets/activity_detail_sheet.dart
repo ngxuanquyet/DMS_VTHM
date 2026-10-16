@@ -139,7 +139,7 @@ class ActivityDetailSheet extends StatelessWidget {
               if (activity.lat != null && activity.lng != null) ...[
                 const _DetailRow(
                   icon: Icons.my_location_rounded,
-                  label: 'Vị trí GPS',
+                  label: 'Toạ độ GPS',
                   value: 'Đã xác thực vị trí GPS',
                 ),
                 const SizedBox(height: 10),

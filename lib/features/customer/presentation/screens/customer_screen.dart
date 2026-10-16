@@ -107,8 +107,8 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
   }
 
   Future<void> _handleAddCustomer() async {
-    final result = await context.push<bool>('/customers/add');
-    if (result == true && mounted) {
+    await context.push('/customers/add');
+    if (mounted) {
       final vm = ref.read(customerViewModelProvider.notifier);
       final currentTab = ref.read(customerViewModelProvider).selectedTab;
       if (currentTab == CustomerFilterTab.visited) {
@@ -884,6 +884,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                 ),
               ),
 
+
             // Customer List View / Status Area
             Expanded(
               child: state.isLoading && state.allCustomers.isEmpty
@@ -1017,6 +1018,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       Positioned.fill(
         child: CustomerCircularMenu(
           onAddCustomer: _handleAddCustomer,
+          onOpenRejected: () => context.push('/customers/rejected'),
           onSync: _handleSync,
           onSendOfflineData: _handleSendOfflineData,
           onRefreshGps: _handleRefreshGps,

@@ -51,9 +51,14 @@ class CustomerEntity {
   final String? email;
   final double? lat;
   final double? lng;
+  final bool? coordsMock;
   final int? geofenceRadiusM;
   final String status;
   final String approvalStatus;
+  final String? approvalLabel;
+  final String? approvalColor;
+  final String? approvalNote;
+  final String? approvalAt;
   final String syncStatus; // 'synced' | 'pending' | 'error'
   final String? clientUuid;
   final String? createdByName;
@@ -97,9 +102,14 @@ class CustomerEntity {
     this.email,
     this.lat,
     this.lng,
+    this.coordsMock,
     this.geofenceRadiusM,
     this.status = 'active',
     this.approvalStatus = 'approved',
+    this.approvalLabel,
+    this.approvalColor,
+    this.approvalNote,
+    this.approvalAt,
     this.syncStatus = 'synced',
     this.clientUuid,
     this.createdByName,
@@ -114,6 +124,38 @@ class CustomerEntity {
     this.photoUrl,
     this.photoUrls = const [],
   });
+
+  bool get isPendingApproval => approvalStatus == 'pending';
+  bool get isRejectedApproval => approvalStatus == 'rejected';
+  bool get isApproved =>
+      approvalStatus == 'approved' ||
+      (approvalStatus != 'pending' && approvalStatus != 'rejected');
+
+  /// Nhãn hiển thị trạng thái duyệt (theo spec 15/10/2026: ưu tiên approval_label từ server)
+  String get displayApprovalLabel {
+    if (approvalLabel != null && approvalLabel!.trim().isNotEmpty) {
+      return approvalLabel!;
+    }
+    if (isPendingApproval) return 'Chờ duyệt';
+    if (isRejectedApproval) return 'Bị từ chối';
+    return 'Đã duyệt';
+  }
+
+  /// Màu trạng thái duyệt (theo spec 15/10/2026: bootstrap warning/danger/success)
+  Color get approvalBadgeColor {
+    switch (approvalColor?.toLowerCase()) {
+      case 'warning':
+        return const Color(0xFFF59E0B);
+      case 'danger':
+        return const Color(0xFFEF4444);
+      case 'success':
+        return const Color(0xFF10B981);
+      default:
+        if (isPendingApproval) return const Color(0xFFF59E0B);
+        if (isRejectedApproval) return const Color(0xFFEF4444);
+        return const Color(0xFF10B981);
+    }
+  }
 
   /// Kiểm tra xem đường dẫn ảnh có phải là tệp cục bộ trên máy không
   static bool isLocalFilePath(String path) {
@@ -195,9 +237,14 @@ class CustomerEntity {
     String? email,
     double? lat,
     double? lng,
+    bool? coordsMock,
     int? geofenceRadiusM,
     String? status,
     String? approvalStatus,
+    String? approvalLabel,
+    String? approvalColor,
+    String? approvalNote,
+    String? approvalAt,
     String? syncStatus,
     String? clientUuid,
     String? createdByName,
@@ -234,9 +281,14 @@ class CustomerEntity {
       email: email ?? this.email,
       lat: lat ?? this.lat,
       lng: lng ?? this.lng,
+      coordsMock: coordsMock ?? this.coordsMock,
       geofenceRadiusM: geofenceRadiusM ?? this.geofenceRadiusM,
       status: status ?? this.status,
       approvalStatus: approvalStatus ?? this.approvalStatus,
+      approvalLabel: approvalLabel ?? this.approvalLabel,
+      approvalColor: approvalColor ?? this.approvalColor,
+      approvalNote: approvalNote ?? this.approvalNote,
+      approvalAt: approvalAt ?? this.approvalAt,
       syncStatus: syncStatus ?? this.syncStatus,
       clientUuid: clientUuid ?? this.clientUuid,
       createdByName: createdByName ?? this.createdByName,

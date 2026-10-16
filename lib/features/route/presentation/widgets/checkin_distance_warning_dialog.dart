@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../customer/presentation/widgets/customer_card.dart';
 
 Future<void> showCheckinDistanceWarningDialog(
   BuildContext context, {
@@ -84,78 +84,12 @@ class CheckinDistanceWarningDialog extends StatelessWidget {
   }
 
   Future<void> _openDirections(BuildContext context) async {
-    final hasAddress = address != null && address!.trim().isNotEmpty && address!.trim() != 'Chưa cập nhật';
-    final hasGps = lat != null && lng != null;
-
-    if (!hasAddress && !hasGps) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Điểm bán chưa có địa chỉ hoặc tọa độ GPS để chỉ đường'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    final destination = hasAddress
-        ? Uri.encodeComponent(address!.trim())
-        : '$lat,$lng';
-
-    // 1. Android Google Maps navigation intent
-    final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
-
-    // 2. iOS Google Maps app scheme
-    final iosGmapsUri = Uri.parse('comgooglemaps://?daddr=$destination&directionsmode=driving');
-
-    // 3. Official Google Maps universal URL
-    final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    await CustomerCard.defaultOpenDirections(
+      context,
+      lat: lat,
+      lng: lng,
+      address: address ?? '',
     );
-
-    // 4. Apple Maps fallback
-    final appleMapsUri = Uri.parse('maps://?daddr=$destination&dirflg=d');
-
-    try {
-      if (await canLaunchUrl(androidNavUri)) {
-        await launchUrl(androidNavUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      if (await canLaunchUrl(iosGmapsUri)) {
-        await launchUrl(iosGmapsUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      final launched = await launchUrl(
-        googleMapsUrl,
-        mode: LaunchMode.externalApplication,
-      );
-      if (launched) return;
-    } catch (_) {}
-
-    try {
-      if (await canLaunchUrl(appleMapsUri)) {
-        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.platformDefault);
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Không thể mở ứng dụng bản đồ Google Maps'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
   }
 
   @override
@@ -626,71 +560,12 @@ class CheckoutDistanceWarningDialog extends StatelessWidget {
   }
 
   Future<void> _openDirections(BuildContext context) async {
-    final hasAddress = address != null && address!.trim().isNotEmpty && address!.trim() != 'Chưa cập nhật';
-    final hasGps = lat != null && lng != null;
-
-    if (!hasAddress && !hasGps) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Điểm bán chưa có địa chỉ hoặc tọa độ GPS để chỉ đường'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    final destination = hasAddress
-        ? Uri.encodeComponent(address!.trim())
-        : '$lat,$lng';
-
-    final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
-    final iosGmapsUri = Uri.parse('comgooglemaps://?daddr=$destination&directionsmode=driving');
-    final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    await CustomerCard.defaultOpenDirections(
+      context,
+      lat: lat,
+      lng: lng,
+      address: address ?? '',
     );
-    final appleMapsUri = Uri.parse('maps://?daddr=$destination&dirflg=d');
-
-    try {
-      if (await canLaunchUrl(androidNavUri)) {
-        await launchUrl(androidNavUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      if (await canLaunchUrl(iosGmapsUri)) {
-        await launchUrl(iosGmapsUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      final launched = await launchUrl(
-        googleMapsUrl,
-        mode: LaunchMode.externalApplication,
-      );
-      if (launched) return;
-    } catch (_) {}
-
-    try {
-      if (await canLaunchUrl(appleMapsUri)) {
-        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    } catch (_) {}
-
-    try {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.platformDefault);
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Không thể mở ứng dụng bản đồ Google Maps'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
   }
 
   @override

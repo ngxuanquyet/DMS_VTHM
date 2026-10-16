@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -7,6 +8,7 @@ import '../theme/app_typography.dart';
 class AppErrorDialog extends StatelessWidget {
   final String title;
   final String message;
+  final String? errorId;
   final VoidCallback? onRetry;
   final VoidCallback? onDismiss;
   final String retryText;
@@ -16,6 +18,7 @@ class AppErrorDialog extends StatelessWidget {
     super.key,
     required this.title,
     required this.message,
+    this.errorId,
     this.onRetry,
     this.onDismiss,
     this.retryText = 'Thử lại',
@@ -29,6 +32,7 @@ class AppErrorDialog extends StatelessWidget {
     BuildContext context, {
     String? title,
     required String message,
+    String? errorId,
     VoidCallback? onRetry,
     VoidCallback? onDismiss,
     String retryText = 'Thử lại',
@@ -52,6 +56,7 @@ class AppErrorDialog extends StatelessWidget {
           child: AppErrorDialog(
             title: title ?? 'Thông báo lỗi',
             message: message,
+            errorId: errorId,
             onRetry: () {
               Navigator.of(ctx).pop();
               _isShowing = false;
@@ -75,6 +80,18 @@ class AppErrorDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Trích xuất mã lỗi nếu truyền vào hoặc nằm trong chuỗi message
+    String? resolvedErrorId = errorId;
+    String displayMessage = message;
+    if (resolvedErrorId == null || resolvedErrorId.isEmpty) {
+      final regExp = RegExp(r'\(Mã lỗi:\s*(ERR-[A-Za-z0-9\-]+)\)');
+      final match = regExp.firstMatch(message);
+      if (match != null) {
+        resolvedErrorId = match.group(1);
+        displayMessage = message.replaceAll(regExp, '').trim();
+      }
+    }
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -122,13 +139,69 @@ class AppErrorDialog extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4.0),
               child: Text(
-                message,
+                displayMessage,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium(
                   color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                 ).copyWith(height: 1.4),
               ),
             ),
+
+            // Badge hiển thị Mã lỗi kèm nút Sao chép
+            if (resolvedErrorId != null && resolvedErrorId.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkSurfaceContainer
+                      : AppColors.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.tag_rounded, size: 16, color: AppColors.error),
+                    const SizedBox(width: 4),
+                    Text(
+                      resolvedErrorId,
+                      style: AppTypography.labelLarge(
+                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                      ).copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: resolvedErrorId!));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Đã sao chép mã lỗi vào bộ nhớ tạm.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(2.0),
+                        child: Icon(
+                          Icons.copy_rounded,
+                          size: 15,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
 
             // Action Buttons

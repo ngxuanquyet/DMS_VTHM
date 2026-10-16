@@ -218,10 +218,12 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
-  /// Đếm số điểm bán theo từng thứ trong tuần
+  /// Đếm số điểm bán theo từng thứ trong tuần (loại trừ điểm bán bị từ chối)
   int getDealerCountForDay(int? day) {
-    if (day == null) return _rawCustomers.length;
-    return _rawCustomers.where((c) => _matchesCustomerDayOfWeek(c, day)).length;
+    if (day == null) return _rawCustomers.where((c) => !c.isRejectedApproval).length;
+    return _rawCustomers
+        .where((c) => !c.isRejectedApproval && _matchesCustomerDayOfWeek(c, day))
+        .length;
   }
 
   void applyFilters({
@@ -456,8 +458,10 @@ class RouteViewModel extends StateNotifier<RouteState> {
             )
             .toList();
         if (cleanRoutes.isNotEmpty) {
-          for (final r in cleanRoutes) {
-            routeSet.add(r);
+          if (!c.isRejectedApproval) {
+            for (final r in cleanRoutes) {
+              routeSet.add(r);
+            }
           }
           return c;
         }
@@ -467,8 +471,10 @@ class RouteViewModel extends StateNotifier<RouteState> {
               .whereType<String>()
               .toList();
           if (mappedNames.isNotEmpty) {
-            for (final r in mappedNames) {
-              routeSet.add(r);
+            if (!c.isRejectedApproval) {
+              for (final r in mappedNames) {
+                routeSet.add(r);
+              }
             }
             return c.copyWith(
               routes: mappedNames,
@@ -491,14 +497,19 @@ class RouteViewModel extends StateNotifier<RouteState> {
               p,
               provinceName: c.provinceName,
             )) {
-              routeSet.add(p);
+              if (!c.isRejectedApproval) {
+                routeSet.add(p);
+              }
             }
           }
         }
         return c;
       }).toList();
 
-      _rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers);
+      // Loại trừ các điểm bán bị từ chối duyệt (hiển thị riêng ở màn hình từ chối)
+      _rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers)
+          .where((c) => !c.isRejectedApproval)
+          .toList();
       final availableRoutes = routeSet.toList();
 
       // Trích xuất danh sách loại khách hàng từ meta hệ thống và khách hàng thực tế
@@ -516,7 +527,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           }
         }
       }
-      for (final c in resolvedCustomers) {
+      for (final c in _rawCustomers) {
         final t = c.type.trim();
         if (t.isNotEmpty && t != 'Tất cả' && t != 'Tất cả loại') {
           typeSet.add(t);
@@ -524,7 +535,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
       }
       final customerTypes = typeSet.toList()..sort();
 
-      final customerStatuses = resolvedCustomers
+      final customerStatuses = _rawCustomers
           .map((c) => c.status.trim())
           .where((s) => s.isNotEmpty && s != 'Tất cả')
           .toSet()
@@ -563,8 +574,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
   void _recomputeRouteDetail() {
     if (!mounted) return;
-    // 1. Lọc theo tuyến được chọn
-    var filtered = _rawCustomers;
+    // 1. Lọc theo tuyến được chọn (loại trừ các điểm bán bị từ chối duyệt)
+    var filtered = _rawCustomers.where((c) => !c.isRejectedApproval).toList();
     if (state.selectedRoute != 'Tất cả tuyến' && state.selectedRoute.isNotEmpty) {
       filtered = filtered.where((c) {
         if (c.route == state.selectedRoute) return true;
@@ -654,6 +665,14 @@ class RouteViewModel extends StateNotifier<RouteState> {
       } else if (!existing.isOpen && v.isOpen) {
         // Ưu tiên lượt đang mở
         visitMap[v.customerId] = v;
+      } else if (!existing.isOpen && !v.isOpen) {
+        // Cả hai đều đã hoàn thành -> Chọn lượt mới nhất để hiển thị giờ ghé gần nhất
+        if (v.id > existing.id ||
+            (v.checkinAt != null &&
+                existing.checkinAt != null &&
+                v.checkinAt!.isAfter(existing.checkinAt!))) {
+          visitMap[v.customerId] = v;
+        }
       }
     }
     // Bổ sung activeVisit vào visitMap nếu chưa có và không bị huỷ (rất quan trọng khi offline)
@@ -1027,21 +1046,27 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final takenCount = state.photos.length;
     final photosMissing = math.max(0, targetMinPhotos - takenCount);
 
+    // §3b DUYET-DIEM-BAN-MOI-2026-10-15 (chốt 16/10/2026):
+    // Lượt đầu ở điểm bán NV mở trên app: KHÔNG chịu thời gian tối thiểu (seconds_remaining = 0)
+    final isNewPendingStore = state.customer is CustomerEntity &&
+        (state.customer as CustomerEntity).isPendingApproval;
+
     var currentReq = state.requirements;
-    final currentSec = currentReq?.secondsRemaining ??
-        (isClosed ? 0 : rules.visit.minDurationMinutes * 60);
+    final currentSec = (isClosed || isNewPendingStore)
+        ? 0
+        : (currentReq?.secondsRemaining ?? rules.visit.minDurationMinutes * 60);
     final missingForms = isClosed
         ? <MissingFormEntity>[]
         : (currentReq?.missingForms ?? <MissingFormEntity>[]);
 
-    final isTimeOk = isClosed || currentSec <= 0;
+    final isTimeOk = isClosed || isNewPendingStore || currentSec <= 0;
     final isFormsOk = isClosed || missingForms.isEmpty;
     final isPhotosOk = photosMissing <= 0;
     final satisfied = isTimeOk && isFormsOk && isPhotosOk;
 
     List<String> blockers = [];
     if (!isClosed) {
-      if (currentSec > 0) {
+      if (!isNewPendingStore && currentSec > 0) {
         final minutes = (currentSec / 60).ceil();
         blockers.add('Bạn cần ở lại thêm $minutes phút nữa mới check-out được.');
       }
@@ -1061,7 +1086,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     final updated = VisitRequirementsEntity(
       satisfied: satisfied,
-      secondsRemaining: isClosed ? 0 : currentSec,
+      secondsRemaining: (isClosed || isNewPendingStore) ? 0 : currentSec,
       photosMissing: photosMissing,
       missingForms: missingForms,
       blockers: blockers,
@@ -1460,11 +1485,17 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             ? (state.customer as CustomerEntity).address
             : state.checkinData?.dealer.address);
 
+    // §5b API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15:
+    // Lượt đầu ở điểm bán vừa mở: KHÔNG chịu thời gian tối thiểu (seconds_remaining = 0)
+    final isNewPendingStore = state.customer is CustomerEntity &&
+        (state.customer as CustomerEntity).isPendingApproval;
+    final effectiveMinDuration = isNewPendingStore ? 0 : minDurationMinutes;
+
     List<String> blockers = [];
     if (!isClosed) {
-      if (minDurationMinutes > 0) {
+      if (effectiveMinDuration > 0) {
         blockers.add(
-          'Bạn cần ở lại thêm $minDurationMinutes phút nữa mới check-out được.',
+          'Bạn cần ở lại thêm $effectiveMinDuration phút nữa mới check-out được.',
         );
       }
       if (photosMissing > 0) {
@@ -1478,6 +1509,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
     }
 
+    final customerApprovalStatus = state.customer is CustomerEntity
+        ? (state.customer as CustomerEntity).approvalStatus
+        : 'approved';
+    final customerApprovalNote = state.customer is CustomerEntity
+        ? (state.customer as CustomerEntity).approvalNote
+        : null;
+
     return VisitEntity(
       id: tempId,
       visitDate:
@@ -1490,9 +1528,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       customerAddress: customerAddress,
       clientUuid: _sessionClientUuid,
       visitResult: state.visitResult,
+      customerApprovalStatus: customerApprovalStatus,
+      customerApprovalNote: customerApprovalNote,
       requirements: VisitRequirementsEntity(
-        satisfied: photosMissing <= 0 && minDurationMinutes <= 0,
-        secondsRemaining: minDurationMinutes * 60,
+        satisfied: photosMissing <= 0 && effectiveMinDuration <= 0,
+        secondsRemaining: effectiveMinDuration * 60,
         photosMissing: photosMissing,
         missingForms: const [],
         blockers: blockers,
@@ -1631,6 +1671,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         _targetDoneTime = DateTime.now().add(
           Duration(seconds: req.secondsRemaining),
         );
+      } else {
+        _targetDoneTime = null;
       }
 
       final cTime = visit.checkinAt != null
@@ -1711,6 +1753,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           _targetDoneTime = DateTime.now().add(
             Duration(seconds: offlineVisit.requirements!.secondsRemaining),
           );
+        } else {
+          _targetDoneTime = null;
         }
 
         state = state.copyWith(
@@ -2306,6 +2350,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final request = CheckoutRequestModel(
       visitResult: state.visitResult,
       closedNote: state.visitResult == 'closed' ? state.closedNote : null,
+      note: state.visitNote.isNotEmpty ? state.visitNote : null,
       lat: lat,
       lng: lng,
       accuracyM: accuracyM,

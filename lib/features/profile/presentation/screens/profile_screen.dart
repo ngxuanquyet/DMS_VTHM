@@ -11,6 +11,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/top_app_bar.dart';
+import '../../../../core/screens/error_log_screen.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
 
@@ -22,6 +23,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  int _versionTapCount = 0;
 
 
   void _showInfoDialog(String title, String content) {
@@ -547,12 +549,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   horizontal: 12,
                   vertical: 6,
                 ),
-                child: Text(
-                  AppConstants.appVersionBuild,
-                  style: AppTypography.labelSmall(
-                    color: isDark
-                        ? AppColors.darkOnSurfaceVariant
-                        : AppColors.outline,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    _versionTapCount++;
+                    if (_versionTapCount >= 5) {
+                      _versionTapCount = 0;
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ErrorLogScreen()),
+                      );
+                    }
+                  },
+                  child: Text(
+                    AppConstants.appVersionBuild,
+                    style: AppTypography.labelSmall(
+                      color: isDark
+                          ? AppColors.darkOnSurfaceVariant
+                          : AppColors.outline,
+                    ),
                   ),
                 ),
               ),

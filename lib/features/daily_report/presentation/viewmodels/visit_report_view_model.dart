@@ -20,10 +20,41 @@ class VisitReportState {
 
   int get totalVisits => visits.length;
 
+  /// Tổng số lượt viếng thăm đã check-out/hoàn thành (§3c SPEC 16/10/2026: Đếm MỌI lượt, bất kể trạng thái duyệt điểm bán)
   int get visitedCount => visits.where((v) {
+        if (v.isCancelled) return false;
         if (v.visitResult == 'visited') return true;
         return v.isCompleted && v.visitResult != 'closed';
       }).length;
+
+  /// Tập hợp ID khách hàng đã ghé theo trạng thái phê duyệt (§3c SPEC 16/10/2026)
+  Set<int> get approvedCustomerIds => visits
+      .where((v) => !v.isCancelled && v.customerApprovalStatus == 'approved')
+      .map((v) => v.customerId)
+      .toSet();
+
+  Set<int> get pendingCustomerIds => visits
+      .where((v) => !v.isCancelled && v.customerApprovalStatus == 'pending')
+      .map((v) => v.customerId)
+      .toSet();
+
+  Set<int> get rejectedCustomerIds => visits
+      .where((v) => !v.isCancelled && v.customerApprovalStatus == 'rejected')
+      .map((v) => v.customerId)
+      .toSet();
+
+  /// Số khách hàng hợp lệ (đã duyệt) (§3c)
+  int get approvedCustomerCount => approvedCustomerIds.length;
+
+  /// Số khách hàng chờ duyệt (§3c)
+  int get pendingCustomerCount => pendingCustomerIds.length;
+
+  /// Số khách hàng không hợp lệ / bị từ chối (§3c)
+  int get rejectedCustomerCount => rejectedCustomerIds.length;
+
+  /// Tổng số khách hàng phân biệt đã ghé trong ngày
+  int get totalCustomerCount =>
+      {...approvedCustomerIds, ...pendingCustomerIds, ...rejectedCustomerIds}.length;
 
   int get closedCount =>
       visits.where((v) => v.visitResult == 'closed').length;

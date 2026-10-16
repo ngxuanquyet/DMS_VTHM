@@ -119,3 +119,31 @@ riêng cho web và app (kèm tham số `?context=web|mobile` của endpoint này
 |---|---|
 | 200 | trả biểu mẫu |
 | 403 | không giữ quyền `/crm/customer-form/schema` |
+
+---
+## Cập nhật 13/10/2026 — ô `input_type: location` (Địa chỉ + toạ độ GPS)
+
+Admin nay thêm được ô động kiểu `location`; giá trị trong `data` là MỘT object `{address, lat, lng, accuracy,
+mock}`. Hợp đồng đầy đủ (dùng chung với biểu mẫu thị trường):
+[`API-O-VI-TRI-BIEU-MAU-2026-10-13.md`](API-O-VI-TRI-BIEU-MAU-2026-10-13.md). Ô này KHÁC cột cứng
+`address`/`lat`/`lng` của điểm bán.
+
+---
+## Cập nhật 15/10/2026 — ô CỨNG `coords` ("Toạ độ") thay hai ô `lat` / `lng`
+
+Schema **không còn** hai ô cứng `lat` ("Vĩ độ") và `lng` ("Kinh độ"). Thay bằng MỘT ô cứng:
+
+```json
+{ "kind": "fixed", "code": "coords", "label": "Toạ độ", "input_type": "location", "required": true, … }
+```
+
+* **Vẽ:** nút "Lấy vị trí" lấy GPS của thiết bị — KHÔNG có ô gõ địa chỉ (điểm bán có ô `address` riêng), KHÔNG cho
+  gõ toạ độ tay.
+* **Gửi** (`POST`/`PATCH /crm/customers`): `"coords": {"lat": 21.0285123, "lng": 105.8542, "accuracy": 7.9, "mock": false}`.
+  `mock` = hệ điều hành báo vị trí giả lập → lưu ở `crm_customer.coords_mock`. `accuracy`/`address` gửi kèm thì bị bỏ.
+  `"coords": null` (khi sửa) = xoá toạ độ.
+* **Đọc** (`GET /crm/customers/{id}`): khoá `coords` = `{lat, lng, mock}` hoặc `null`; `mock` `null` = không rõ (dữ liệu cũ).
+  `lat`/`lng` vẫn trả như cũ.
+* **Bắt buộc:** chỉ ép ở đường TẠO, với nhân viên thị trường (quản trị được miễn) — như mọi cột cứng bắt buộc.
+* **App đời cũ** gửi `lat`/`lng` phẳng vẫn được nhận (và vẫn tính là "có toạ độ"). Gửi CẢ `coords` lẫn `lat`/`lng`
+  trong một lượt ⇒ 422 ở `coords`. Toạ độ đổi theo đường phẳng thì cờ `mock` cũ về `null`.

@@ -8,6 +8,7 @@ import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
 
 import '../services/anti_fraud_service.dart';
+import '../services/error_tracker_service.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(
@@ -18,6 +19,7 @@ final dioProvider = Provider<Dio>((ref) {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        AppConstants.headerClientKey: AppConstants.headerClientValue,
       },
     ),
   );
@@ -68,6 +70,9 @@ class AuthInterceptor extends QueuedInterceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    // Luôn gửi header X-Client: dms-app theo spec 15/10/2026
+    options.headers[AppConstants.headerClientKey] = AppConstants.headerClientValue;
+
     // Only attach bearer token if not calling login or refresh
     if (!options.path.contains('/auth/login') &&
         !options.path.contains('/auth/refresh')) {
@@ -101,6 +106,7 @@ class AuthInterceptor extends QueuedInterceptor {
               headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                AppConstants.headerClientKey: AppConstants.headerClientValue,
               },
             ),
           );
@@ -132,6 +138,29 @@ class AuthInterceptor extends QueuedInterceptor {
             }
             final cloneReq = await dio.fetch(opts);
             return handler.resolve(cloneReq);
+          }
+        } on DioException catch (refreshErr) {
+          final resData = refreshErr.response?.data;
+          final errCode = resData is Map ? resData['code']?.toString() : null;
+          final isDmsForbidden = refreshErr.response?.statusCode == 403 || errCode == 'DMS_APP_FORBIDDEN';
+
+          // Token refresh failed -> Clear session
+          await prefs.remove(AppConstants.keyAccessToken);
+          await prefs.remove(AppConstants.keyAuthToken);
+          await prefs.remove(AppConstants.keyRefreshToken);
+          await prefs.remove(AppConstants.keyUserData);
+
+          if (isDmsForbidden) {
+            final msg = (resData is Map ? resData['message']?.toString() : null) ??
+                'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.';
+            return handler.reject(
+              DioException(
+                requestOptions: err.requestOptions,
+                response: refreshErr.response,
+                type: DioExceptionType.badResponse,
+                error: DmsAppForbiddenException(msg),
+              ),
+            );
           }
         } catch (_) {
           // Token refresh failed -> Clear session
@@ -288,6 +317,14 @@ class ApiClient {
   }
 
   AppException _handleDioError(DioException error) {
+    // Tự động ghi nhận và sinh mã lỗi Incident Error ID
+    final errorRecord = ErrorTrackerService.instance.trackDioError(error);
+    final errorId = errorRecord.id;
+
+    if (error.error is DmsAppForbiddenException) {
+      final prev = error.error as DmsAppForbiddenException;
+      return DmsAppForbiddenException(prev.message, errorId);
+    }
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout ||
@@ -295,11 +332,15 @@ class ApiClient {
         error.error is SocketException ||
         error.error is HttpException) {
       connectivityNotifier?.handleNetworkDisconnection();
-      return const NetworkException();
+      return NetworkException(
+        'Không có kết nối mạng. Vui lòng kiểm tra lại.',
+        errorId,
+      );
     }
     if (error.response != null) {
       final statusCode = error.response?.statusCode;
       final data = error.response?.data;
+      final errCode = data is Map ? data['code']?.toString() : null;
       String? message;
       if (data is Map &&
           data.containsKey('message') &&
@@ -308,10 +349,21 @@ class ApiClient {
         message = data['message'].toString();
       }
 
+      // Xử lý mã lỗi 403 DMS_APP_FORBIDDEN theo spec 15/10/2026
+      if (errCode == 'DMS_APP_FORBIDDEN' ||
+          (statusCode == 403 && (message?.contains('chưa được cấp quyền dùng app DMS') ?? false))) {
+        return DmsAppForbiddenException(
+          message ?? 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+          errorId,
+        );
+      }
+
       if (statusCode == 401) {
         return ServerException(
           message ?? 'Tên đăng nhập hoặc mật khẩu không đúng hoặc phiên đăng nhập hết hạn.',
           statusCode,
+          errCode,
+          errorId,
         );
       }
 
@@ -329,15 +381,15 @@ class ApiClient {
           final fullMsg = message != null
               ? '$message\n${errorList.join("\n")}'
               : errorList.join('\n');
-          return ServerException(fullMsg, statusCode);
+          return ServerException(fullMsg, statusCode, errCode, errorId);
         }
       }
 
       if (message != null) {
-        return ServerException(message, statusCode);
+        return ServerException(message, statusCode, errCode, errorId);
       }
-      return ServerException('Lỗi máy chủ ($statusCode)', statusCode);
+      return ServerException('Lỗi máy chủ ($statusCode)', statusCode, errCode, errorId);
     }
-    return ServerException(error.message ?? 'Đã xảy ra lỗi không xác định');
+    return ServerException(error.message ?? 'Đã xảy ra lỗi không xác định', null, null, errorId);
   }
 }

@@ -7,6 +7,10 @@ Tài liệu này là **hợp đồng đủ để làm trọn một lượt viế
 ảnh, nộp biểu mẫu, tới check-out. Mọi endpoint dưới đây đã được gọi thật bằng `curl` trên bản sao dữ liệu
 (`app_test`) ngày 29/09/2026; các đoạn JSON là **phản hồi thật đã cắt gọn**, không phải ví dụ dựng tay.
 
+> 📌 **Bổ sung 13/10/2026:** server nay ĐO vị trí lúc check-out và gắn cờ "ra ngoài vùng" —
+> **không chặn**, không breaking change. Xem
+> [`API-VIENG-THAM-THAY-DOI-CHO-MOBILE-2026-10-13.md`](API-VIENG-THAM-THAY-DOI-CHO-MOBILE-2026-10-13.md).
+
 > 🔴 **Luật nghiệp vụ nằm ở SERVER, app không phải là hàng rào.** App kiểm để làm mờ nút và báo còn thiếu
 > gì; server kiểm lại tất cả và là nơi nói không. Vì vậy đừng "tối ưu" bằng cách bỏ một lượt gọi kiểm —
 > nhưng cũng đừng sợ bị lỗi: mọi lời từ chối đều kèm **câu tiếng Việt viết cho nhân viên đọc**, hiện thẳng
@@ -19,6 +23,7 @@ Tài liệu này là **hợp đồng đủ để làm trọn một lượt viế
 | # | Việc | Endpoint |
 |---|---|---|
 | 1 | Đăng nhập | `POST /auth/login` |
+| 1b | Lấy **ngưỡng** để làm mờ nút và báo trước | `GET /dms/mobile-rules` |
 | 2 | Lấy điểm bán thuộc tuyến của mình | `GET /dms/routes/customers` |
 | 3 | Đánh dấu điểm bán **đã ghé hôm nay** | `GET /dms/visits/mine?date_from=<hôm nay>&date_to=<hôm nay>` |
 | 4 | **Check-in** tại điểm bán | `POST /dms/visits` |
@@ -27,6 +32,7 @@ Tài liệu này là **hợp đồng đủ để làm trọn một lượt viế
 | 7 | Nộp phiếu | `POST /dms/form-submissions` |
 | 8 | Soi "còn thiếu gì mới ra được" | `GET /dms/visits/{id}/requirements` |
 | 9 | **Check-out** (gửi kèm toạ độ) | `POST /dms/visits/{id}/checkout` |
+| — | **Huỷ** lượt đang mở (thay cho bước 9) | `POST /dms/visits/{id}/cancel` |
 
 Bước 5–8 lặp lại tuỳ ý trong khi lượt còn mở. Bước 3 không cần cột trạng thái nào và **tự reset theo ngày**
 — xem §2.3.
@@ -47,14 +53,34 @@ dùng tới:
 
 | Chuỗi quyền | Mở cửa nào |
 |---|---|
+| `/dms/mobile-rule/index` | **ngưỡng của luồng thị trường** (bán kính, thời gian, số ảnh, lệch giờ) |
 | `/dms/route/mine` · `/dms/route/mine-customers` | tuyến và điểm bán của mình |
 | `/dms/visit/create` | check-in · **tải ảnh** · **xoá ảnh** |
 | `/dms/visit/mine` | danh sách lượt của mình · xem ảnh qua đường Bearer |
+| `/dms/visit-history/index` · `/dms/visit-history/view` | **lịch sử viếng thăm của một điểm bán** (lượt của mọi người, §2.4) |
 | `/dms/visit/requirements` · `/dms/visit/checkout` | soi điều kiện · đóng lượt |
 | `/dms/form/available` · `/dms/form-submission/create` | biểu mẫu và nộp phiếu |
 | `/crm/customer/mine` | sổ điểm bán của mình (nguồn duy nhất có **toạ độ**, xem §11) |
 
 Thiếu quyền ⇒ **403**. Tài khoản không phải nhân sự nội bộ (đối tác) bị chặn ở mọi endpoint viếng thăm.
+
+### 1.1 Quyền được dùng app DMS (bổ sung 15/10/2026)
+
+Chi tiết đầy đủ (JSON thật, cách xử lý từng ca, kịch bản kiểm thử):
+[`API-QUYEN-APP-DMS-THAY-DOI-CHO-MOBILE-2026-10-15.md`](API-QUYEN-APP-DMS-THAY-DOI-CHO-MOBILE-2026-10-15.md).
+
+App **PHẢI gửi header `X-Client: dms-app`** ở `POST /auth/login` và `POST /auth/refresh`. Server chỉ cho người có
+quyền `/dms/app-access/index` (đang nằm trong vai `crm_customer_self`) đăng nhập vào app:
+
+```
+POST /auth/login   (X-Client: dms-app)  → 403 {"success":false,"code":"DMS_APP_FORBIDDEN",
+                                                "message":"Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý."}
+POST /auth/refresh (X-Client: dms-app)  → cùng 403 khi người đó bị tước quyền lúc đang giữ phiên; refresh token bị thu hồi
+GET  /dms/app-access                     → 200 {"data":{"allowed":true}} | 403 — gọi lúc mở app khi đang giữ phiên cũ
+```
+
+Gặp `DMS_APP_FORBIDDEN` (hoặc 403 ở `/dms/app-access`) ⇒ xoá token trong máy, quay về màn đăng nhập, hiện nguyên câu
+`message`. ⚠️ Bản app chưa gửi header thì **không bị chặn** — rào chỉ có tác dụng từ bản app gửi header.
 
 ---
 
@@ -87,14 +113,22 @@ GET /dms/routes/customers
 
 ```json
 {"success":true,"data":{"items":[
-  {"id":1139,"code":"08670102","name":"195 LONG XUYÊN","address":"Mỹ bình Long Xuyên An Giang"}
+  {"id":2348,"code":"08180024","name":"Đại Việt","address":"Quầy thuốc Đỗ Dung, Mỹ Hưng, Mỹ Lộc, Nam Định",
+   "lat":"20.4427685","lng":"106.1307546","geofence_radius_m":null}
 ],"truncated":false}}
 ```
 
 * Danh sách **phẳng**, đã khử trùng (một điểm bán nằm ở nhiều tuyến vẫn chỉ ra một dòng).
 * Trần **2.000** điểm bán; chạm trần thì `truncated = true` — app phải nói ra thay vì lặng lẽ thiếu điểm
   bán. Đo trên prod 29/09/2026: người nhiều nhất có **1.518** điểm bán ⇒ hiện chưa ai chạm trần.
-* ⚠️ **Không có `lat`/`lng`** ở đây. Cần toạ độ để dẫn đường thì lấy qua `GET /crm/customers/mine` (xem §11).
+* 🟢 **Từ 01/10/2026 có `lat` · `lng` · `geofence_radius_m`** ngay tại đây, để app **tự đo khoảng cách
+  trước khi gửi check-in** thay vì chỉ biết mình đứng xa sau khi nhận 422. Bản cũ của tài liệu ghi "không
+  có `lat`/`lng`, lấy qua `/crm/customers/mine`" — vế đó hết đúng, tuy đường kia vẫn chạy.
+* `geofence_radius_m` là bán kính **khai riêng** của điểm bán; `null` = dùng con số chung
+  `visit.default_radius_m` của `GET /dms/mobile-rules` (§1b). Đo prod 01/10/2026: **8.734/8.735 điểm để
+  trống**, nên trên thực tế gần như luôn là con số chung.
+* Toạ độ trả về dạng **chuỗi** (`numeric(10,7)` của DB). Ép `float` ở client làm tròn chữ số thứ 7 — không
+  đáng kể cho bản đồ, nhưng đủ để hai bên tính ra hai con số khoảng cách hơi khác nhau.
 
 ### 2.3 Điểm bán nào ĐÃ GHÉ HÔM NAY
 
@@ -113,9 +147,9 @@ GET /dms/visits/mine?date_from=2026-09-29&date_to=2026-09-29&per-page=100
 Cách dùng: gọi một lượt lúc mở app (và sau mỗi lần check-out), rồi đánh dấu mọi `customer_id` xuất hiện
 trong kết quả là **đã ghé**. `checkout_at = null` nghĩa là lượt **đang mở** (chưa hoàn thành).
 
-🔴 **Không cần cơ chế reset.** Cờ này là truy vấn theo ngày, nên sang ngày mới danh sách tự rỗng. Và nếu app
-có vẽ cờ sai thì server vẫn chặn: check-in lần hai vào cùng điểm bán trong ngày nhận **422 "Hôm nay bạn đã
-viếng thăm điểm bán này rồi."**
+🔴 **Không cần cơ chế reset.** Cờ này là truy vấn theo ngày, nên sang ngày mới danh sách tự rỗng. Cờ "đã ghé"
+**chỉ để hiển thị, KHÔNG được chặn nút check-in**: từ 15/10/2026 ghé lại cùng điểm bán trong ngày là hợp lệ và
+mở một **lượt mới** (một `customer_id` có thể xuất hiện nhiều dòng trong kết quả).
 
 Bộ lọc dùng được: `date_from` · `date_to` (định dạng `YYYY-MM-DD`, so theo `visit_date`) · `customer_id` ·
 `route_id` · `visit_result` · `open_only=1` · `q` · `page` · `per-page` · `sort`.
@@ -125,6 +159,52 @@ Bộ lọc dùng được: `date_from` · `date_to` (định dạng `YYYY-MM-DD`
 * `per-page` mặc định 20 và **nhận thẳng giá trị client gửi** — xin vài trăm dòng một lượt là tự làm chậm
   chính mình; một ngày đi tuyến hiếm khi quá 40 lượt.
 * Màn "của tôi" **không** trả toạ độ, số điện thoại hay người liên hệ của điểm bán (dữ liệu cá nhân) — xem §11.
+
+### 2.4 Lịch sử viếng thăm của MỘT điểm bán (bổ sung 16/10/2026)
+
+Cho nhân viên xem trước khi vào điểm bán: lần trước **ai** ghé, lúc nào, kết quả, ghi chú, ảnh, biểu mẫu đã nộp.
+
+```
+GET /dms/customers/{customerId}/visit-history?page=1&per-page=20
+GET /dms/customers/{customerId}/visit-history/{visitId}
+```
+
+Luật (chủ hệ thống chốt 16/10/2026):
+
+* Thấy lượt của **MỌI nhân viên** tại điểm bán đó, không chỉ của mình — mỗi dòng có `employee_name`.
+* Chỉ mở cho điểm bán nằm trong **bất kỳ tuyến đang bật** nào giao cho mình (mọi ngày trong tuần, không chỉ
+  tuyến hôm nay). Ngoài tuyến ⇒ **403** *"Điểm bán này không thuộc tuyến nào được giao cho bạn."*
+* Lùi **2 tháng** tính từ hôm nay (tham số `visit_history_months`, admin đổi được — đọc `meta.date_from` /
+  `meta.date_to` để ghi "Lịch sử từ … đến …", đừng hardcode). Gồm lượt MobiWork cũ; **không** có lượt đã huỷ.
+* **Không** có toạ độ, khoảng cách, cờ nghi vấn (giả lập vị trí, đổi giờ máy, ngoài vùng) — đó là dữ liệu
+  của màn quản lý.
+* Mới nhất trước. `per-page` tối đa 50. Server **bỏ qua** mọi bộ lọc khác (`date_from`, `user_id`…).
+
+Danh sách (nhẹ — không có ảnh):
+
+```json
+{"success":true,"meta":{"total":2,"currentPage":1,"pageSize":20,"pageCount":1,
+  "date_from":"2026-08-16","date_to":"2026-10-16"},"data":[
+  {"id":44602,"visit_date":"2026-09-30","checkin_at":"2026-09-30 08:57:13+07",
+   "checkout_at":"2026-09-30 09:12:44+07","duration_seconds":931,"user_id":2461,
+   "employee_name":"Nguyễn Xuân Quyết","customer_id":8737,"customer_code":"08500394","customer_name":"…",
+   "visit_result":"visited","visit_result_label":"Điểm bán mở cửa","visit_result_color":"success",
+   "closed_note":null,"note":null,"is_first_visit":false,"photo_count":2,"form_count":1}
+]}
+```
+
+`checkout_at = null` = lượt đang mở (có người đang ở điểm bán).
+
+Chi tiết = các khoá của danh sách **cộng**:
+
+* `photo_urls` — cùng quy ước §11.5 (ảnh app: đường tương đối công khai; ảnh MobiWork: URL tuyệt đối).
+* `forms[]` — phiếu đã nộp trong lượt: `id, form_id, form_name, kind, submitted_at, answers,
+  form_schema_snapshot, answer_labels, answer_photos`. Render câu hỏi theo **`form_schema_snapshot` của
+  chính phiếu** (biểu mẫu có thể đã sửa sau ngày nộp); ô kiểu Khách hàng tra tên ở `answer_labels`
+  (id → "Tên (mã)"), ô kiểu Ảnh tra đường ở `answer_photos` (token → đường tương đối; token vắng mặt = ảnh
+  không còn tệp, đừng vẽ ô vỡ).
+
+`visitId` không thuộc điểm bán trên URL, hoặc cũ hơn cửa sổ ⇒ **404**.
 
 ---
 
@@ -158,12 +238,12 @@ Content-Type: application/json
     "blockers":["Bạn cần ở lại thêm 5 phút nữa mới check-out được.","Bạn cần chụp thêm 2 ảnh nữa."]}}}
 ```
 
-### Năm luật check-in (server từ chối bằng **422** kèm câu tiếng Việt)
+### Luật check-in (server từ chối bằng **422** kèm câu tiếng Việt)
 
 | Luật | Câu từ chối |
 |---|---|
 | ① Điểm bán phải thuộc **tuyến được giao** cho mình | "Điểm bán này không thuộc tuyến nào được giao cho bạn." (hoặc "…không nằm trong tuyến đi hôm nay của bạn." nếu admin siết về chế độ `today`) |
-| ② Một điểm bán, **một ngày, một lượt** | "Hôm nay bạn đã viếng thăm điểm bán này rồi." |
+| ~~② Một điểm bán, một ngày, một lượt~~ — **BỎ 15/10/2026**: ghé lại trong ngày mở lượt mới | (không còn chặn) |
 | ③ Không mở lượt mới khi **còn lượt treo** | "Bạn còn một lượt viếng thăm chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới." |
 | ④ Đứng **ngoài bán kính** điểm bán | "Bạn đang cách điểm bán 137m. Hãy lại gần hơn rồi check-in." |
 | ⑤ **Giả lập vị trí**: mặc định vẫn cho qua, chỉ gắn cờ đỏ vào báo cáo | (không chặn — trừ khi admin bật công tắc) |
@@ -354,6 +434,47 @@ Content-Type: application/json
 
 ---
 
+## 7.1 Huỷ lượt check-in
+
+```
+POST /dms/visits/{id}/cancel
+```
+
+**Không có tham số nào.** Không body, không lý do.
+
+```json
+{"success":true,"message":"Đã huỷ lượt viếng thăm.","data":{"id":128899,"cancelled_at":"2026-09-30 13:57:16+07"}}
+```
+
+Dành cho ca người dùng bấm check-in rồi đổi ý: **bấm nhầm điểm bán, khách đóng cửa, máy sắp hết pin**.
+
+**Vì sao cửa này quan trọng hơn vẻ ngoài của nó.** Luật "không được mở lượt mới khi còn lượt treo" tính
+theo **NGƯỜI**, không theo điểm bán. Không có đường huỷ thì một lượt bỏ dở lúc 9h khoá mọi lần check-in
+tiếp theo ở **mọi** điểm bán — và từ 15/10/2026 **không còn cron đóng hộ**: mọi lượt phải do chính nhân
+viên check-out, nên huỷ là đường gỡ DUY NHẤT của một lượt bỏ dở. Nút huỷ phải nằm ngay trên màn hình lượt đang mở,
+đừng giấu trong menu phụ.
+
+Luật:
+
+* **Huỷ được bất cứ lúc nào khi lượt chưa check-out.** Không có cửa sổ thời gian, không cần nêu lý do
+  (chủ hệ thống chốt 30/09/2026).
+* **IDEMPOTENT** — gửi lại lần hai vẫn **200**, và `cancelled_at` giữ nguyên mốc lần bấm ĐẦU. Đây là chỗ
+  khác check-out; dọn hàng đợi cứ gửi lại thoải mái.
+* **Lượt đã check-out thì không huỷ được** ⇒ 422 *"Lượt viếng thăm này đã check-out rồi, không huỷ được
+  nữa."*
+* Sau khi huỷ, lượt đó **không còn chặn** lần check-in sau (luật ③ bỏ qua dòng đã huỷ).
+* Lượt đã huỷ **biến mất khỏi mọi báo cáo**, kể cả `GET /dms/visits/mine`. Đừng dựa vào nó để đồng bộ
+  trạng thái: sau khi nhận 200 thì **xoá bản ghi khỏi hàng đợi cục bộ**, đừng chờ thấy nó trong danh sách.
+* Hai cửa ghi bị đóng lại với lượt đã huỷ: check-out ⇒ 422 *"…đã bị huỷ, không check-out được."*; tải ảnh
+  ⇒ 422 *"…đã bị huỷ, không nhận thêm ảnh được."* Gặp hai câu đó khi dọn hàng đợi thì **coi như xong** và
+  bỏ việc đó đi — người dùng đã đổi ý từ trước, gói tin của app chỉ tới muộn.
+
+⚠️ **Lượt chưa kịp đồng bộ thì đừng gửi gì cả.** Check-in còn nằm trong hàng đợi mà người dùng bấm huỷ:
+app **xoá thẳng bản ghi cục bộ**, không cần gọi check-in rồi gọi huỷ. Hai lượt gọi mạng cho một việc
+không ai nhìn thấy.
+
+---
+
 ## 8. Quy ước phản hồi và mã lỗi
 
 Mọi phản hồi đều cùng một phong bì:
@@ -398,6 +519,23 @@ Quy tắc chung cho hàng đợi: **sinh `client_uuid` một lần, giữ nguyê
 ---
 
 ## 9.1 🔴 `queued_seconds` — đồng hồ đơn điệu, và ba chỗ làm hỏng nó IM LẶNG
+
+🔴 **PHẠM VI: `queued_seconds` và `client_boot_id` CHỈ dùng ở ba cửa dưới đây.**
+
+```
+POST /dms/visits                     (check-in)
+POST /dms/visits/{id}/checkout
+POST /dms/form-submissions
+```
+
+**Đừng gắn chúng vào phong bì chung của hàng đợi.** Các cửa khác kiểm khoá gốc theo danh sách trắng và sẽ
+trả **422 nêu đích danh** khi nhận được trường lạ. Ca đã xảy ra thật ngày 30/09/2026: app gắn
+`client_boot_id` vào mọi request xếp hàng, `POST /crm/customers` từ chối với *"Biểu mẫu điểm bán không có
+trường nào tên client_boot_id"*, và mục đó kẹt lại thử đi thử lại 25 lần. Xem
+`API-TAO-DIEM-BAN-HOP-DONG-HIEN-HANH-2026-09-30.md`.
+
+⚠️ Và nhớ luật thử lại: **422 là hỏng vĩnh viễn**, đừng retry — cùng payload đó gửi lại bao nhiêu lần cũng
+vẫn 422, trong khi hàng đợi tuần tự thì mục hỏng chặn mọi mục sau nó.
 
 **Vì sao có mục này.** Trước 30/09/2026 server ghi `checkin_at` bằng **giờ lúc gói tin đến**. Ghé lúc 9h
 sáng mà 18h mới có sóng thì báo cáo ghi 18h; mất sóng qua đêm thì lượt rơi sang **ngày hôm sau**; và khi dọn
@@ -498,8 +636,9 @@ prod ngày 29/09/2026 (chưa ai đổi nên đều là mặc định):
    mình đứng quá xa **sau khi** server trả 422. Nếu cần khoá nút từ trước, hãy yêu cầu — sẽ thêm một endpoint
    cấu hình cho app.
 3. **Vai nhân viên không xem được chi tiết một lượt** (`GET /dms/visits/{id}`) và **không xem lại được phiếu
-   đã nộp** (`GET /dms/form-submissions`): hai cửa đó hiện chỉ mở cho vai quản lý. Theo phạm vi chủ hệ thống
-   chốt 29/09/2026 thì app **không cần** hai cửa này; cần thì nói để mở chuỗi quyền hẹp.
+   đã nộp** (`GET /dms/form-submissions`): hai cửa đó chỉ mở cho vai quản lý. Từ 16/10/2026 nhân viên xem
+   chi tiết lượt + phiếu đã nộp **tại điểm bán thuộc tuyến mình** qua §2.4 (bản hẹp: không toạ độ, không cờ
+   nghi vấn).
 4. **Không có đường xoá lượt.** Lượt viếng thăm cố ý không có thùng rác; bấm sai thì để cron tự đóng sau 12 giờ.
 5. **`photo_urls` gộp CẢ HAI nguồn ảnh** (đổi 30/09/2026 — trước đó chỉ có ảnh MobiWork). Khoá này có trên
    từng dòng của `GET /dms/visits/mine`, và **trộn hai dạng đường dẫn**:
@@ -520,4 +659,9 @@ prod ngày 29/09/2026 (chưa ai đổi nên đều là mặc định):
 | 28/09/2026 | Module viếng thăm lên sóng: check-in, requirements, check-out, báo cáo |
 | **29/09/2026** | Thêm **đường tải/xoá/xem ảnh** (`/dms/visits/{id}/photos`, `/dms/visit-photos/…`) — trước đó không có cách nào qua cổng ③ · **nộp phiếu thành idempotent** theo `client_uuid` · **check-out nhận toạ độ** (`lat`/`lng`/`accuracy_m`) |
 | **30/09/2026** | **`queued_seconds` + `client_boot_id`** trên check-in / check-out / nộp phiếu — server dựng mốc bấm THẬT thay vì mốc gói tin đến, xem §9.1. Trước đó lượt gửi từ hàng đợi bị ghi sai giờ, sai ngày, và bị cổng ① chặn oan |
+| **30/09/2026** | **`POST /dms/visits/{id}/cancel`** — nhân viên tự huỷ lượt check-in còn mở, xem §7.1. Trước đó một lượt bỏ dở khoá mọi lần check-in tiếp theo tới 12 giờ |
 | **30/09/2026** | `photo_urls` trên `GET /dms/visits/mine` nay **gộp cả ảnh app tải lên** (đường tương đối) lẫn ảnh MobiWork (URL tuyệt đối) — xem §11.5. Trước đó lượt do app sinh ra có `photo_count` > 0 nhưng `photo_urls` rỗng |
+| **15/10/2026** | Thêm khoá **`is_checkout_other_day`** trên `GET /dms/visits/mine` — cờ check-out khác ngày, chỉ để hiện. Toàn bộ thay đổi 15/10 + việc app cần làm: [`API-VIENG-THAM-THAY-DOI-CHO-MOBILE-2026-10-15.md`](API-VIENG-THAM-THAY-DOI-CHO-MOBILE-2026-10-15.md) |
+| **15/10/2026** | **Bỏ cron đóng hộ lượt treo** — lượt chưa check-out nằm mở tới khi nhân viên tự check-out hoặc huỷ (§7.1). `GET /dms/mobile-rules` vẫn trả `visit.auto_close_after_hours` nhưng **luôn `0`**, sẽ xoá khi app ngừng đọc |
+| **15/10/2026** | **Bỏ luật ② "một điểm bán, một ngày, một lượt"** — ghé lại cùng điểm bán trong ngày mở lượt MỚI, server không còn trả 422 *"Hôm nay bạn đã viếng thăm điểm bán này rồi."*. App đừng chặn nút check-in theo cờ "đã ghé" |
+| **16/10/2026** | Thêm **lịch sử viếng thăm của một điểm bán** (§2.4): `GET /dms/customers/{id}/visit-history` + `/{visitId}` — lượt của mọi người, 2 tháng gần nhất, chỉ điểm bán thuộc tuyến mình |

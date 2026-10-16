@@ -16,6 +16,7 @@ import '../../../../core/widgets/custom_donut_chart.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../core/widgets/camera_permission_dialog.dart';
+import '../../../../core/widgets/app_fullscreen_image_viewer.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
@@ -35,6 +36,7 @@ import '../../../forms/presentation/screens/market_form_fill_screen.dart';
 import '../../../forms/presentation/widgets/market_form_card.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../domain/entities/route_entity.dart';
+import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
 
 class CheckInScreen extends ConsumerStatefulWidget {
   final DealerEntity? dealer;
@@ -132,16 +134,12 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               content: Text(
                 isCancelled
                     ? 'Lượt viếng thăm trước đó đã được huỷ. Bạn có thể bắt đầu lượt check-in mới.'
-                    : 'Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.',
+                    : 'Lượt viếng thăm trước đó đã hoàn tất. Bạn có thể bắt đầu lượt check-in mới.',
               ),
               backgroundColor: isCancelled ? const Color(0xFF0284C7) : const Color(0xFF10B981),
               behavior: SnackBarBehavior.floating,
             ),
           );
-          if (!isCancelled) {
-            _safePop();
-            return;
-          }
         }
       }
     }
@@ -210,19 +208,6 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       }
     }
 
-    if (widget.dealer != null && widget.dealer!.status == DealerVisitStatus.completed) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Hôm nay bạn đã hoàn thành (check-out) viếng thăm điểm bán này rồi.'),
-            backgroundColor: Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _safePop();
-        return;
-      }
-    }
 
     if (widget.dealer != null) {
       vm.initCheckinWithDealer(widget.dealer!);
@@ -1692,6 +1677,70 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                () {
+                                  final activeCust = state.customer is CustomerEntity
+                                      ? (state.customer as CustomerEntity)
+                                      : (widget.dealer?.customer is CustomerEntity
+                                          ? (widget.dealer!.customer as CustomerEntity)
+                                          : null);
+                                  final isPendingAppr = activeCust?.isPendingApproval ?? false;
+                                  final isRejectedAppr = activeCust?.isRejectedApproval ?? false;
+
+                                  if (isPendingAppr) {
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0x33D97706) : const Color(0xFFFFFBEB),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFFCD34D)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 15),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Điểm bán đang chờ duyệt — Hồ sơ & lượt viếng thăm này sẽ được gửi duyệt đồng thời.',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  } else if (isRejectedAppr) {
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFFCA5A5)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 15),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Điểm bán bị từ chối duyệt: ${activeCust?.approvalNote ?? "Chưa rõ lý do"}. Lượt viếng thăm vẫn được lưu lại nhưng không tính KPI.',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                }(),
                                 Row(
                                   children: [
                                     Expanded(
@@ -2166,25 +2215,42 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       final photo = state.photos[idx];
                                       return Stack(
                                         children: [
-                                          Container(
-                                            width: 100,
-                                            height: 100,
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                                          GestureDetector(
+                                            onTap: () {
+                                              final items = state.photos.map((p) {
+                                                return FullScreenImageItem(
+                                                  filePath: p.localPath,
+                                                  url: p.fullPublicUrl,
+                                                  title: p.photoTypeLabel,
+                                                  subtitle: p.takenAt != null ? 'Chụp lúc: ${p.takenAt}' : null,
+                                                );
+                                              }).toList();
+                                              AppFullScreenImageViewer.open(
+                                                context,
+                                                items: items,
+                                                initialIndex: idx,
+                                              );
+                                            },
+                                            child: Container(
+                                              width: 100,
+                                              height: 100,
+                                              decoration: BoxDecoration(
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                                                ),
                                               ),
-                                            ),
-                                            clipBehavior: Clip.antiAlias,
-                                            child: photo.localPath != null && File(photo.localPath!).existsSync()
-                                                ? Image.file(File(photo.localPath!), fit: BoxFit.cover)
-                                                : Image.network(
-                                                    photo.fullPublicUrl,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => const Center(
-                                                      child: Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                                              clipBehavior: Clip.antiAlias,
+                                              child: photo.localPath != null && File(photo.localPath!).existsSync()
+                                                  ? Image.file(File(photo.localPath!), fit: BoxFit.cover)
+                                                  : Image.network(
+                                                      photo.fullPublicUrl,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, __, ___) => const Center(
+                                                        child: Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                                                      ),
                                                     ),
-                                                  ),
+                                            ),
                                           ),
                                           Positioned(
                                             bottom: 4,
@@ -2252,6 +2318,29 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                             ],
                           ),
                         ),
+
+                        // 5. Lịch sử viếng thăm của điểm bán (§2.4 SPEC 16/10/2026)
+                        () {
+                          final effectiveCustomerId = state.customer is CustomerEntity
+                              ? (state.customer as CustomerEntity).id
+                              : (widget.dealer?.customer is CustomerEntity
+                                  ? (widget.dealer!.customer as CustomerEntity).id
+                                  : (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0));
+                          if (effectiveCustomerId <= 0) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.marginMobile,
+                              16,
+                              AppSpacing.marginMobile,
+                              20,
+                            ),
+                            child: CustomerVisitHistoryWidget(
+                              customerId: effectiveCustomerId,
+                              customerName: state.checkinData?.dealer.name,
+                              initiallyExpanded: true,
+                            ),
+                          );
+                        }(),
                       ],
                     ),
                   ),

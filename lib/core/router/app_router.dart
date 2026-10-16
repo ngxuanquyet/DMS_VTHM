@@ -10,6 +10,7 @@ import '../../features/customer/presentation/screens/add_customer_screen.dart';
 import '../../features/customer/presentation/screens/customer_detail_screen.dart';
 import '../../features/customer/presentation/screens/customer_screen.dart';
 import '../../features/customer/presentation/screens/edit_customer_screen.dart';
+import '../../features/customer/presentation/screens/rejected_customers_screen.dart';
 import '../../features/daily_report/presentation/screens/daily_report_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
 import '../../features/forms/presentation/screens/market_form_fill_screen.dart';
@@ -201,12 +202,63 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/customers/rejected',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => ZoomPageTransition(
+          key: state.pageKey,
+          child: const RejectedCustomersScreen(),
+        ),
+      ),
+      // Deep link web One / FCM Push Notification (§6 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+      GoRoute(
+        path: '/crm/customers',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final openIdStr = state.uri.queryParameters['open'] ?? state.uri.queryParameters['id'];
+          final openId = int.tryParse(openIdStr ?? '');
+          if (openId != null && openId > 0) {
+            return ZoomPageTransition(
+              key: state.pageKey,
+              child: CustomerDetailScreen(
+                customer: CustomerEntity(
+                  id: openId,
+                  code: '',
+                  name: 'Đang tải thông tin...',
+                  type: 'Đang tải...',
+                  route: 'Tuyến mặc định',
+                  address: 'Đang tải địa chỉ...',
+                  contactPerson: '',
+                  phone: '',
+                ),
+              ),
+            );
+          }
+          return const NoTransitionPage(child: CustomerScreen());
+        },
+      ),
+      GoRoute(
         path: '/customers/detail',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
-          final customer = state.extra is CustomerEntity
+          CustomerEntity? customer = state.extra is CustomerEntity
               ? state.extra as CustomerEntity
               : null;
+          if (customer == null) {
+            final openIdStr = state.uri.queryParameters['open'] ?? state.uri.queryParameters['id'];
+            final openId = int.tryParse(openIdStr ?? '');
+            if (openId != null && openId > 0) {
+              customer = CustomerEntity(
+                id: openId,
+                code: '',
+                name: 'Đang tải thông tin...',
+                type: 'Đang tải...',
+                route: 'Tuyến mặc định',
+                address: 'Đang tải địa chỉ...',
+                contactPerson: '',
+                phone: '',
+              );
+            }
+          }
           if (customer == null) {
             return ZoomPageTransition(
               key: state.pageKey,
@@ -231,13 +283,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final customer = state.extra is CustomerEntity
               ? state.extra as CustomerEntity
               : null;
-          if (customer == null) {
+          if (customer == null || customer.isRejectedApproval) {
             return ZoomPageTransition(
               key: state.pageKey,
               child: Scaffold(
                 appBar: AppBar(title: const Text('Sửa điểm bán')),
-                body: const Center(
-                  child: Text('Không tìm thấy thông tin điểm bán'),
+                body: Center(
+                  child: Text(
+                    customer?.isRejectedApproval == true
+                        ? 'Điểm bán đã bị từ chối duyệt, không thể chỉnh sửa lại.'
+                        : 'Không tìm thấy thông tin điểm bán',
+                  ),
                 ),
               ),
             );
