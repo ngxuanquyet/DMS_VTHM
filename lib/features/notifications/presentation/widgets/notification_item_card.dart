@@ -44,6 +44,20 @@ class NotificationItemCard extends ConsumerWidget {
 
   /// Tự động xác định màn hình đích tương ứng với từng loại thông báo
   static String? resolveNotificationRoute(NotificationEntity notification) {
+    final type = notification.type.toLowerCase();
+    final title = notification.title.toLowerCase();
+    final message = notification.message.toLowerCase();
+    final combined = '$type $title $message';
+
+    // 0. Ưu tiên hàng đầu: Thông báo điểm bán bị từ chối duyệt -> luôn điều hướng về /customers/rejected
+    if (type == 'crm.customer_rejected' ||
+        (combined.contains('từ chối') &&
+            (combined.contains('điểm bán') ||
+                combined.contains('khách hàng') ||
+                type.contains('customer')))) {
+      return '/customers/rejected';
+    }
+
     final explicitPath = notification.routePath?.trim();
     if (explicitPath != null && explicitPath.isNotEmpty && explicitPath != '/notifications') {
       if (explicitPath == '/route' || explicitPath == '/route/check-in') {
@@ -57,11 +71,6 @@ class NotificationItemCard extends ConsumerWidget {
         isOfflineQueueWarningNotification(notification)) {
       return null;
     }
-
-    final type = notification.type.toLowerCase();
-    final title = notification.title.toLowerCase();
-    final message = notification.message.toLowerCase();
-    final combined = '$type $title $message';
 
     // 1. Thông báo Tuyến bán hàng / Lộ trình (Ưu tiên theo yêu cầu người dùng)
     if (type.contains('route') ||
@@ -552,6 +561,16 @@ class NotificationItemCard extends ConsumerWidget {
         icon = Icons.cloud_off_rounded;
         iconColor = const Color(0xFFEA580C);
         iconBg = const Color(0xFFFFEDD5);
+        break;
+      case 'crm.customer_rejected':
+        icon = Icons.cancel_outlined;
+        iconColor = const Color(0xFFDC2626);
+        iconBg = const Color(0xFFFEE2E2);
+        break;
+      case 'crm.customer_approved':
+        icon = Icons.check_circle_outline_rounded;
+        iconColor = const Color(0xFF006E15);
+        iconBg = const Color(0xFFE8F5E9);
         break;
       case 'form':
         icon = Icons.assignment_outlined;

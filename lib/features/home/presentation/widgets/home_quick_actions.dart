@@ -8,7 +8,7 @@ import 'report_menu_bottom_sheet.dart';
 ///   + "Chấm công" (Tone vàng nhạt / soft amber) -> chuyển đến màn hình chấm công (/attendance)
 ///   + "Báo cáo" (Tone chàm nhạt / soft indigo) -> mở menu danh mục báo cáo & lịch sử
 /// - Cột phải:
-///   + "Khai báo vị trí" (Tone xanh ngọc nhạt / soft teal) -> chuyển đến màn hình khai báo vị trí (/position-declaration)
+///   + "Viếng thăm" (Tone xanh ngọc nhạt / soft teal) -> chuyển đến màn hình tuyến viếng thăm (/routes)
 ///   + "Đồng bộ" (Tone xanh da trời nhạt / soft sky blue) -> kích hoạt đồng bộ dữ liệu
 class HomeQuickActions extends StatelessWidget {
   final bool isSyncing;
@@ -57,18 +57,18 @@ class HomeQuickActions extends StatelessWidget {
         ),
         const SizedBox(width: 14),
 
-        // Cột phải: Khai báo vị trí (trên) & Đồng bộ (dưới ô khai báo vị trí)
+        // Cột phải: Viếng thăm (trên) & Đồng bộ (dưới ô viếng thăm)
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _QuickActionCard(
-                title: 'Khai báo vị trí',
-                icon: Icons.location_on_rounded,
+                title: 'Viếng thăm',
+                icon: Icons.storefront_rounded,
                 backgroundColor: const Color(0xFFCCFBF1),
                 foregroundColor: const Color(0xFF0D9488),
                 borderColor: const Color(0xFF99F6E4),
-                onTap: () => context.push('/position-declaration'),
+                onTap: () => context.go('/routes'),
               ),
               const SizedBox(height: 14),
               _QuickActionCard(

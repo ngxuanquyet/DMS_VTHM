@@ -14,6 +14,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
@@ -134,13 +135,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       }
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Không thể lấy tọa độ GPS để tính khoảng cách.'),
-            backgroundColor: AppColors.error,
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppSnackBar.showError(
+          context,
+          'Không thể lấy tọa độ GPS để tính khoảng cách.',
         );
       }
     }

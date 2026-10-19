@@ -29,26 +29,23 @@ class DynamicFormFieldWrapper extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        field.label,
-                        style: AppTypography.labelLarge(
-                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    if (field.isRequired)
-                      const Text(
-                        ' *',
-                        style: TextStyle(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.bold,
+                child: Text.rich(
+                  TextSpan(
+                    text: field.label,
+                    style: AppTypography.labelLarge(
+                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                    children: [
+                      if (field.isRequired)
+                        const TextSpan(
+                          text: ' *',
+                          style: TextStyle(
+                            color: AppColors.error,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (field.badge != null && field.badge!.isNotEmpty)
@@ -89,12 +86,22 @@ class DynamicFormFieldWrapper extends StatelessWidget {
                 ),
             ],
           ),
+          // Chú giải / Hướng dẫn của trường ngay dưới nhãn
+          if (field.description != null && field.description!.trim().isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              field.description!.trim(),
+              style: AppTypography.bodySmall(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+              ).copyWith(fontSize: 12),
+            ),
+          ],
           const SizedBox(height: 6),
 
           // Main Field Input
           child,
 
-          // Helper Text or Error Text
+          // Error Text
           if (errorText != null && errorText!.isNotEmpty) ...[
             const SizedBox(height: 4),
             Row(
@@ -108,14 +115,6 @@ class DynamicFormFieldWrapper extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ] else if (field.helperText != null && field.helperText!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              field.helperText!,
-              style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-              ).copyWith(fontSize: 11),
             ),
           ],
         ],

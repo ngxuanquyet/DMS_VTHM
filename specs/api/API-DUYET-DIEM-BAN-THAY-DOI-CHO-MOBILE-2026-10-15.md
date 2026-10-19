@@ -184,10 +184,29 @@ Người MỞ điểm bán nhận push khi quản trị ra quyết định (ngư
 | Được duyệt | `Điểm bán đã được duyệt: Thành Hậu` | `Điểm bán 08170165 chuyển sang trạng thái "Đã duyệt".` |
 | Bị từ chối | `Điểm bán bị từ chối: Thành Hậu` | `Điểm bán 08170165 chuyển sang trạng thái "Bị từ chối". Lý do: …` |
 
-Khoá `data` của FCM có `link` = **`/crm/customers?open=<id>`** (đường của web One). App DMS muốn bấm vào là mở đúng
-điểm bán thì đọc tham số `open` trong `link` rồi gọi `GET /crm/customers/{id}`. Push đi qua đúng kênh/thiết bị app
-đã đăng ký (`POST /notification/device-token`) — không có gì phải đăng ký thêm. Người dùng tắt được hai loại tin
-này ở nhóm "Điểm bán" trong cài đặt thông báo.
+Khoá `data` của FCM có `link` (đường của web One) và `type` = `crm.customer_approved` | `crm.customer_rejected`.
+
+> 🔄 **Cập nhật 19/10/2026 — `link` đổi theo người nhận:**
+> * nhân viên thị trường (không có quyền màn quản trị Điểm bán) ⇒ **`/crm/my-customers?open=<id>`** (màn "Điểm bán
+>   của tôi" trên web, có từ 18/10);
+> * quản trị ⇒ vẫn `/crm/customers?open=<id>`.
+>
+> App DMS bấm vào để mở đúng điểm bán thì **chỉ đọc tham số `open`** trong `link` rồi gọi `GET /crm/customers/{id}` —
+> ĐỪNG so khớp cả đường dẫn, vì nó khác nhau theo vai.
+
+**Push tới máy nào.** Push đi qua máy app đã đăng ký bằng `POST /notification/device-token`. Từ 19/10/2026 hai tin này
+mang cờ `prefer_app = dms` (cùng khuôn với push nhắc ca — [`API-NHAC-CA-MOBILE-2026-10-17.md`](API-NHAC-CA-MOBILE-2026-10-17.md)):
+
+* người nhận **có** máy đăng ký với `app = dms` ⇒ **chỉ** các máy app DMS nhận (cài cả app One trên cùng máy cũng không
+  hiện hai lần);
+* người nhận **chưa có** máy app DMS nào ⇒ gửi tới mọi máy như trước (app One, trình duyệt) — không mất tin.
+
+🔴 **App DMS phải đăng ký token với `app = dms`** thì mới nhận được push. Đo prod 19/10/2026: bảng token chưa có máy
+`app = dms` nào (chỉ `one`: 18 máy Android, 146 trình duyệt) — tức app DMS hiện chưa nhận push nào. Kiểm thêm: file
+`google-services.json` của app DMS phải thuộc **cùng dự án Firebase với server** (`project_id` = `vthmgroup-app`) và
+có mục `client` đúng `applicationId` của app DMS; khác dự án thì FCM từ chối token và server không gửi được.
+
+Người dùng tắt được hai loại tin này ở nhóm "Điểm bán" trong cài đặt thông báo.
 
 Sau khi nhận push (hoặc khi app mở lại / đồng bộ ngoại tuyến) nên làm mới `GET /crm/customers/mine` — trạng thái
 duyệt có thể đổi bất kỳ lúc nào, và bản sao trong máy sẽ cũ.

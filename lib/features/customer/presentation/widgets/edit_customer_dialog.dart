@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
@@ -499,12 +500,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         setState(() {
           _isSaving = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi cập nhật: ${e.toString()}'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     }
   }
@@ -943,6 +939,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
     final picked = await picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 85,
+      maxWidth: 1920,
+      maxHeight: 1920,
     );
     if (picked != null) {
       final watermarked = await PhotoWatermarkHelper.addWatermark(

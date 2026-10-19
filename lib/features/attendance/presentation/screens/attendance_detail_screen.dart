@@ -21,8 +21,9 @@ import '../widgets/attendance_geofence_card.dart';
 import '../widgets/attendance_history_card.dart';
 import '../widgets/attendance_out_of_range_dialog.dart';
 import '../widgets/attendance_photo_capture_dialog.dart';
+import '../widgets/attendance_shift_card.dart';
 import '../widgets/gps_location_card.dart';
-import '../widgets/monthly_stats_card.dart';
+
 
 class AttendanceDetailScreen extends ConsumerStatefulWidget {
   const AttendanceDetailScreen({super.key});
@@ -94,23 +95,6 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
       }
     }
 
-    final isWorking = (today != null && today.punchCount > 0) || todayPunches.isNotEmpty;
-
-    // Tính thống kê tháng từ history
-    final currentMonthPrefix = '${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final distinctWorkingDays = state.history
-        .where((p) => p.dateFormatted.contains(currentMonthPrefix) || p.dateFormatted.contains('/${now.month}/'))
-        .map((p) => p.dateFormatted)
-        .toSet()
-        .length;
-    final lateDaysCount = state.history.where((p) => p.isTimeTampered).length;
-
-    final stats = MonthlyAttendanceStatsEntity(
-      monthLabel: 'Tháng ${now.month.toString().padLeft(2, '0')}/${now.year}',
-      workingDays: distinctWorkingDays,
-      lateDays: lateDaysCount,
-    );
-
     final locationEntity = AttendanceLocationEntity(
       address: 'Vị trí hiện tại',
       gpsAccuracy: state.currentPosition != null
@@ -144,70 +128,15 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
                 child: Column(
                   children: [
                     // =========================================================
-                    // 1. HERO / DIGITAL CLOCK SECTION
-                    // =========================================================
-                    Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isWorking
-                                ? AppColors.primary.withValues(alpha: 0.12)
-                                : AppColors.surfaceVariant,
-                            borderRadius: AppRadius.roundedFull,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: isWorking ? AppColors.primary : AppColors.outline,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                isWorking ? 'Đã có lượt chấm hôm nay' : 'Chưa chấm công hôm nay',
-                                style: AppTypography.labelLarge(
-                                  color: isWorking
-                                      ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                                      : AppColors.outline,
-                                ).copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final liveTime = ref.watch(
-                              attendanceViewModelProvider.select((s) => s.liveCurrentTime),
-                            );
-                            return Text(
-                              liveTime,
-                              style: AppTypography.displayLarge(
-                                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                              ).copyWith(fontWeight: FontWeight.w700, letterSpacing: -1),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatVietnameseDate(now),
-                          style: AppTypography.bodyLarge(
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.stackLg),
-
-                    // =========================================================
-                    // 2. GEOFENCE & WORKPLACE CONFIG CARD (§2)
+                    // 1. GEOFENCE & WORKPLACE CONFIG CARD (§2)
                     // =========================================================
                     const AttendanceGeofenceCard(),
+                    const SizedBox(height: AppSpacing.stackMd),
+
+                    // =========================================================
+                    // 2. SHIFT & SCHEDULE CARD (§8 SPEC-2026-10-17)
+                    // =========================================================
+                    const AttendanceShiftCard(),
                     const SizedBox(height: AppSpacing.stackMd),
 
                     // =========================================================
@@ -308,15 +237,8 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
                       ),
                     ),
                     const SizedBox(height: AppSpacing.stackMd),
-
                     // =========================================================
-                    // 5. THỐNG KÊ THÁNG
-                    // =========================================================
-                    MonthlyStatsCard(stats: stats),
-                    const SizedBox(height: AppSpacing.stackMd),
-
-                    // =========================================================
-                    // 6. LỊCH SỬ CHẤM CÔNG CỦA MÌNH (§5)
+                    // 5. LỊCH SỬ CHẤM CÔNG CỦA MÌNH (§5)
                     // =========================================================
                     AttendanceHistoryCard(history: state.history),
                     const SizedBox(height: 40),
@@ -425,22 +347,5 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               }
             },
     );
-  }
-
-  String _formatVietnameseDate(DateTime dt) {
-    const weekdays = [
-      'Thứ Hai',
-      'Thứ Ba',
-      'Thứ Tư',
-      'Thứ Năm',
-      'Thứ Sáu',
-      'Thứ Bảy',
-      'Chủ Nhật'
-    ];
-    final weekdayName = weekdays[dt.weekday - 1];
-    final day = dt.day.toString().padLeft(2, '0');
-    final month = dt.month.toString().padLeft(2, '0');
-    final year = dt.year.toString();
-    return '$weekdayName, ngày $day/$month/$year';
   }
 }

@@ -393,15 +393,7 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                             showZoomControls: true,
                             interactive: true,
                             onMyLocationTap: _isLocating ? null : _getCurrentLocation,
-                            onTap: widget.isReadOnly
-                                ? null
-                                : (point) {
-                                    final lat = double.parse(point.latitude.toStringAsFixed(6));
-                                    final lng = double.parse(point.longitude.toStringAsFixed(6));
-                                    widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
-                                    widget.onCoordinatesDetailsChanged?.call(lat, lng, _resolvedAddress, null, false);
-                                    _fetchAddress(lat, lng);
-                                  },
+                            onTap: null, // Không chuyển dịch GPS khi click bản đồ; giữ cố định vị trí GPS hiện tại của thiết bị
                           ),
                         ),
                       ),

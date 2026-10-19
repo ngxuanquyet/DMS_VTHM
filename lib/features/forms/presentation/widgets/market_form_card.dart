@@ -106,6 +106,45 @@ class MarketFormCard extends StatelessWidget {
                                 ),
                               ),
                             ],
+                            if (config.isScopeFirst) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  'Lần đầu',
+                                  style: AppTypography.labelSmall(
+                                    color: const Color(0xFF7C3AED),
+                                  ).copyWith(fontWeight: FontWeight.w700, fontSize: 11),
+                                ),
+                              ),
+                            ] else if (config.isScopeRepeat) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFF0284C7).withValues(alpha: 0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  'Từ lần 2',
+                                  style: AppTypography.labelSmall(
+                                    color: const Color(0xFF0284C7),
+                                  ).copyWith(fontWeight: FontWeight.w700, fontSize: 11),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 4),

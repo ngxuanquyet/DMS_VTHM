@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -83,10 +84,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
       return DayAttendanceStatus.none;
     }
 
-    // 1. Vi phạm (Ngoài vùng / Giờ lệch / GPS giả) -> Đỏ
-    if (dayPunches.any((p) => p.isOutsideGeofence || p.isTimeTampered || p.isMockLocation)) {
-      return DayAttendanceStatus.violation;
-    }
+
 
     // 2. Thiếu ảnh chụp -> Vàng
     if (dayPunches.any((p) => !p.requirements.satisfied)) {
@@ -113,7 +111,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
       case DayAttendanceStatus.warning:
         return AppColors.warning; // Vàng hổ phách
       case DayAttendanceStatus.violation:
-        return AppColors.error; // Đỏ
+        return const Color(0xFF10B981);
       case DayAttendanceStatus.none:
         return Colors.grey.shade400; // Xám
       case DayAttendanceStatus.future:
@@ -566,7 +564,6 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
         children: [
           _buildLegendItem(const Color(0xFF10B981), 'Đủ công'),
           _buildLegendItem(AppColors.warning, 'Thiếu ảnh/ca'),
-          _buildLegendItem(AppColors.error, 'Vi phạm'),
           _buildLegendItem(Colors.grey.shade400, 'Không chấm'),
         ],
       ),
@@ -684,16 +681,8 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     bool isDark,
   ) {
     final isSatisfied = item.requirements.satisfied;
-    final hasViolation = item.isTimeTampered || item.isMockLocation || item.isOutsideGeofence;
-
-    final Color indicatorColor;
-    if (hasViolation) {
-      indicatorColor = AppColors.error;
-    } else if (!isSatisfied) {
-      indicatorColor = AppColors.warning;
-    } else {
-      indicatorColor = const Color(0xFF10B981);
-    }
+    final Color indicatorColor =
+        isSatisfied ? const Color(0xFF10B981) : AppColors.warning;
 
     return Container(
       decoration: BoxDecoration(
@@ -786,22 +775,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
             ],
           ),
 
-          // Cờ cảnh báo nếu có (§7)
-          if (item.isTimeTampered || item.isMockLocation || item.isOutsideGeofence) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                if (item.isTimeTampered)
-                  _flagBadge('Giờ lệch (>15p)', AppColors.error),
-                if (item.isMockLocation)
-                  _flagBadge('GPS giả lập', AppColors.warning),
-                if (item.isOutsideGeofence)
-                  _flagBadge('Ngoài vùng', AppColors.error),
-              ],
-            ),
-          ],
+
 
           // Danh sách thumbnail ảnh của lượt chấm (§4.4)
           if (item.photos.isNotEmpty) ...[
@@ -828,17 +802,40 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              fullUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Center(
-                                child: Icon(
-                                  Icons.image_not_supported_rounded,
-                                  size: 20,
-                                  color: Colors.grey,
+                            if (photo.url.isNotEmpty && File(photo.url).existsSync())
+                              Image.file(
+                                File(photo.url),
+                                fit: BoxFit.cover,
+                              )
+                            else
+                              Image.network(
+                                fullUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Center(
+                                  child: Icon(
+                                    Icons.image_not_supported_rounded,
+                                    size: 20,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                               ),
-                            ),
+                            if (photo.id < 0)
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(
+                                    Icons.cloud_upload_outlined,
+                                    color: Colors.white,
+                                    size: 11,
+                                  ),
+                                ),
+                              ),
                             Positioned(
                               bottom: 0,
                               left: 0,
@@ -904,24 +901,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     );
   }
 
-  Widget _flagBadge(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: AppRadius.roundedSm,
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
+
 
   Widget _directionBadge(String? direction, String label) {
     final isOut = label == 'Ra' || direction == 'out';

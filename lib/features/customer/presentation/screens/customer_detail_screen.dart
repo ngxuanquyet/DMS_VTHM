@@ -1124,7 +1124,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   // ===========================================================================
 
   Widget _buildAddressAndGpsCard(bool isDark) {
-    final hasGps = _customer.lat != null && _customer.lng != null;
+    final coords = CustomerCard.extractCoordinates(
+      lat: _customer.lat,
+      lng: _customer.lng,
+      dynamicFields: _customer.dynamicFields,
+    );
+    final hasGps = coords != null;
 
     return _buildSectionCard(
       title: 'Địa chỉ & Tọa độ GPS',
@@ -1184,15 +1189,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               children: [
                 // 1. Bản đồ Goong Vector MapLibre
                 GoongMapView(
-                  key: ValueKey('customer_detail_map_${_customer.id}_${_customer.lat}_${_customer.lng}_${_mapStyle.styleName}'),
+                  key: ValueKey('customer_detail_map_${_customer.id}_${coords.$1}_${coords.$2}_${_mapStyle.styleName}'),
                   center: LatLng(
-                    _customer.lat!.toDouble(),
-                    _customer.lng!.toDouble(),
+                    coords.$1,
+                    coords.$2,
                   ),
                   zoom: 16.5,
                   mapStyle: _mapStyle,
                   markers: [
-                    LatLng(_customer.lat!.toDouble(), _customer.lng!.toDouble()),
+                    LatLng(coords.$1, coords.$2),
                   ],
                   showMyLocation: false,
                   showMyLocationButton: true,
@@ -1250,7 +1255,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '${_customer.lat!.toStringAsFixed(5)}, ${_customer.lng!.toStringAsFixed(5)}',
+                          '${coords.$1.toStringAsFixed(5)}, ${coords.$2.toStringAsFixed(5)}',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,

@@ -18,7 +18,7 @@ import '../../../../../core/widgets/camera_permission_dialog.dart';
 
 /// Mục ảnh quản lý trạng thái tải lên và hiển thị cục bộ
 class FormPhotoEntry {
-  final String localPath;
+  String localPath;
   String? token;
   String? previewUrl;
   bool isUploading;
@@ -238,6 +238,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// Trả về bản sao các câu trả lời hiện tại
   Map<String, dynamic> get currentAnswers => Map<String, dynamic>.from(_answers);
 
+  /// Danh sách các mục ảnh theo mã trường
+  Map<String, List<FormPhotoEntry>> get photoEntries => _photoEntries;
+
   /// Danh sách các mã code thuộc nhóm trình bày (không thu dữ liệu)
   Set<String> get _presentationCodes {
     return widget.blocks
@@ -277,11 +280,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Xử lý riêng cho ô ảnh (§1, §2, §3)
       if (block.isImage || block.resolved.inputType.toLowerCase() == 'file') {
         final entries = _photoEntries[code] ?? [];
-        final hasUploading = entries.any((e) => e.isUploading);
-        if (hasUploading) {
-          newErrors[code] = '$label: Vui lòng chờ ảnh tải lên hoàn tất.';
-          continue;
-        }
         if (block.required && entries.isEmpty) {
           newErrors[code] = '$label không được để trống.';
           continue;
@@ -604,6 +602,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // ==========================================
 
   Widget _buildHeading(MarketFormBlockEntity block, bool isDark) {
+    final hasDesc = block.resolved.description != null &&
+        block.resolved.description!.trim().isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 4),
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -615,22 +616,36 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           ),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.label_important_rounded,
-            size: 20,
-            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+          Row(
+            children: [
+              Icon(
+                Icons.label_important_rounded,
+                size: 20,
+                color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  block.resolved.label,
+                  style: AppTypography.titleMedium(
+                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                  ).copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              block.resolved.label,
-              style: AppTypography.titleMedium(
-                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-              ).copyWith(fontWeight: FontWeight.w700),
+          if (hasDesc) ...[
+            const SizedBox(height: 4),
+            Text(
+              block.resolved.description!.trim(),
+              style: AppTypography.bodySmall(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+              ).copyWith(fontSize: 12),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -779,7 +794,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: _errors.containsKey(code)
@@ -788,6 +802,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         ),
       ),
       child: SwitchListTile(
+        tileColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
         title: _buildLabel(block, isDark),
         value: current,
         activeThumbColor: AppColors.primary,
@@ -810,11 +828,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       children: [
         _buildLabel(block, isDark),
         const SizedBox(height: 6),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        Material(
+          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(10),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
+            side: BorderSide(
               color: _errors.containsKey(code)
                   ? AppColors.error
                   : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
@@ -859,11 +878,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       children: [
         _buildLabel(block, isDark),
         const SizedBox(height: 6),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+        Material(
+          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(10),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
+            side: BorderSide(
               color: _errors.containsKey(code)
                   ? AppColors.error
                   : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
@@ -1062,8 +1082,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: _buildLabel(block, isDark)),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -1081,15 +1103,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             ),
           ],
         ),
-        if (block.resolved.description != null && block.resolved.description!.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            block.resolved.description!,
-            style: AppTypography.bodySmall(
-              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-            ),
-          ),
-        ],
         const SizedBox(height: 8),
 
         Container(
@@ -1138,7 +1151,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                         : 'Chụp thêm ảnh (${entries.length}/$maxFiles)',
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   ),
-                  onPressed: () => _showPhotoSourceSheet(context, block),
+                  onPressed: () => _pickAndUploadPhoto(context, block, ImageSource.camera),
                 )
               else
                 Container(
@@ -1201,7 +1214,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 fit: StackFit.expand,
                 children: [
                   if (hasLocal)
-                    Image.file(File(entry.localPath), fit: BoxFit.cover)
+                    Image.file(
+                      File(entry.localPath),
+                      key: ValueKey(entry.localPath),
+                      fit: BoxFit.cover,
+                    )
                   else if (hasRemote)
                     Image.network(
                       entry.fullPreviewUrl,
@@ -1213,16 +1230,16 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   else
                     const Center(child: Icon(Icons.photo_rounded, size: 28, color: Colors.grey)),
 
-                  // Trạng thái đang tải lên
+                  // Trạng thái đang tải lên / xử lý ảnh
                   if (entry.isUploading)
                     Container(
-                      color: Colors.black54,
+                      color: Colors.black45,
                       child: const Center(
                         child: SizedBox(
-                          width: 24,
-                          height: 24,
+                          width: 26,
+                          height: 26,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
+                            strokeWidth: 2.8,
                             color: Colors.white,
                           ),
                         ),
@@ -1281,41 +1298,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-  void _showPhotoSourceSheet(BuildContext context, MarketFormBlockEntity block) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt_rounded, color: AppColors.primary),
-                title: const Text('Chụp ảnh từ máy ảnh (Khuyến nghị)', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Chụp ảnh trực tiếp tại điểm bán'),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickAndUploadPhoto(context, block, ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded, color: AppColors.secondary),
-                title: const Text('Chọn ảnh từ thư viện'),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _pickAndUploadPhoto(context, block, ImageSource.gallery);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _showImagePreviewDialog(BuildContext context, FormPhotoEntry entry) {
     final hasLocal = entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
@@ -1365,31 +1347,28 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final currentEntries = _photoEntries[code] ?? [];
     if (currentEntries.length >= maxFiles) return;
 
-    if (source == ImageSource.camera) {
-      final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
-        context,
-        featureName: 'khảo sát thị trường',
-        customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh khảo sát trực tiếp tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
-      );
-      if (!hasPermission) return;
-    }
+    // Chỉ cho phép chụp ảnh từ Camera
+    final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
+      context,
+      featureName: 'khảo sát thị trường',
+      customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh khảo sát trực tiếp tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+    );
+    if (!hasPermission) return;
 
     try {
       final picker = ImagePicker();
       final photo = await picker.pickImage(
-        source: source,
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
         imageQuality: 85,
       );
       if (photo == null) return;
 
-      final watermarked = await PhotoWatermarkHelper.addWatermark(
-        imageFile: File(photo.path),
-        locationName: block.resolved.label,
-      );
-
+      // HIỂN THỊ NGAY LẬP TỨC BOX ẢNH VỚI VÒNG XOAY LOADING TRÊN GIAO DIỆN
       final entry = FormPhotoEntry(
-        localPath: watermarked.path,
-        isUploading: widget.onUploadPhoto != null,
+        localPath: photo.path,
+        isUploading: true,
       );
 
       setState(() {
@@ -1400,9 +1379,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _errors.remove(code);
       });
 
-      // Nếu có callback upload, thực hiện upload ngay lập tức (§2: Tải ảnh lên TRƯỚC)
-      if (widget.onUploadPhoto != null) {
-        try {
+      // Thực hiện đóng dấu toạ độ và tải lên ngầm
+      try {
+        final watermarked = await PhotoWatermarkHelper.addWatermark(
+          imageFile: File(photo.path),
+          locationName: block.resolved.label,
+        );
+        entry.localPath = watermarked.path;
+
+        if (widget.onUploadPhoto != null) {
           final result = await widget.onUploadPhoto!(watermarked);
           if (mounted) {
             setState(() {
@@ -1413,20 +1398,25 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               _updateAnswersForImageField(code);
             });
           }
-        } catch (e) {
+        } else {
           if (mounted) {
             setState(() {
               entry.isUploading = false;
-              entry.uploadError = e.toString().replaceAll('AppException: ', '');
               _updateAnswersForImageField(code);
             });
           }
         }
-      } else {
-        _updateAnswersForImageField(code);
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            entry.isUploading = false;
+            entry.uploadError = e.toString().replaceAll('AppException: ', '');
+            _updateAnswersForImageField(code);
+          });
+        }
       }
     } catch (e) {
-      debugPrint('[MarketFormRenderer] Lỗi chụp/chọn ảnh: $e');
+      debugPrint('[MarketFormRenderer] Lỗi chụp ảnh: $e');
     }
   }
 
@@ -1491,23 +1481,41 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // ==========================================
 
   Widget _buildLabel(MarketFormBlockEntity block, bool isDark) {
-    return RichText(
-      text: TextSpan(
-        text: block.resolved.label,
-        style: AppTypography.titleMedium(
-          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-        ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
-        children: [
-          if (block.required)
-            const TextSpan(
-              text: ' *',
-              style: TextStyle(
-                color: AppColors.error,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+    final hasDesc = block.resolved.description != null &&
+        block.resolved.description!.trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: block.resolved.label,
+            style: AppTypography.titleMedium(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
+            children: [
+              if (block.required)
+                const TextSpan(
+                  text: ' *',
+                  style: TextStyle(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (hasDesc) ...[
+          const SizedBox(height: 3),
+          Text(
+            block.resolved.description!.trim(),
+            style: AppTypography.bodySmall(
+              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+            ).copyWith(fontSize: 12),
+          ),
         ],
-      ),
+      ],
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -106,26 +107,104 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                         // Error Banner
                         if (authState.status == AuthStatus.error && authState.errorMessage != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-                            decoration: BoxDecoration(
-                              color: AppColors.errorContainer.withValues(alpha: 0.3),
-                              borderRadius: AppRadius.roundedMd,
-                              border: Border.all(color: AppColors.errorContainer),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.error_outline, color: AppColors.error, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    authState.errorMessage!,
-                                    style: AppTypography.bodyMedium(color: AppColors.error),
-                                  ),
+                          Builder(
+                            builder: (context) {
+                              String displayMsg = authState.errorMessage!;
+                              String? code = authState.errorCode;
+                              final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+                              final match = codeRegex.firstMatch(displayMsg);
+                              if (match != null) {
+                                code ??= match.group(1)?.trim();
+                                displayMsg = displayMsg.replaceAll(codeRegex, '').trim();
+                              }
+
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: AppSpacing.stackMd),
+                                decoration: BoxDecoration(
+                                  color: AppColors.errorContainer.withValues(alpha: 0.3),
+                                  borderRadius: AppRadius.roundedMd,
+                                  border: Border.all(color: AppColors.errorContainer),
                                 ),
-                              ],
-                            ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Padding(
+                                          padding: EdgeInsets.only(top: 2),
+                                          child: Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            displayMsg,
+                                            style: AppTypography.bodyMedium(color: AppColors.error),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (code != null && code.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.error.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.tag_rounded, size: 14, color: AppColors.error),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Mã lỗi: $code',
+                                                  style: const TextStyle(
+                                                    color: AppColors.error,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontFamily: 'monospace',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          TextButton.icon(
+                                            onPressed: () {
+                                              Clipboard.setData(ClipboardData(text: code!));
+                                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Đã sao chép mã lỗi vào bộ nhớ tạm.'),
+                                                  duration: Duration(seconds: 2),
+                                                ),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.copy_rounded, size: 13, color: AppColors.error),
+                                            label: const Text(
+                                              'Chép mã',
+                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.error),
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              backgroundColor: AppColors.error.withValues(alpha: 0.08),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ],
 
@@ -170,63 +249,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: AppSpacing.stackSm),
 
-                        // Options: Remember Me & Forgot Password
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            InkWell(
-                              onTap: () {
-                                ref.read(authViewModelProvider.notifier).setRememberMe(!authState.rememberMe);
-                              },
-                              borderRadius: AppRadius.roundedSm,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 6.0),
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: Checkbox(
-                                        value: authState.rememberMe,
-                                        activeColor: AppColors.primaryContainer,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                        onChanged: (val) {
-                                          ref.read(authViewModelProvider.notifier).setRememberMe(val ?? false);
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      strings.rememberLogin,
-                                      style: AppTypography.bodyMedium(
-                                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
+                        // Option: Forgot Password (đã bỏ Ghi nhớ đăng nhập trên giao diện)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(strings.forgotPasswordMsg),
                                 ),
+                              );
+                            },
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(50, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              strings.forgotPassword,
+                              style: AppTypography.labelLarge(
+                                color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
                               ),
                             ),
-                            TextButton(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(strings.forgotPasswordMsg),
-                                  ),
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(50, 30),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                strings.forgotPassword,
-                                style: AppTypography.labelLarge(
-                                  color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.stackLg),
 

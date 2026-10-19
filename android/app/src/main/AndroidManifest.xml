@@ -87,5 +87,23 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- Hỗ trợ mở ứng dụng bản đồ & chỉ đường cho url_launcher trên Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 </manifest>

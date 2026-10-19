@@ -46,20 +46,20 @@ class VisitReportCard extends StatelessWidget {
     final isOpen = visit.isOpen;
     final isCancelled = visit.isCancelled;
 
-    Color statusColor = const Color(0xFF006E15);
+    Color statusColor = visit.resultBootstrapColor ?? const Color(0xFF006E15);
     Color statusBgColor = const Color(0xFFE8F5E9);
-    String statusText = 'Mở cửa';
+    String statusText = visit.visitResultLabel ?? 'Mở cửa';
     IconData statusIcon = Icons.check_circle_rounded;
 
     if (isCancelled) {
-      statusColor = const Color(0xFF6B7280);
+      statusColor = visit.resultBootstrapColor ?? const Color(0xFF6B7280);
       statusBgColor = const Color(0xFFF3F4F6);
-      statusText = 'Đã huỷ';
+      statusText = visit.visitResultLabel ?? 'Đã huỷ';
       statusIcon = Icons.cancel_rounded;
     } else if (isClosed) {
-      statusColor = const Color(0xFFD97706);
+      statusColor = visit.resultBootstrapColor ?? const Color(0xFFD97706);
       statusBgColor = const Color(0xFFFEF3C7);
-      statusText = 'Đóng cửa';
+      statusText = visit.visitResultLabel ?? 'Đóng cửa';
       statusIcon = Icons.storefront_outlined;
     } else if (isOpen) {
       statusColor = const Color(0xFF0284C7);
@@ -202,40 +202,10 @@ class VisitReportCard extends StatelessWidget {
                                             color: badgeText,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  );
-                                }(),
-                              ],
-                              if (visit.isCheckoutOtherDay) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? const Color(0x33F59E0B) : const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFF59E0B), width: 0.8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.next_plan_outlined,
-                                        size: 10,
-                                        color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+                                                      ],
                                       ),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        'Ra khác ngày',
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w700,
-                                          color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                    );
+                                  }(),
                               ],
                             ],
                           ),
@@ -406,41 +376,6 @@ class VisitReportCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (visit.isCheckoutWithinGeofence == false) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEE2E2).withValues(alpha: isDark ? 0.2 : 0.9),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: const Color(0xFFFCA5A5).withValues(alpha: isDark ? 0.3 : 1),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.warning_amber_rounded,
-                                    size: 11,
-                                    color: Color(0xFFDC2626),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    visit.checkoutDistanceFormatted != '—'
-                                        ? 'Ngoài vùng (${visit.checkoutDistanceFormatted})'
-                                        : 'Ngoài vùng',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFFDC2626),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),

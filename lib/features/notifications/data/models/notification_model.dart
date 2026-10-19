@@ -24,15 +24,20 @@ class NotificationModel {
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
+    final rawData = json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : null;
+    final resolvedPath = (json['routePath'] ?? json['link'] ?? json['url'] ?? rawData?['link'] ?? rawData?['routePath']) as String?;
+    final resolvedMessage = (json['message'] ?? json['body'] ?? rawData?['message'] ?? rawData?['body'] ?? '') as String;
+    final resolvedType = (json['type'] ?? rawData?['type'] ?? 'system') as String;
+
     return NotificationModel(
       id: json['id'] as String? ?? '',
-      type: json['type'] as String? ?? 'system',
+      type: resolvedType,
       title: json['title'] as String? ?? '',
-      message: json['message'] as String? ?? '',
+      message: resolvedMessage,
       timeAgo: json['timeAgo'] as String? ?? '',
       isRead: json['isRead'] as bool? ?? false,
       category: json['category'] as String? ?? 'work',
-      routePath: json['routePath'] as String?,
+      routePath: resolvedPath,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,

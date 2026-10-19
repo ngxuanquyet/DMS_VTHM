@@ -16,6 +16,7 @@ import '../../../../core/constants/search_target.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/search_target_chips.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -451,14 +452,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi đồng bộ: $e'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     } finally {
       if (mounted) {

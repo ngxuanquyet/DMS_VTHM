@@ -8,6 +8,7 @@ class MarketFormConfigEntity {
   final bool isRequired;
   final int sortOrder;
   final MarketFormSchemaEntity schema;
+  final String visitScope; // 'all' | 'first' | 'repeat' (§1 SPEC-2026-10-18)
 
   const MarketFormConfigEntity({
     required this.configId,
@@ -18,10 +19,14 @@ class MarketFormConfigEntity {
     required this.isRequired,
     required this.sortOrder,
     required this.schema,
+    this.visitScope = 'all',
   });
 
   bool get isSurvey => kind == 'survey';
   bool get isCollect => kind == 'collect';
+  bool get isScopeFirst => visitScope == 'first';
+  bool get isScopeRepeat => visitScope == 'repeat';
+  bool get isScopeAll => visitScope == 'all';
 }
 
 /// Entity schema chứa danh sách blocks

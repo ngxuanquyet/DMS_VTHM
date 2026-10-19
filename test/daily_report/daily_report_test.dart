@@ -191,22 +191,14 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Check title and metrics headers
+      // Check title
       expect(find.text('Báo cáo viếng thăm'), findsOneWidget);
-      expect(find.text('Điểm viếng thăm'), findsOneWidget);
-      expect(find.text('Ảnh đóng dấu'), findsOneWidget);
-      expect(find.text('Biểu mẫu nộp'), findsOneWidget);
-      expect(find.text('Giờ làm việc'), findsOneWidget);
 
-      // Verify metric values calculated dynamically:
-      // Total 2 visits, 1 visited -> '1 / 2 điểm'
-      expect(find.text('1 / 2 điểm'), findsOneWidget);
-      // Photos: 3 + 1 = 4 ảnh
-      expect(find.text('4 ảnh'), findsOneWidget);
-      // Forms: 1 + 0 = 1 phiếu
-      expect(find.text('1 phiếu'), findsOneWidget);
-      // Duration: 1800 + 300 = 2100s = 35 phút
-      expect(find.text('35 phút'), findsOneWidget);
+      // Verify 4 summary boxes have been removed
+      expect(find.text('Điểm viếng thăm'), findsNothing);
+      expect(find.text('Ảnh đóng dấu'), findsNothing);
+      expect(find.text('Biểu mẫu nộp'), findsNothing);
+      expect(find.text('Giờ làm việc'), findsNothing);
 
       // Verify visit cards
       expect(find.text('Nhà thuốc An Khang'), findsWidgets);

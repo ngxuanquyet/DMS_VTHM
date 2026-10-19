@@ -1,3 +1,5 @@
+import '../errors/app_exceptions.dart';
+
 /// Tiện ích xử lý chuỗi và bỏ dấu tiếng Việt phục vụ tìm kiếm offline (§7.4 SPEC-DONG-BO-OFFLINE).
 class StringUtils {
   static const _vietnameseDiacriticsMap = {
@@ -42,13 +44,31 @@ class StringUtils {
     return toUnaccentedLower(text).contains(toUnaccentedLower(query));
   }
 
-  /// Chuyển đổi các thông báo lỗi kỹ thuật (Dio, HTTP, Exception) thành câu từ thân thiện, dễ hiểu cho người dùng
+  /// Chuyển đổi các thông báo lỗi kỹ thuật (Dio, HTTP, Exception) thành câu từ thân thiện, dễ hiểu cho người dùng kèm mã lỗi
   static String formatUserFriendlyError(dynamic error) {
     if (error == null) return 'Đã xảy ra lỗi không xác định.';
     final str = error.toString().trim();
     if (str.isEmpty) return 'Đã xảy ra lỗi không xác định.';
 
+    // Trích xuất mã lỗi nếu có
+    String? extractedCode;
+    if (error is AppException) {
+      extractedCode = error.displayErrorCode;
+    }
+    if (extractedCode == null || extractedCode.isEmpty) {
+      final codeMatch = RegExp(r'\(Mã lỗi:\s*([^)]+)\)').firstMatch(str);
+      if (codeMatch != null) {
+        extractedCode = codeMatch.group(1)?.trim();
+      } else {
+        final legacyMatch = RegExp(r'\(code:\s*(\d+),\s*error_code:\s*([^)]+)\)').firstMatch(str);
+        if (legacyMatch != null) {
+          extractedCode = legacyMatch.group(2)?.trim();
+        }
+      }
+    }
+
     final lower = str.toLowerCase();
+    String friendlyMsg;
 
     // Lỗi mạng, mất kết nối, timeout
     if (lower.contains('socketexception') ||
@@ -61,35 +81,34 @@ class StringUtils {
         lower.contains('receivetimeout') ||
         lower.contains('sendtimeout') ||
         lower.contains('handshakeexception')) {
-      return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng.';
-    }
-
-    // Lỗi máy chủ 500, 502, 503, 504
-    if (lower.contains('500') ||
+      friendlyMsg = 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng.';
+    } else if (lower.contains('500') ||
         lower.contains('502') ||
         lower.contains('503') ||
         lower.contains('504') ||
         lower.contains('internal server error') ||
         lower.contains('bad gateway') ||
         lower.contains('service unavailable')) {
-      return 'Hệ thống đang bận hoặc gián đoạn. Vui lòng thử lại sau.';
+      friendlyMsg = 'Hệ thống đang bận hoặc gián đoạn. Vui lòng thử lại sau.';
+      extractedCode ??= lower.contains('500') ? 'HTTP-500' : 'HTTP-503';
+    } else if (lower.contains('401') || lower.contains('unauthorized')) {
+      friendlyMsg = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+      extractedCode ??= 'UNAUTHORIZED';
+    } else if (lower.contains('403') || lower.contains('forbidden')) {
+      friendlyMsg = 'Bạn không có quyền thực hiện thao tác này.';
+      extractedCode ??= 'FORBIDDEN';
+    } else {
+      var cleaned = str
+          .replaceAll(RegExp(r'^(Exception|AppException|ServerException|DioException.*?:)\s*', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\(Mã lỗi:\s*[^)]+\)'), '')
+          .replaceAll(RegExp(r'\(code:\s*\d+,\s*error_code:\s*[^)]+\)'), '')
+          .trim();
+      friendlyMsg = cleaned.isNotEmpty ? cleaned : 'Đã xảy ra sự cố. Vui lòng thử lại sau.';
     }
 
-    // Lỗi phiên đăng nhập 401
-    if (lower.contains('401') || lower.contains('unauthorized')) {
-      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    if (extractedCode != null && extractedCode.isNotEmpty && !friendlyMsg.contains(extractedCode)) {
+      return '$friendlyMsg (Mã lỗi: $extractedCode)';
     }
-
-    // Lỗi quyền hạn 403
-    if (lower.contains('403') || lower.contains('forbidden')) {
-      return 'Bạn không có quyền thực hiện thao tác này.';
-    }
-
-    // Loại bỏ các tiền tố lập trình
-    var cleaned = str
-        .replaceAll(RegExp(r'^(Exception|AppException|ServerException|DioException.*?:)\s*', caseSensitive: false), '')
-        .trim();
-
-    return cleaned.isNotEmpty ? cleaned : 'Đã xảy ra sự cố. Vui lòng thử lại sau.';
+    return friendlyMsg;
   }
 }

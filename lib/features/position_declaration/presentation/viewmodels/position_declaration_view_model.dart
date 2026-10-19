@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/map/goong_api_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../domain/entities/position_declaration_entity.dart';
@@ -308,7 +309,7 @@ class PositionDeclarationViewModel
       await loadHistory();
       return (false, msg);
     } catch (e) {
-      final msg = e.toString().replaceAll('Exception: ', '');
+      final msg = StringUtils.formatUserFriendlyError(e);
       state = state.copyWith(
         status: PositionDeclarationStatus.error,
         errorMessage: msg,
@@ -351,12 +352,22 @@ class PositionDeclarationViewModel
   }
 
   String _extractDioErrorMessage(DioException dioErr) {
+    if (dioErr.error is AppException) {
+      return (dioErr.error as AppException).userMessage;
+    }
     if (dioErr.response?.data is Map<String, dynamic>) {
       final data = dioErr.response!.data as Map<String, dynamic>;
-      if (data['message'] != null && data['message'].toString().trim().isNotEmpty) {
-        return data['message'].toString().trim();
+      final msg = data['message']?.toString().trim();
+      final code = data['code'] ?? data['error_code'];
+      final errId = data['errorId'] ?? data['incident_id'];
+      final resolvedCode = errId ?? code ?? (dioErr.response?.statusCode != null ? 'HTTP-${dioErr.response!.statusCode}' : null);
+      if (msg != null && msg.isNotEmpty) {
+        if (resolvedCode != null) {
+          return '$msg (Mã lỗi: $resolvedCode)';
+        }
+        return msg;
       }
     }
-    return dioErr.message ?? 'Đã xảy ra lỗi khi gửi khai báo vị trí';
+    return StringUtils.formatUserFriendlyError(dioErr);
   }
 }

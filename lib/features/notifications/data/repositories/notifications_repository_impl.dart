@@ -55,6 +55,9 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
   @override
   Future<void> markAsRead(String id) async {
     await _localService.markAsRead(id);
+    try {
+      await _apiService.markAsRead(id);
+    } catch (_) {}
     if (_cachedData != null) {
       _cachedData = NotificationDataEntity(
         today: _cachedData!.today.map((e) => e.id == id ? e.copyWith(isRead: true) : e).toList(),
@@ -66,6 +69,9 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
   @override
   Future<void> markAllAsRead() async {
     await _localService.markAllAsRead();
+    try {
+      await _apiService.markAllAsRead();
+    } catch (_) {}
     if (_cachedData != null) {
       _cachedData = NotificationDataEntity(
         today: _cachedData!.today.map((e) => e.copyWith(isRead: true)).toList(),

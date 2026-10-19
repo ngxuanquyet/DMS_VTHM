@@ -5,7 +5,7 @@ import 'package:vthm_dms/features/home/presentation/widgets/home_quick_actions.d
 void main() {
   group('HomeQuickActions Widget Tests', () {
     testWidgets(
-      'Renders Chấm công, Khai báo vị trí, and Báo cáo cards with proper styling and layout',
+      'Renders Chấm công, Viếng thăm, and Báo cáo cards with proper styling and layout',
       (tester) async {
         await tester.pumpWidget(
           const MaterialApp(home: Scaffold(body: HomeQuickActions())),
@@ -15,9 +15,9 @@ void main() {
         expect(find.text('Chấm công'), findsOneWidget);
         expect(find.byIcon(Icons.access_time_filled_rounded), findsOneWidget);
 
-        // 2. Verify "Khai báo vị trí" card
-        expect(find.text('Khai báo vị trí'), findsOneWidget);
-        expect(find.byIcon(Icons.location_on_rounded), findsOneWidget);
+        // 2. Verify "Viếng thăm" card
+        expect(find.text('Viếng thăm'), findsOneWidget);
+        expect(find.byIcon(Icons.storefront_rounded), findsOneWidget);
 
         // 3. Verify "Báo cáo" card
         expect(find.text('Báo cáo'), findsOneWidget);
@@ -51,7 +51,7 @@ void main() {
         expect(
           hasTealCard,
           isTrue,
-          reason: 'Khai báo vị trí card must have soft teal pastel color (0xFFCCFBF1)',
+          reason: 'Viếng thăm card must have soft teal pastel color (0xFFCCFBF1)',
         );
         expect(
           hasIndigoCard,
@@ -62,29 +62,29 @@ void main() {
         // 5. Verify layout: Báo cáo is below Chấm công (higher Y position)
         final chamCongCard = find.ancestor(of: find.text('Chấm công'), matching: find.byType(InkWell));
         final baoCaoCard = find.ancestor(of: find.text('Báo cáo'), matching: find.byType(InkWell));
-        final khaiBaoViTriCard = find.ancestor(of: find.text('Khai báo vị trí'), matching: find.byType(InkWell));
+        final viengThamCard = find.ancestor(of: find.text('Viếng thăm'), matching: find.byType(InkWell));
         final dongBoCard = find.ancestor(of: find.text('Đồng bộ'), matching: find.byType(InkWell));
 
         final chamCongOffset = tester.getTopLeft(chamCongCard);
         final baoCaoOffset = tester.getTopLeft(baoCaoCard);
-        final khaiBaoViTriOffset = tester.getTopLeft(khaiBaoViTriCard);
+        final viengThamOffset = tester.getTopLeft(viengThamCard);
         final dongBoOffset = tester.getTopLeft(dongBoCard);
 
         expect(baoCaoOffset.dy > chamCongOffset.dy, isTrue,
             reason: 'Báo cáo must be positioned vertically below Chấm công');
         expect((baoCaoOffset.dx - chamCongOffset.dx).abs() < 5, isTrue,
             reason: 'Báo cáo and Chấm công must be in the same left column');
-        expect(khaiBaoViTriOffset.dx > chamCongOffset.dx, isTrue,
-            reason: 'Khai báo vị trí must be on the right column');
+        expect(viengThamOffset.dx > chamCongOffset.dx, isTrue,
+            reason: 'Viếng thăm must be on the right column');
 
         // 6. Verify "Đồng bộ" card layout
         expect(find.text('Đồng bộ'), findsOneWidget);
         expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
 
-        expect(dongBoOffset.dy > khaiBaoViTriOffset.dy, isTrue,
-            reason: 'Đồng bộ must be positioned vertically below Khai báo vị trí');
-        expect((dongBoOffset.dx - khaiBaoViTriOffset.dx).abs() < 5, isTrue,
-            reason: 'Đồng bộ and Khai báo vị trí must be in the same right column');
+        expect(dongBoOffset.dy > viengThamOffset.dy, isTrue,
+            reason: 'Đồng bộ must be positioned vertically below Viếng thăm');
+        expect((dongBoOffset.dx - viengThamOffset.dx).abs() < 5, isTrue,
+            reason: 'Đồng bộ and Viếng thăm must be in the same right column');
       },
     );
 
@@ -129,7 +129,7 @@ void main() {
     });
 
     testWidgets(
-      'Tapping Báo cáo card opens modal bottom sheet with 4 report items',
+      'Tapping Báo cáo card opens modal bottom sheet with report items',
       (tester) async {
         await tester.pumpWidget(
           const MaterialApp(home: Scaffold(body: HomeQuickActions())),
@@ -142,20 +142,12 @@ void main() {
         // Verify bottom sheet title
         expect(find.text('Báo cáo & Lịch sử'), findsOneWidget);
 
-        // Verify the 4 requested items
+        // Verify report items
         expect(find.text('Báo cáo viếng thăm'), findsOneWidget);
         expect(find.text('Lịch sử chấm công'), findsOneWidget);
-        expect(find.text('Lịch sử khai báo vị trí'), findsOneWidget);
-        expect(find.text('Nghi vấn gian lận'), findsOneWidget);
-
-        // Test tapping "Nghi vấn gian lận" opens fraud check dialog
-        await tester.tap(find.text('Nghi vấn gian lận'));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Kiểm tra gian lận'), findsOneWidget);
-        expect(find.text('Toạ độ giả lập (Mock GPS)'), findsOneWidget);
-        expect(find.text('Đồng hồ thiết bị (Clock Skew)'), findsOneWidget);
-        expect(find.text('Bán kính viếng thăm (Geofence)'), findsOneWidget);
+        expect(find.text('Quãng đường di chuyển'), findsOneWidget);
+        expect(find.text('Lịch sử khai báo vị trí'), findsNothing);
+        expect(find.text('Nghi vấn gian lận'), findsNothing);
       },
     );
   });

@@ -743,14 +743,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                           showZoomControls: true, // Nút phóng to / thu nhỏ (+ / -)
                           interactive: true, // Cho phép vuốt, kéo, cuộn, xoay bản đồ
                           onMyLocationTap: _isLocating ? null : _fetchFreshLocation,
-                          onTap: widget.isReadOnly
-                              ? null
-                              : (point) {
-                                  final newLat = double.parse(point.latitude.toStringAsFixed(7));
-                                  final newLng = double.parse(point.longitude.toStringAsFixed(7));
-                                  _notifyChange(lat: newLat, lng: newLng);
-                                  _reverseGeocodeAndUpdate(newLat, newLng);
-                                },
+                          onTap: null, // Không chuyển dịch toạ độ khi chạm bản đồ; giữ nguyên vị trí GPS hiện tại
                         ),
                       ),
                     ),
@@ -798,12 +791,12 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.touch_app_rounded, size: 14, color: Colors.white),
+                              const Icon(Icons.my_location_rounded, size: 14, color: Colors.white),
                               const SizedBox(width: 6),
                               Text(
                                 widget.isReadOnly
                                     ? 'Chưa có vị trí ghim trên bản đồ'
-                                    : 'Chạm bản đồ hoặc bấm nút để ghim vị trí',
+                                    : 'Bấm nút định vị để lấy vị trí GPS hiện tại',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
@@ -939,24 +932,6 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                           style: AppTypography.bodySmall(
                             color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                           ).copyWith(fontSize: 11),
-                        ),
-                      ],
-                      if (_isMock) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEA580C).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'GPS giả',
-                            style: TextStyle(
-                              color: Color(0xFFEA580C),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
                         ),
                       ],
                       const SizedBox(width: 6),

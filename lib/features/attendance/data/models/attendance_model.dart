@@ -68,6 +68,100 @@ class AttendancePhotoConfigModel {
       );
 }
 
+class AttendanceShiftModel {
+  final int id;
+  final String code;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final bool crossMidnight;
+
+  const AttendanceShiftModel({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    this.crossMidnight = false,
+  });
+
+  factory AttendanceShiftModel.fromJson(Map<String, dynamic> json) {
+    return AttendanceShiftModel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      code: json['code'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      startTime: json['start_time'] as String? ?? '',
+      endTime: json['end_time'] as String? ?? '',
+      crossMidnight: json['cross_midnight'] as bool? ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'code': code,
+        'name': name,
+        'start_time': startTime,
+        'end_time': endTime,
+        'cross_midnight': crossMidnight,
+      };
+
+  AttendanceShiftEntity toEntity() => AttendanceShiftEntity(
+        id: id,
+        code: code,
+        name: name,
+        startTime: startTime,
+        endTime: endTime,
+        crossMidnight: crossMidnight,
+      );
+}
+
+class AttendanceShiftScheduleModel {
+  final String workDate;
+  final String status;
+  final String? source;
+  final AttendanceShiftModel? shift;
+  final List<AttendanceShiftModel> candidates;
+
+  const AttendanceShiftScheduleModel({
+    required this.workDate,
+    required this.status,
+    this.source,
+    this.shift,
+    this.candidates = const [],
+  });
+
+  factory AttendanceShiftScheduleModel.fromJson(Map<String, dynamic> json) {
+    return AttendanceShiftScheduleModel(
+      workDate: json['work_date'] as String? ?? '',
+      status: json['status'] as String? ?? 'no_schedule',
+      source: json['source'] as String?,
+      shift: json['shift'] is Map<String, dynamic>
+          ? AttendanceShiftModel.fromJson(json['shift'] as Map<String, dynamic>)
+          : null,
+      candidates: (json['candidates'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((e) => AttendanceShiftModel.fromJson(e))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'work_date': workDate,
+        'status': status,
+        if (source != null) 'source': source,
+        if (shift != null) 'shift': shift!.toJson(),
+        'candidates': candidates.map((e) => e.toJson()).toList(),
+      };
+
+  AttendanceShiftScheduleEntity toEntity() => AttendanceShiftScheduleEntity(
+        workDate: workDate,
+        status: status,
+        source: source,
+        shift: shift?.toEntity(),
+        candidates: candidates.map((e) => e.toEntity()).toList(),
+      );
+}
+
 class AttendanceTodayModel {
   final String? workDate;
   final int punchCount;
@@ -75,6 +169,7 @@ class AttendanceTodayModel {
   final String? lastOutAt;
   final String nextAction;
   final String nextActionLabel;
+  final AttendanceShiftScheduleModel? shift;
 
   const AttendanceTodayModel({
     this.workDate,
@@ -83,6 +178,7 @@ class AttendanceTodayModel {
     this.lastOutAt,
     this.nextAction = 'in',
     this.nextActionLabel = 'Vào',
+    this.shift,
   });
 
   factory AttendanceTodayModel.fromJson(Map<String, dynamic> json) {
@@ -93,6 +189,9 @@ class AttendanceTodayModel {
       lastOutAt: json['last_out_at'] as String?,
       nextAction: json['next_action'] as String? ?? 'in',
       nextActionLabel: json['next_action_label'] as String? ?? 'Vào',
+      shift: json['shift'] is Map<String, dynamic>
+          ? AttendanceShiftScheduleModel.fromJson(json['shift'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -103,6 +202,7 @@ class AttendanceTodayModel {
         'last_out_at': lastOutAt,
         'next_action': nextAction,
         'next_action_label': nextActionLabel,
+        if (shift != null) 'shift': shift!.toJson(),
       };
 
   AttendanceTodayEntity toEntity() => AttendanceTodayEntity(
@@ -112,6 +212,7 @@ class AttendanceTodayModel {
         lastOutAt: lastOutAt,
         nextAction: nextAction,
         nextActionLabel: nextActionLabel,
+        shift: shift?.toEntity(),
       );
 }
 

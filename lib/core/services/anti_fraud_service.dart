@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../rules/mobile_rules_service.dart';
 import '../utils/system_clock.dart';
-import '../widgets/anti_fraud_warning_dialog.dart';
 
 enum RiskSeverity { normal, warning, critical }
 
@@ -85,6 +84,9 @@ class AntiFraudService {
   static DateTime? _lastServerTimeUtc;
   static int? _lastServerTimeMonotonicMs;
   static bool _hasWarnedOnCurrentSession = false;
+
+  /// Trạng thái đã cảnh báo trong phiên làm việc
+  static bool get hasWarnedOnCurrentSession => _hasWarnedOnCurrentSession;
 
   /// Đặt lại trạng thái đã cảnh báo trong phiên làm việc
   static void resetSessionWarning() {
@@ -205,13 +207,12 @@ class AntiFraudService {
   // 3. KIỂM TRA VÀ CẢNH BÁO KHI NHÂN VIÊN VÀO APP
   // ===========================================================================
 
-  /// Kiểm tra và hiển thị cảnh báo ngay khi nhân viên vào ứng dụng (HomeScreen)
-  /// Tránh spam người dùng bằng cờ `_hasWarnedOnCurrentSession`
+  /// Kiểm tra tính toàn vẹn ngầm khi nhân viên vào ứng dụng (HomeScreen).
+  /// Không hiển thị bất kỳ cảnh báo nào cho người dùng biết.
   Future<ComplianceReport> checkAndWarnOnAppEntry(
     BuildContext context, {
     bool forceShow = false,
   }) async {
-    // Lấy toạ độ vị trí nhanh nếu có quyền
     Position? pos;
     try {
       final permission = await Geolocator.checkPermission();
@@ -221,109 +222,32 @@ class AntiFraudService {
       }
     } catch (_) {}
 
-    final report = await checkDeviceCompliance(position: pos);
-
-    // Nếu phát hiện gian lận/lệch giờ và chưa cảnh báo trong phiên này
-    if ((!report.isCompliant || forceShow) &&
-        (!_hasWarnedOnCurrentSession || forceShow) &&
-        context.mounted) {
-      _hasWarnedOnCurrentSession = true;
-      await AntiFraudWarningDialog.showAppEntryWarning(context, report: report);
-    }
-
-    return report;
+    return checkDeviceCompliance(position: pos);
   }
 
   // ===========================================================================
   // 4. KIỂM TRA TRƯỚC KHI GỬI CÁC REQUEST LIÊN QUAN VỊ TRÍ & THỜI GIAN
   // ===========================================================================
 
-  /// Kiểm tra tính hợp lệ trước khi gửi các request liên quan vị trí, time lên server:
+  /// Kiểm tra thông tin ngầm trước khi gửi các request liên quan vị trí, time lên server:
   /// - Chấm công (`POST /attendance/mobile/punch`)
   /// - Check-in viếng thăm (`POST /dms/visits`)
   /// - Check-out viếng thăm (`POST /dms/visits/{id}/checkout`)
   /// - Khai báo vị trí (`POST /dms/position-declarations`)
   ///
-  /// Trả về `FraudCheckResult`:
-  /// - `isAllowed`: true nếu được phép tiếp tục gửi lên hệ thống; false nếu bị chặn hoặc người dùng huỷ.
-  /// - `hasMockGps`: cờ báo toạ độ giả lập.
-  /// - `hasClockSkew`: cờ báo lệch giờ máy.
+  /// 🔴 Đã loại bỏ tất cả dialog cảnh báo/chặn người dùng.
+  /// Luôn cho phép tiếp tục (`isAllowed = true`), không cho người dùng biết.
   Future<FraudCheckResult> validateAction(
     BuildContext context, {
     Position? position,
     required AntiFraudActionType actionType,
     required String actionTitle,
   }) async {
-    final rules = _ref.read(mobileRulesProvider);
-
-    // 1. Xác định quy tắc chặn theo module
-    bool blockOnMock = false;
-    switch (actionType) {
-      case AntiFraudActionType.attendance:
-        blockOnMock = false; // §7 API-CHAM-CONG-MOBILE-2026-10-05.md: Chỉ gắn cờ, không chặn
-        break;
-      case AntiFraudActionType.visitCheckin:
-      case AntiFraudActionType.visitCheckout:
-        blockOnMock = rules.visit.blockOnMockLocation;
-        break;
-      case AntiFraudActionType.positionDeclaration:
-        blockOnMock = rules.position.blockOnMockLocation;
-        break;
-      case AntiFraudActionType.offlineSync:
-        blockOnMock = rules.visit.blockOnMockLocation || rules.position.blockOnMockLocation;
-        break;
-    }
-
     final hasMock = position != null && position.isMocked;
     final skewMinutes = getEstimatedClockSkewMinutes();
-    final toleranceMinutes = rules.clock.skewToleranceMinutes;
+    final toleranceMinutes = _ref.read(mobileRulesProvider).clock.skewToleranceMinutes;
     final hasSkew = skewMinutes.abs() > toleranceMinutes;
 
-    // A. TRƯỜNG HỢP BỊ CHẶN CỨNG DO MOCK GPS VÀ LUẬT BLOCK BẬT
-    if (hasMock && blockOnMock) {
-      if (context.mounted) {
-        await AntiFraudWarningDialog.showActionBlocked(
-          context,
-          actionTitle: actionTitle,
-          reason: 'Hệ thống phát hiện thiết bị đang sử dụng phần mềm giả lập vị trí (Fake GPS / Mock Location). '
-              'Theo quy định vận hành của công ty, thao tác $actionTitle bị TỪ CHỐI.',
-          resolution: 'Vui lòng tắt phần mềm giả lập toạ độ hoặc tắt tùy chọn Mock Location trong Cài đặt nhà phát triển trên máy.',
-        );
-      }
-      return FraudCheckResult(
-        isAllowed: false,
-        hasMockGps: true,
-        hasClockSkew: hasSkew,
-        clockSkewMinutes: skewMinutes,
-        errorMessage: 'Bị từ chối do bật Mock Location',
-      );
-    }
-
-    // B. TRƯỜNG HỢP CÓ RỦI RO (MOCK GPS NHƯNG KHÔNG CHẶN CỨNG HOẶC LỆCH GIỜ)
-    if (hasMock || hasSkew) {
-      if (context.mounted) {
-        final shouldProceed = await AntiFraudWarningDialog.showActionWarning(
-          context,
-          actionTitle: actionTitle,
-          hasMockGps: hasMock,
-          hasClockSkew: hasSkew,
-          skewMinutes: skewMinutes,
-          toleranceMinutes: toleranceMinutes,
-        );
-
-        if (!shouldProceed) {
-          return FraudCheckResult(
-            isAllowed: false,
-            hasMockGps: hasMock,
-            hasClockSkew: hasSkew,
-            clockSkewMinutes: skewMinutes,
-            warningMessage: 'Người dùng đã huỷ thao tác sau khi nhận cảnh báo rủi ro.',
-          );
-        }
-      }
-    }
-
-    // C. HỢP LỆ HOẶC ĐÃ XÁC NHẬN CHẤP NHẬN GẮN CỜ GỬI LÊN HỆ THỐNG
     return FraudCheckResult(
       isAllowed: true,
       hasMockGps: hasMock,

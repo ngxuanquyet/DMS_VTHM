@@ -52,11 +52,13 @@ class TravelViewModel extends StateNotifier<TravelState> {
         forceRefresh: refresh,
       );
 
+      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         days: result,
       );
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         errorMessage: e.toString().replaceFirst('Exception: ', ''),
@@ -80,11 +82,13 @@ class TravelViewModel extends StateNotifier<TravelState> {
         forceRefresh: refresh,
       );
 
+      if (!mounted) return;
       state = state.copyWith(
         isLoadingLegs: false,
         currentDayLegs: legs,
       );
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(
         isLoadingLegs: false,
         errorMessage: e.toString().replaceFirst('Exception: ', ''),

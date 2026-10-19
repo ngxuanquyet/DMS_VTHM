@@ -73,7 +73,20 @@ class FormsRepositoryImpl implements FormsRepository {
     MarketFormSubmissionModel submission, {
     bool isOffline = false,
   }) async {
-    if (isOffline) {
+    // Kiểm tra xem trong answers có ảnh nào chưa có token (đang lưu tạm localPath) không
+    bool hasPendingLocalPhotos = false;
+    submission.answers.forEach((k, v) {
+      if (v is List) {
+        for (final item in v) {
+          final str = item.toString();
+          if (str.contains('/') || str.contains(r'\') || str.length != 32) {
+            hasPendingLocalPhotos = true;
+          }
+        }
+      }
+    });
+
+    if (isOffline || hasPendingLocalPhotos) {
       return _saveToSyncQueue(submission);
     }
 
@@ -153,7 +166,7 @@ class FormsRepositoryImpl implements FormsRepository {
 
     return const MarketFormSubmitResult(
       success: true,
-      message: 'Đã lưu phiếu trên máy. Dữ liệu sẽ tự động gửi khi có mạng trở lại.',
+      message: 'Đã lưu phiếu! Dữ liệu và ảnh đang được tải lên chạy nền.',
     );
   }
 }

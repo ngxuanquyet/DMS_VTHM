@@ -11,6 +11,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../domain/entities/attendance_entity.dart';
@@ -52,6 +53,8 @@ class _AttendancePhotoCaptureDialogState
 
   bool _isUploadingFront = false;
   bool _isUploadingBack = false;
+  bool _isProcessingFront = false;
+  bool _isProcessingBack = false;
   bool _isSubmitting = false;
   double _submitProgress = 0.0;
   String _submitStatus = '';
@@ -107,6 +110,12 @@ class _AttendancePhotoCaptureDialogState
       );
 
       if (xFile == null) return;
+
+      setState(() {
+        if (photoType == 'front') _isProcessingFront = true;
+        if (photoType == 'back') _isProcessingBack = true;
+      });
+
       final rawFile = File(xFile.path);
 
       // Đóng dấu Watermark thông tin chấm công (thời gian, toạ độ GPS, tên nhân sự, địa điểm)
@@ -132,8 +141,10 @@ class _AttendancePhotoCaptureDialogState
         setState(() {
           if (photoType == 'front') {
             _localFrontFile = file;
+            _isProcessingFront = false;
           } else if (photoType == 'back') {
             _localBackFile = file;
+            _isProcessingBack = false;
           }
         });
         return;
@@ -142,9 +153,11 @@ class _AttendancePhotoCaptureDialogState
       // Luồng bổ sung ảnh cho lượt chấm đã có trên server
       setState(() {
         if (photoType == 'front') {
+          _isProcessingFront = false;
           _isUploadingFront = true;
           _localFrontFile = file;
         } else if (photoType == 'back') {
+          _isProcessingBack = false;
           _isUploadingBack = true;
           _localBackFile = file;
         }
@@ -206,11 +219,9 @@ class _AttendancePhotoCaptureDialogState
           await Future.delayed(const Duration(milliseconds: 600));
           if (mounted) {
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Đã hoàn tất chụp ảnh bổ sung!'),
-                backgroundColor: AppColors.primary,
-              ),
+            AppSnackBar.showSuccess(
+              context,
+              'Đã hoàn tất chụp ảnh bổ sung! Ảnh đang được tải lên nền.',
             );
           }
         }
@@ -218,20 +229,20 @@ class _AttendancePhotoCaptureDialogState
     } catch (e) {
       if (mounted) {
         setState(() {
+          _isProcessingFront = false;
+          _isProcessingBack = false;
           _isUploadingFront = false;
           _isUploadingBack = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi chụp ảnh: ${e.toString().replaceAll("AppException: ", "")}'),
-            backgroundColor: AppColors.error,
-          ),
+        AppSnackBar.showError(
+          context,
+          e,
         );
       }
     }
   }
 
-  /// Gửi lượt chấm công thật kèm ảnh đã chụp
+  /// Gửi lượt chấm công thật kèm ảnh
   Future<void> _handleConfirmNewPunch() async {
     final photoConfig = ref.read(attendanceViewModelProvider).config?.photo;
     final minPhotos = photoConfig?.minPhotos ?? 2;
@@ -239,21 +250,17 @@ class _AttendancePhotoCaptureDialogState
 
     if (requireBoth) {
       if (_localFrontFile == null || _localBackFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Vui lòng chụp đủ cả 2 ảnh: camera trước và camera sau!'),
-            backgroundColor: AppColors.error,
-          ),
+        AppSnackBar.showError(
+          context,
+          'Vui lòng chụp đủ cả 2 ảnh: camera trước và camera sau!',
         );
         return;
       }
     } else {
       if (capturedCount < minPhotos) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Vui lòng chụp ít nhất $minPhotos ảnh trước khi gửi chấm công!'),
-            backgroundColor: AppColors.error,
-          ),
+        AppSnackBar.showError(
+          context,
+          'Vui lòng chụp ít nhất $minPhotos ảnh trước khi gửi chấm công!',
         );
         return;
       }
@@ -272,7 +279,7 @@ class _AttendancePhotoCaptureDialogState
 
     setState(() {
       _isSubmitting = true;
-      _submitProgress = 0.15;
+      _submitProgress = 0.20;
       _submitStatus = 'Đang gửi lượt chấm công...';
     });
 
@@ -297,14 +304,12 @@ class _AttendancePhotoCaptureDialogState
           _submitProgress = 1.0;
           _submitStatus = 'Đã chấm công thành công!';
         });
-        await Future.delayed(const Duration(milliseconds: 350));
+        await Future.delayed(const Duration(milliseconds: 250));
         if (mounted) {
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đã chấm công thành công!'),
-              backgroundColor: AppColors.primary,
-            ),
+          AppSnackBar.showSuccess(
+            context,
+            'Đã chấm công thành công! Ảnh đang được tải lên nền.',
           );
         }
       } else {
@@ -429,43 +434,61 @@ class _AttendancePhotoCaptureDialogState
               const SizedBox(height: 20),
 
               // 2 Nút chụp ảnh: Camera trước + Camera sau (§2)
-              Row(
-                children: [
-                  // Nút 1: Camera trước (Ảnh chân dung)
-                  Expanded(
-                    child: _buildPhotoSlot(
-                      title: 'Camera trước',
-                      subtitle: 'Ảnh chân dung',
-                      isFront: true,
-                      isUploaded: hasFrontPhoto,
-                      isLoading: _isUploadingFront,
-                      localFile: _localFrontFile,
-                      serverPhoto: punch?.frontPhoto,
-                      onTap: () => _capturePhoto(
-                        photoType: 'front',
-                        preferredCamera: CameraDevice.front,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+              Builder(
+                builder: (context) {
+                  final bool isFrontLoading = _isUploadingFront ||
+                      _isProcessingFront ||
+                      (_isSubmitting &&
+                          _localFrontFile != null &&
+                          (_localBackFile == null ? _submitProgress < 0.95 : _submitProgress < 0.60));
 
-                  // Nút 2: Camera sau (Ảnh khung cảnh)
-                  Expanded(
-                    child: _buildPhotoSlot(
-                      title: 'Camera sau',
-                      subtitle: 'Ảnh khung cảnh',
-                      isFront: false,
-                      isUploaded: hasBackPhoto,
-                      isLoading: _isUploadingBack,
-                      localFile: _localBackFile,
-                      serverPhoto: punch?.backPhoto,
-                      onTap: () => _capturePhoto(
-                        photoType: 'back',
-                        preferredCamera: CameraDevice.rear,
+                  final bool isBackLoading = _isUploadingBack ||
+                      _isProcessingBack ||
+                      (_isSubmitting &&
+                          _localBackFile != null &&
+                          (_localFrontFile == null
+                              ? _submitProgress < 0.95
+                              : (_submitProgress >= 0.40 && _submitProgress < 0.95)));
+
+                  return Row(
+                    children: [
+                      // Nút 1: Camera trước (Ảnh chân dung)
+                      Expanded(
+                        child: _buildPhotoSlot(
+                          title: 'Camera trước',
+                          subtitle: 'Ảnh chân dung',
+                          isFront: true,
+                          isUploaded: hasFrontPhoto && !isFrontLoading,
+                          isLoading: isFrontLoading,
+                          localFile: _localFrontFile,
+                          serverPhoto: punch?.frontPhoto,
+                          onTap: () => _capturePhoto(
+                            photoType: 'front',
+                            preferredCamera: CameraDevice.front,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
+                      const SizedBox(width: 12),
+
+                      // Nút 2: Camera sau (Ảnh khung cảnh)
+                      Expanded(
+                        child: _buildPhotoSlot(
+                          title: 'Camera sau',
+                          subtitle: 'Ảnh khung cảnh',
+                          isFront: false,
+                          isUploaded: hasBackPhoto && !isBackLoading,
+                          isLoading: isBackLoading,
+                          localFile: _localBackFile,
+                          serverPhoto: punch?.backPhoto,
+                          onTap: () => _capturePhoto(
+                            photoType: 'back',
+                            preferredCamera: CameraDevice.rear,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
               if (!isNewPunch && (_isUploadingFront || _isUploadingBack)) ...[
                 const SizedBox(height: 14),
@@ -491,128 +514,95 @@ class _AttendancePhotoCaptureDialogState
               // Actions
               if (isNewPunch) ...[
                 if (_isSubmitting) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E2420)
-                          : const Color(0xFFF0FDF4),
-                      borderRadius: AppRadius.roundedLg,
-                      border: Border.all(
-                        color: const Color(0xFF006E15).withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
                           children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006E15)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _submitStatus.isNotEmpty
-                                          ? _submitStatus
-                                          : 'Đang gửi lượt chấm công...',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? Colors.white
-                                            : const Color(0xFF166534),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006E15)),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              '${(_submitProgress * 100).toInt()}%',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF006E15),
+                            Expanded(
+                              child: Text(
+                                _submitStatus.isNotEmpty
+                                    ? _submitStatus
+                                    : 'Đang gửi lượt chấm công...',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : const Color(0xFF166534),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        // Thanh tiến trình loader
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: TweenAnimationBuilder<double>(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                            tween: Tween<double>(
-                              begin: 0.0,
-                              end: _submitProgress.clamp(0.05, 1.0),
-                            ),
-                            builder: (context, value, _) => LinearProgressIndicator(
-                              value: value,
-                              minHeight: 7,
-                              backgroundColor: isDark
-                                  ? Colors.white12
-                                  : const Color(0xFFDCFCE7),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xFF006E15),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Hệ thống đang xử lý và đồng bộ, vui lòng không tắt ứng dụng.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.white60 : const Color(0xFF4B5563),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
-                          ),
-                          child: const Text('Hủy bỏ'),
-                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: AppButton(
-                          text: 'Gửi chấm công',
-                          icon: Icons.send_rounded,
-                          height: 48,
-                          onPressed: _handleConfirmNewPunch,
+                      const SizedBox(width: 8),
+                      Text(
+                        '${(_submitProgress * 100).toInt()}%',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF006E15),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _submitProgress.clamp(0.05, 1.0),
+                      minHeight: 5,
+                      backgroundColor: isDark ? Colors.white12 : const Color(0xFFDCFCE7),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF006E15)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                 ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                        ),
+                        child: const Text('Hủy bỏ'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: AppButton(
+                        text: _isSubmitting ? 'Đang gửi chấm công...' : 'Gửi chấm công',
+                        icon: _isSubmitting ? null : Icons.send_rounded,
+                        isLoading: _isSubmitting,
+                        height: 48,
+                        onPressed: _isSubmitting ? null : _handleConfirmNewPunch,
+                      ),
+                    ),
+                  ],
+                ),
               ] else ...[
-                if (isSatisfied)
+                if (_isUploadingFront || _isUploadingBack)
+                  AppButton(
+                    text: 'Đang tải ảnh lên...',
+                    isLoading: true,
+                    height: 48,
+                    onPressed: null,
+                  )
+                else if (isSatisfied)
                   AppButton(
                     text: 'Hoàn tất',
                     icon: Icons.check_rounded,
@@ -707,10 +697,28 @@ class _AttendancePhotoCaptureDialogState
                     if (isLoading)
                       Container(
                         color: Colors.black45,
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.8,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                isNewPunch ? 'Đang tải...' : 'Đang gửi...',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -744,9 +752,9 @@ class _AttendancePhotoCaptureDialogState
               ).copyWith(fontWeight: FontWeight.w600),
             ),
             Text(
-              isUploaded ? 'Chạm để chụp lại' : subtitle,
+              isLoading ? 'Đang tải ảnh...' : (isUploaded ? 'Chạm để chụp lại' : subtitle),
               style: AppTypography.bodySmall(
-                color: isUploaded
+                color: isUploaded && !isLoading
                     ? AppColors.primary
                     : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
               ).copyWith(fontSize: 10),

@@ -106,6 +106,34 @@ class AttendanceApiService {
     return [];
   }
 
+  /// Lấy lịch ca làm việc nhiều ngày (§8.2 API-NHAC-CA-MOBILE-2026-10-17.md)
+  /// GET /attendance/mobile/shifts?from={from}&days={days}
+  Future<List<AttendanceShiftScheduleModel>> getMobileShifts({
+    String? from,
+    int days = 7,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'days': days.clamp(1, 31),
+    };
+    if (from != null && from.trim().isNotEmpty) {
+      queryParams['from'] = from.trim();
+    }
+
+    final response = await _apiClient.get(
+      '/attendance/mobile/shifts',
+      queryParameters: queryParams,
+    );
+
+    if (response is Map<String, dynamic> && response['data'] is List) {
+      final list = response['data'] as List<dynamic>;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((item) => AttendanceShiftScheduleModel.fromJson(item))
+          .toList();
+    }
+    return [];
+  }
+
   /// Phương thức cũ hỗ trợ tương thích ngược (không gọi mạng vì backend dùng spec /attendance/mobile/*)
   Future<AttendanceDetailModel> getAttendanceDetail() async {
     return AttendanceDetailModel(

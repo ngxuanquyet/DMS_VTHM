@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_dynamic_column.dart';
@@ -1064,6 +1065,29 @@ void main() {
       // Active visit stale 888 đã được dọn dẹp hoàn toàn
       expect(vm.state.activeVisit, isNull);
       expect(visitRepo.activeVisit, isNull);
+    });
+
+    test('VisitEntity parses visit_result_label and visit_result_color correctly (§2 Spec 18/10/2026)', () {
+      final json = {
+        'id': 43928,
+        'visit_date': '2026-09-16',
+        'customer_id': 8737,
+        'customer_name': 'Nhà thuốc Hoa Mai',
+        'visit_result': 'visited',
+        'visit_result_label': 'Điểm bán mở cửa',
+        'visit_result_color': 'success',
+      };
+
+      final visit = VisitEntity.fromJson(json);
+      expect(visit.visitResult, 'visited');
+      expect(visit.visitResultLabel, 'Điểm bán mở cửa');
+      expect(visit.visitResultColor, 'success');
+      expect(visit.resultBootstrapColor, const Color(0xFF16A34A));
+
+      // Test copyWith
+      final updated = visit.copyWith(visitResultColor: 'danger', visitResultLabel: 'Cửa hàng đóng cửa');
+      expect(updated.visitResultLabel, 'Cửa hàng đóng cửa');
+      expect(updated.resultBootstrapColor, const Color(0xFFDC2626));
     });
   });
 }

@@ -217,5 +217,77 @@ void main() {
       expect(submittedAnswers!['dms_ly_do_vt'], 'A');
       expect(submittedAnswers.containsKey('dms_so_ke'), isFalse); // Không gửi ô ẩn!
     });
+
+    testWidgets('Displays field descriptions / chú giải for form fields and headings', (tester) async {
+      final blocksWithDesc = [
+        const MarketFormBlockEntity(
+          ref: 'hd_1',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          resolved: MarketFormResolvedEntity(
+            code: 'hd_1',
+            label: 'Tiêu đề khảo sát',
+            inputType: 'heading',
+            description: 'Chú giải phần tiêu đề khảo sát',
+          ),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'txt_1',
+          type: 'field',
+          required: true,
+          colSpan: 12,
+          resolved: MarketFormResolvedEntity(
+            code: 'txt_1',
+            label: 'Tên cửa hàng thực tế',
+            inputType: 'text',
+            description: 'Nhập đúng biển hiệu bên ngoài điểm bán',
+          ),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'num_1',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          resolved: MarketFormResolvedEntity(
+            code: 'num_1',
+            label: 'Số mét mặt tiền',
+            inputType: 'number',
+            description: 'Ước lượng chiều dài mặt tiền cửa hàng (mét)',
+          ),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'bool_1',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          resolved: MarketFormResolvedEntity(
+            code: 'bool_1',
+            label: 'Có tủ mát không',
+            inputType: 'boolean',
+            description: 'Bật nếu điểm bán có trang bị tủ làm mát sản phẩm',
+          ),
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(
+                blocks: blocksWithDesc,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify all descriptions are found
+      expect(find.text('Chú giải phần tiêu đề khảo sát'), findsOneWidget);
+      expect(find.text('Nhập đúng biển hiệu bên ngoài điểm bán'), findsOneWidget);
+      expect(find.text('Ước lượng chiều dài mặt tiền cửa hàng (mét)'), findsOneWidget);
+      expect(find.text('Bật nếu điểm bán có trang bị tủ làm mát sản phẩm'), findsOneWidget);
+    });
   });
 }
+

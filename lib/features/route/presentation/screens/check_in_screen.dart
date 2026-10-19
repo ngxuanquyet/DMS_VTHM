@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/network/connectivity_provider.dart';
@@ -325,6 +327,23 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   void _showCheckinErrorDialog(String errorMessage) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    String displayMessage = errorMessage;
+    String? code;
+    final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+    final match = codeRegex.firstMatch(displayMessage);
+    if (match != null) {
+      code = match.group(1)?.trim();
+      displayMessage = displayMessage.replaceAll(codeRegex, '').trim();
+    } else {
+      final legacyRegExp = RegExp(r'\(code:\s*(\d+),\s*error_code:\s*([^)]+)\)');
+      final legacyMatch = legacyRegExp.firstMatch(displayMessage);
+      if (legacyMatch != null) {
+        code = '${legacyMatch.group(2)?.trim()} (${legacyMatch.group(1)})';
+        displayMessage = displayMessage.replaceAll(legacyRegExp, '').trim();
+      }
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -357,7 +376,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                errorMessage,
+                displayMessage,
                 style: const TextStyle(
                   color: AppColors.error,
                   fontWeight: FontWeight.w600,
@@ -366,6 +385,59 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 ),
               ),
             ),
+            if (code != null && code.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkSurfaceContainer
+                      : AppColors.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.tag_rounded, size: 16, color: AppColors.error),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'Mã lỗi: $code',
+                        style: TextStyle(
+                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'monospace',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: code!));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Đã sao chép mã lỗi vào bộ nhớ tạm.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(2.0),
+                        child: Icon(Icons.copy_rounded, size: 15, color: AppColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Hệ thống không cho phép mở lượt viếng thăm này theo quy định hiện tại.',
@@ -516,13 +588,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         );
         _safePop();
       } else if (errorMsg != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, errorMsg);
       }
     }
   }
@@ -760,28 +826,11 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           return;
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline_rounded, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text(message)),
-              ],
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, message);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi chụp ảnh: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     }
   }
@@ -1056,13 +1105,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ),
         );
       } else if (message != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, message);
       }
     }
   }
@@ -1193,6 +1236,18 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   void _showBlockersDialog(List<String> blockers) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final parsedBlockers = blockers.map((b) {
+      String text = b;
+      String? code;
+      final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+      final match = codeRegex.firstMatch(b);
+      if (match != null) {
+        code = match.group(1)?.trim();
+        text = b.replaceAll(codeRegex, '').trim();
+      }
+      return (text, code);
+    }).toList();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1232,25 +1287,73 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: blockers
+                children: parsedBlockers
                     .map(
-                      (b) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2.0),
-                        child: Row(
+                      (item) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('• ', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-                            Expanded(
-                              child: Text(
-                                b,
-                                style: const TextStyle(
-                                  color: AppColors.error,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  height: 1.3,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('• ', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+                                Expanded(
+                                  child: Text(
+                                    item.$1,
+                                    style: const TextStyle(
+                                      color: AppColors.error,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (item.$2 != null && item.$2!.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(left: 12, top: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Mã lỗi: ${item.$2}',
+                                        style: const TextStyle(
+                                          color: AppColors.error,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(4),
+                                      onTap: () {
+                                        Clipboard.setData(ClipboardData(text: item.$2!));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Đã sao chép mã lỗi vào bộ nhớ tạm.'),
+                                            duration: Duration(seconds: 2),
+                                          ),
+                                        );
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(2.0),
+                                        child: Icon(Icons.copy_rounded, size: 14, color: AppColors.primary),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),

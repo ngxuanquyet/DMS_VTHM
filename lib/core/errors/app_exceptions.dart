@@ -6,10 +6,34 @@ class AppException implements Exception {
 
   const AppException(this.message, [this.statusCode, this.code, this.errorId]);
 
+  /// Chuỗi mã lỗi định danh chuẩn hóa để hiển thị trên UI, gửi cho quản trị viên tra cứu
+  String? get displayErrorCode {
+    if (errorId != null && errorId!.trim().isNotEmpty) {
+      if (code != null && code!.trim().isNotEmpty && !errorId!.contains(code!)) {
+        return '$errorId ($code)';
+      }
+      return errorId;
+    }
+    if (code != null && code!.trim().isNotEmpty) {
+      if (statusCode != null && statusCode! > 0) {
+        return '$code ($statusCode)';
+      }
+      return code;
+    }
+    if (statusCode != null && statusCode! > 0) {
+      return 'HTTP-$statusCode';
+    }
+    return null;
+  }
+
   /// Chuỗi thông báo thân thiện kèm mã lỗi định danh để hiển thị trên UI/SnackBar/Dialog
   String get userMessage {
     if (errorId != null && errorId!.isNotEmpty) {
       return '$message\n(Mã lỗi: $errorId)';
+    }
+    final errCode = displayErrorCode;
+    if (errCode != null && errCode.isNotEmpty) {
+      return '$message\n(Mã lỗi: $errCode)';
     }
     return message;
   }
@@ -18,6 +42,10 @@ class AppException implements Exception {
   String toString() {
     if (errorId != null && errorId!.isNotEmpty) {
       return '$message (Mã lỗi: $errorId)';
+    }
+    final errCode = displayErrorCode;
+    if (errCode != null && errCode.isNotEmpty) {
+      return '$message (Mã lỗi: $errCode)';
     }
     return 'AppException: $message (code: $statusCode, error_code: $code)';
   }

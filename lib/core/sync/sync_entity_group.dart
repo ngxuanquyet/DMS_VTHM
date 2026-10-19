@@ -153,7 +153,7 @@ class SyncEntityGroupHelper {
         GroupedSyncItem(
           key: c.clientUuid,
           entityType: 'customer',
-          title: 'Khách hàng: $name',
+          title: 'Thêm khách hàng mới: $name',
           subtitle: sub.join(' • '),
           icon: Icons.person_add_alt_1_rounded,
           color: const Color(0xFF10B981),

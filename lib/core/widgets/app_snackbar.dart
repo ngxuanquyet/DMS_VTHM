@@ -7,33 +7,65 @@ import '../theme/app_colors.dart';
 class AppSnackBar {
   AppSnackBar._();
 
-  /// Hiển thị thông báo lỗi kèm Mã lỗi (nếu có) và nút sao chép
+  /// Hiển thị thông báo lỗi kèm Mã lỗi (nếu có) và nút sao chép để báo admin
   static void showError(
     BuildContext context,
     dynamic error, {
     String? errorId,
+    String? errorCode,
     Duration duration = const Duration(seconds: 4),
   }) {
     String message = 'Đã xảy ra lỗi. Vui lòng thử lại.';
     String? resolvedId = errorId;
+    String? resolvedCode = errorCode;
 
     if (error is AppException) {
       message = error.message;
       resolvedId ??= error.errorId;
+      resolvedCode ??= error.code;
+      if (resolvedId == null && resolvedCode == null) {
+        resolvedCode = error.displayErrorCode;
+      }
     } else if (error is Exception) {
       message = error.toString().replaceAll('Exception: ', '');
     } else if (error != null) {
       message = error.toString();
     }
 
-    // Nếu message có chứa dạng "(Mã lỗi: ERR-...)" thì tách ra
-    if (resolvedId == null || resolvedId.isEmpty) {
-      final regExp = RegExp(r'\(Mã lỗi:\s*(ERR-[A-Za-z0-9\-]+)\)');
-      final match = regExp.firstMatch(message);
-      if (match != null) {
-        resolvedId = match.group(1);
-        message = message.replaceAll(regExp, '').trim();
+    // Nếu message có chứa dạng "(Mã lỗi: ...)" thì tách ra
+    final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+    final match = codeRegex.firstMatch(message);
+    if (match != null) {
+      final extracted = match.group(1)?.trim();
+      if (extracted != null && extracted.isNotEmpty) {
+        if (resolvedId == null && resolvedCode == null) {
+          resolvedCode = extracted;
+        }
       }
+      message = message.replaceAll(codeRegex, '').trim();
+    }
+
+    // Tách code dạng (code: 422, error_code: VALIDATION_ERROR) nếu có
+    final legacyRegex = RegExp(r'\(code:\s*(\d+),\s*error_code:\s*([^)]+)\)');
+    final legacyMatch = legacyRegex.firstMatch(message);
+    if (legacyMatch != null) {
+      resolvedCode ??= legacyMatch.group(2)?.trim();
+      resolvedId ??= 'HTTP-${legacyMatch.group(1)}';
+      message = message.replaceAll(legacyRegex, '').trim();
+    }
+
+    // Chuẩn hóa mã lỗi hiển thị (displayCode)
+    String? displayCode;
+    if (resolvedId != null && resolvedId.isNotEmpty) {
+      if (resolvedCode != null &&
+          resolvedCode.isNotEmpty &&
+          !resolvedId.contains(resolvedCode)) {
+        displayCode = '$resolvedId ($resolvedCode)';
+      } else {
+        displayCode = resolvedId;
+      }
+    } else if (resolvedCode != null && resolvedCode.isNotEmpty) {
+      displayCode = resolvedCode;
     }
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -63,12 +95,12 @@ class AppSnackBar {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (resolvedId != null && resolvedId.isNotEmpty) ...[
+                  if (displayCode != null && displayCode.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
-                      'Mã lỗi: $resolvedId',
+                      'Mã lỗi: $displayCode',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: Colors.white.withValues(alpha: 0.95),
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         fontFamily: 'monospace',
@@ -78,11 +110,11 @@ class AppSnackBar {
                 ],
               ),
             ),
-            if (resolvedId != null && resolvedId.isNotEmpty) ...[
+            if (displayCode != null && displayCode.isNotEmpty) ...[
               const SizedBox(width: 6),
               TextButton(
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: resolvedId!));
+                  Clipboard.setData(ClipboardData(text: displayCode!));
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(

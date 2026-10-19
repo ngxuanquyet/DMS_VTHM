@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'visit_requirements_entity.dart';
 
@@ -19,6 +20,8 @@ class VisitEntity {
   final String? routeName;
   final bool isOnRoute;
   final String? visitResult; // 'visited' | 'closed'
+  final String? visitResultLabel; // Nhãn server phát: 'Điểm bán mở cửa', 'Điểm bán đóng cửa' (§2.1 SPEC-2026-10-18)
+  final String? visitResultColor; // Màu Bootstrap: 'success', 'warning', 'danger', 'info', etc. (§2.1 SPEC-2026-10-18)
   final String? closedNote;
   final int photoCount;
   final int formCount;
@@ -90,9 +93,32 @@ class VisitEntity {
     this.isCheckoutOtherDay = false,
     this.customerApprovalStatus = 'approved',
     this.customerApprovalNote,
+    this.visitResultLabel,
+    this.visitResultColor,
   });
 
   bool get isCustomerApproved => customerApprovalStatus == 'approved';
+
+  /// Ánh xạ màu Bootstrap từ server sang Color của Flutter (§2.1 & §2.3 SPEC-2026-10-18)
+  Color? get resultBootstrapColor {
+    switch (visitResultColor?.toLowerCase()) {
+      case 'success':
+        return const Color(0xFF16A34A);
+      case 'warning':
+        return const Color(0xFFD97706);
+      case 'danger':
+        return const Color(0xFFDC2626);
+      case 'info':
+        return const Color(0xFF0284C7);
+      case 'secondary':
+      case 'muted':
+        return const Color(0xFF6B7280);
+      case 'primary':
+        return const Color(0xFF006E15);
+      default:
+        return null;
+    }
+  }
 
   /// Chuỗi hiển thị km tuân thủ 3 trạng thái (§3 SPEC-2026-10-08):
   /// - null: "—" (chưa tính)
@@ -249,6 +275,8 @@ class VisitEntity {
       isCheckoutOtherDay: json['is_checkout_other_day'] == true,
       customerApprovalStatus: json['customer_approval_status']?.toString() ?? 'approved',
       customerApprovalNote: json['customer_approval_note']?.toString(),
+      visitResultLabel: json['visit_result_label']?.toString(),
+      visitResultColor: json['visit_result_color']?.toString(),
     );
   }
 
@@ -283,6 +311,8 @@ class VisitEntity {
         'is_checkout_other_day': isCheckoutOtherDay,
         'customer_approval_status': customerApprovalStatus,
         'customer_approval_note': customerApprovalNote,
+        'visit_result_label': visitResultLabel,
+        'visit_result_color': visitResultColor,
       };
 
   VisitEntity copyWith({
@@ -319,6 +349,8 @@ class VisitEntity {
     bool? isCheckoutOtherDay,
     String? customerApprovalStatus,
     String? customerApprovalNote,
+    String? visitResultLabel,
+    String? visitResultColor,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -354,6 +386,8 @@ class VisitEntity {
       isCheckoutOtherDay: isCheckoutOtherDay ?? this.isCheckoutOtherDay,
       customerApprovalStatus: customerApprovalStatus ?? this.customerApprovalStatus,
       customerApprovalNote: customerApprovalNote ?? this.customerApprovalNote,
+      visitResultLabel: visitResultLabel ?? this.visitResultLabel,
+      visitResultColor: visitResultColor ?? this.visitResultColor,
     );
   }
 }

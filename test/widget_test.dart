@@ -235,7 +235,7 @@ void main() {
 
     await tester.pump();
     expect(find.text('Tuyến'), findsOneWidget);
-    expect(find.text('Tìm điểm bán, mã KH, SĐT trên tuyến...'), findsOneWidget);
+    expect(find.text('Tìm theo tên, mã, tuyến, địa chỉ, SĐT...'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
   });
 

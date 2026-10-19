@@ -340,7 +340,8 @@ class ApiClient {
     if (error.response != null) {
       final statusCode = error.response?.statusCode;
       final data = error.response?.data;
-      final errCode = data is Map ? data['code']?.toString() : null;
+      final rawCode = data is Map ? data['code']?.toString() : null;
+      final errCode = rawCode ?? _resolveDefaultCode(statusCode);
       String? message;
       if (data is Map &&
           data.containsKey('message') &&
@@ -390,6 +391,32 @@ class ApiClient {
       }
       return ServerException('Lỗi máy chủ ($statusCode)', statusCode, errCode, errorId);
     }
-    return ServerException(error.message ?? 'Đã xảy ra lỗi không xác định', null, null, errorId);
+    return ServerException(error.message ?? 'Đã xảy ra lỗi không xác định', null, 'CONNECTION_ERROR', errorId);
+  }
+
+  static String? _resolveDefaultCode(int? statusCode) {
+    if (statusCode == null) return null;
+    switch (statusCode) {
+      case 400:
+        return 'BAD_REQUEST';
+      case 401:
+        return 'UNAUTHORIZED';
+      case 403:
+        return 'FORBIDDEN';
+      case 404:
+        return 'NOT_FOUND';
+      case 422:
+        return 'VALIDATION_ERROR';
+      case 500:
+        return 'SERVER_ERROR';
+      case 502:
+        return 'BAD_GATEWAY';
+      case 503:
+        return 'SERVICE_UNAVAILABLE';
+      case 504:
+        return 'GATEWAY_TIMEOUT';
+      default:
+        return 'HTTP_$statusCode';
+    }
   }
 }

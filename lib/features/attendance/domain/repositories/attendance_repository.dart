@@ -25,8 +25,22 @@ abstract class AttendanceRepository {
     String? parentUuid,
   });
 
+  /// Đưa ảnh chấm công vào hàng đợi để tải ngầm chạy nền (§4)
+  Future<AttendancePunchPhotoEntity> enqueuePunchPhoto({
+    required int punchId,
+    required File file,
+    required String photoType,
+    DateTime? takenAt,
+    double? lat,
+    double? lng,
+    String? parentUuid,
+  });
+
   /// Lấy lịch sử chấm công của chính mình (§5)
   Future<List<AttendancePunchEntity>> getHistory({int days = 7});
+
+  /// Lấy lịch ca làm việc nhiều ngày (§8.2 API-NHAC-CA-MOBILE-2026-10-17.md)
+  Future<List<AttendanceShiftScheduleEntity>> getMobileShifts({String? from, int days = 7});
 
   /// Hỗ trợ tương thích ngược
   Future<AttendanceDetailEntity> getAttendanceDetail();

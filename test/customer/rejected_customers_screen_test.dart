@@ -147,7 +147,7 @@ void main() {
 
       // Kiểm tra khối lượt viếng thăm đi kèm ở ngay bên dưới (không tách màn)
       expect(find.textContaining('LƯỢT VIẾNG THĂM ĐI KÈM (1)'), findsOneWidget);
-      expect(find.text('Chưa tính KPI'), findsOneWidget);
+      expect(find.text('Chưa tính KPI'), findsNothing);
       expect(find.text('4 ảnh'), findsOneWidget);
       expect(find.text('2 biểu mẫu'), findsOneWidget);
       expect(find.text('30 phút'), findsOneWidget);

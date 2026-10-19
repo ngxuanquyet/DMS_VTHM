@@ -6,8 +6,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/services/app_notification_service.dart';
+import '../../../../core/sync/sync_service.dart';
 import '../../data/repositories/attendance_repository_impl.dart';
 import '../../domain/entities/attendance_entity.dart';
+import '../../domain/repositories/attendance_repository.dart';
 import '../../domain/usecases/attendance_usecases.dart';
 import '../states/attendance_state.dart';
 
@@ -35,6 +38,10 @@ final toggleAttendanceUseCaseProvider = Provider<ToggleAttendanceUseCase>((ref) 
   return ToggleAttendanceUseCase(ref.read(attendanceRepositoryProvider));
 });
 
+final getMobileShiftsUseCaseProvider = Provider<GetMobileShiftsUseCase>((ref) {
+  return GetMobileShiftsUseCase(ref.read(attendanceRepositoryProvider));
+});
+
 final attendanceViewModelProvider =
     StateNotifierProvider.autoDispose<AttendanceViewModel, AttendanceState>((ref) {
   return AttendanceViewModel(
@@ -44,6 +51,10 @@ final attendanceViewModelProvider =
     getHistoryUseCase: ref.read(getAttendanceHistoryUseCaseProvider),
     getAttendanceDetailUseCase: ref.read(getAttendanceDetailUseCaseProvider),
     toggleAttendanceUseCase: ref.read(toggleAttendanceUseCaseProvider),
+    getMobileShiftsUseCase: ref.read(getMobileShiftsUseCaseProvider),
+    notificationService: ref.read(appNotificationServiceProvider),
+    attendanceRepository: ref.read(attendanceRepositoryProvider),
+    syncService: ref.read(syncServiceProvider),
   );
 });
 
@@ -54,6 +65,10 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final GetAttendanceHistoryUseCase getHistoryUseCase;
   final GetAttendanceDetailUseCase getAttendanceDetailUseCase;
   final ToggleAttendanceUseCase toggleAttendanceUseCase;
+  final GetMobileShiftsUseCase? getMobileShiftsUseCase;
+  final AppNotificationService? notificationService;
+  final AttendanceRepository? attendanceRepository;
+  final SyncService? syncService;
 
   Timer? _clockTimer;
 
@@ -64,6 +79,10 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     required this.getHistoryUseCase,
     required this.getAttendanceDetailUseCase,
     required this.toggleAttendanceUseCase,
+    this.getMobileShiftsUseCase,
+    this.notificationService,
+    this.attendanceRepository,
+    this.syncService,
   }) : super(const AttendanceState()) {
     _startClockTimer();
     loadInitialData();
@@ -129,6 +148,33 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
       final legacyDetail = await getAttendanceDetailUseCase();
 
+      // 4. Tải lịch ca làm việc (§8: GET /attendance/mobile/shifts?days=7)
+      List<AttendanceShiftScheduleEntity> shiftsList = [];
+      try {
+        if (getMobileShiftsUseCase != null) {
+          shiftsList = await getMobileShiftsUseCase!(days: 7);
+        }
+      } catch (shiftErr) {
+        debugPrint('[AttendanceViewModel] Không tải được lịch ca tuần: $shiftErr');
+      }
+
+      // 5. Lên lịch nhắc ca làm việc với Local Notifications (§8)
+      try {
+        if (shiftsList.isNotEmpty) {
+          await notificationService?.scheduleMultiDayShiftReminders(
+            shiftsList,
+            todayPunchCount: config.today?.punchCount ?? 0,
+          );
+        } else if (config.today?.shift != null) {
+          await notificationService?.scheduleShiftReminders(
+            config.today!.shift,
+            punchCount: config.today?.punchCount ?? 0,
+          );
+        }
+      } catch (notifErr) {
+        debugPrint('[AttendanceViewModel] Lỗi lên lịch nhắc ca: $notifErr');
+      }
+
       // Lựa chọn địa điểm chấm công: giữ lựa chọn cũ hoặc chọn địa điểm gần nhất
       AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
       if (activeLoc != null) {
@@ -146,6 +192,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         latestPunch: latest,
         liveWorkDurationSeconds: workDuration,
         detail: legacyDetail,
+        shifts: shiftsList,
         errorMessage: null,
       );
     } catch (e) {
@@ -227,6 +274,9 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
           ? 'Lượt chấm này đã có trên hệ thống trước đó.'
           : 'Đã ghi nhận chấm công lúc ${punchResult.timeFormatted}.';
 
+      // Hủy nhắc vào ca khi đã chấm công thành công (§8)
+      notificationService?.cancelShiftInReminder();
+
       if (addToHistory) {
         // Cập nhật danh sách lịch sử
         final updatedHistory = List<AttendancePunchEntity>.from(state.history);
@@ -262,7 +312,8 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   }
 
   /// Gửi lượt chấm công thật kèm ảnh (§3 & §4)
-  /// Chỉ lưu vào lịch sử khi gửi lượt chấm công thật thành công
+  /// Tối ưu UX: Ghi nhận lượt chấm nhanh, chuyển ảnh vào hàng đợi upload nền SyncService,
+  /// cập nhật giao diện lập tức (Optimistic UI) giúp người dùng không phải chờ đợi.
   Future<bool> submitPunchWithPhotos({
     required Position position,
     File? frontPhoto,
@@ -276,9 +327,9 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     );
 
     try {
-      onProgress?.call(0.15, 'Đang ghi nhận lượt chấm công...');
+      onProgress?.call(0.20, 'Đang ghi nhận lượt chấm công...');
 
-      // 1. Gửi lượt chấm công lên server (§3) - không lưu vào lịch sử trước
+      // 1. Gửi lượt chấm công lên server (§3) hoặc lưu offline nếu mất mạng
       final clickUuid = const Uuid().v4();
       final punchResult = await punchUseCase(
         lat: position.latitude,
@@ -288,52 +339,82 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         clientUuid: clickUuid,
       );
 
-      // 2. Tải lần lượt từng ảnh lên (§4.1)
-      if (frontPhoto != null) {
-        onProgress?.call(0.45, 'Đang tải lên ảnh chân dung...');
-        try {
-          await uploadPhotoUseCase(
-            punchId: punchResult.id,
-            file: frontPhoto,
-            photoType: 'front',
-            lat: position.latitude,
-            lng: position.longitude,
-            parentUuid: punchResult.clientUuid,
-          );
-        } catch (photoErr) {
-          debugPrint('[AttendanceViewModel] Lỗi tải ảnh trước: $photoErr');
-        }
-      }
+      final List<AttendancePunchPhotoEntity> attachedPhotos = [];
 
-      if (backPhoto != null) {
-        onProgress?.call(0.75, 'Đang tải lên ảnh khung cảnh...');
-        try {
-          await uploadPhotoUseCase(
-            punchId: punchResult.id,
-            file: backPhoto,
-            photoType: 'back',
-            lat: position.latitude,
-            lng: position.longitude,
-            parentUuid: punchResult.clientUuid,
-          );
-        } catch (photoErr) {
-          debugPrint('[AttendanceViewModel] Lỗi tải ảnh sau: $photoErr');
-        }
-      }
-
-      onProgress?.call(0.90, 'Đang cập nhật lịch sử chấm công...');
-
-      // 3. Làm mới lịch sử từ server (§5) và config để cập nhật today.next_action_label (§2)
-      final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
-      AttendanceConfigEntity? refreshedConfig;
-      try {
-        refreshedConfig = await getConfigUseCase(
+      // 2. Chuyển ảnh vào hàng đợi nền và gắn ngay vào bản ghi chấm công cục bộ
+      if (frontPhoto != null && attendanceRepository != null) {
+        onProgress?.call(0.50, 'Đang lưu ảnh chân dung...');
+        final frontEntity = await attendanceRepository!.enqueuePunchPhoto(
+          punchId: punchResult.id,
+          file: frontPhoto,
+          photoType: 'front',
           lat: position.latitude,
           lng: position.longitude,
+          parentUuid: punchResult.clientUuid,
         );
-      } catch (_) {}
+        attachedPhotos.add(frontEntity);
+      }
+
+      if (backPhoto != null && attendanceRepository != null) {
+        onProgress?.call(0.80, 'Đang lưu ảnh khung cảnh...');
+        final backEntity = await attendanceRepository!.enqueuePunchPhoto(
+          punchId: punchResult.id,
+          file: backPhoto,
+          photoType: 'back',
+          lat: position.latitude,
+          lng: position.longitude,
+          parentUuid: punchResult.clientUuid,
+        );
+        attachedPhotos.add(backEntity);
+      }
+
+      // Kích hoạt tiến trình đồng bộ ảnh chạy nền
+      syncService?.syncQueue();
 
       onProgress?.call(1.0, 'Đã chấm công thành công!');
+
+      // Hủy nhắc vào ca khi đã chấm công thành công (§8)
+      notificationService?.cancelShiftInReminder();
+
+      final updatedRequirements = AttendanceRequirementsEntity(
+        photoCount: attachedPhotos.length,
+        minPhotos: state.config?.photo.minPhotos ?? 2,
+        maxPhotos: state.config?.photo.maxPhotos ?? 10,
+        needFront: !attachedPhotos.any((p) => p.photoType == 'front'),
+        needBack: !attachedPhotos.any((p) => p.photoType == 'back'),
+        requireBoth: true,
+        satisfied: true,
+      );
+
+      final livePunchWithPhotos = AttendancePunchEntity(
+        id: punchResult.id,
+        punchAt: punchResult.punchAt,
+        clientUuid: punchResult.clientUuid,
+        lat: punchResult.lat,
+        lng: punchResult.lng,
+        accuracyM: punchResult.accuracyM,
+        geofenceId: punchResult.geofenceId,
+        geofenceName: punchResult.geofenceName,
+        isOutsideGeofence: punchResult.isOutsideGeofence,
+        isMockLocation: punchResult.isMockLocation,
+        isTimeTampered: punchResult.isTimeTampered,
+        duplicate: punchResult.duplicate,
+        photos: attachedPhotos,
+        requirements: updatedRequirements,
+      );
+
+      final updatedHistory = List<AttendancePunchEntity>.from(state.history);
+      updatedHistory.removeWhere((p) => p.clientUuid == punchResult.clientUuid);
+      updatedHistory.insert(0, livePunchWithPhotos);
+
+      // Làm mới lịch sử từ server nếu có
+      List<AttendancePunchEntity> finalHistory = updatedHistory;
+      try {
+        final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
+        if (refreshedHistory.isNotEmpty) {
+          finalHistory = refreshedHistory;
+        }
+      } catch (_) {}
 
       final msg = punchResult.duplicate
           ? 'Lượt chấm này đã có trên hệ thống trước đó.'
@@ -341,9 +422,8 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
       state = state.copyWith(
         isPunching: false,
-        config: refreshedConfig ?? state.config,
-        latestPunch: punchResult,
-        history: refreshedHistory,
+        latestPunch: livePunchWithPhotos,
+        history: finalHistory,
         successMessage: msg,
         errorMessage: null,
       );
@@ -360,7 +440,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     }
   }
 
-  /// Tải ảnh camera cho lượt chấm (§4)
+  /// Tải ảnh camera bổ sung cho lượt chấm (§4) - Chạy nền và cập nhật UI ngay lập tức
   Future<AttendancePunchPhotoEntity?> uploadPunchPhoto({
     required int punchId,
     required File file,
@@ -371,14 +451,28 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     state = state.copyWith(isUploadingPhoto: true, errorMessage: null);
 
     try {
-      final photo = await uploadPhotoUseCase(
-        punchId: punchId,
-        file: file,
-        photoType: photoType,
-        takenAt: DateTime.now(),
-        lat: lat,
-        lng: lng,
-      );
+      AttendancePunchPhotoEntity photo;
+      if (attendanceRepository != null) {
+        photo = await attendanceRepository!.enqueuePunchPhoto(
+          punchId: punchId,
+          file: file,
+          photoType: photoType,
+          takenAt: DateTime.now(),
+          lat: lat,
+          lng: lng,
+          parentUuid: state.latestPunch?.clientUuid,
+        );
+        syncService?.syncQueue();
+      } else {
+        photo = await uploadPhotoUseCase(
+          punchId: punchId,
+          file: file,
+          photoType: photoType,
+          takenAt: DateTime.now(),
+          lat: lat,
+          lng: lng,
+        );
+      }
 
       // Cập nhật lượt chấm hiện tại
       if (state.latestPunch != null && state.latestPunch!.id == punchId) {
@@ -389,7 +483,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         final hasFront = currentPhotos.any((p) => p.photoType == 'front');
         final hasBack = currentPhotos.any((p) => p.photoType == 'back');
 
-        final updatedRequirements = photo.requirements ?? AttendanceRequirementsEntity(
+        final updatedRequirements = AttendanceRequirementsEntity(
           photoCount: currentPhotos.length,
           minPhotos: state.config?.photo.minPhotos ?? 2,
           maxPhotos: state.config?.photo.maxPhotos ?? 10,
@@ -416,23 +510,27 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
           requirements: updatedRequirements,
         );
 
-        state = state.copyWith(latestPunch: updatedPunch);
-      }
+        final updatedHistory = List<AttendancePunchEntity>.from(state.history);
+        final idx = updatedHistory.indexWhere((p) => p.id == punchId);
+        if (idx >= 0) {
+          updatedHistory[idx] = updatedPunch;
+        }
 
-      // Làm mới lịch sử
-      final refreshedHistory = await getHistoryUseCase(days: state.selectedDays);
-      state = state.copyWith(
-        isUploadingPhoto: false,
-        history: refreshedHistory,
-      );
+        state = state.copyWith(
+          isUploadingPhoto: false,
+          latestPunch: updatedPunch,
+          history: updatedHistory,
+        );
+      } else {
+        state = state.copyWith(isUploadingPhoto: false);
+      }
 
       return photo;
     } catch (e) {
-      final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
-      debugPrint('[AttendanceViewModel] Lỗi tải ảnh: $msg');
+      debugPrint('[AttendanceViewModel] Lỗi upload ảnh chấm công: $e');
       state = state.copyWith(
         isUploadingPhoto: false,
-        errorMessage: msg,
+        errorMessage: e.toString().replaceAll('AppException: ', ''),
       );
       return null;
     }

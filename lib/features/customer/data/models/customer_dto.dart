@@ -423,7 +423,16 @@ class CustomerDto {
       updatedByName: updatedByName,
       createdAt: createdAt,
       updatedAt: updatedAt,
-      isToday: true,
+      isToday: CustomerEntity.isSameDayOfWeek(
+            CustomerEntity.extractDayOfWeekFromName(resolvedRoute),
+            DateTime.now().weekday,
+          ) ||
+          routes.any(
+            (r) => CustomerEntity.isSameDayOfWeek(
+              CustomerEntity.extractDayOfWeekFromName(r),
+              DateTime.now().weekday,
+            ),
+          ),
       visitStatus: CustomerVisitStatus.pending,
       accentColor: accentColor,
       dynamicFields: dynamicFields,

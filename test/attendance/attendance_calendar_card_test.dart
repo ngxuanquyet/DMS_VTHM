@@ -69,10 +69,10 @@ void main() {
     expect(find.text('T2'), findsOneWidget);
     expect(find.text('CN'), findsOneWidget);
 
-    // 3. Kiểm tra thanh chú thích
+    // 3. Kiểm tra thanh chú thích (đã loại bỏ 'Vi phạm')
     expect(find.text('Đủ công'), findsOneWidget);
     expect(find.text('Thiếu ảnh/ca'), findsOneWidget);
-    expect(find.text('Vi phạm'), findsOneWidget);
+    expect(find.text('Vi phạm'), findsNothing);
     expect(find.text('Không chấm'), findsOneWidget);
 
     // 4. Kiểm tra lượt chấm của ngày hôm nay được liệt kê

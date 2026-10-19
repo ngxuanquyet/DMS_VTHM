@@ -9,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:go_router/go_router.dart';
 import '../../features/notifications/domain/entities/notification_entity.dart';
 import '../../features/notifications/data/models/notification_model.dart';
+import '../../features/attendance/domain/entities/attendance_entity.dart';
 import '../router/app_router.dart';
 
 final appNotificationServiceProvider = Provider<AppNotificationService>((ref) {
@@ -30,6 +31,12 @@ class AppNotificationService {
   static const String _channelName = 'Thông báo DMS VTHM';
   static const String _channelDesc =
       'Kênh nhận thông báo chấm công, lộ trình, cảnh báo và đồng bộ ngoại tuyến';
+  static const String _alertChannelId = 'vthm_alerts';
+  static const String _alertChannelName = 'Thông báo VTHM';
+  static const String _alertChannelDesc =
+      'Kênh cảnh báo và nhắc chấm công vào ca, ra ca';
+  static const int shiftRemindInTodayId = 2001;
+  static const int shiftRemindOutTodayId = 2002;
   static const String _prefsKey = 'local_notifications_store_v1';
   static const String _readIdsKey = 'local_notifications_read_ids_v1';
   static const String _throttlePrefix = 'notify_throttle_';
@@ -74,6 +81,17 @@ class AppNotificationService {
             enableVibration: true,
           ),
         );
+        // Tạo notification channel vthm_alerts theo chuẩn Server §3.5
+        await androidPlatform.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _alertChannelId,
+            _alertChannelName,
+            description: _alertChannelDesc,
+            importance: Importance.max,
+            playSound: true,
+            enableVibration: true,
+          ),
+        );
         // Xin quyền thông báo trên Android 13+
         await androidPlatform.requestNotificationsPermission();
       }
@@ -103,26 +121,57 @@ class AppNotificationService {
     }
   }
 
-  /// Xử lý điều hướng khi người dùng chạm vào thông báo (hỗ trợ FCM link `/crm/customers?open=<id>`)
+  /// Xử lý điều hướng khi người dùng chạm vào thông báo (hỗ trợ FCM link `/crm/customers?open=<id>` hoặc `/crm/my-customers?open=<id>`)
   void _handleNotificationTapPayload(String? payload) {
     if (payload == null || payload.trim().isEmpty) return;
     try {
       String targetPath = payload.trim();
-      if (targetPath.startsWith('{') && targetPath.endsWith('}')) {
+      bool isRejectedCustomer = false;
+
+      if (targetPath == 'att.shift_remind_in' || targetPath == 'att.shift_remind_out') {
+        targetPath = '/attendance';
+      } else if (targetPath == 'crm.customer_rejected' || targetPath == '/customers/rejected') {
+        targetPath = '/customers/rejected';
+        isRejectedCustomer = true;
+      } else if (targetPath.startsWith('{') && targetPath.endsWith('}')) {
         try {
           final decoded = jsonDecode(targetPath) as Map<String, dynamic>;
-          final link = decoded['link'] ?? decoded['routePath'] ?? decoded['url'];
-          if (link != null) targetPath = link.toString().trim();
+          final type = decoded['type']?.toString();
+          if (type == 'att.shift_remind_in' || type == 'att.shift_remind_out') {
+            targetPath = '/attendance';
+          } else if (type == 'crm.customer_rejected') {
+            targetPath = '/customers/rejected';
+            isRejectedCustomer = true;
+          } else {
+            final rawData = decoded['data'] is Map<String, dynamic> ? decoded['data'] as Map<String, dynamic> : null;
+            final link = decoded['link'] ?? decoded['routePath'] ?? decoded['url'] ?? rawData?['link'];
+            if (link != null) targetPath = link.toString().trim();
+          }
         } catch (_) {}
       }
 
       final context = rootNavigatorKey.currentContext;
       if (context != null) {
+        if (isRejectedCustomer || targetPath == '/customers/rejected') {
+          context.push('/customers/rejected');
+          return;
+        }
+
+        // Cập nhật 19/10/2026: Ưu tiên đọc tham số open=<id> từ link bất kể vai trò/tiền tố đường dẫn
+        final uri = Uri.tryParse(targetPath);
+        final openParam = uri?.queryParameters['open'] ?? RegExp(r'[?&]open=(\d+)').firstMatch(targetPath)?.group(1);
+        if (openParam != null && int.tryParse(openParam) != null) {
+          context.push('/crm/customers?open=$openParam');
+          return;
+        }
+
         if (targetPath.startsWith('/')) {
           context.push(targetPath);
-        } else if (targetPath.contains('/crm/customers')) {
-          final idx = targetPath.indexOf('/crm/customers');
+        } else if (targetPath.contains('/crm/customers') || targetPath.contains('/crm/my-customers')) {
+          final idx = targetPath.indexOf('/crm/');
           context.push(targetPath.substring(idx));
+        } else if (targetPath.contains('/attendance')) {
+          context.push('/attendance');
         }
       }
     } catch (e) {
@@ -401,6 +450,47 @@ class AppNotificationService {
       } catch (e) {
         debugPrint('[NotificationService] Không thể hiển thị notification khay hệ thống: $e');
       }
+    }
+  }
+
+  /// Hiển thị thông báo trên kênh cao cấp vthm_alerts theo chuẩn Server (§4 API-THONG-BAO-DAY-MOBILE-2026-10-19)
+  Future<void> showFcmAlertNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+    String? tag,
+  }) async {
+    if (_localNotifications == null) return;
+    try {
+      final androidDetails = AndroidNotificationDetails(
+        _alertChannelId,
+        _alertChannelName,
+        channelDescription: _alertChannelDesc,
+        importance: Importance.max,
+        priority: Priority.max,
+        showWhen: true,
+        icon: '@mipmap/ic_launcher',
+        tag: tag,
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+      final details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+      await _localNotifications?.show(
+        id: id,
+        title: title,
+        body: body,
+        notificationDetails: details,
+        payload: payload,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi hiển thị FCM banner: $e');
     }
   }
 
@@ -814,8 +904,24 @@ class AppNotificationService {
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
+  void _ensureTimezone() {
+    try {
+      tz.local;
+    } catch (_) {
+      try {
+        tz.initializeTimeZones();
+        try {
+          tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
+        } catch (_) {
+          tz.setLocalLocation(tz.UTC);
+        }
+      } catch (_) {}
+    }
+  }
+
   /// Tính thời điểm hẹn giờ gần nhất cho một thứ cụ thể trong tuần (T2 - T7)
   tz.TZDateTime _nextInstanceOfDayAndTime(int weekday, int hour, int minute) {
+    _ensureTimezone();
     final now = tz.TZDateTime.now(tz.local);
     var scheduledDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
 
@@ -1051,6 +1157,195 @@ class AppNotificationService {
         }
         debugPrint('[NotificationService] Đã hủy toàn bộ lịch nhắc Vào ca T2-T7');
       }
+    } catch (_) {}
+  }
+
+  // ===========================================================================
+  // 6. LÊN LỊCH NHẮC THEO CA LÀM VIỆC (§8 API-NHAC-CA-MOBILE-2026-10-17)
+  // ===========================================================================
+
+  /// Lên lịch nhắc chấm công vào ca và ra ca theo ca làm việc hôm nay (§8)
+  /// Nhắc Vào ca: 15 phút trước giờ bắt đầu ca
+  /// Hủy nhắc Vào ca nếu đã có lượt chấm công (punchCount > 0)
+  /// Nhắc Ra ca: đúng giờ kết thúc ca (hỗ trợ ca qua đêm crossMidnight)
+  Future<void> scheduleShiftReminders(
+    AttendanceShiftScheduleEntity? schedule, {
+    int punchCount = 0,
+  }) async {
+    if (schedule == null || schedule.shift == null || !schedule.isShift) {
+      return;
+    }
+    await scheduleMultiDayShiftReminders([schedule], todayPunchCount: punchCount);
+  }
+
+  /// Lên lịch nhắc ca cho nhiều ngày (từ GET /attendance/mobile/shifts)
+  Future<void> scheduleMultiDayShiftReminders(
+    List<AttendanceShiftScheduleEntity> schedules, {
+    int todayPunchCount = 0,
+  }) async {
+    if (!_isInitialized || _localNotifications == null) {
+      await init();
+    }
+    if (_localNotifications == null) return;
+
+    try {
+      _ensureTimezone();
+      final now = tz.TZDateTime.now(tz.local);
+      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final scheduleMode = await _resolveAndroidScheduleMode();
+
+      const androidDetails = AndroidNotificationDetails(
+        _alertChannelId,
+        _alertChannelName,
+        channelDescription: _alertChannelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        icon: '@mipmap/ic_launcher',
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      for (final schedule in schedules) {
+        if (!schedule.isShift || schedule.shift == null) continue;
+        final shift = schedule.shift!;
+        final workDateParsed = DateTime.tryParse(schedule.workDate);
+        if (workDateParsed == null) continue;
+
+        final isToday = schedule.workDate == todayStr;
+
+        // Parse start_time (HH:mm or HH:mm:ss)
+        final startParts = shift.startTime.split(':');
+        if (startParts.length < 2) continue;
+        final startH = int.tryParse(startParts[0]) ?? 8;
+        final startM = int.tryParse(startParts[1]) ?? 0;
+
+        // Parse end_time (HH:mm or HH:mm:ss)
+        final endParts = shift.endTime.split(':');
+        if (endParts.length < 2) continue;
+        final endH = int.tryParse(endParts[0]) ?? 17;
+        final endM = int.tryParse(endParts[1]) ?? 30;
+
+        // 1. Nhắc vào ca: 15 phút trước giờ bắt đầu (§3.1)
+        final shiftStart = tz.TZDateTime(
+          tz.local,
+          workDateParsed.year,
+          workDateParsed.month,
+          workDateParsed.day,
+          startH,
+          startM,
+        );
+        final remindInTime = shiftStart.subtract(const Duration(minutes: 15));
+
+        // Generate distinct ID for this date
+        final dateKey = (workDateParsed.year % 100) * 500 + workDateParsed.month * 32 + workDateParsed.day;
+        final inId = 20000 + dateKey;
+        final outId = 30000 + dateKey;
+
+        // Nếu là hôm nay và đã có lượt chấm công (today.punch_count > 0) thì huỷ/không đặt nhắc vào ca
+        if (isToday && todayPunchCount > 0) {
+          await _localNotifications?.cancel(id: inId);
+          await _localNotifications?.cancel(id: shiftRemindInTodayId);
+        } else if (remindInTime.isAfter(now)) {
+          final payloadIn = jsonEncode({
+            'type': 'att.shift_remind_in',
+            'link': '/attendance',
+            'work_date': schedule.workDate,
+            'shift_name': shift.name,
+          });
+
+          await _localNotifications?.zonedSchedule(
+            id: isToday ? shiftRemindInTodayId : inId,
+            title: 'Sắp vào ca: ${shift.name} bắt đầu lúc ${shift.startTime}',
+            body: 'Ca ${shift.name} (${shift.startTime}–${shift.endTime}) của bạn sắp bắt đầu. Mở app để chấm công vào ca.',
+            scheduledDate: remindInTime,
+            notificationDetails: details,
+            androidScheduleMode: scheduleMode,
+            payload: payloadIn,
+          );
+          debugPrint('[NotificationService] Đã lên lịch nhắc vào ca lúc $remindInTime cho ngày ${schedule.workDate}');
+        }
+
+        // 2. Nhắc ra ca: đúng giờ kết thúc ca (hỗ trợ ca qua đêm crossMidnight §3.1 & §8)
+        var endDate = workDateParsed;
+        if (shift.crossMidnight) {
+          endDate = endDate.add(const Duration(days: 1));
+        }
+        final remindOutTime = tz.TZDateTime(
+          tz.local,
+          endDate.year,
+          endDate.month,
+          endDate.day,
+          endH,
+          endM,
+        );
+
+        if (remindOutTime.isAfter(now)) {
+          final payloadOut = jsonEncode({
+            'type': 'att.shift_remind_out',
+            'link': '/attendance',
+            'work_date': schedule.workDate,
+            'shift_name': shift.name,
+          });
+
+          await _localNotifications?.zonedSchedule(
+            id: isToday ? shiftRemindOutTodayId : outId,
+            title: 'Nhớ chấm công ra: ${shift.name} đã kết thúc lúc ${shift.endTime}',
+            body: 'Ca ${shift.name} (${shift.startTime}–${shift.endTime}) của bạn đã kết thúc. Mở app để chấm công ra ca.',
+            scheduledDate: remindOutTime,
+            notificationDetails: details,
+            androidScheduleMode: scheduleMode,
+            payload: payloadOut,
+          );
+          debugPrint('[NotificationService] Đã lên lịch nhắc ra ca lúc $remindOutTime cho ngày ${schedule.workDate}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi lên lịch nhắc ca làm việc: $e');
+    }
+  }
+
+  /// Hủy nhắc vào ca (gọi ngay sau khi chấm công thành công)
+  Future<void> cancelShiftInReminder() async {
+    try {
+      await _localNotifications?.cancel(id: shiftRemindInTodayId);
+      final now = DateTime.now();
+      final dateKey = (now.year % 100) * 500 + now.month * 32 + now.day;
+      await _localNotifications?.cancel(id: 20000 + dateKey);
+      await _localNotifications?.cancel(id: 101);
+      debugPrint('[NotificationService] Đã hủy thông báo nhắc vào ca hôm nay');
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi hủy nhắc vào ca: $e');
+    }
+  }
+
+  /// Hủy nhắc ra ca
+  Future<void> cancelShiftOutReminder() async {
+    try {
+      await _localNotifications?.cancel(id: shiftRemindOutTodayId);
+      final now = DateTime.now();
+      final dateKey = (now.year % 100) * 500 + now.month * 32 + now.day;
+      await _localNotifications?.cancel(id: 30000 + dateKey);
+      await _localNotifications?.cancel(id: 107);
+      debugPrint('[NotificationService] Đã hủy thông báo nhắc ra ca hôm nay');
+    } catch (e) {
+      debugPrint('[NotificationService] Lỗi hủy nhắc ra ca: $e');
+    }
+  }
+
+  /// Hủy toàn bộ nhắc ca
+  Future<void> cancelAllShiftReminders() async {
+    try {
+      await _localNotifications?.cancel(id: shiftRemindInTodayId);
+      await _localNotifications?.cancel(id: shiftRemindOutTodayId);
     } catch (_) {}
   }
 }

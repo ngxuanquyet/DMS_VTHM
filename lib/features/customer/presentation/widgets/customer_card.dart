@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -187,12 +188,30 @@ class CustomerCard extends StatelessWidget {
       key: key,
       code: dealer.code?.isNotEmpty == true ? dealer.code! : 'KH${dealer.order}',
       name: dealer.name,
-      address: dealer.address,
+      address: dealer.address.isNotEmpty
+          ? dealer.address
+          : (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).address
+              : (dealer.customer is Map<String, dynamic>
+                  ? (dealer.customer['address']?.toString() ?? '')
+                  : '')),
       phone: dealer.phone,
       contactPerson: dealer.contactPerson,
       type: resolvedType,
-      lat: dealer.lat,
-      lng: dealer.lng,
+      lat: (dealer.lat != null && dealer.lat != 0.0)
+          ? dealer.lat
+          : (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).lat
+              : (dealer.customer is Map<String, dynamic>
+                  ? (dealer.customer['lat'] as num?)?.toDouble()
+                  : null)),
+      lng: (dealer.lng != null && dealer.lng != 0.0)
+          ? dealer.lng
+          : (dealer.customer is CustomerEntity
+              ? (dealer.customer as CustomerEntity).lng
+              : (dealer.customer is Map<String, dynamic>
+                  ? (dealer.customer['lng'] as num?)?.toDouble()
+                  : null)),
       distance: distance,
       distanceText: distanceText,
       isCompleted: isCompleted,
@@ -510,6 +529,15 @@ class CustomerCard extends StatelessWidget {
     double? lng,
     Map<String, dynamic>? dynamicFields,
   }) {
+    bool isValid(double? a, double? b) {
+      if (a == null || b == null) return false;
+      if (a == 0.0 && b == 0.0) return false;
+      if (a.abs() < 0.000001 && b.abs() < 0.000001) return false;
+      // Toạ độ hợp lệ trên Trái Đất: Vĩ độ -90..90, Kinh độ -180..180
+      if (a.abs() > 90.0 || b.abs() > 180.0) return false;
+      return true;
+    }
+
     double? parseCoord(dynamic value) {
       if (value == null) return null;
       if (value is num) return value.toDouble();
@@ -519,29 +547,31 @@ class CustomerCard extends StatelessWidget {
       return null;
     }
 
-    if (lat != null && lng != null && (lat != 0 || lng != 0)) {
-      return (lat, lng);
+    // 1. Ưu tiên lat/lng trực tiếp nếu hợp lệ
+    if (isValid(lat, lng)) {
+      return (lat!, lng!);
     }
 
+    // 2. Quét trong dynamicFields
     if (dynamicFields != null && dynamicFields.isNotEmpty) {
-      // 1. Kiểm tra dynamicFields['coords']
+      // 2.1 Kiểm tra dynamicFields['coords']
       final rawCoords = dynamicFields['coords'];
       if (rawCoords is Map) {
         final dLat = parseCoord(rawCoords['lat'] ?? rawCoords['latitude']);
         final dLng = parseCoord(rawCoords['lng'] ?? rawCoords['longitude']);
-        if (dLat != null && dLng != null && (dLat != 0 || dLng != 0)) {
-          return (dLat, dLng);
+        if (isValid(dLat, dLng)) {
+          return (dLat!, dLng!);
         }
       }
 
-      // 2. Kiểm tra các khoá phẳng lat / lng / latitude / longitude
+      // 2.2 Kiểm tra các khoá phẳng lat / lng / latitude / longitude
       final dLat = parseCoord(dynamicFields['lat'] ?? dynamicFields['latitude']);
       final dLng = parseCoord(dynamicFields['lng'] ?? dynamicFields['longitude']);
-      if (dLat != null && dLng != null && (dLat != 0 || dLng != 0)) {
-        return (dLat, dLng);
+      if (isValid(dLat, dLng)) {
+        return (dLat!, dLng!);
       }
 
-      // 3. Quét các trường toạ độ khác như 'toa_do', 'toado'
+      // 2.3 Quét các trường toạ độ khác như 'toa_do', 'toado'
       for (final entry in dynamicFields.entries) {
         final k = entry.key.toLowerCase().trim();
         if (k == 'coords' || k == 'toa_do' || k == 'toado' || k.contains('coord')) {
@@ -549,25 +579,21 @@ class CustomerCard extends StatelessWidget {
           if (val is Map) {
             final eLat = parseCoord(val['lat'] ?? val['latitude']);
             final eLng = parseCoord(val['lng'] ?? val['longitude']);
-            if (eLat != null && eLng != null && (eLat != 0 || eLng != 0)) {
-              return (eLat, eLng);
+            if (isValid(eLat, eLng)) {
+              return (eLat!, eLng!);
             }
           } else if (val is String && val.contains(',')) {
             final parts = val.split(',');
             if (parts.length >= 2) {
               final eLat = double.tryParse(parts[0].trim());
               final eLng = double.tryParse(parts[1].trim());
-              if (eLat != null && eLng != null && (eLat != 0 || eLng != 0)) {
-                return (eLat, eLng);
+              if (isValid(eLat, eLng)) {
+                return (eLat!, eLng!);
               }
             }
           }
         }
       }
-    }
-
-    if (lat != null && lng != null) {
-      return (lat, lng);
     }
 
     return null;
@@ -581,7 +607,7 @@ class CustomerCard extends StatelessWidget {
     Map<String, dynamic>? dynamicFields,
   }) async {
     // 🔴 Quy tắc: button chỉ đường ưu tiên lấy từ field toạ độ (lat, lng hoặc coords),
-    // nếu toạ độ null/trống mới fallback sang field địa chỉ.
+    // nếu toạ độ null/trống/không hợp lệ mới fallback sang field địa chỉ.
     final coords = extractCoordinates(
       lat: lat,
       lng: lng,
@@ -590,60 +616,126 @@ class CustomerCard extends StatelessWidget {
     final hasGps = coords != null;
 
     final effectiveAddress = extractDynamicAddress(dynamicFields, address);
-    final hasAddress = effectiveAddress != null && effectiveAddress.isNotEmpty;
+    final hasAddress = effectiveAddress != null &&
+        effectiveAddress.trim().isNotEmpty &&
+        effectiveAddress.trim() != 'Chưa cập nhật';
 
     if (!hasGps && !hasAddress) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Điểm bán chưa cập nhật tọa độ GPS hoặc địa chỉ để chỉ đường'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Điểm bán chưa cập nhật tọa độ GPS hoặc địa chỉ để chỉ đường'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
       return;
     }
 
-    final destination = hasGps
+    final destinationParam = hasGps
         ? '${coords.$1},${coords.$2}'
-        : Uri.encodeComponent(effectiveAddress!);
+        : effectiveAddress!.trim();
 
     // Hỗ trợ mở chỉ đường đa nền tảng:
     // 1. Android Google Maps navigation intent
-    final androidNavUri = Uri.parse('google.navigation:q=$destination&mode=d');
-    // 2. iOS Google Maps app scheme
-    final iosGmapsUri = Uri.parse('comgooglemaps://?daddr=$destination&directionsmode=driving');
-    // 3. Official Google Maps universal URL
-    final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    final androidNavUri = Uri.parse(
+      'google.navigation:q=${Uri.encodeComponent(destinationParam)}&mode=d',
+    );
+    // 2. Android universal Geo intent
+    final androidGeoUri = Uri.parse(
+      'geo:0,0?q=${Uri.encodeComponent(destinationParam)}',
+    );
+    // 3. iOS Google Maps app scheme
+    final iosGmapsUri = Uri.parse(
+      'comgooglemaps://?daddr=${Uri.encodeComponent(destinationParam)}&directionsmode=driving',
     );
     // 4. Apple Maps fallback
-    final appleMapsUri = Uri.parse('maps://?daddr=$destination&dirflg=d');
+    final appleMapsUri = Uri.parse(
+      'maps://?daddr=${Uri.encodeComponent(destinationParam)}&dirflg=d',
+    );
+    // 5. Official Google Maps universal URL (trình duyệt / app web fallback)
+    final googleMapsUrl = Uri.https(
+      'www.google.com',
+      '/maps/dir/',
+      {
+        'api': '1',
+        'destination': destinationParam,
+        'travelmode': 'driving',
+      },
+    );
 
-    try {
-      if (await canLaunchUrl(androidNavUri)) {
-        await launchUrl(androidNavUri, mode: LaunchMode.externalApplication);
-        return;
+    bool launched = false;
+
+    // Trên Android
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        if (await canLaunchUrl(androidNavUri)) {
+          launched = await launchUrl(androidNavUri, mode: LaunchMode.externalApplication);
+          if (launched) return;
+        }
+      } catch (e) {
+        debugPrint('[Directions] androidNavUri failed: $e');
       }
-    } catch (_) {}
 
-    try {
-      if (await canLaunchUrl(iosGmapsUri)) {
-        await launchUrl(iosGmapsUri, mode: LaunchMode.externalApplication);
-        return;
+      try {
+        if (await canLaunchUrl(androidGeoUri)) {
+          launched = await launchUrl(androidGeoUri, mode: LaunchMode.externalApplication);
+          if (launched) return;
+        }
+      } catch (e) {
+        debugPrint('[Directions] androidGeoUri failed: $e');
       }
-    } catch (_) {}
+    }
 
+    // Trên iOS
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        if (await canLaunchUrl(iosGmapsUri)) {
+          launched = await launchUrl(iosGmapsUri, mode: LaunchMode.externalApplication);
+          if (launched) return;
+        }
+      } catch (e) {
+        debugPrint('[Directions] iosGmapsUri failed: $e');
+      }
+
+      try {
+        if (await canLaunchUrl(appleMapsUri)) {
+          launched = await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
+          if (launched) return;
+        }
+      } catch (e) {
+        debugPrint('[Directions] appleMapsUri failed: $e');
+      }
+    }
+
+    // Fallback toàn cầu qua Web Google Maps
     try {
       if (await canLaunchUrl(googleMapsUrl)) {
-        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-        return;
+        launched = await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+        if (launched) return;
       }
+    } catch (e) {
+      debugPrint('[Directions] googleMapsUrl externalApp failed: $e');
+    }
+
+    try {
+      launched = await launchUrl(googleMapsUrl, mode: LaunchMode.externalNonBrowserApplication);
+      if (launched) return;
     } catch (_) {}
 
     try {
-      if (await canLaunchUrl(appleMapsUri)) {
-        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
-      }
+      launched = await launchUrl(googleMapsUrl, mode: LaunchMode.platformDefault);
+      if (launched) return;
     } catch (_) {}
+
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể mở ứng dụng bản đồ hoặc trình duyệt để chỉ đường.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   @override
@@ -1079,45 +1171,49 @@ class CustomerCard extends StatelessWidget {
                     const SizedBox(width: 8),
 
                     // Directions Button
-                    InkWell(
-                      onTap: onDirections ??
-                          () => defaultOpenDirections(
-                                context,
-                                lat: effectiveLat,
-                                lng: effectiveLng,
-                                address: effectiveAddress,
-                                dynamicFields: effectiveDynamicFields,
-                              ),
+                    Material(
+                      color: Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF6E8),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFBECAB7),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.directions,
-                              size: 14,
-                              color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
+                      child: InkWell(
+                        onTap: onDirections ??
+                            () => defaultOpenDirections(
+                                  context,
+                                  lat: effectiveLat,
+                                  lng: effectiveLng,
+                                  address: effectiveAddress,
+                                  dynamicFields: effectiveDynamicFields,
+                                ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFEFF6E8),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFBECAB7),
+                              width: 1,
                             ),
-                            const SizedBox(width: 3),
-                            Text(
-                              'Chỉ đường',
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.directions,
+                                size: 14,
                                 color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 3),
+                              Text(
+                                'Chỉ đường',
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppColors.primaryFixedDim : const Color(0xFF006E15),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

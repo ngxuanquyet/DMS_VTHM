@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/database_provider.dart';
@@ -527,7 +528,16 @@ Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool i
 }
 
 Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntry entry, bool isDark) {
-  final lastError = StringUtils.formatUserFriendlyError(entry.lastError);
+  final rawLastError = StringUtils.formatUserFriendlyError(entry.lastError);
+  String cleanError = rawLastError;
+  String? errorCode;
+  final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+  final match = codeRegex.firstMatch(cleanError);
+  if (match != null) {
+    errorCode = match.group(1)?.trim();
+    cleanError = cleanError.replaceAll(codeRegex, '').trim();
+  }
+
   String title = 'Dữ liệu cần kiểm tra lại';
   if (entry.entity == 'customer') {
     title = 'Thông tin khách hàng mới';
@@ -545,6 +555,8 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
     title = 'Ảnh thực địa điểm bán';
   }
 
+  final reportCode = errorCode ?? 'SYNC-FAIL-${entry.entity.toUpperCase()}';
+
   return Container(
     margin: const EdgeInsets.only(bottom: 6),
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -554,8 +566,12 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
       border: Border.all(color: const Color(0xFFE11D48).withValues(alpha: 0.3)),
     ),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.error_outline_rounded, color: Color(0xFFE11D48), size: 18),
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Icon(Icons.error_outline_rounded, color: Color(0xFFE11D48), size: 18),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -571,14 +587,57 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              const SizedBox(height: 2),
               Text(
-                lastError,
+                cleanError,
                 style: TextStyle(
-                  fontSize: 10,
-                  color: isDark ? Colors.white60 : const Color(0xFF6F7A74),
+                  fontSize: 11,
+                  color: isDark ? Colors.white70 : const Color(0xFF4B5563),
                 ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 5),
+              // Badge mã lỗi kèm nút sao chép để báo admin
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: reportCode));
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Đã sao chép mã lỗi $reportCode vào bộ nhớ tạm.'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black38 : Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: const Color(0xFFE11D48).withValues(alpha: 0.4),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.copy_rounded, size: 10, color: Color(0xFFE11D48)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Mã lỗi: $reportCode',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                          color: Color(0xFFE11D48),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

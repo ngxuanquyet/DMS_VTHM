@@ -114,6 +114,25 @@ void main() {
       expect(selectBlock.resolved.options[0].value, 'quay');
       expect(selectBlock.resolved.options[0].label, 'Quầy chính');
     });
+
+    test('Parses visit_scope correctly (all, first, repeat) (§1 Spec 18/10/2026)', () {
+      final defaultJson = Map<String, dynamic>.from(sampleJson);
+      final defaultModel = MarketFormConfigModel.fromJson(defaultJson);
+      expect(defaultModel.visitScope, 'all');
+      expect(defaultModel.toEntity().isScopeAll, isTrue);
+
+      final firstJson = Map<String, dynamic>.from(sampleJson)..['visit_scope'] = 'first';
+      final firstModel = MarketFormConfigModel.fromJson(firstJson);
+      expect(firstModel.visitScope, 'first');
+      expect(firstModel.toEntity().isScopeFirst, isTrue);
+      expect(firstModel.toEntity().isScopeRepeat, isFalse);
+
+      final repeatJson = Map<String, dynamic>.from(sampleJson)..['visit_scope'] = 'repeat';
+      final repeatModel = MarketFormConfigModel.fromJson(repeatJson);
+      expect(repeatModel.visitScope, 'repeat');
+      expect(repeatModel.toEntity().isScopeRepeat, isTrue);
+      expect(repeatModel.toEntity().isScopeFirst, isFalse);
+    });
   });
 }
 

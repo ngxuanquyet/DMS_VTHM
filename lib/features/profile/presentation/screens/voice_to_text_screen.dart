@@ -11,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/microphone_permission_dialog.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 
@@ -101,11 +102,10 @@ class _VoiceToTextScreenState extends ConsumerState<VoiceToTextScreen>
       _isListening = false;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Lỗi nhận diện giọng nói: ${error.errorMsg}'),
-        backgroundColor: AppColors.error,
-      ),
+    AppSnackBar.showError(
+      context,
+      'Lỗi nhận diện giọng nói: ${error.errorMsg}',
+      errorCode: 'VOICE_RECOG_ERROR',
     );
   }
 

@@ -78,6 +78,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         final notifService = ref.read(appNotificationServiceProvider);
         await notifService.setupDefaultWeeklySchedules();
       }
+      // Tự động kiểm tra và cập nhật ca làm việc mới nhất nếu admin vừa đổi ca
+      ref.read(attendanceViewModelProvider.notifier).loadInitialData();
     } catch (_) {}
   }
 
@@ -243,6 +245,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       failureCount++;
     }
 
+    // 5b. Cập nhật ca làm việc mới nhất & đặt lại lịch nhắc nếu admin đổi ca
+    try {
+      await ref.read(attendanceViewModelProvider.notifier).loadInitialData();
+    } catch (e) {
+      debugPrint('[HomeScreenSync] Lỗi cập nhật ca làm việc: $e');
+    }
+
     // 6. Đẩy dữ liệu ngoại tuyến nếu có
     try {
       await ref.read(syncServiceProvider).syncQueue(force: true);
@@ -369,7 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         AttendanceSummaryCard(attendance: homeState.dashboard?.attendance),
                         const SizedBox(height: AppSpacing.stackMd),
 
-                        // Thao tác nhanh dạng card màu (Chấm công & Báo cáo & Khai báo vị trí & Đồng bộ)
+                        // Thao tác nhanh dạng card màu (Chấm công & Báo cáo & Viếng thăm & Đồng bộ)
                         HomeQuickActions(
                           isSyncing: _isSyncing,
                           onSync: _handleSyncAll,

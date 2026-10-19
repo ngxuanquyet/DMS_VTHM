@@ -11,6 +11,7 @@ class MarketFormConfigModel {
   final bool isRequired;
   final int sortOrder;
   final MarketFormSchemaModel schema;
+  final String visitScope; // 'all' | 'first' | 'repeat' (§1 SPEC-2026-10-18)
 
   const MarketFormConfigModel({
     required this.configId,
@@ -21,6 +22,7 @@ class MarketFormConfigModel {
     required this.isRequired,
     required this.sortOrder,
     required this.schema,
+    this.visitScope = 'all',
   });
 
   factory MarketFormConfigModel.fromJson(Map<String, dynamic> json) {
@@ -41,6 +43,7 @@ class MarketFormConfigModel {
       schema: json['schema'] is Map<String, dynamic>
           ? MarketFormSchemaModel.fromJson(json['schema'] as Map<String, dynamic>)
           : const MarketFormSchemaModel(blocks: []),
+      visitScope: json['visit_scope']?.toString() ?? 'all',
     );
   }
 
@@ -53,6 +56,7 @@ class MarketFormConfigModel {
         'is_required': isRequired,
         'sort_order': sortOrder,
         'schema': schema.toJson(),
+        'visit_scope': visitScope,
       };
 
   MarketFormConfigEntity toEntity() {
@@ -65,6 +69,7 @@ class MarketFormConfigModel {
       isRequired: isRequired,
       sortOrder: sortOrder,
       schema: schema.toEntity(),
+      visitScope: visitScope,
     );
   }
 }
@@ -121,20 +126,26 @@ class MarketFormBlockModel {
   });
 
   factory MarketFormBlockModel.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic> resolvedMap;
+    if (json['resolved'] is Map<String, dynamic>) {
+      resolvedMap = json['resolved'] as Map<String, dynamic>;
+    } else {
+      // Khi server trả block dạng phẳng (các thuộc tính nằm ngay ở cấp block)
+      resolvedMap = Map<String, dynamic>.from(json);
+    }
+
     return MarketFormBlockModel(
-      ref: json['ref']?.toString() ?? '',
+      ref: json['ref']?.toString() ?? json['code']?.toString() ?? '',
       type: json['type']?.toString() ?? 'field',
       required: json['required'] == true || json['required'] == 1,
       colSpan: json['col_span'] is int
           ? json['col_span'] as int
           : (int.tryParse(json['col_span']?.toString() ?? '') ?? 12),
       showIf: json['show_if'],
-      resolved: json['resolved'] is Map<String, dynamic>
-          ? MarketFormResolvedModel.fromJson(
-              json['resolved'] as Map<String, dynamic>,
-              blockJson: json,
-            )
-          : MarketFormResolvedModel.empty(blockJson: json),
+      resolved: MarketFormResolvedModel.fromJson(
+        resolvedMap,
+        blockJson: json,
+      ),
       blockJson: json,
     );
   }
@@ -192,12 +203,46 @@ class MarketFormResolvedModel {
     Map<String, dynamic> json, {
     Map<String, dynamic>? blockJson,
   }) {
+    final rawDesc = json['description'] ??
+        json['help_text'] ??
+        json['helper_text'] ??
+        json['note'] ??
+        blockJson?['description'] ??
+        blockJson?['help_text'] ??
+        blockJson?['helper_text'] ??
+        (json['config'] is Map
+            ? (json['config']['description'] ??
+                json['config']['help_text'] ??
+                json['config']['helper_text'])
+            : null);
+
+    final inputType = json['input_type']?.toString() ??
+        json['type']?.toString() ??
+        blockJson?['input_type']?.toString() ??
+        blockJson?['type']?.toString() ??
+        'text';
+
+    final label = json['label']?.toString() ??
+        json['title']?.toString() ??
+        json['name']?.toString() ??
+        blockJson?['label']?.toString() ??
+        blockJson?['title']?.toString() ??
+        '';
+
+    final code = json['code']?.toString() ??
+        json['ref']?.toString() ??
+        blockJson?['code']?.toString() ??
+        blockJson?['ref']?.toString() ??
+        '';
+
+    final config = json['config'] ?? blockJson?['config'];
+
     return MarketFormResolvedModel(
-      code: json['code']?.toString() ?? '',
-      label: json['label']?.toString() ?? '',
-      inputType: json['input_type']?.toString() ?? 'text',
-      config: json['config'],
-      description: json['description']?.toString(),
+      code: code,
+      label: label,
+      inputType: inputType,
+      config: config,
+      description: rawDesc?.toString(),
       resolvedJson: json,
       blockJson: blockJson,
     );
@@ -215,7 +260,14 @@ class MarketFormResolvedModel {
     List<MarketFormOptionEntity> parsedOptions = [];
     MarketFormValidationEntity? parsedValidation;
 
-    final isImage = inputType.toLowerCase() == 'image';
+    final lowerType = inputType.toLowerCase();
+    final lowerCode = code.toLowerCase();
+    final isImage = lowerType == 'image' ||
+        lowerType == 'file' ||
+        lowerType == 'photo' ||
+        lowerType == 'photos' ||
+        lowerCode.contains('photo') ||
+        lowerCode.contains('image');
 
     // §1 & Yêu cầu UI: Parse max_files phòng thủ, linh hoạt từ nhiều vị trí:
     // 1. resolved.config['max_files'] (Map, chuỗi JSON, hoặc mảng)
@@ -295,39 +347,99 @@ class MarketFormResolvedModel {
       return null;
     }
 
+    int? parseRuleString(String str) {
+      final regExp = RegExp(
+        r'(?:max_files|max_photos|max_images|max_count|max|limit)[:=]\s*(\d+)',
+        caseSensitive: false,
+      );
+      final match = regExp.firstMatch(str);
+      if (match != null) {
+        return int.tryParse(match.group(1)!);
+      }
+      return null;
+    }
+
     const candidateKeys = [
       'max_files',
       'maxFiles',
+      'max_file',
+      'maxFile',
       'max_photos',
       'maxPhotos',
+      'max_photo',
+      'maxPhoto',
       'max_images',
       'maxImages',
+      'max_image',
+      'maxImage',
       'max_count',
       'maxCount',
+      'file_limit',
+      'photo_limit',
+      'image_limit',
+      'max_items',
+      'maxItems',
+      'max_uploads',
+      'maxUploads',
+      'max_upload',
+      'maxUpload',
+      'max_quantity',
+      'so_luong_anh',
+      'so_anh_toi_da',
+      'so_anh',
       'max',
       'limit',
+      'maximum',
     ];
 
     int? findInMap(Map<dynamic, dynamic>? map) {
       if (map == null) return null;
+
       for (final k in candidateKeys) {
         if (map.containsKey(k)) {
           final res = toInt(map[k]);
           if (res != null) return res;
         }
       }
-      if (map['validation'] is Map) {
-        final valMap = map['validation'] as Map;
-        final res = toInt(valMap['max']) ??
-            toInt(valMap['max_files']) ??
-            toInt(valMap['max_photos']);
+
+      // Kiểm tra validation hoặc rules (Map, String, List)
+      final valObj = map['validation'] ?? map['rules'];
+      if (valObj is Map) {
+        for (final k in candidateKeys) {
+          if (valObj.containsKey(k)) {
+            final res = toInt(valObj[k]);
+            if (res != null) return res;
+          }
+        }
+      } else if (valObj is String) {
+        final res = parseRuleString(valObj);
         if (res != null) return res;
+      } else if (valObj is List) {
+        for (final item in valObj) {
+          if (item is Map) {
+            final res = findInMap(item);
+            if (res != null) return res;
+          } else if (item is String) {
+            final res = parseRuleString(item);
+            if (res != null) return res;
+          }
+        }
       }
+
+      // Kiểm tra các map lồng nhau thông dụng (extra, props, attributes, params)
+      for (final subKey in ['extra', 'props', 'attributes', 'params', 'parameters']) {
+        if (map[subKey] is Map) {
+          final res = findInMap(map[subKey] as Map);
+          if (res != null) return res;
+        }
+      }
+
       return null;
     }
 
     int? findInConfig(dynamic raw) {
       if (raw == null) return null;
+      if (raw is num) return raw.toInt();
       if (raw is Map) return findInMap(raw);
       if (raw is String) {
         final trimmed = raw.trim();
@@ -337,19 +449,26 @@ class MarketFormResolvedModel {
             if (decoded is Map) return findInMap(decoded);
           } catch (_) {}
         }
-        return toInt(trimmed);
+        final asNum = toInt(trimmed);
+        if (asNum != null) return asNum;
+        return parseRuleString(trimmed);
       }
       if (raw is List) {
         for (final item in raw) {
           if (item is Map) {
             final res = findInMap(item);
             if (res != null) return res;
-            if (item['key']?.toString() == 'max_files' ||
-                item['name']?.toString() == 'max_files' ||
-                item['key']?.toString() == 'max_photos') {
+            final keyStr = item['key']?.toString() ??
+                item['name']?.toString() ??
+                item['id']?.toString() ??
+                '';
+            if (candidateKeys.contains(keyStr)) {
               final val = toInt(item['value']);
               if (val != null) return val;
             }
+          } else if (item is String) {
+            final res = parseRuleString(item);
+            if (res != null) return res;
           }
         }
       }
@@ -366,13 +485,24 @@ class MarketFormResolvedModel {
     if (blockJson != null) {
       found ??= findInMap(blockJson);
       found ??= findInConfig(blockJson['config']);
-      if (blockJson['validation'] is Map) {
-        found ??= findInMap(blockJson['validation'] as Map);
+      if (blockJson['validation'] != null) {
+        if (blockJson['validation'] is Map) {
+          found ??= findInMap(blockJson['validation'] as Map);
+        } else if (blockJson['validation'] is String) {
+          found ??= parseRuleString(blockJson['validation'] as String);
+        }
+      }
+      if (blockJson['rules'] != null) {
+        if (blockJson['rules'] is Map) {
+          found ??= findInMap(blockJson['rules'] as Map);
+        } else if (blockJson['rules'] is String) {
+          found ??= parseRuleString(blockJson['rules'] as String);
+        }
       }
     }
 
     if (found != null) {
-      // §1: max_files <= 0 hiểu là 1; kẹp trần 10
+      // §1: max_files <= 0 hiểu là 1; kẹp trần 10 theo spec
       if (found <= 0) return 1;
       if (found > 10) return 10;
       return found;

@@ -134,6 +134,30 @@ void main() {
         routePath: '/notifications',
       );
       expect(NotificationItemCard.resolveNotificationRoute(notifQueue), isNull);
+
+      // Điểm bán bị từ chối duyệt: luôn ưu tiên điều hướng về /customers/rejected
+      const notifRejected1 = NotificationEntity(
+        id: '9',
+        type: 'crm.customer_rejected',
+        title: 'Từ chối duyệt điểm bán',
+        message: 'Điểm bán Tạp hoá Bình Minh không được duyệt do trùng địa chỉ.',
+        timeAgo: 'Vừa xong',
+        isRead: false,
+        category: 'work',
+        routePath: '/crm/my-customers?open=123',
+      );
+      expect(NotificationItemCard.resolveNotificationRoute(notifRejected1), '/customers/rejected');
+
+      const notifRejected2 = NotificationEntity(
+        id: '10',
+        type: 'crm',
+        title: 'Yêu cầu tạo điểm bán bị từ chối',
+        message: 'Vui lòng kiểm tra lại thông tin và chụp lại ảnh đại diện.',
+        timeAgo: '30 phút trước',
+        isRead: false,
+        category: 'work',
+      );
+      expect(NotificationItemCard.resolveNotificationRoute(notifRejected2), '/customers/rejected');
     });
   });
 

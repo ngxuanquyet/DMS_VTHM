@@ -18,7 +18,6 @@ import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/position_declaration/presentation/screens/position_declaration_history_screen.dart';
 import '../../features/position_declaration/presentation/screens/position_declaration_screen.dart';
-import '../../features/profile/presentation/screens/dynamic_form_demo_screen.dart';
 import '../../features/profile/presentation/screens/personal_info_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/voice_to_text_screen.dart';
@@ -209,9 +208,35 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           child: const RejectedCustomersScreen(),
         ),
       ),
-      // Deep link web One / FCM Push Notification (§6 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
+      // Deep link web One / FCM Push Notification (§6 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15 & cập nhật 19/10/2026)
       GoRoute(
         path: '/crm/customers',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final openIdStr = state.uri.queryParameters['open'] ?? state.uri.queryParameters['id'];
+          final openId = int.tryParse(openIdStr ?? '');
+          if (openId != null && openId > 0) {
+            return ZoomPageTransition(
+              key: state.pageKey,
+              child: CustomerDetailScreen(
+                customer: CustomerEntity(
+                  id: openId,
+                  code: '',
+                  name: 'Đang tải thông tin...',
+                  type: 'Đang tải...',
+                  route: 'Tuyến mặc định',
+                  address: 'Đang tải địa chỉ...',
+                  contactPerson: '',
+                  phone: '',
+                ),
+              ),
+            );
+          }
+          return const NoTransitionPage(child: CustomerScreen());
+        },
+      ),
+      GoRoute(
+        path: '/crm/my-customers',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
           final openIdStr = state.uri.queryParameters['open'] ?? state.uri.queryParameters['id'];
@@ -351,14 +376,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: MarketFormFillScreen(args: args),
           );
         },
-      ),
-      GoRoute(
-        path: '/dev/dynamic-form-demo',
-        parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) => ZoomPageTransition(
-          key: state.pageKey,
-          child: const DynamicFormDemoScreen(),
-        ),
       ),
       GoRoute(
         path: '/travel',

@@ -7,6 +7,7 @@ import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/camera_permission_dialog.dart';
 import '../../../../core/widgets/voice_input_mic_button.dart';
 import '../states/position_declaration_state.dart';
@@ -53,19 +54,7 @@ class _PositionDeclarationScreenState
         (prev, next) {
       if (next.errorMessage != null &&
           next.errorMessage != prev?.errorMessage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline_rounded, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text(next.errorMessage!)),
-              ],
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, next.errorMessage);
         vm.clearMessage();
       } else if (next.successMessage != null &&
           next.successMessage != prev?.successMessage) {
@@ -648,44 +637,23 @@ class _PositionDeclarationScreenState
             ? null
             : () async {
                 if (state.selectedReason == null) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Vui lòng chọn một lý do khai báo trước khi gửi.'),
-                      backgroundColor: AppColors.error,
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                  AppSnackBar.showError(
+                    context,
+                    'Vui lòng chọn một lý do khai báo trước khi gửi.',
                   );
                   return;
                 }
                 if (state.lat == null || state.lng == null) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Vui lòng xác định vị trí GPS trước khi gửi khai báo.'),
-                      backgroundColor: AppColors.error,
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                  AppSnackBar.showError(
+                    context,
+                    'Vui lòng xác định vị trí GPS trước khi gửi khai báo.',
                   );
                   return;
                 }
                 if (state.photos.isEmpty) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Row(
-                        children: [
-                          Icon(Icons.camera_alt_outlined, color: Colors.white, size: 20),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text('Vui lòng chụp ít nhất 1 ảnh chứng minh trước khi gửi khai báo.'),
-                          ),
-                        ],
-                      ),
-                      backgroundColor: AppColors.error,
-                      behavior: SnackBarBehavior.floating,
-                      duration: Duration(seconds: 3),
-                    ),
+                  AppSnackBar.showError(
+                    context,
+                    'Vui lòng chụp ít nhất 1 ảnh chứng minh trước khi gửi khai báo.',
                   );
                   vm.setPhotoRequiredError();
                   return;

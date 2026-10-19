@@ -222,6 +222,40 @@ void main() {
       final block = MarketFormBlockModel.fromJson(json).toEntity();
       expect(block.resolved.maxFiles, 10);
     });
+
+    test('Parse max_files từ block phẳng không có resolved lồng', () {
+      final json = {
+        'type': 'image',
+        'ref': 'anh_mat_tien',
+        'label': 'Ảnh mặt tiền',
+        'max_files': 3,
+        'required': true,
+      };
+
+      final block = MarketFormBlockModel.fromJson(json).toEntity();
+      expect(block.isImage, isTrue);
+      expect(block.resolved.code, 'anh_mat_tien');
+      expect(block.resolved.label, 'Ảnh mặt tiền');
+      expect(block.resolved.maxFiles, 3);
+    });
+
+    test('Parse max_files từ chuỗi validation (ví dụ required|max:4)', () {
+      final json = {
+        'type': 'field',
+        'ref': 'anh_trung_bay',
+        'resolved': {
+          'code': 'anh_trung_bay',
+          'label': 'Ảnh trưng bày',
+          'input_type': 'image',
+          'config': {
+            'validation': 'required|max:4',
+          },
+        }
+      };
+
+      final block = MarketFormBlockModel.fromJson(json).toEntity();
+      expect(block.resolved.maxFiles, 4);
+    });
   });
 
   group('§2. Tải ảnh lên — POST /dms/form-photos', () {
@@ -525,6 +559,54 @@ void main() {
 
       // Verify UI hiển thị "0/10 ảnh" thay vì "0/1 ảnh"
       expect(find.text('0/10 ảnh'), findsOneWidget);
+    });
+
+    testWidgets('Khi ảnh đang trong quá trình upload (isUploading = true), hiển thị thumbnail kèm CircularProgressIndicator', (tester) async {
+      final blocks = [
+        MarketFormBlockModel.fromJson({
+          'type': 'field',
+          'ref': 'anh_test',
+          'resolved': {
+            'code': 'anh_test',
+            'label': 'Ảnh test',
+            'input_type': 'image',
+            'config': {'max_files': 3},
+          }
+        }).toEntity(),
+      ];
+
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(
+                key: key,
+                blocks: blocks,
+                initialAnswers: {
+                  'anh_test': ['temp_token_123'],
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify widget thumbnail box xuất hiện
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      // Khi simulate ảnh đang upload trong state
+      // ignore: invalid_use_of_protected_member
+      key.currentState?.setState(() {
+        final entries = key.currentState?.photoEntries['anh_test'];
+        if (entries != null && entries.isNotEmpty) {
+          entries.first.isUploading = true;
+        }
+      });
+      await tester.pump();
+
+      // Verify có CircularProgressIndicator ngay lập tức trong box ảnh
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
 }

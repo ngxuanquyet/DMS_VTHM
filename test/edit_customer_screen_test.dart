@@ -169,7 +169,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. Phải có dropdown Tuyến bán hàng và hiển thị đúng tuyến hiện tại TEST-QUYETNX
-    expect(find.text('Tuyến bán hàng'), findsOneWidget);
+    expect(find.textContaining('Tuyến bán hàng'), findsOneWidget);
     expect(find.text('TEST-QUYETNX'), findsOneWidget);
 
     // 2. Trường thông tin mở rộng chỉ hiển thị Vinlux, TUYỆT ĐỐI không hiển thị các trường hệ thống

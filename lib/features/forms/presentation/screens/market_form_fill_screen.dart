@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/sync/sync_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
 import '../../domain/entities/market_form_entity.dart';
@@ -281,6 +283,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
 
       final result = await submitUseCase(submission, isOffline: !isOnline);
 
+      // Kích hoạt đồng bộ nền để tải các ảnh đang chờ lên server
+      ref.read(syncServiceProvider).syncQueue();
+
       if (mounted) {
         setState(() {
           _isSubmitting = false;
@@ -291,16 +296,11 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result.message),
-              backgroundColor:
-                  result.success ? const Color(0xFF10B981) : AppColors.error,
-            ),
-          );
-
           if (result.success) {
+            AppSnackBar.showSuccess(context, result.message);
             _safePop(true);
+          } else {
+            AppSnackBar.showError(context, result.message);
           }
         }
       }
@@ -309,12 +309,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
         setState(() {
           _isSubmitting = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi khi nộp phiếu: ${e.toString().replaceAll('AppException: ', '')}'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     }
   }

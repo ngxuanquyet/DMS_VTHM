@@ -1,9 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
+import '../../../../core/services/fcm_push_service.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../data/services/auth_api_service.dart';
-import '../../../../core/rules/mobile_rules_service.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
@@ -87,6 +88,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
           state = state.copyWith(
             status: AuthStatus.error,
             errorMessage: e.message,
+            errorCode: e.displayErrorCode ?? 'DMS_APP_FORBIDDEN (403)',
           );
           return false;
         } on ServerException catch (e) {
@@ -95,6 +97,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
             state = state.copyWith(
               status: AuthStatus.error,
               errorMessage: 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+              errorCode: e.displayErrorCode ?? 'DMS_APP_FORBIDDEN (403)',
             );
             return false;
           }
@@ -110,6 +113,11 @@ class AuthViewModel extends StateNotifier<AuthState> {
         ref?.read(mobileRulesProvider.notifier).fetchRules();
         try {
           ref?.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+        } catch (_) {}
+        // Đăng ký FCM device token cho tài khoản (§3.1 API-THONG-BAO-DAY-MOBILE-2026-10-19)
+        try {
+          ref?.read(fcmPushServiceProvider).setCurrentUserId(user.id.toString());
+          ref?.read(fcmPushServiceProvider).registerDeviceToken();
         } catch (_) {}
         return true;
       } else {
@@ -135,11 +143,12 @@ class AuthViewModel extends StateNotifier<AuthState> {
       state = state.copyWith(
         status: AuthStatus.error,
         errorMessage: 'Vui lòng điền đầy đủ tài khoản và mật khẩu',
+        errorCode: 'VALIDATION_ERROR',
       );
       return false;
     }
 
-    state = state.copyWith(status: AuthStatus.authenticating, errorMessage: null);
+    state = state.copyWith(status: AuthStatus.authenticating, errorMessage: null, errorCode: null);
 
     try {
       final user = await loginUseCase(
@@ -157,11 +166,18 @@ class AuthViewModel extends StateNotifier<AuthState> {
       try {
         ref?.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
       } catch (_) {}
+      // Đăng ký FCM device token cho tài khoản (§3.1 API-THONG-BAO-DAY-MOBILE-2026-10-19)
+      try {
+        ref?.read(fcmPushServiceProvider).setCurrentUserId(user.id.toString());
+        ref?.read(fcmPushServiceProvider).registerDeviceToken();
+      } catch (_) {}
       return true;
     } catch (e) {
       String msg;
-      if (e is DmsAppForbiddenException) {
+      String? errCode;
+      if (e is AppException) {
         msg = e.message;
+        errCode = e.displayErrorCode;
       } else {
         msg = e.toString()
             .replaceAll('AppException: ', '')
@@ -171,12 +187,19 @@ class AuthViewModel extends StateNotifier<AuthState> {
       state = state.copyWith(
         status: AuthStatus.error,
         errorMessage: msg,
+        errorCode: errCode,
       );
       return false;
     }
   }
 
   Future<void> logout() async {
+    // Hủy đăng ký máy DELETE /notification/device-token trước khi xóa access token (§3.2)
+    try {
+      ref?.read(fcmPushServiceProvider).setCurrentUserId(null);
+      await ref?.read(fcmPushServiceProvider).unregisterDeviceToken();
+    } catch (_) {}
+
     await logoutUseCase();
     state = state.copyWith(
       status: AuthStatus.unauthenticated,

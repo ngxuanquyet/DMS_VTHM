@@ -295,7 +295,6 @@ class _MarketFormSubmissionDetailScreenState
     final addr = value['address']?.toString();
     final lat = value['lat'];
     final lng = value['lng'];
-    final isMock = value['mock'] == true;
     final numLat = lat is num ? lat.toDouble() : double.tryParse(lat?.toString() ?? '');
     final numLng = lng is num ? lng.toDouble() : double.tryParse(lng?.toString() ?? '');
 
@@ -356,22 +355,6 @@ class _MarketFormSubmissionDetailScreenState
                     ],
                   ),
                 ),
-                if (isMock)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEA580C).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'GPS giả',
-                      style: TextStyle(
-                        color: Color(0xFFEA580C),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
                 InkWell(
                   onTap: () async {
                     final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$numLat,$numLng');

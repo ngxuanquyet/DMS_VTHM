@@ -7,6 +7,7 @@ import 'core/network/connectivity_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/services/app_notification_service.dart';
 import 'core/services/error_tracker_service.dart';
+import 'core/services/fcm_push_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 
@@ -35,6 +36,14 @@ void main() async {
     debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
   }
 
+  // Khởi tạo dịch vụ thông báo đẩy Firebase Cloud Messaging (§1, §5.2 API-THONG-BAO-DAY-MOBILE-2026-10-19)
+  try {
+    final fcmService = FcmPushService();
+    await fcmService.init();
+  } catch (e) {
+    debugPrint('[Main] Khởi tạo FcmPushService lỗi: $e');
+  }
+
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -61,6 +70,8 @@ class VthmApp extends ConsumerWidget {
     ref.watch(languageProvider);
     // Initialize & watch real-time connectivity monitor
     ref.watch(connectivityProvider);
+    // Connect ref to FCM Push Service
+    ref.watch(fcmPushServiceProvider);
 
     return MaterialApp.router(
       title: AppConstants.appName,

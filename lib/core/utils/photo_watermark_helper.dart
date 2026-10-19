@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image/image.dart' as img;
 import '../constants/app_assets.dart';
 import '../constants/app_constants.dart';
 import '../services/location_service.dart';
@@ -41,14 +42,33 @@ class PhotoWatermarkHelper {
       final frame = await codec.getNextFrame();
       final image = frame.image;
 
-      final width = image.width.toDouble();
-      final height = image.height.toDouble();
+      final origW = image.width.toDouble();
+      final origH = image.height.toDouble();
+
+      // Giới hạn chiều dài/rộng lớn nhất tối đa 1600px để ảnh không bị quá khổ và dung lượng luôn nhỏ gọn (~250KB - 500KB)
+      const double maxDimension = 1600.0;
+      double width = origW;
+      double height = origH;
+      if (width > maxDimension || height > maxDimension) {
+        if (width >= height) {
+          height = (height * maxDimension / width).roundToDouble();
+          width = maxDimension;
+        } else {
+          width = (width * maxDimension / height).roundToDouble();
+          height = maxDimension;
+        }
+      }
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width, height));
 
-      // 1. Vẽ ảnh gốc
-      canvas.drawImage(image, Offset.zero, Paint());
+      // 1. Vẽ ảnh gốc (thu nhỏ theo tỉ lệ width x height với bộ lọc làm mịn medium)
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, origW, origH),
+        Rect.fromLTWH(0, 0, width, height),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
 
       // 2. Tự động lấy GPS nếu không được truyền vào
       double? lat = latitude;
@@ -236,17 +256,54 @@ class PhotoWatermarkHelper {
         fallbackPainter.paint(canvas, Offset(padding, textY));
       }
 
-      // 8. Xuất ảnh đã đóng dấu
+      // 8. Xuất ảnh đã đóng dấu và nén sang JPEG (dung lượng ~250KB - 500KB)
       final picture = recorder.endRecording();
       final watermarkedImage = await picture.toImage(width.toInt(), height.toInt());
-      final byteData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
+      final parentDir = imageFile.parent;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-      if (byteData != null) {
-        final parentDir = imageFile.parent;
-        final fileName = 'wm_${DateTime.now().millisecondsSinceEpoch}.png';
-        final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
-        await outputFile.writeAsBytes(byteData.buffer.asUint8List());
-        return outputFile;
+      // Cách 1: Nén trực tiếp từ rawRgba sang JPEG cực nhanh và không tốn bộ nhớ đệm
+      try {
+        final rawRgbaData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (rawRgbaData != null) {
+          final dartImage = img.Image.fromBytes(
+            width: width.toInt(),
+            height: height.toInt(),
+            bytes: rawRgbaData.buffer,
+            order: img.ChannelOrder.rgba,
+          );
+          final fileName = 'wm_$nowMs.jpg';
+          final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
+          final compressedBytes = img.encodeJpg(dartImage, quality: 78);
+          await outputFile.writeAsBytes(compressedBytes);
+          return outputFile;
+        }
+      } catch (e) {
+        debugPrint('[PhotoWatermarkHelper] Không thể convert từ rawRgba: $e');
+      }
+
+      // Cách 2: Fallback qua PNG byteData rồi decode sang JPEG
+      try {
+        final pngData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
+        if (pngData != null) {
+          final rawPngBytes = pngData.buffer.asUint8List();
+          final decoded = img.decodeImage(rawPngBytes);
+          if (decoded != null) {
+            final fileName = 'wm_$nowMs.jpg';
+            final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
+            final compressedBytes = img.encodeJpg(decoded, quality: 78);
+            await outputFile.writeAsBytes(compressedBytes);
+            return outputFile;
+          }
+
+          // Fallback cuối cùng nếu decodeImage không thành công
+          final fileName = 'wm_$nowMs.png';
+          final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
+          await outputFile.writeAsBytes(rawPngBytes);
+          return outputFile;
+        }
+      } catch (e) {
+        debugPrint('[PhotoWatermarkHelper] Lỗi khi nén fallback: $e');
       }
     } catch (e) {
       debugPrint('[PhotoWatermarkHelper] Lỗi khi đóng dấu ảnh (dùng ảnh gốc): $e');

@@ -483,17 +483,35 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     DealerEntity dealer,
   ) async {
     Map<String, dynamic>? dynFields;
+    double? lat = (dealer.lat != null && dealer.lat != 0.0) ? dealer.lat : null;
+    double? lng = (dealer.lng != null && dealer.lng != 0.0) ? dealer.lng : null;
+    String address = dealer.address;
+
     if (dealer.customer is CustomerEntity) {
-      dynFields = (dealer.customer as CustomerEntity).dynamicFields;
+      final cust = dealer.customer as CustomerEntity;
+      dynFields = cust.dynamicFields;
+      lat ??= (cust.lat != null && cust.lat != 0.0) ? cust.lat : null;
+      lng ??= (cust.lng != null && cust.lng != 0.0) ? cust.lng : null;
+      if (address.isEmpty || address == 'Chưa cập nhật') {
+        address = cust.address;
+      }
     } else if (dealer.customer is Map<String, dynamic>) {
-      dynFields = dealer.customer as Map<String, dynamic>;
+      final map = dealer.customer as Map<String, dynamic>;
+      dynFields = map;
+      final cLat = (map['lat'] as num?)?.toDouble();
+      final cLng = (map['lng'] as num?)?.toDouble();
+      lat ??= (cLat != null && cLat != 0.0) ? cLat : null;
+      lng ??= (cLng != null && cLng != 0.0) ? cLng : null;
+      if (address.isEmpty || address == 'Chưa cập nhật') {
+        address = map['address']?.toString() ?? '';
+      }
     }
 
     await CustomerCard.defaultOpenDirections(
       context,
-      lat: dealer.lat,
-      lng: dealer.lng,
-      address: dealer.address,
+      lat: lat,
+      lng: lng,
+      address: address,
       dynamicFields: dynFields,
     );
   }

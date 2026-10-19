@@ -95,5 +95,41 @@ void main() {
       expect(coords!.$1, closeTo(21.0, 0.0001));
       expect(coords.$2, closeTo(105.0, 0.0001));
     });
+    test('returns null when lat and lng are 0.0 (Null Island)', () {
+      final coords = CustomerCard.extractCoordinates(
+        lat: 0.0,
+        lng: 0.0,
+        dynamicFields: {},
+      );
+
+      expect(coords, isNull);
+    });
+
+    test('ignores direct 0.0 coordinates and uses valid dynamicFields coords', () {
+      final coords = CustomerCard.extractCoordinates(
+        lat: 0.0,
+        lng: 0.0,
+        dynamicFields: {
+          'coords': {
+            'lat': 21.0285,
+            'lng': 105.8544,
+          },
+        },
+      );
+
+      expect(coords, isNotNull);
+      expect(coords!.$1, closeTo(21.0285, 0.0001));
+      expect(coords.$2, closeTo(105.8544, 0.0001));
+    });
+
+    test('returns null when coordinates are out of valid Earth bounds', () {
+      final coords = CustomerCard.extractCoordinates(
+        lat: 999.0,
+        lng: 999.0,
+        dynamicFields: {},
+      );
+
+      expect(coords, isNull);
+    });
   });
 }

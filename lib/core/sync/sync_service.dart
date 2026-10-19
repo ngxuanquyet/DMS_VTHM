@@ -610,6 +610,12 @@ class SyncService {
                 .read(checkInViewModelProvider.notifier)
                 .syncServerVisitId(serverId, clientUuid: entry.clientUuid);
           } catch (_) {}
+          try {
+            // §1.3 SPEC-2026-10-18: Tải lại biểu mẫu khảo sát ngay khi đồng bộ xong check-in ngoại tuyến
+            _ref
+                .read(checkInViewModelProvider.notifier)
+                .loadSurveyForms(updatedActive.customerId);
+          } catch (_) {}
         }
       } catch (err) {
         debugPrint('[SyncService] Cập nhật local visit serverId lỗi: $err');

@@ -132,9 +132,11 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                 ),
               _detailRow(
                 'Kết quả viếng thăm',
-                visit.visitResult == 'closed'
-                    ? 'Cửa hàng đóng cửa'
-                    : (visit.isOpen ? 'Đang thực hiện' : 'Thành công (Mở cửa)'),
+                visit.visitResultLabel ??
+                    (visit.visitResult == 'closed'
+                        ? 'Cửa hàng đóng cửa'
+                        : (visit.isOpen ? 'Đang thực hiện' : 'Thành công (Mở cửa)')),
+                valueColor: visit.resultBootstrapColor,
               ),
               if (visit.closedNote != null && visit.closedNote!.isNotEmpty)
                 _detailRow('Lý do đóng cửa', visit.closedNote!),
@@ -146,34 +148,12 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
               _detailRow('Số biểu mẫu nộp', '${visit.formCount} phiếu'),
               if (visit.checkoutLat != null && visit.checkoutLng != null)
                 _detailRow('Vị trí Check-out', 'Đã xác thực vị trí GPS'),
-              _detailRow(
-                'Quãng đường đến điểm',
-                visit.travelM == null
-                    ? '— (đang tính toán)'
-                    : visit.travelM == 0
-                        ? '0 km (thiếu mốc để đo)'
-                        : '${(visit.travelM! / 1000.0).toStringAsFixed(1)} km',
-              ),
-              _detailRow(
-                'Khoảng cách Check-in',
-                visit.distanceToCustomerM == null
-                    ? '— (chưa tính)'
-                    : '${visit.checkinDistanceFormatted}${visit.isWithinGeofence != null ? (visit.isWithinGeofence == true ? ' (Hợp lệ)' : ' (Ngoài vùng)') : ''}',
-                valueColor: visit.isWithinGeofence == false ? const Color(0xFFDC2626) : null,
-              ),
-              if (visit.checkoutAt != null)
+              if (visit.travelM != null)
                 _detailRow(
-                  'Khoảng cách Check-out',
-                  visit.checkoutDistanceM == null
-                      ? '— (chưa tính)'
-                      : '${visit.checkoutDistanceFormatted}${visit.isCheckoutWithinGeofence != null ? (visit.isCheckoutWithinGeofence == true ? ' (Trong vùng)' : ' (Ngoài vùng - Đã gắn cờ)') : ''}',
-                  valueColor: visit.isCheckoutWithinGeofence == false ? const Color(0xFFDC2626) : null,
-                ),
-              if (visit.isCheckoutOtherDay)
-                _detailRow(
-                  'Ngày Check-out',
-                  'Khác ngày check-in (Đã gắn cờ "Ra khác ngày")',
-                  valueColor: const Color(0xFFD97706),
+                  'Quãng đường đến điểm',
+                  visit.travelM == 0
+                      ? '0 km (thiếu mốc để đo)'
+                      : '${(visit.travelM! / 1000.0).toStringAsFixed(1)} km',
                 ),
 
               // Hiển thị ảnh nếu có photoUrls

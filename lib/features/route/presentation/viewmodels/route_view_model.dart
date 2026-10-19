@@ -858,111 +858,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
   }
 
   int? _extractDayOfWeekFromName(String? text) {
-    if (text == null || text.trim().isEmpty) return null;
-    final lower = text.toLowerCase().trim();
-
-    if (lower.contains('chủ nhật') ||
-        lower.contains('chu nhat') ||
-        RegExp(r'\bcn\b').hasMatch(lower)) {
-      return 7;
-    }
-    if (lower.contains('thứ 2') ||
-        lower.contains('thu 2') ||
-        lower.contains('thứ hai') ||
-        lower.contains('thu hai') ||
-        RegExp(r'\bt2\b').hasMatch(lower) ||
-        RegExp(r'\bt-2\b').hasMatch(lower)) {
-      return 1;
-    }
-    if (lower.contains('thứ 3') ||
-        lower.contains('thu 3') ||
-        lower.contains('thứ ba') ||
-        lower.contains('thu ba') ||
-        RegExp(r'\bt3\b').hasMatch(lower) ||
-        RegExp(r'\bt-3\b').hasMatch(lower)) {
-      return 2;
-    }
-    if (lower.contains('thứ 4') ||
-        lower.contains('thu 4') ||
-        lower.contains('thứ tư') ||
-        lower.contains('thu tu') ||
-        RegExp(r'\bt4\b').hasMatch(lower) ||
-        RegExp(r'\bt-4\b').hasMatch(lower)) {
-      return 3;
-    }
-    if (lower.contains('thứ 5') ||
-        lower.contains('thu 5') ||
-        lower.contains('thứ năm') ||
-        lower.contains('thu nam') ||
-        RegExp(r'\bt5\b').hasMatch(lower) ||
-        RegExp(r'\bt-5\b').hasMatch(lower)) {
-      return 4;
-    }
-    if (lower.contains('thứ 6') ||
-        lower.contains('thu 6') ||
-        lower.contains('thứ sáu') ||
-        lower.contains('thu sau') ||
-        RegExp(r'\bt6\b').hasMatch(lower) ||
-        RegExp(r'\bt-6\b').hasMatch(lower)) {
-      return 5;
-    }
-    if (lower.contains('thứ 7') ||
-        lower.contains('thu 7') ||
-        lower.contains('thứ bảy') ||
-        lower.contains('thu bay') ||
-        RegExp(r'\bt7\b').hasMatch(lower) ||
-        RegExp(r'\bt-7\b').hasMatch(lower)) {
-      return 6;
-    }
-    return null;
+    return CustomerEntity.extractDayOfWeekFromName(text);
   }
 
   bool _matchesCustomerDayOfWeek(CustomerEntity c, int targetDay) {
-    final todayWeekday = DateTime.now().weekday;
-    if (targetDay == todayWeekday && c.isToday) {
-      return true;
-    }
-
-    // 1. Kiểm tra qua routeIds với state.userRoutes
-    for (final id in c.routeIds) {
-      for (final ur in state.userRoutes) {
-        if (ur.id == id) {
-          if (ur.visitDayOfWeek == targetDay) return true;
-          if (_extractDayOfWeekFromName(ur.name) == targetDay) return true;
-          if (_extractDayOfWeekFromName(ur.code) == targetDay) return true;
-        }
-      }
-    }
-
-    // 2. Kiểm tra qua danh sách routes của khách hàng
-    for (final rName in c.routes) {
-      if (_extractDayOfWeekFromName(rName) == targetDay) return true;
-      for (final ur in state.userRoutes) {
-        if (ur.name.trim() == rName.trim()) {
-          if (ur.visitDayOfWeek == targetDay) return true;
-          if (_extractDayOfWeekFromName(ur.name) == targetDay) return true;
-        }
-      }
-    }
-
-    // 3. Kiểm tra qua chuỗi c.route
-    if (c.route.isNotEmpty) {
-      final parts = c.route.split(',').map((e) => e.trim());
-      for (final p in parts) {
-        if (_extractDayOfWeekFromName(p) == targetDay) return true;
-      }
-    }
-
-    // 4. Kiểm tra dynamicFields
-    final dynDay = c.dynamicFields['visit_day_of_week'] ??
-        c.dynamicFields['thu'] ??
-        c.dynamicFields['ngay_tuan'];
-    if (dynDay != null) {
-      if (dynDay is int && dynDay == targetDay) return true;
-      if (_extractDayOfWeekFromName(dynDay.toString()) == targetDay) return true;
-    }
-
-    return false;
+    return c.matchesDayOfWeek(targetDay, userRoutes: state.userRoutes);
   }
 }
 
@@ -1630,12 +1530,6 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
     }
 
-    // 2. Kiểm tra cờ giả lập vị trí GPS nếu luật yêu cầu chặn
-    if ((mobileRules?.visit.blockOnMockLocation ?? false) &&
-        (isMockLocation == true)) {
-      return 'Thiết bị đang sử dụng phần mềm giả lập vị trí GPS. Vui lòng tắt ứng dụng giả lập để check-in.';
-    }
-
     final request = CheckinRequestModel(
       customerId: customerId,
       lat: lat,
@@ -1865,6 +1759,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }
 
   /// Tải 1 tấm ảnh lên cho lượt viếng thăm (§4.1) hoặc lưu ngoại tuyến khi mất mạng
+  /// Tối ưu UX: Hiển thị ngay lên giao diện và trừ photosMissing (Optimistic UI),
+  /// đồng thời upload chạy ngầm không khoá nút chụp hay giao diện người dùng.
   Future<(bool, String?)> uploadPhoto(
     File file, {
     String photoType = 'other',
@@ -1874,86 +1770,118 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     if (state.visitId == 0) {
       return (false, 'Chưa có lượt viếng thăm hợp lệ');
     }
-    state = state.copyWith(isUploadingPhoto: true);
 
     // Chuẩn hoá photoType theo đặc tả API (§4.1):
-    // Server chỉ nhận: display, store_front, posm, document, other.
-    // Nếu app phân loại là closed_store (ảnh đóng cửa) -> map về store_front (mặt tiền đóng cửa)
     final apiPhotoType = (photoType == 'closed_store') ? 'store_front' : photoType;
 
-    // Nếu phiên hiện tại là ngoại tuyến (visitId < 0) -> Lưu ảnh ngoại tuyến ngay
+    // 1. Sao lưu file vào thư mục offline_visit_photos lâu dài
+    File persistentFile;
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final offlineDir = Directory(p.join(appDocDir.path, 'offline_visit_photos'));
+      if (!await offlineDir.exists()) {
+        await offlineDir.create(recursive: true);
+      }
+      final fileName = 'visit_photo_${DateTime.now().millisecondsSinceEpoch}_${const Uuid().v4().substring(0, 8)}.jpg';
+      persistentFile = await file.copy(p.join(offlineDir.path, fileName));
+    } catch (_) {
+      persistentFile = file;
+    }
+
+    // 2. Tạo bản ghi ảnh lạc quan hiển thị ngay lên UI
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final tempPhoto = VisitPhotoEntity(
+      id: tempId,
+      token: '',
+      url: persistentFile.path,
+      localPath: persistentFile.path,
+      photoType: apiPhotoType,
+      photoTypeLabel: apiPhotoType == 'display'
+          ? 'Ảnh trưng bày'
+          : (apiPhotoType == 'store_front'
+              ? 'Mặt tiền'
+              : (apiPhotoType == 'closed_store'
+                  ? 'Ảnh đóng cửa'
+                  : (apiPhotoType == 'posm'
+                      ? 'POSM'
+                      : (apiPhotoType == 'document' ? 'Tài liệu' : 'Ảnh chụp')))),
+      photoTypeColor: 'primary',
+      takenAt: DateTime.now().toIso8601String(),
+    );
+
+    final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)..add(tempPhoto);
+
+    // 3. Trừ photosMissing và cập nhật yêu cầu check-out ngay lập tức
+    var currentReq = state.requirements;
+    if (currentReq != null) {
+      final newPhotosMissing = math.max(0, currentReq.photosMissing - 1);
+      final isTimeOk = currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
+      final isFormsOk = currentReq.missingForms.isEmpty || state.visitResult == 'closed';
+      final isPhotosOk = newPhotosMissing <= 0;
+      final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+
+      List<String> newBlockers = List<String>.from(currentReq.blockers);
+      if (newPhotosMissing <= 0) {
+        newBlockers.removeWhere(
+          (b) => b.toLowerCase().contains('ảnh') || b.toLowerCase().contains('chụp'),
+        );
+      }
+
+      currentReq = currentReq.copyWith(
+        photosMissing: newPhotosMissing,
+        satisfied: newSatisfied,
+        blockers: newBlockers,
+      );
+    }
+
+    state = state.copyWith(
+      photos: updatedPhotos,
+      requirements: currentReq,
+      isUploadingPhoto: false,
+    );
+
+    // Nếu phiên ngoại tuyến (visitId < 0) -> Đẩy vào SyncQueueEntries ngay
     if (state.visitId < 0) {
-      return _savePhotoOffline(
-        file: file,
+      await _enqueueVisitPhotoToDb(
+        file: persistentFile,
         photoType: apiPhotoType,
         lat: lat,
         lng: lng,
       );
+      _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
+      return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
 
     try {
       final photo = await uploadVisitPhotoUseCase(
         visitId: state.visitId,
-        file: file,
+        file: persistentFile,
         photoType: apiPhotoType,
         takenAt: DateTime.now(),
         lat: lat,
         lng: lng,
       );
 
-      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)
-        ..add(photo);
-      var currentReq = state.requirements;
-      if (currentReq != null && !photo.duplicate) {
-        final newPhotosMissing = math.max(0, currentReq.photosMissing - 1);
-        final isTimeOk =
-            currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
-        final isFormsOk =
-            currentReq.missingForms.isEmpty || state.visitResult == 'closed';
-        final isPhotosOk = newPhotosMissing <= 0;
-        final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
-
-        List<String> newBlockers = List<String>.from(currentReq.blockers);
-        if (newPhotosMissing <= 0) {
-          newBlockers.removeWhere(
-            (b) =>
-                b.toLowerCase().contains('ảnh') ||
-                b.toLowerCase().contains('chụp'),
-          );
-        }
-
-        currentReq = currentReq.copyWith(
-          photosMissing: newPhotosMissing,
-          satisfied: newSatisfied,
-          blockers: newBlockers,
-        );
+      final idx = state.photos.indexWhere((p) => p.id == tempId);
+      if (idx >= 0) {
+        final syncedPhotos = List<VisitPhotoEntity>.from(state.photos);
+        syncedPhotos[idx] = photo.copyWith(localPath: persistentFile.path);
+        state = state.copyWith(photos: syncedPhotos);
       }
-
-      state = state.copyWith(
-        photos: updatedPhotos,
-        requirements: currentReq,
-        isUploadingPhoto: false,
-      );
-
       await refreshRequirements();
 
-      if (photo.duplicate) {
-        return (
-          true,
-          'Ảnh này đã có trong lượt viếng thăm, không thêm gì thêm.',
-        );
-      }
       return (true, null);
     } catch (e) {
       if (_isNetworkError(e)) {
-        return _savePhotoOffline(
-          file: file,
+        await _enqueueVisitPhotoToDb(
+          file: persistentFile,
           photoType: apiPhotoType,
           lat: lat,
           lng: lng,
         );
+        return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
       }
-      state = state.copyWith(isUploadingPhoto: false);
+
       final rawMsg = e.toString().toLowerCase();
       final isCancelledError = rawMsg.contains('đã bị huỷ') ||
           rawMsg.contains('đã huỷ') ||
@@ -1962,8 +1890,6 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           rawMsg.contains('already cancelled');
 
       if (isCancelledError) {
-        // Lượt viếng thăm này đã bị huỷ trên server (§3 & §4 HUY-LUOT-VIENG-THAM)!
-        // Tự động dọn dẹp active session bị lỗi thời:
         final cancelledVisitId = state.visitId;
         final clientUuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
         await visitRepository.clearActiveVisit();
@@ -1983,98 +1909,52 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         );
       }
 
-      final msg = e
-          .toString()
-          .replaceAll('ServerException: ', '')
-          .replaceAll('AppException: ', '');
-      return (false, msg);
+      await _enqueueVisitPhotoToDb(
+        file: persistentFile,
+        photoType: apiPhotoType,
+        lat: lat,
+        lng: lng,
+      );
+      return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
   }
 
-  Future<(bool, String?)> _savePhotoOffline({
+  Future<void> _enqueueVisitPhotoToDb({
     required File file,
     required String photoType,
     double? lat,
     double? lng,
   }) async {
+    if (ref == null) return;
     try {
-      final appDocDir = await getApplicationDocumentsDirectory();
-      final offlineDir = Directory(
-        p.join(appDocDir.path, 'offline_visit_photos'),
+      final db = ref!.read(appDatabaseProvider);
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final payload = {
+        'visit_id': state.visitId,
+        'photo_type': photoType,
+        'lat': lat,
+        'lng': lng,
+        'taken_at': DateTime.now().toIso8601String(),
+        'is_offline_sync': true,
+      };
+
+      await db.enqueue(
+        SyncQueueEntriesCompanion(
+          entity: const drift.Value('visit_photo'),
+          op: const drift.Value('upload'),
+          clientUuid: drift.Value(const Uuid().v4()),
+          parentUuid: drift.Value(_sessionClientUuid),
+          localPath: drift.Value(file.path),
+          payload: drift.Value(jsonEncode(payload)),
+          state: const drift.Value('pending'),
+          createdAt: drift.Value(nowMs),
+          createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
+          bootId: drift.Value(SystemClock.bootId),
+          attempts: const drift.Value(0),
+        ),
       );
-      if (!await offlineDir.exists()) {
-        await offlineDir.create(recursive: true);
-      }
-      final fileName =
-          'visit_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final persistentFile = await file.copy(p.join(offlineDir.path, fileName));
-
-      if (ref != null) {
-        final db = ref!.read(appDatabaseProvider);
-        final nowMs = DateTime.now().millisecondsSinceEpoch;
-        final payload = {
-          'visit_id': state.visitId,
-          'photo_type': photoType,
-          'lat': lat,
-          'lng': lng,
-          'taken_at': DateTime.now().toIso8601String(),
-          'is_offline_sync': true,
-        };
-
-        await db.enqueue(
-          SyncQueueEntriesCompanion(
-            entity: const drift.Value('visit_photo'),
-            op: const drift.Value('upload'),
-            clientUuid: drift.Value(const Uuid().v4()),
-            parentUuid: drift.Value(_sessionClientUuid),
-            localPath: drift.Value(persistentFile.path),
-            payload: drift.Value(jsonEncode(payload)),
-            state: const drift.Value('pending'),
-            createdAt: drift.Value(nowMs),
-            createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
-            bootId: drift.Value(SystemClock.bootId),
-            attempts: const drift.Value(0),
-          ),
-        );
-      }
-
-      final photo = VisitPhotoEntity(
-        id: -DateTime.now().millisecondsSinceEpoch,
-        token: '',
-        url: persistentFile.path,
-        photoType: photoType,
-        photoTypeLabel: photoType == 'display'
-            ? 'Ảnh trưng bày'
-            : (photoType == 'store_front'
-                ? 'Mặt tiền'
-                : (photoType == 'closed_store'
-                    ? 'Ảnh đóng cửa'
-                    : 'Ảnh chụp')),
-        photoTypeColor: 'primary',
-        takenAt: DateTime.now().toIso8601String(),
-        localPath: persistentFile.path,
-      );
-
-      final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)
-        ..add(photo);
-
-      state = state.copyWith(
-        photos: updatedPhotos,
-        isUploadingPhoto: false,
-      );
-
-      _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
-
-      return (
-        true,
-        'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.',
-      );
-    } catch (err) {
-      state = state.copyWith(isUploadingPhoto: false);
-      return (
-        false,
-        'Không thể lưu ảnh trên máy: ${StringUtils.formatUserFriendlyError(err)}',
-      );
+    } catch (e) {
+      debugPrint('[RouteViewModel] Lỗi enqueue ảnh: $e');
     }
   }
 

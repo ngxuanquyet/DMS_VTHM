@@ -7,6 +7,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
@@ -584,12 +585,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi cập nhật: ${e.toString().replaceAll('Exception: ', '')}'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     } finally {
       if (mounted) {

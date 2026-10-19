@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -23,6 +24,7 @@ class AttendancePhotoViewerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLocal = photo.url.isNotEmpty && File(photo.url).existsSync();
     final fullUrl = photo.getFullUrl(AppConstants.baseUrl);
 
     return Dialog(
@@ -52,9 +54,14 @@ class AttendancePhotoViewerDialog extends StatelessWidget {
             child: Container(
               color: Colors.black,
               constraints: const BoxConstraints(maxHeight: 500),
-              child: Image.network(
-                fullUrl,
-                fit: BoxFit.contain,
+              child: isLocal
+                  ? Image.file(
+                      File(photo.url),
+                      fit: BoxFit.contain,
+                    )
+                  : Image.network(
+                      fullUrl,
+                      fit: BoxFit.contain,
                 loadingBuilder: (context, child, progress) {
                   if (progress == null) return child;
                   return const SizedBox(

@@ -747,6 +747,16 @@ class CustomerLocalDataSource {
       approvalAt: dynFields['approval_at']?.toString(),
       syncStatus: row.syncStatus,
       clientUuid: row.clientUuid,
+      isToday: CustomerEntity.isSameDayOfWeek(
+            CustomerEntity.extractDayOfWeekFromName(resolvedRowRoute),
+            DateTime.now().weekday,
+          ) ||
+          localRoutes.any(
+            (r) => CustomerEntity.isSameDayOfWeek(
+              CustomerEntity.extractDayOfWeekFromName(r),
+              DateTime.now().weekday,
+            ),
+          ),
       createdByName: dynFields['created_by_name']?.toString() ??
           dynFields['created_by_code']?.toString() ??
           dynFields['created_by']?.toString() ??

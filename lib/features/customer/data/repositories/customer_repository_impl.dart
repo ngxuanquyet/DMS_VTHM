@@ -589,6 +589,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
       approvalColor: 'warning',
       syncStatus: 'synced',
       clientUuid: clientUuid,
+      isToday: CustomerEntity.isSameDayOfWeek(
+        CustomerEntity.extractDayOfWeekFromName(route),
+        DateTime.now().weekday,
+      ),
       photoUrl: photoToken,
       photoUrls: photoToken != null ? [photoToken] : const [],
       createdAt: clientTimeIso,

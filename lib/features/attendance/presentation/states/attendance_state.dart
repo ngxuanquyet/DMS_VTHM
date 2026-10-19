@@ -18,6 +18,7 @@ class AttendanceState {
   final int liveWorkDurationSeconds;
   final AttendanceDetailEntity? detail;
   final Position? currentPosition;
+  final List<AttendanceShiftScheduleEntity> shifts;
 
   const AttendanceState({
     this.status = AttendanceStatus.initial,
@@ -34,6 +35,7 @@ class AttendanceState {
     this.liveWorkDurationSeconds = 0,
     this.detail,
     this.currentPosition,
+    this.shifts = const [],
   });
 
   /// Kiểm tra tài khoản có được phép chấm công hay không (§1.2 & §2)
@@ -102,6 +104,7 @@ class AttendanceState {
     int? liveWorkDurationSeconds,
     AttendanceDetailEntity? detail,
     Position? currentPosition,
+    List<AttendanceShiftScheduleEntity>? shifts,
   }) {
     return AttendanceState(
       status: status ?? this.status,
@@ -118,6 +121,7 @@ class AttendanceState {
       liveWorkDurationSeconds: liveWorkDurationSeconds ?? this.liveWorkDurationSeconds,
       detail: detail ?? this.detail,
       currentPosition: currentPosition ?? this.currentPosition,
+      shifts: shifts ?? this.shifts,
     );
   }
 }

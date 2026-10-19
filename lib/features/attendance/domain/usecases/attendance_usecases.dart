@@ -89,3 +89,13 @@ class ToggleAttendanceUseCase {
     return _repository.toggleAttendanceCheck();
   }
 }
+
+class GetMobileShiftsUseCase {
+  final AttendanceRepository _repository;
+
+  GetMobileShiftsUseCase(this._repository);
+
+  Future<List<AttendanceShiftScheduleEntity>> call({String? from, int days = 7}) {
+    return _repository.getMobileShifts(from: from, days: days);
+  }
+}

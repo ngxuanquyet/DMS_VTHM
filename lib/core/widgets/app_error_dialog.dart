@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../errors/app_exceptions.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -9,6 +10,7 @@ class AppErrorDialog extends StatelessWidget {
   final String title;
   final String message;
   final String? errorId;
+  final String? errorCode;
   final VoidCallback? onRetry;
   final VoidCallback? onDismiss;
   final String retryText;
@@ -19,6 +21,7 @@ class AppErrorDialog extends StatelessWidget {
     required this.title,
     required this.message,
     this.errorId,
+    this.errorCode,
     this.onRetry,
     this.onDismiss,
     this.retryText = 'Thử lại',
@@ -31,8 +34,10 @@ class AppErrorDialog extends StatelessWidget {
   static Future<void> show(
     BuildContext context, {
     String? title,
-    required String message,
+    dynamic error,
+    String? message,
     String? errorId,
+    String? errorCode,
     VoidCallback? onRetry,
     VoidCallback? onDismiss,
     String retryText = 'Thử lại',
@@ -40,6 +45,23 @@ class AppErrorDialog extends StatelessWidget {
   }) async {
     if (_isShowing) return;
     _isShowing = true;
+
+    String resolvedMessage = message ?? 'Đã xảy ra lỗi. Vui lòng thử lại.';
+    String? resolvedId = errorId;
+    String? resolvedCode = errorCode;
+
+    if (error is AppException) {
+      resolvedMessage = message ?? error.message;
+      resolvedId ??= error.errorId;
+      resolvedCode ??= error.code;
+      if (resolvedId == null && resolvedCode == null) {
+        resolvedCode = error.displayErrorCode;
+      }
+    } else if (error is Exception) {
+      resolvedMessage = message ?? error.toString().replaceAll('Exception: ', '');
+    } else if (error != null) {
+      resolvedMessage = message ?? error.toString();
+    }
 
     try {
       await showDialog(
@@ -55,8 +77,9 @@ class AppErrorDialog extends StatelessWidget {
           },
           child: AppErrorDialog(
             title: title ?? 'Thông báo lỗi',
-            message: message,
-            errorId: errorId,
+            message: resolvedMessage,
+            errorId: resolvedId,
+            errorCode: resolvedCode,
             onRetry: () {
               Navigator.of(ctx).pop();
               _isShowing = false;
@@ -83,14 +106,41 @@ class AppErrorDialog extends StatelessWidget {
 
     // Trích xuất mã lỗi nếu truyền vào hoặc nằm trong chuỗi message
     String? resolvedErrorId = errorId;
+    String? resolvedCode = errorCode;
     String displayMessage = message;
-    if (resolvedErrorId == null || resolvedErrorId.isEmpty) {
-      final regExp = RegExp(r'\(Mã lỗi:\s*(ERR-[A-Za-z0-9\-]+)\)');
-      final match = regExp.firstMatch(message);
-      if (match != null) {
-        resolvedErrorId = match.group(1);
-        displayMessage = message.replaceAll(regExp, '').trim();
+
+    // Trích xuất mã lỗi nếu nằm trong chuỗi message dạng (Mã lỗi: ...)
+    final codeRegex = RegExp(r'\(Mã lỗi:\s*([^)]+)\)');
+    final match = codeRegex.firstMatch(displayMessage);
+    if (match != null) {
+      final extracted = match.group(1)?.trim();
+      if (extracted != null && extracted.isNotEmpty) {
+        if (resolvedErrorId == null && resolvedCode == null) {
+          resolvedErrorId = extracted;
+        }
       }
+      displayMessage = displayMessage.replaceAll(codeRegex, '').trim();
+    }
+
+    // Tách code dạng (code: 422, error_code: VALIDATION_ERROR) nếu có
+    final legacyRegExp = RegExp(r'\(code:\s*(\d+),\s*error_code:\s*([^)]+)\)');
+    final legacyMatch = legacyRegExp.firstMatch(displayMessage);
+    if (legacyMatch != null) {
+      resolvedCode ??= legacyMatch.group(2)?.trim();
+      resolvedErrorId ??= 'HTTP-${legacyMatch.group(1)}';
+      displayMessage = displayMessage.replaceAll(legacyRegExp, '').trim();
+    }
+
+    // Chuẩn hóa mã lỗi hiển thị
+    String? finalCode;
+    if (resolvedErrorId != null && resolvedErrorId.isNotEmpty) {
+      if (resolvedCode != null && resolvedCode.isNotEmpty && !resolvedErrorId.contains(resolvedCode)) {
+        finalCode = '$resolvedErrorId ($resolvedCode)';
+      } else {
+        finalCode = resolvedErrorId;
+      }
+    } else if (resolvedCode != null && resolvedCode.isNotEmpty) {
+      finalCode = resolvedCode;
     }
 
     return Dialog(
@@ -147,8 +197,8 @@ class AppErrorDialog extends StatelessWidget {
               ),
             ),
 
-            // Badge hiển thị Mã lỗi kèm nút Sao chép
-            if (resolvedErrorId != null && resolvedErrorId.isNotEmpty) ...[
+            // Badge hiển thị Mã lỗi kèm nút Sao chép để báo admin
+            if (finalCode != null && finalCode.isNotEmpty) ...[
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -167,21 +217,25 @@ class AppErrorDialog extends StatelessWidget {
                   children: [
                     const Icon(Icons.tag_rounded, size: 16, color: AppColors.error),
                     const SizedBox(width: 4),
-                    Text(
-                      resolvedErrorId,
-                      style: AppTypography.labelLarge(
-                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                      ).copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'monospace',
-                        letterSpacing: 0.5,
+                    Flexible(
+                      child: Text(
+                        finalCode,
+                        style: AppTypography.labelLarge(
+                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                        ).copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'monospace',
+                          letterSpacing: 0.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 6),
                     InkWell(
                       borderRadius: BorderRadius.circular(4),
                       onTap: () {
-                        Clipboard.setData(ClipboardData(text: resolvedErrorId!));
+                        Clipboard.setData(ClipboardData(text: finalCode!));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Đã sao chép mã lỗi vào bộ nhớ tạm.'),

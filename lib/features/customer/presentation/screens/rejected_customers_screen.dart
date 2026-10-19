@@ -685,22 +685,6 @@ class _CompoundRejectedDealerCard extends StatelessWidget {
                         color: isDark ? Colors.white : const Color(0xFF181C1B),
                       ),
                     ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDC2626).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Chưa tính KPI',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFDC2626),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 8),

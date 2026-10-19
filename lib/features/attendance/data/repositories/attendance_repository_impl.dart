@@ -4,6 +4,8 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -299,6 +301,78 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     return tempPhoto;
   }
 
+  @override
+  Future<AttendancePunchPhotoEntity> enqueuePunchPhoto({
+    required int punchId,
+    required File file,
+    required String photoType,
+    DateTime? takenAt,
+    double? lat,
+    double? lng,
+    String? parentUuid,
+  }) async {
+    final now = takenAt ?? DateTime.now();
+    final photoUuid = const Uuid().v4();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    // Lưu ảnh vào thư mục attendance_photos cố định
+    String localSavedPath = file.path;
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final attDir = Directory(p.join(appDocDir.path, 'attendance_photos'));
+      if (!await attDir.exists()) {
+        await attDir.create(recursive: true);
+      }
+      final persistentFile = await file.copy(
+        p.join(attDir.path, 'att_${photoType}_${nowMs}_$photoUuid.jpg'),
+      );
+      localSavedPath = persistentFile.path;
+    } catch (e) {
+      debugPrint('[AttendanceRepo] Không thể copy ảnh vào thư mục riêng: $e');
+    }
+
+    final payloadMap = {
+      'punch_id': punchId,
+      'photo_type': photoType,
+      'taken_at': now.toIso8601String(),
+      'lat': lat,
+      'lng': lng,
+      'local_path': localSavedPath,
+    };
+
+    if (database != null) {
+      await database!.enqueue(
+        SyncQueueEntriesCompanion.insert(
+          entity: 'attendance_photo',
+          op: 'upload',
+          clientUuid: photoUuid,
+          parentUuid: parentUuid != null ? Value(parentUuid) : const Value.absent(),
+          localPath: Value(localSavedPath),
+          payload: jsonEncode(payloadMap),
+          createdAt: nowMs,
+          createdElapsed: SystemClock.nowMonotonicMs,
+          bootId: SystemClock.bootId,
+        ),
+      );
+    }
+
+    final tempPhoto = AttendancePunchPhotoEntity(
+      id: -nowMs,
+      fileId: null,
+      token: null,
+      url: localSavedPath,
+      photoType: photoType,
+      photoTypeLabel: photoType == 'front' ? 'Ảnh chân dung' : 'Ảnh khung cảnh',
+      photoTypeColor: 'primary',
+      takenAt: now.toIso8601String(),
+      sortOrder: 0,
+      duplicate: false,
+    );
+
+    await _attachPhotoToLocalPunch(punchId, tempPhoto);
+    return tempPhoto;
+  }
+
   // ===========================================================================
   // 4. LỊCH SỬ CHẤM CÔNG CỦA MÌNH (GET /attendance/mobile/history)
   // ===========================================================================
@@ -328,6 +402,39 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         final list = jsonDecode(cachedJson) as List<dynamic>;
         return list
             .map((item) => AttendancePunchModel.fromJson(item as Map<String, dynamic>).toEntity())
+            .toList();
+      } catch (_) {}
+    }
+
+    return const [];
+  }
+
+  @override
+  Future<List<AttendanceShiftScheduleEntity>> getMobileShifts({
+    String? from,
+    int days = 7,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final userCacheKey = '${_getUserConfigCacheKey(prefs)}_shifts';
+
+    if (_isOnline) {
+      try {
+        final models = await _apiService.getMobileShifts(from: from, days: days);
+        final jsonList = models.map((m) => m.toJson()).toList();
+        await prefs.setString(userCacheKey, jsonEncode(jsonList));
+        return models.map((m) => m.toEntity()).toList();
+      } catch (e) {
+        debugPrint('[AttendanceRepo] Lỗi tải lịch ca làm việc ($from, $days ngày): $e');
+      }
+    }
+
+    // Đọc từ bộ nhớ cache cục bộ nếu mất mạng hoặc lỗi server
+    final cachedJson = prefs.getString(userCacheKey);
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final rawList = jsonDecode(cachedJson) as List<dynamic>;
+        return rawList
+            .map((item) => AttendanceShiftScheduleModel.fromJson(item as Map<String, dynamic>).toEntity())
             .toList();
       } catch (_) {}
     }

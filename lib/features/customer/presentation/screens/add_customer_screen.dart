@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../data/repositories/customer_repository_impl.dart';
@@ -530,13 +531,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi khi thêm điểm bán: ${e.toString()}'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppSnackBar.showError(context, e);
       }
     } finally {
       if (mounted) {

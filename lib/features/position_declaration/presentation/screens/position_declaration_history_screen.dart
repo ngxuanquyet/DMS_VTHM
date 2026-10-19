@@ -580,23 +580,6 @@ class _PositionDeclarationHistoryScreenState
                           ),
                         ],
                       ),
-                    if (item.isMockLocation)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Cảnh báo GPS ảo',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFEF4444),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
 

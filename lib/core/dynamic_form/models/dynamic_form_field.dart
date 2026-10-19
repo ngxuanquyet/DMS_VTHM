@@ -252,6 +252,9 @@ class DynamicFormField {
   /// Thứ tự sắp xếp
   final int order;
 
+  /// Chú giải / Hướng dẫn nhập trường
+  String? get description => helperText;
+
   const DynamicFormField({
     required this.code,
     required this.label,
@@ -339,7 +342,10 @@ class DynamicFormField {
       label = 'Vị trí điểm bán trên bản đồ';
     }
 
-    String? helperText = json['description']?.toString() ?? json['helper_text']?.toString();
+    String? helperText = json['description']?.toString() ??
+        json['helper_text']?.toString() ??
+        json['help_text']?.toString() ??
+        json['note']?.toString();
     if (helperText == null && (code == 'photo_file_id' || type == DynamicFormFieldType.photo)) {
       helperText = 'Chụp hoặc tải lên tối đa $effectiveMaxPhotos ảnh thực tế tại điểm bán';
     }
@@ -386,7 +392,7 @@ class DynamicFormField {
       step: json['step'] is num ? json['step'] as num : num.tryParse(json['step']?.toString() ?? ''),
       maxPhotos: effectiveMaxPhotos,
       allowGallery: json['allow_gallery'] == null
-          ? true
+          ? false
           : (json['allow_gallery'] == true ||
               json['allow_gallery'] == 1 ||
               json['allow_gallery'] == 'true'),

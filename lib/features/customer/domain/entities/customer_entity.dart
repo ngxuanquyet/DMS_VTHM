@@ -116,7 +116,7 @@ class CustomerEntity {
     this.updatedByName,
     this.createdAt,
     this.updatedAt,
-    this.isToday = true,
+    this.isToday = false,
     this.visitStatus = CustomerVisitStatus.pending,
     this.accentColor = const Color(0xFF10B981),
     this.dynamicFields = const {},
@@ -379,5 +379,129 @@ class CustomerEntity {
 
     return false;
   }
+
+  /// Trích xuất thứ trong tuần từ tên tuyến (1: Thứ 2 ... 6: Thứ 7, 7: Chủ nhật)
+  static int? extractDayOfWeekFromName(String? text) {
+    if (text == null || text.trim().isEmpty) return null;
+    final normalized = text
+        .toLowerCase()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .replaceAll('.', ' ')
+        .trim();
+
+    if (normalized.contains('chủ nhật') ||
+        normalized.contains('chu nhat') ||
+        RegExp(r'\bcn\b').hasMatch(normalized)) {
+      return 7;
+    }
+    if (normalized.contains('thứ 2') ||
+        normalized.contains('thu 2') ||
+        normalized.contains('thứ hai') ||
+        normalized.contains('thu hai') ||
+        RegExp(r'\bt\s*2\b').hasMatch(normalized)) {
+      return 1;
+    }
+    if (normalized.contains('thứ 3') ||
+        normalized.contains('thu 3') ||
+        normalized.contains('thứ ba') ||
+        normalized.contains('thu ba') ||
+        RegExp(r'\bt\s*3\b').hasMatch(normalized)) {
+      return 2;
+    }
+    if (normalized.contains('thứ 4') ||
+        normalized.contains('thu 4') ||
+        normalized.contains('thứ tư') ||
+        normalized.contains('thu tu') ||
+        RegExp(r'\bt\s*4\b').hasMatch(normalized)) {
+      return 3;
+    }
+    if (normalized.contains('thứ 5') ||
+        normalized.contains('thu 5') ||
+        normalized.contains('thứ năm') ||
+        normalized.contains('thu nam') ||
+        RegExp(r'\bt\s*5\b').hasMatch(normalized)) {
+      return 4;
+    }
+    if (normalized.contains('thứ 6') ||
+        normalized.contains('thu 6') ||
+        normalized.contains('thứ sáu') ||
+        normalized.contains('thu sau') ||
+        RegExp(r'\bt\s*6\b').hasMatch(normalized)) {
+      return 5;
+    }
+    if (normalized.contains('thứ 7') ||
+        normalized.contains('thu 7') ||
+        normalized.contains('thứ bảy') ||
+        normalized.contains('thu bay') ||
+        RegExp(r'\bt\s*7\b').hasMatch(normalized)) {
+      return 6;
+    }
+    return null;
+  }
+
+  /// Kiểm tra xem 2 giá trị thứ trong tuần có khớp nhau không (xử lý CN: 7 trong Dart, 0 trên DB/API)
+  static bool isSameDayOfWeek(int? dayA, int? dayB) {
+    if (dayA == null || dayB == null) return false;
+    if (dayA == dayB) return true;
+    if ((dayA == 7 && dayB == 0) || (dayA == 0 && dayB == 7)) return true;
+    return false;
+  }
+
+  /// Kiểm tra khách hàng có thuộc tuyến của ngày trong tuần chỉ định không
+  bool matchesDayOfWeek(int targetDay, {List<dynamic> userRoutes = const []}) {
+    // 1. Kiểm tra qua routeIds với danh sách tuyến userRoutes
+    for (final id in routeIds) {
+      for (final ur in userRoutes) {
+        final urId = ur.id is int ? ur.id as int : int.tryParse(ur.id.toString());
+        if (urId == id) {
+          final visitDay = ur.visitDayOfWeek as int?;
+          if (isSameDayOfWeek(visitDay, targetDay)) return true;
+          if (extractDayOfWeekFromName(ur.name?.toString()) == targetDay) return true;
+          if (extractDayOfWeekFromName(ur.code?.toString()) == targetDay) return true;
+        }
+      }
+    }
+
+    // 2. Kiểm tra qua danh sách routes của khách hàng
+    for (final rName in routes) {
+      if (extractDayOfWeekFromName(rName) == targetDay) return true;
+      for (final ur in userRoutes) {
+        if (ur.name?.toString().trim() == rName.trim()) {
+          final visitDay = ur.visitDayOfWeek as int?;
+          if (isSameDayOfWeek(visitDay, targetDay)) return true;
+          if (extractDayOfWeekFromName(ur.name?.toString()) == targetDay) return true;
+        }
+      }
+    }
+
+    // 3. Kiểm tra qua chuỗi route
+    if (route.isNotEmpty) {
+      final parts = route.split(',').map((e) => e.trim());
+      for (final p in parts) {
+        if (extractDayOfWeekFromName(p) == targetDay) return true;
+        for (final ur in userRoutes) {
+          if (ur.name?.toString().trim() == p) {
+            final visitDay = ur.visitDayOfWeek as int?;
+            if (isSameDayOfWeek(visitDay, targetDay)) return true;
+            if (extractDayOfWeekFromName(ur.name?.toString()) == targetDay) return true;
+          }
+        }
+      }
+    }
+
+    // 4. Kiểm tra dynamicFields
+    final dynDay = dynamicFields['visit_day_of_week'] ??
+        dynamicFields['thu'] ??
+        dynamicFields['ngay_tuan'];
+    if (dynDay != null) {
+      final parsedDay = int.tryParse(dynDay.toString());
+      if (parsedDay != null && isSameDayOfWeek(parsedDay, targetDay)) return true;
+      if (extractDayOfWeekFromName(dynDay.toString()) == targetDay) return true;
+    }
+
+    return false;
+  }
 }
+
 

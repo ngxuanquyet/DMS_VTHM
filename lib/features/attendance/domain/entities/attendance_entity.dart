@@ -8,6 +8,7 @@ class AttendanceTodayEntity {
   final String? lastOutAt;
   final String nextAction; // 'in' | 'out'
   final String nextActionLabel; // 'Vào' | 'Ra'
+  final AttendanceShiftScheduleEntity? shift;
 
   const AttendanceTodayEntity({
     this.workDate,
@@ -16,6 +17,7 @@ class AttendanceTodayEntity {
     this.lastOutAt,
     this.nextAction = 'in',
     this.nextActionLabel = 'Vào',
+    this.shift,
   });
 
   /// Lấy giờ vào định dạng HH:mm
@@ -38,6 +40,67 @@ class AttendanceTodayEntity {
       return DateFormat('HH:mm').format(dt);
     }
     return raw;
+  }
+}
+
+/// Thông tin ca làm việc cụ thể (§8.1)
+class AttendanceShiftEntity {
+  final int id;
+  final String code;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final bool crossMidnight;
+
+  const AttendanceShiftEntity({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    this.crossMidnight = false,
+  });
+
+  String get timeRange => '$startTime – $endTime';
+}
+
+/// Lịch ca làm việc trong ngày (§8.1 - §8.3)
+class AttendanceShiftScheduleEntity {
+  final String workDate;
+  final String status; // 'shift' | 'multiple' | 'day_off' | 'no_schedule'
+  final String? source; // 'override' | 'schedule' | 'auto'
+  final AttendanceShiftEntity? shift;
+  final List<AttendanceShiftEntity> candidates;
+
+  const AttendanceShiftScheduleEntity({
+    required this.workDate,
+    required this.status,
+    this.source,
+    this.shift,
+    this.candidates = const [],
+  });
+
+  bool get isShift => status == 'shift' && shift != null;
+  bool get isMultiple => status == 'multiple';
+  bool get isDayOff => status == 'day_off';
+  bool get isNoSchedule => status == 'no_schedule';
+
+  String get displayText {
+    switch (status) {
+      case 'shift':
+        return shift != null ? 'Ca ${shift!.name}' : 'Ca làm việc';
+      case 'multiple':
+        if (candidates.isNotEmpty) {
+          final candNames = candidates.map((c) => '${c.code} (${c.startTime})').join(' / ');
+          return 'Xoay ca: $candNames';
+        }
+        return 'Xoay ca';
+      case 'day_off':
+        return 'Nghỉ';
+      case 'no_schedule':
+      default:
+        return 'Chưa được xếp lịch — liên hệ nhân sự';
+    }
   }
 }
 

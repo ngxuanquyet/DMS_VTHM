@@ -134,10 +134,10 @@ void main() {
       // Verify address text field
       expect(find.text('12 Lý Thường Kiệt'), findsOneWidget);
 
-      // Verify coordinates displayed with ±accuracy m and GPS giả badge
+      // Verify coordinates displayed with ±accuracy m (GPS giả badge removed for silent fraud check)
       expect(find.textContaining('21.028512, 105.854200'), findsOneWidget);
       expect(find.text('(±8.3 m)'), findsOneWidget);
-      expect(find.text('GPS giả'), findsOneWidget);
+      expect(find.text('GPS giả'), findsNothing);
 
       // Button says "Lấy lại vị trí" when coordinates already exist
       expect(find.text('Lấy lại vị trí'), findsOneWidget);

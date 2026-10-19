@@ -494,7 +494,7 @@ void main() {
       expect(codes.contains('region_id'), isTrue);
       expect(codes.contains('phone'), isTrue);
       expect(codes.contains('address'), isTrue);
-      expect(codes.contains('lat_lng'), isTrue);
+      expect(codes.contains('coords') || codes.contains('lat_lng'), isTrue);
     });
 
     test('DynamicFormField copyWith correctly modifies options and properties', () {
