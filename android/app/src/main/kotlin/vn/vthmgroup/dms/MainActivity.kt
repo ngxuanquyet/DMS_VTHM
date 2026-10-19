@@ -1,4 +1,4 @@
-package com.example.vthm_dms
+package vn.vthmgroup.dms
 
 import io.flutter.embedding.android.FlutterActivity
 
