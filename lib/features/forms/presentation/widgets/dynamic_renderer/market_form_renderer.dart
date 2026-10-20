@@ -12,6 +12,7 @@ import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
+import '../../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
@@ -559,6 +560,24 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           onChanged: widget.lockCustomer
               ? (_) {}
               : (val) => _updateValue(block.resolved.code, val),
+        );
+      case 'ref_erp_partner':
+        // Khách hàng pháp nhân (khách ERP Bravo): tìm trên server; giá trị là MÃ chuỗi (giữ số 0 đầu) —
+        // ô chọn một lưu một chuỗi, ô chọn nhiều (`config.multiple`) lưu mảng chuỗi.
+        final cfg = block.resolved.config;
+        final multiple = cfg is Map && cfg['multiple'] == true;
+        return ErpPartnerFieldWidget(
+          fieldCode: block.resolved.code,
+          label: block.resolved.label.isNotEmpty ? block.resolved.label : block.resolved.code,
+          description: block.resolved.description,
+          isRequired: block.required,
+          multiple: multiple,
+          selectedCodes: ErpPartnerFieldWidget.codesFromValue(_answers[block.resolved.code]),
+          errorText: _errors[block.resolved.code],
+          onChanged: (codes) => _updateValue(
+            block.resolved.code,
+            ErpPartnerFieldWidget.valueFromCodes(codes, multiple: multiple),
+          ),
         );
       default:
         return _buildTextField(block, isDark, isMultiline: false);

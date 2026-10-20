@@ -42,7 +42,10 @@ enum DynamicFormFieldType {
   location,
 
   /// Chữ ký điện tử
-  signature;
+  signature,
+
+  /// Khách hàng pháp nhân (khách ERP Bravo) — tìm trên server, giá trị là MÃ chuỗi
+  erpPartner;
 
   /// Chuyển đổi chuỗi type từ API (case-insensitive) sang enum
   static DynamicFormFieldType fromString(String? typeStr) {
@@ -143,6 +146,9 @@ enum DynamicFormFieldType {
       case 'signature':
       case 'sign':
         return DynamicFormFieldType.signature;
+
+      case 'ref_erp_partner':
+        return DynamicFormFieldType.erpPartner;
 
       default:
         return DynamicFormFieldType.text;
@@ -248,6 +254,9 @@ class DynamicFormField {
   /// đã có. Ô chọn nhiều: server gửi MẢNG.
   final dynamic defaultValue;
 
+  /// Ô Khách hàng pháp nhân (`ref_erp_partner`) cho chọn nhiều khách — đọc từ `erp_partner.multiple` của schema
+  final bool erpPartnerMultiple;
+
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
@@ -281,6 +290,7 @@ class DynamicFormField {
     this.source,
     this.catalog,
     this.defaultValue,
+    this.erpPartnerMultiple = false,
     this.section,
     this.badge,
     this.order = 0,
@@ -406,6 +416,7 @@ class DynamicFormField {
       source: json['source']?.toString(),
       catalog: json['catalog']?.toString(),
       defaultValue: json['default'],
+      erpPartnerMultiple: json['erp_partner'] is Map && (json['erp_partner'] as Map)['multiple'] == true,
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -434,6 +445,7 @@ class DynamicFormField {
     String? source,
     String? catalog,
     dynamic defaultValue,
+    bool? erpPartnerMultiple,
     String? section,
     String? badge,
     int? order,
@@ -459,6 +471,7 @@ class DynamicFormField {
       source: source ?? this.source,
       catalog: catalog ?? this.catalog,
       defaultValue: defaultValue ?? this.defaultValue,
+      erpPartnerMultiple: erpPartnerMultiple ?? this.erpPartnerMultiple,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,

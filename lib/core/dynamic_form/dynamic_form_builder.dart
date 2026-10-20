@@ -16,6 +16,7 @@ import 'widgets/rating_field_widget.dart';
 import 'widgets/single_choice_field_widget.dart';
 import 'widgets/text_field_widget.dart';
 import '../widgets/location_field_widget.dart';
+import '../widgets/erp_partner_field_widget.dart';
 import '../map/app_map_location_card.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
@@ -806,6 +807,23 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           errorText: errorText,
           focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
+        );
+
+      case DynamicFormFieldType.erpPartner:
+        // Khách hàng pháp nhân: giá trị là MÃ chuỗi (giữ số 0 đầu) — chọn một: một chuỗi, chọn nhiều: mảng chuỗi
+        return ErpPartnerFieldWidget(
+          fieldCode: field.code,
+          label: field.label,
+          description: field.helperText,
+          isRequired: field.isRequired,
+          isReadOnly: field.isReadOnly,
+          multiple: field.erpPartnerMultiple,
+          selectedCodes: ErpPartnerFieldWidget.codesFromValue(value),
+          errorText: errorText,
+          onChanged: (codes) => updateFieldValue(
+            field.code,
+            ErpPartnerFieldWidget.valueFromCodes(codes, multiple: field.erpPartnerMultiple),
+          ),
         );
     }
   }
