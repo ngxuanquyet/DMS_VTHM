@@ -102,7 +102,10 @@ void main() {
       code: 'KH00999',
       name: 'Tạp Hóa Hương Sen',
       type: 'Đại lý cấp 1',
+      // #23682: kênh MobiWork cũ (`channelName`) KHÔNG còn hiện — màn chi tiết hiện Kênh · Tuyến Bravo.
       channelName: 'Kênh GT',
+      erpChannels: [ErpChannelEntity(id: 1, code: 'KPP', name: 'Kênh phân phối')],
+      territories: ['MB1'],
       route: 'Tuyến Bắc Từ Liêm',
       address: 'Số 123 Đường Cầu Diễn, Bắc Từ Liêm, Hà Nội',
       wardName: 'Phúc Diễn',
@@ -161,7 +164,8 @@ void main() {
     // Verify Code & Badges
     expect(find.text('KH00999'), findsOneWidget);
     expect(find.text('Đại lý cấp 1'), findsOneWidget);
-    expect(find.text('Kênh GT'), findsAtLeastNWidgets(1));
+    expect(find.text('KPP · MB1'), findsAtLeastNWidgets(1));
+    expect(find.text('Kênh GT'), findsNothing, reason: 'Không rơi về kênh MobiWork cũ (#23682).');
     expect(find.text('Tuyến Bắc Từ Liêm'), findsAtLeastNWidgets(1));
 
     // Verify Photo count pill (2 ảnh)

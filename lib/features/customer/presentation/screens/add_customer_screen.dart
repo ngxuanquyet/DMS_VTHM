@@ -791,6 +791,16 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
           fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
 
+          // #23819: ô Kênh/Tuyến bật "tự điền theo phòng ban" — server gửi `default` tính cho chính người đang đăng nhập.
+          // Chỉ màn TẠO mới điền sẵn (nhân viên vẫn sửa được); dữ liệu đã gõ (`_savedFormData`) vẫn thắng vì
+          // DynamicFormBuilder ưu tiên `initialData` hơn `initialValue`.
+          for (var i = 0; i < fields.length; i++) {
+            final f = fields[i];
+            if (f.defaultValue != null && f.initialValue == null) {
+              fields[i] = f.copyWith(initialValue: f.defaultValue);
+            }
+          }
+
           // Cập nhật options cho các trường phân loại nếu schema chưa có options.
           // Để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.
           for (var i = 0; i < fields.length; i++) {

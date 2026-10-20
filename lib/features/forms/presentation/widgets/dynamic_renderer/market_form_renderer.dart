@@ -214,6 +214,20 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       }
     }
 
+    // #23819: ô Kênh/Tuyến bật "tự điền theo phòng ban" — server gửi `config.default` tính cho chính người đăng nhập.
+    // Chỉ điền ô CÒN TRỐNG (câu trả lời nháp đã có thì giữ); lựa chọn của app là CHUỖI nên đổi giá trị về chuỗi để ô chọn
+    // khớp được (ô chọn nhiều: server gửi mảng).
+    for (final block in widget.blocks) {
+      final cfg = block.resolved.config;
+      final code = block.resolved.code;
+      if (code.isEmpty || cfg is! Map || cfg['default'] == null) continue;
+      final current = _answers[code];
+      final trong = current == null || (current is String && current.trim().isEmpty) || (current is List && current.isEmpty);
+      if (!trong) continue;
+      final d = cfg['default'];
+      _answers[code] = d is List ? d.map((e) => e.toString()).toList() : d.toString();
+    }
+
     _recomputeVisibility();
   }
 

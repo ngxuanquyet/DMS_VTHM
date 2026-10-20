@@ -95,9 +95,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     if (c.customerGroupId != null && c.customerGroupId! > 0) {
       data['customer_group_id'] = c.customerGroupId;
     }
-    if (c.channelId != null && c.channelId! > 0) {
-      data['channel_id'] = c.channelId;
-    }
     if (c.regionId != null && c.regionId! > 0) {
       data['region_id'] = c.regionId;
     }

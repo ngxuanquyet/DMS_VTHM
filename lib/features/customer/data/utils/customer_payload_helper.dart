@@ -8,7 +8,7 @@ const Set<String> kAllowedCustomerRootKeys = {
   'region_id',
   'customer_type_id',
   'customer_group_id',
-  'channel_id',
+  // #23682: bỏ `channel_id` (kênh MobiWork cũ) — server bỏ qua từ 19/10/2026, sẽ gỡ ở bước 2.
   'status',
   'address',
   'delivery_address',
@@ -35,6 +35,9 @@ const Set<String> kAllowedCustomerRootKeys = {
 /// Các khoá cấm tuyệt đối không được gửi lên POST /crm/customers
 /// (kể cả ở gốc body lẫn bên trong map `data`).
 const Set<String> kForbiddenCustomerKeys = {
+  // #23682: kênh MobiWork cũ — gỡ khỏi khoá gốc thì PHẢI cấm ở đây, nếu không vòng gom ô động coi nó là ô động
+  // và gửi lên trong `data`.
+  'channel_id',
   'client_boot_id',
   'queued_seconds',
   'client_time',
@@ -82,7 +85,7 @@ const Set<String> kCustomerFixedKeys = {
   'region_id',
   'customer_type_id',
   'customer_group_id',
-  'channel_id',
+  // #23682: bỏ `channel_id` (kênh MobiWork cũ) — server bỏ qua từ 19/10/2026, sẽ gỡ ở bước 2.
   'status',
   'address',
   'delivery_address',

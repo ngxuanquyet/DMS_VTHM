@@ -1129,8 +1129,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         state.visitEntity?.customerAddress ??
         state.checkinData?.dealer.address;
 
-    final customerChannelIds = customer?.erpChannels.map((c) => c.id).toList() ??
-        (customer?.channelId != null ? [customer!.channelId!] : <int>[]);
+    // #23682: chỉ kênh Bravo (`erp_channels`). KHÔNG rơi về `channelId` cũ — đó là id danh mục kênh MobiWork, khác hẳn
+    // id `sales_channel` mà điều kiện `@customer.channel_ids` so sánh.
+    final customerChannelIds = customer?.erpChannels.map((c) => c.id).toList() ?? <int>[];
     final customerTerritoryCodes = customer?.territories ?? <String>[];
 
     final customerContext = MarketFormFillArgs.buildCustomerContext(

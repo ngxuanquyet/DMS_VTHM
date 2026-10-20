@@ -240,8 +240,13 @@ class DynamicFormField {
   /// Nguồn dữ liệu: 'fixed', 'mobiwork', v.v.
   final String? source;
 
-  /// Danh mục liên kết: 'customer_type', 'channel', 'region', v.v.
+  /// Danh mục liên kết: 'customer_type', 'customer_group', 'region', 'sales_channel', 'sales_territory'.
   final String? catalog;
+
+  /// Giá trị server tính sẵn cho người đang đăng nhập (khoá `default` — ô Kênh/Tuyến bật "tự điền theo phòng ban",
+  /// #23819). CHỈ dùng khi TẠO mới (màn thêm điểm bán gán vào `initialValue`); màn sửa bỏ qua để không điền vào điểm bán
+  /// đã có. Ô chọn nhiều: server gửi MẢNG.
+  final dynamic defaultValue;
 
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
@@ -275,6 +280,7 @@ class DynamicFormField {
     this.kind,
     this.source,
     this.catalog,
+    this.defaultValue,
     this.section,
     this.badge,
     this.order = 0,
@@ -399,6 +405,7 @@ class DynamicFormField {
       kind: kind,
       source: json['source']?.toString(),
       catalog: json['catalog']?.toString(),
+      defaultValue: json['default'],
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -426,6 +433,7 @@ class DynamicFormField {
     String? kind,
     String? source,
     String? catalog,
+    dynamic defaultValue,
     String? section,
     String? badge,
     int? order,
@@ -450,6 +458,7 @@ class DynamicFormField {
       kind: kind ?? this.kind,
       source: source ?? this.source,
       catalog: catalog ?? this.catalog,
+      defaultValue: defaultValue ?? this.defaultValue,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,

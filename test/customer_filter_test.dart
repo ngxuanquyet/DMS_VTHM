@@ -92,6 +92,8 @@ void main() {
       route: 'Tuyến T2',
       type: 'Đại lý Cấp 1',
       channelName: 'GT',
+      // #23682: bộ lọc Kênh chỉ theo Kênh Bravo (`erpChannels`), không theo `channelName` cũ.
+      erpChannels: const [ErpChannelEntity(id: 1, code: 'GT', name: 'GT')],
       syncStatus: 'synced',
       status: 'active',
       isToday: true,
@@ -108,6 +110,8 @@ void main() {
       route: 'Tuyến T3',
       type: 'Tạp hóa',
       channelName: 'MT',
+      // #23682: bộ lọc Kênh chỉ theo Kênh Bravo (`erpChannels`), không theo `channelName` cũ.
+      erpChannels: const [ErpChannelEntity(id: 2, code: 'MT', name: 'MT')],
       syncStatus: 'synced',
       status: 'active',
       isToday: false,
@@ -125,6 +129,8 @@ void main() {
       route: 'Tuyến T2',
       type: 'Siêu thị',
       channelName: 'GT',
+      // #23682: bộ lọc Kênh chỉ theo Kênh Bravo (`erpChannels`), không theo `channelName` cũ.
+      erpChannels: const [ErpChannelEntity(id: 1, code: 'GT', name: 'GT')],
       syncStatus: 'pending',
       status: 'active',
       isToday: true,

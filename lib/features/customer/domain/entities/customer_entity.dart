@@ -196,10 +196,8 @@ class CustomerEntity {
     } else if (territoriesStr.isNotEmpty) {
       return territoriesStr;
     }
-    // Fallback: nếu chưa có kênh Bravo (chưa sync hoặc bản ghi cũ), dùng channelName cũ nếu có
-    if (channelName != null && channelName!.trim().isNotEmpty) {
-      return channelName!.trim();
-    }
+    // #23682: KHÔNG rơi về `channelName` (kênh MobiWork cũ, vd "MN2, CN Cần Thơ" — thực chất là tuyến, sắp gỡ ở server).
+    // Chưa có kênh/tuyến Bravo thì để trống; đồng bộ lại danh sách điểm bán là có.
     return '';
   }
 

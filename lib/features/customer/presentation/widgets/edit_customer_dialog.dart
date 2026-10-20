@@ -63,7 +63,6 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
   late final TextEditingController _provinceNameController;
   late final TextEditingController _wardNameController;
   int? _selectedCustomerTypeId;
-  int? _selectedChannelId;
   int? _selectedRegionId;
 
   // 2. Contact & Address controllers
@@ -126,7 +125,6 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
     _provinceNameController = TextEditingController(text: c.provinceName ?? '');
     _wardNameController = TextEditingController(text: c.wardName ?? '');
     _selectedCustomerTypeId = c.customerTypeId;
-    _selectedChannelId = c.channelId;
     _selectedRegionId = c.regionId;
 
     _contactNameController = TextEditingController(
@@ -1002,7 +1000,6 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
 
   Widget _buildClassificationDropdowns(bool isDark) {
     final customerTypes = widget.meta.customerTypes;
-    final channels = widget.meta.channels;
     final regions = widget.meta.regions;
 
     return Column(
@@ -1046,50 +1043,6 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
                     ],
                     onChanged: (val) {
                       setState(() => _selectedCustomerTypeId = val);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-
-            // Channel Dropdown
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Kênh bán hàng',
-                    style: AppTypography.labelSmall(
-                      color: isDark
-                          ? AppColors.darkOnSurfaceVariant
-                          : AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<int?>(
-                    initialValue: _selectedChannelId,
-                    isDense: true,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      prefixIcon: Icon(Icons.hub_outlined, size: 18),
-                    ),
-                    hint: const Text('Chọn kênh'),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('(Chưa chọn kênh)', style: TextStyle(color: AppColors.outline)),
-                      ),
-                      ...channels.map(
-                        (ch) => DropdownMenuItem<int?>(
-                          value: ch.id,
-                          child: Text(ch.name.isNotEmpty ? ch.name : ch.code, overflow: TextOverflow.ellipsis),
-                        ),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      setState(() => _selectedChannelId = val);
                     },
                   ),
                 ],

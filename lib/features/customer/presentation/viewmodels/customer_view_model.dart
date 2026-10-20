@@ -144,9 +144,8 @@ class CustomerState {
 
   List<String> get availableChannels {
     final set = <String>{'Tất cả kênh'};
-    for (final ch in meta.channels) {
-      if (ch.name.trim().isNotEmpty) set.add(ch.name.trim());
-    }
+    // #23682: chỉ Kênh Bravo có trên điểm bán (`erpChannels`). KHÔNG lấy `meta.channels` — đó là danh mục kênh MobiWork cũ
+    // (`crm_channel`), chọn vào là bộ lọc (chỉ so `erpChannels`) ra rỗng.
     for (final c in allCustomers) {
       if (c.isRejectedApproval) continue;
       for (final ec in c.erpChannels) {
@@ -155,9 +154,6 @@ class CustomerState {
         } else if (ec.code.trim().isNotEmpty) {
           set.add(ec.code.trim());
         }
-      }
-      if (c.channelName != null && c.channelName!.trim().isNotEmpty) {
-        set.add(c.channelName!.trim());
       }
     }
     return set.toList();
@@ -379,7 +375,7 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
   if (state.selectedChannel != null && state.selectedChannel != 'Tất cả kênh') {
     final sel = state.selectedChannel!.trim();
     list = list.where((c) {
-      if (c.channelName == sel) return true;
+      // #23682: chỉ lọc theo Kênh Bravo — `channelName` cũ là tuyến MobiWork, trộn vào là lệch nghĩa.
       return c.erpChannels.any((e) => e.name.trim() == sel || e.code.trim() == sel);
     }).toList();
   }

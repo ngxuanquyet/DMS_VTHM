@@ -572,7 +572,7 @@ class CustomerLocalDataSource {
       queuePayload['name'] = name;
       queuePayload['code'] = code;
       if (customerTypeId != null) queuePayload['customer_type_id'] = customerTypeId;
-      if (channelId != null) queuePayload['channel_id'] = channelId;
+      // #23682: KHÔNG gửi `channel_id` (kênh MobiWork cũ) — server bỏ qua từ 19/10/2026 và sẽ gỡ ở bước 2.
       if (regionId != null) queuePayload['region_id'] = regionId;
       if (provinceName != null) queuePayload['province_name'] = provinceName;
       if (wardName != null) queuePayload['ward_name'] = wardName;
@@ -611,7 +611,7 @@ class CustomerLocalDataSource {
         'name': name,
         'code': code,
         'customer_type_id': customerTypeId,
-        'channel_id': channelId,
+        // #23682: không gửi `channel_id` (kênh MobiWork cũ) — server bỏ qua, sẽ gỡ ở bước 2.
         'region_id': regionId,
         'province_name': provinceName,
         'ward_name': wardName,
@@ -756,7 +756,7 @@ class CustomerLocalDataSource {
       code: row.code,
       name: row.name,
       customerTypeId: row.customerTypeId,
-      type: row.type.isNotEmpty ? row.type : (row.channelName ?? 'Đại lý'),
+      type: row.type.isNotEmpty ? row.type : 'Đại lý',
       channelId: row.channelId,
       channelName: row.channelName,
       regionId: row.regionId,
