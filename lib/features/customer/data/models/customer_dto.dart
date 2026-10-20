@@ -43,6 +43,13 @@ class CustomerDto {
   final List<String> routes;
   final List<int> routeIds;
 
+  /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
+  final List<ErpChannelEntity> erpChannels;
+  final List<String> territories;
+  final bool erpLinked;
+  final String? territoryCode;
+  final List<int> ownChannelIds;
+
   const CustomerDto({
     required this.id,
     required this.code,
@@ -57,6 +64,11 @@ class CustomerDto {
     this.route,
     this.routes = const [],
     this.routeIds = const [],
+    this.erpChannels = const [],
+    this.territories = const [],
+    this.erpLinked = false,
+    this.territoryCode,
+    this.ownChannelIds = const [],
     required this.address,
     this.provinceName,
     this.wardName,
@@ -299,6 +311,40 @@ class CustomerDto {
             : rawUpdatedByName)
         : (rawUpdatedByCode != null && rawUpdatedByCode.isNotEmpty ? rawUpdatedByCode : null);
 
+    // Kênh ERP và Tuyến Bravo theo Spec 20/10/2026
+    List<ErpChannelEntity> parsedErpChannels = [];
+    final rawErpChannels = json['erp_channels'] ?? dynamicMap['erp_channels'];
+    if (rawErpChannels is List) {
+      for (final item in rawErpChannels) {
+        if (item is Map<String, dynamic>) {
+          parsedErpChannels.add(ErpChannelEntity.fromJson(item));
+        } else if (item is Map) {
+          parsedErpChannels.add(ErpChannelEntity.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+
+    List<String> parsedTerritories = [];
+    final rawTerritories = json['territories'] ?? dynamicMap['territories'];
+    if (rawTerritories is List) {
+      parsedTerritories = rawTerritories
+          .map((e) => e?.toString().trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
+    final bool parsedErpLinked = json['erp_linked'] == true || dynamicMap['erp_linked'] == true;
+    final String? parsedTerritoryCode = (json['territory_code'] ?? dynamicMap['territory_code'])?.toString();
+
+    List<int> parsedOwnChannelIds = [];
+    final rawOwnChannelIds = json['own_channel_ids'] ?? dynamicMap['own_channel_ids'];
+    if (rawOwnChannelIds is List) {
+      parsedOwnChannelIds = rawOwnChannelIds
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
+
     return CustomerDto(
       id: id,
       code: json['code']?.toString() ?? '',
@@ -319,6 +365,11 @@ class CustomerDto {
       route: validRouteName,
       routes: validRoutes,
       routeIds: parsedRouteIds,
+      erpChannels: parsedErpChannels,
+      territories: parsedTerritories,
+      erpLinked: parsedErpLinked,
+      territoryCode: parsedTerritoryCode,
+      ownChannelIds: parsedOwnChannelIds,
       address: json['address']?.toString() ?? '',
       provinceName: json['province_name']?.toString(),
       wardName: json['ward_name']?.toString(),
@@ -400,6 +451,11 @@ class CustomerDto {
       route: resolvedRoute,
       routes: routes.isNotEmpty ? routes : (route != null && route!.trim().isNotEmpty ? [route!.trim()] : const []),
       routeIds: routeIds,
+      erpChannels: erpChannels,
+      territories: territories,
+      erpLinked: erpLinked,
+      territoryCode: territoryCode,
+      ownChannelIds: ownChannelIds,
       address: address,
       provinceName: provinceName,
       wardName: wardName,

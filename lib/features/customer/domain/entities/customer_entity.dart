@@ -30,6 +30,45 @@ class CustomerAssigneeEntity {
   };
 }
 
+/// Thực thể Kênh ERP Bravo theo đặc tả kỹ thuật ngày 20/10/2026
+class ErpChannelEntity {
+  final int id;
+  final String code;
+  final String name;
+
+  const ErpChannelEntity({
+    required this.id,
+    required this.code,
+    required this.name,
+  });
+
+  factory ErpChannelEntity.fromJson(Map<String, dynamic> json) {
+    return ErpChannelEntity(
+      id: json['id'] is int ? json['id'] as int : int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'code': code,
+    'name': name,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ErpChannelEntity &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          code == other.code &&
+          name == other.name;
+
+  @override
+  int get hashCode => id.hashCode ^ code.hashCode ^ name.hashCode;
+}
+
 class CustomerEntity {
   final int id;
   final String code;
@@ -75,6 +114,13 @@ class CustomerEntity {
   final List<String> routes;
   final List<int> routeIds;
 
+  /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
+  final List<ErpChannelEntity> erpChannels;
+  final List<String> territories;
+  final bool erpLinked;
+  final String? territoryCode;
+  final List<int> ownChannelIds;
+
   /// Ảnh đại diện và bộ ảnh điểm bán theo spec 23/09/2026
   final String? photoUrl;
   final List<String> photoUrls;
@@ -93,6 +139,11 @@ class CustomerEntity {
     required this.route,
     this.routes = const [],
     this.routeIds = const [],
+    this.erpChannels = const [],
+    this.territories = const [],
+    this.erpLinked = false,
+    this.territoryCode,
+    this.ownChannelIds = const [],
     required this.address,
     this.provinceName,
     this.wardName,
@@ -124,6 +175,33 @@ class CustomerEntity {
     this.photoUrl,
     this.photoUrls = const [],
   });
+
+  /// Hiển thị Kênh và Tuyến theo Bravo (Spec 20/10/2026: Gợi ý `KPP, KBL · MN2`)
+  String get channelTerritoryDisplay {
+    final channelsStr = erpChannels
+        .map((c) => c.code.trim())
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .join(', ');
+    final territoriesStr = territories
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .join(', ');
+
+    if (channelsStr.isNotEmpty && territoriesStr.isNotEmpty) {
+      return '$channelsStr · $territoriesStr';
+    } else if (channelsStr.isNotEmpty) {
+      return channelsStr;
+    } else if (territoriesStr.isNotEmpty) {
+      return territoriesStr;
+    }
+    // Fallback: nếu chưa có kênh Bravo (chưa sync hoặc bản ghi cũ), dùng channelName cũ nếu có
+    if (channelName != null && channelName!.trim().isNotEmpty) {
+      return channelName!.trim();
+    }
+    return '';
+  }
 
   bool get isPendingApproval => approvalStatus == 'pending';
   bool get isRejectedApproval => approvalStatus == 'rejected';
@@ -228,6 +306,11 @@ class CustomerEntity {
     String? route,
     List<String>? routes,
     List<int>? routeIds,
+    List<ErpChannelEntity>? erpChannels,
+    List<String>? territories,
+    bool? erpLinked,
+    String? territoryCode,
+    List<int>? ownChannelIds,
     String? address,
     String? provinceName,
     String? wardName,
@@ -272,6 +355,11 @@ class CustomerEntity {
       route: route ?? this.route,
       routes: routes ?? this.routes,
       routeIds: routeIds ?? this.routeIds,
+      erpChannels: erpChannels ?? this.erpChannels,
+      territories: territories ?? this.territories,
+      erpLinked: erpLinked ?? this.erpLinked,
+      territoryCode: territoryCode ?? this.territoryCode,
+      ownChannelIds: ownChannelIds ?? this.ownChannelIds,
       address: address ?? this.address,
       provinceName: provinceName ?? this.provinceName,
       wardName: wardName ?? this.wardName,

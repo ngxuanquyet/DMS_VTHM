@@ -170,6 +170,9 @@ class CheckInState {
   final String visitResult; // 'visited' | 'closed'
   final String closedNote;
   final String visitNote;
+  final bool isOutOfGeofence;
+  final double? currentDistanceToDealerM;
+  final double? allowedGeofenceRadiusM;
 
   const CheckInState({
     this.status = CheckInStatus.initial,
@@ -190,6 +193,9 @@ class CheckInState {
     this.visitResult = 'visited',
     this.closedNote = '',
     this.visitNote = '',
+    this.isOutOfGeofence = false,
+    this.currentDistanceToDealerM,
+    this.allowedGeofenceRadiusM,
   });
 
   /// Danh sách các biểu mẫu khảo sát bắt buộc chưa hoàn thành
@@ -229,6 +235,9 @@ class CheckInState {
     String? visitResult,
     String? closedNote,
     String? visitNote,
+    bool? isOutOfGeofence,
+    double? currentDistanceToDealerM,
+    double? allowedGeofenceRadiusM,
   }) {
     return CheckInState(
       status: status ?? this.status,
@@ -251,6 +260,11 @@ class CheckInState {
       visitResult: visitResult ?? this.visitResult,
       closedNote: closedNote ?? this.closedNote,
       visitNote: visitNote ?? this.visitNote,
+      isOutOfGeofence: isOutOfGeofence ?? this.isOutOfGeofence,
+      currentDistanceToDealerM:
+          currentDistanceToDealerM ?? this.currentDistanceToDealerM,
+      allowedGeofenceRadiusM:
+          allowedGeofenceRadiusM ?? this.allowedGeofenceRadiusM,
     );
   }
 }

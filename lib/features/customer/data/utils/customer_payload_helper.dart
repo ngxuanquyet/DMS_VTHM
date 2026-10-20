@@ -211,8 +211,8 @@ class CustomerPayloadHelper {
       }
     }
 
-    // 7. Các trường phân loại: customer_type_id, customer_group_id, channel_id
-    // Lưu ý: Không gửi status (server mặc định là 'active', gửi lên bị 422)
+    // 7. Các trường phân loại: customer_type_id, customer_group_id
+    // Spec 20/10/2026 (§3): Bỏ gửi channel_id (server tự gán theo phòng người tạo)
     if (sourceData['customer_type_id'] != null) {
       final tId = int.tryParse(sourceData['customer_type_id'].toString());
       if (tId != null) payload['customer_type_id'] = tId;
@@ -220,10 +220,6 @@ class CustomerPayloadHelper {
     if (sourceData['customer_group_id'] != null) {
       final gId = int.tryParse(sourceData['customer_group_id'].toString());
       if (gId != null) payload['customer_group_id'] = gId;
-    }
-    if (sourceData['channel_id'] != null) {
-      final cId = int.tryParse(sourceData['channel_id'].toString());
-      if (cId != null) payload['channel_id'] = cId;
     }
 
     // 8. Thông tin liên hệ & địa chỉ (fixed fields)

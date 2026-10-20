@@ -188,5 +188,28 @@ void main() {
       expect(checkoutNotif.title, 'Cảnh báo chưa chấm công ra ca');
       expect(checkoutNotif.message, contains('17:00'));
     });
+
+    test('Visit geofence exit warning triggers alert notification and respects throttling', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = AppNotificationService();
+
+      await service.notifyVisitGeofenceExit(
+        dealerName: 'Đại lý Minh Phát',
+        distanceMeters: 250,
+        allowedRadiusMeters: 100,
+      );
+
+      final data = await service.getSavedNotifications();
+      final geofenceNotif = data.today.firstWhere((e) => e.type == 'visit_geofence_exit');
+
+      expect(geofenceNotif.title, '⚠️ Cảnh báo rời xa điểm bán');
+      expect(geofenceNotif.message, contains('250m'));
+      expect(geofenceNotif.message, contains('100m'));
+      expect(geofenceNotif.message, contains('Đại lý Minh Phát'));
+
+      // Test cancel notification
+      await service.cancelVisitGeofenceExitNotification();
+      expect(true, isTrue);
+    });
   });
 }

@@ -734,6 +734,45 @@ class AppNotificationService {
     );
   }
 
+  /// 5b. Cảnh báo rời khỏi điểm bán vượt bán kính cho phép
+  static const int visitGeofenceAlertId = 108;
+
+  Future<void> notifyVisitGeofenceExit({
+    required String dealerName,
+    required int distanceMeters,
+    required int allowedRadiusMeters,
+  }) async {
+    final throttled = await _shouldThrottle(
+      'geofence_exit_$dealerName',
+      const Duration(minutes: 3),
+    );
+    if (throttled) return;
+
+    final distText = distanceMeters < 1000
+        ? '${distanceMeters}m'
+        : '${(distanceMeters / 1000).toStringAsFixed(1)}km';
+    final radiusText = allowedRadiusMeters < 1000
+        ? '${allowedRadiusMeters}m'
+        : '${(allowedRadiusMeters / 1000).toStringAsFixed(1)}km';
+
+    await sendNotification(
+      id: visitGeofenceAlertId,
+      title: '⚠️ Cảnh báo rời xa điểm bán',
+      message:
+          'Bạn đang ở cách "$dealerName" $distText (vượt bán kính cho phép $radiusText). Vui lòng hoàn tất công việc và thực hiện Check-out!',
+      type: 'visit_geofence_exit',
+      category: 'work',
+      routePath: '/routes',
+    );
+  }
+
+  /// Hủy thông báo cảnh báo rời điểm bán khi đã check-out hoặc huỷ lượt
+  Future<void> cancelVisitGeofenceExitNotification() async {
+    try {
+      await _localNotifications?.cancel(id: visitGeofenceAlertId);
+    } catch (_) {}
+  }
+
   /// 6. Nhắc Chấm công Ra ca cuối ngày (Ca tan 17h, Thứ 2 - Thứ 7)
   Future<void> notifyAttendanceCheckoutReminder({bool? isOverdue}) async {
     final now = DateTime.now();

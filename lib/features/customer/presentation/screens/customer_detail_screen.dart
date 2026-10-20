@@ -940,10 +940,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 color: _customer.accentColor,
                 isDark: isDark,
               ),
-              if (_customer.channelName != null && _customer.channelName!.isNotEmpty)
+              if (_customer.channelTerritoryDisplay.isNotEmpty)
                 _buildBadge(
                   icon: Icons.store_mall_directory_outlined,
-                  label: _customer.channelName!,
+                  label: _customer.channelTerritoryDisplay,
                   color: const Color(0xFF8B5CF6),
                   isDark: isDark,
                 ),
@@ -1521,8 +1521,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         ),
         const SizedBox(height: 10),
         _buildInfoRow(
-          label: 'Kênh phân phối',
-          value: _customer.channelName ?? 'Kênh truyền thống (GT)',
+          label: 'Kênh / Tuyến',
+          value: _customer.channelTerritoryDisplay.isNotEmpty
+              ? _customer.channelTerritoryDisplay
+              : 'Chưa phân kênh',
           icon: Icons.storefront_outlined,
           isDark: isDark,
         ),

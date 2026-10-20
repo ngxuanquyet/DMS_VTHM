@@ -149,6 +149,13 @@ class CustomerState {
     }
     for (final c in allCustomers) {
       if (c.isRejectedApproval) continue;
+      for (final ec in c.erpChannels) {
+        if (ec.name.trim().isNotEmpty) {
+          set.add(ec.name.trim());
+        } else if (ec.code.trim().isNotEmpty) {
+          set.add(ec.code.trim());
+        }
+      }
       if (c.channelName != null && c.channelName!.trim().isNotEmpty) {
         set.add(c.channelName!.trim());
       }
@@ -370,7 +377,11 @@ final filteredCustomersProvider = Provider.autoDispose<List<CustomerWithDistance
 
   // 4. Lọc theo Kênh bán hàng
   if (state.selectedChannel != null && state.selectedChannel != 'Tất cả kênh') {
-    list = list.where((c) => c.channelName == state.selectedChannel).toList();
+    final sel = state.selectedChannel!.trim();
+    list = list.where((c) {
+      if (c.channelName == sel) return true;
+      return c.erpChannels.any((e) => e.name.trim() == sel || e.code.trim() == sel);
+    }).toList();
   }
 
   // 5. Lọc theo từ khóa tìm kiếm và tiêu chí (hỗ trợ không dấu §7.4)

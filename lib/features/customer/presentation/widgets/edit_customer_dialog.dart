@@ -339,9 +339,8 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
       changes['customer_type_id'] = _selectedCustomerTypeId;
     }
 
-    if (_selectedChannelId != c.channelId) {
-      changes['channel_id'] = _selectedChannelId;
-    }
+    // Spec 20/10/2026 (§3): Bỏ gửi channel_id
+    changes.remove('channel_id');
 
     if (_selectedRegionId != c.regionId) {
       changes['region_id'] = _selectedRegionId;

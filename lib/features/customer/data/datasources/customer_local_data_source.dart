@@ -381,6 +381,12 @@ class CustomerLocalDataSource {
           syncStatus: const Value('synced'),
           dynamicFieldsJson: Value(jsonEncode({
             ...remote.dynamicFields,
+            if (remote.erpChannels.isNotEmpty)
+              'erp_channels': remote.erpChannels.map((c) => c.toJson()).toList(),
+            if (remote.territories.isNotEmpty) 'territories': remote.territories,
+            'erp_linked': remote.erpLinked,
+            if (remote.territoryCode != null) 'territory_code': remote.territoryCode,
+            if (remote.ownChannelIds.isNotEmpty) 'own_channel_ids': remote.ownChannelIds,
             if (remote.createdByName != null) 'created_by_name': remote.createdByName,
             if (remote.updatedByName != null) 'updated_by_name': remote.updatedByName,
             if (remote.regionName != null) 'region_name': remote.regionName,
@@ -707,6 +713,37 @@ class CustomerLocalDataSource {
           .toList();
     }
 
+    // Kênh ERP & Tuyến Bravo theo Spec 20/10/2026
+    List<ErpChannelEntity> localErpChannels = [];
+    if (dynFields['erp_channels'] is List) {
+      for (final item in dynFields['erp_channels'] as List) {
+        if (item is Map<String, dynamic>) {
+          localErpChannels.add(ErpChannelEntity.fromJson(item));
+        } else if (item is Map) {
+          localErpChannels.add(ErpChannelEntity.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+
+    List<String> localTerritories = [];
+    if (dynFields['territories'] is List) {
+      localTerritories = (dynFields['territories'] as List)
+          .map((e) => e?.toString().trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
+    final bool localErpLinked = dynFields['erp_linked'] == true;
+    final String? localTerritoryCode = dynFields['territory_code']?.toString();
+
+    List<int> localOwnChannelIds = [];
+    if (dynFields['own_channel_ids'] is List) {
+      localOwnChannelIds = (dynFields['own_channel_ids'] as List)
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+    }
+
     Color accent = const Color(0xFF10B981);
     if (row.type.contains('NPP') || row.type.contains('Cấp 1')) {
       accent = const Color(0xFF3B82F6);
@@ -729,6 +766,11 @@ class CustomerLocalDataSource {
       route: resolvedRowRoute,
       routes: localRoutes,
       routeIds: localRouteIds,
+      erpChannels: localErpChannels,
+      territories: localTerritories,
+      erpLinked: localErpLinked,
+      territoryCode: localTerritoryCode,
+      ownChannelIds: localOwnChannelIds,
       address: row.address,
       provinceName: row.provinceName,
       wardName: row.wardName,

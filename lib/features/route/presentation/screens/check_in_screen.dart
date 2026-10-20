@@ -1129,9 +1129,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         state.visitEntity?.customerAddress ??
         state.checkinData?.dealer.address;
 
+    final customerChannelIds = customer?.erpChannels.map((c) => c.id).toList() ??
+        (customer?.channelId != null ? [customer!.channelId!] : <int>[]);
+    final customerTerritoryCodes = customer?.territories ?? <String>[];
+
     final customerContext = MarketFormFillArgs.buildCustomerContext(
       typeId: customer?.customerTypeId,
-      channelId: customer?.channelId,
+      channelIds: customerChannelIds,
+      territoryCodes: customerTerritoryCodes,
       regionId: customer?.regionId,
       groupId: customer?.customerGroupId,
     );
@@ -1742,6 +1747,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                         ],
                       ),
                     ),
+                  if (state.isOutOfGeofence && state.currentDistanceToDealerM != null)
+                    _buildGeofenceAlertBanner(context, state, isDark),
                   Expanded(
                     child: SingleChildScrollView(
                     padding: const EdgeInsets.only(bottom: 24),
@@ -2792,6 +2799,85 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGeofenceAlertBanner(
+    BuildContext context,
+    CheckInState state,
+    bool isDark,
+  ) {
+    final distM = state.currentDistanceToDealerM?.round() ?? 0;
+    final radiusM = state.allowedGeofenceRadiusM?.round() ?? 100;
+    final distText =
+        distM < 1000 ? '${distM}m' : '${(distM / 1000).toStringAsFixed(1)}km';
+    final radiusText = radiusM < 1000
+        ? '${radiusM}m'
+        : '${(radiusM / 1000).toStringAsFixed(1)}km';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFFDC2626) : const Color(0xFFFCA5A5),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFDC2626),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cảnh báo: Bạn đang ở xa điểm bán ($distText)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF991B1B),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Khoảng cách đã vượt bán kính cho phép ($radiusText). Vui lòng hoàn thành công việc và thực hiện Check-out để tránh bị ghi nhận sai vị trí.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: isDark
+                        ? const Color(0xFFFCA5A5)
+                        : const Color(0xFF7F1D1D),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

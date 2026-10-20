@@ -394,13 +394,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         changes['customer_group_id'] = newGroupId;
       }
 
-      // Kênh bán hàng
-      final newChannelId = formData['channel_id'] is num
-          ? (formData['channel_id'] as num).toInt()
-          : int.tryParse(formData['channel_id']?.toString() ?? '');
-      if (newChannelId != null && newChannelId != c.channelId) {
-        changes['channel_id'] = newChannelId;
-      }
+      // Spec 20/10/2026 (§3): Server bỏ qua channel_id, app thôi gửi channel_id
+      changes.remove('channel_id');
 
       // Khu vực
       final newRegionId = formData['region_id'] is num
@@ -837,6 +832,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                 }
               }
 
+              // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
+              fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
+
               // Cập nhật options cho các trường phân loại
               for (var i = 0; i < fields.length; i++) {
                 final f = fields[i];
@@ -849,16 +847,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                   // Đảm bảo loại khách hàng hiện tại có trong options
                   if (c.customerTypeId != null && !opts.any((o) => o.value == c.customerTypeId)) {
                     opts.insert(0, DynamicFormOption(label: c.type.isNotEmpty ? c.type : 'Loại ${c.customerTypeId}', value: c.customerTypeId!));
-                  }
-                  fields[i] = f.copyWith(options: opts);
-                } else if (f.code == 'channel_id') {
-                  final opts = f.options.isEmpty && meta.channels.isNotEmpty
-                      ? meta.channels
-                          .map((ch) => DynamicFormOption(label: ch.name.isNotEmpty ? ch.name : ch.code, value: ch.id))
-                          .toList()
-                      : List<DynamicFormOption>.from(f.options);
-                  if (c.channelId != null && !opts.any((o) => o.value == c.channelId)) {
-                    opts.insert(0, DynamicFormOption(label: c.channelName ?? 'Kênh ${c.channelId}', value: c.channelId!));
                   }
                   fields[i] = f.copyWith(options: opts);
                 } else if (f.code == 'region_id') {
@@ -904,31 +892,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                 );
               }
 
-              // Tự động chèn channel_id nếu schema thiếu
-              if (!fields.any((f) => f.code == 'channel_id')) {
-                final channelOptions = meta.channels.isNotEmpty
-                    ? meta.channels
-                        .map((ch) => DynamicFormOption(label: ch.name.isNotEmpty ? ch.name : ch.code, value: ch.id))
-                        .toList()
-                    : [const DynamicFormOption(label: 'GT (Truyền thống)', value: 1)];
-                if (c.channelId != null && !channelOptions.any((o) => o.value == c.channelId)) {
-                  channelOptions.insert(0, DynamicFormOption(label: c.channelName ?? 'Kênh ${c.channelId}', value: c.channelId!));
-                }
-                final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
-                fields.insert(
-                  insertIdx != -1 ? insertIdx + 1 : 1,
-                  DynamicFormField(
-                    code: 'channel_id',
-                    label: 'Kênh bán hàng',
-                    type: DynamicFormFieldType.singleChoice,
-                    isRequired: false,
-                    options: channelOptions,
-                    placeholder: 'Chọn kênh bán hàng...',
-                    section: 'Thông tin chung',
-                  ),
-                );
-              }
-
               // Tự động chèn region_id nếu schema thiếu
               if (!fields.any((f) => f.code == 'region_id')) {
                 final regionOptions = meta.regions.isNotEmpty
@@ -939,7 +902,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                 if (c.regionId != null && !regionOptions.any((o) => o.value == c.regionId)) {
                   regionOptions.insert(0, DynamicFormOption(label: c.regionName ?? 'Khu vực ${c.regionId}', value: c.regionId!));
                 }
-                final insertIdx = fields.indexWhere((f) => f.code == 'channel_id');
+                final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
                 fields.insert(
                   insertIdx != -1 ? insertIdx + 1 : 1,
                   DynamicFormField(

@@ -274,5 +274,96 @@ void main() {
       );
       expect(visNoCustomer['dms_ton_kho'], isFalse);
     });
+
+    test('Spec 20/10/2026: Đánh giá @customer.channel_ids và @customer.territory_codes', () {
+      final blocks = [
+        const MarketFormBlockEntity(
+          ref: 'form_kpp_mn2',
+          type: 'field',
+          required: true,
+          colSpan: 12,
+          showIf: {
+            'all': [
+              {
+                'field': '@customer.channel_ids',
+                'op': 'in',
+                'value': [1, 4]
+              },
+              {
+                'field': '@customer.territory_codes',
+                'op': 'contains',
+                'value': 'MN2'
+              }
+            ]
+          },
+          resolved: MarketFormResolvedEntity(code: 'form_kpp_mn2', label: 'Biểu mẫu MN2', inputType: 'text'),
+        ),
+      ];
+
+      // Điểm bán 1132: channel_ids = [1, 4], territory_codes = ["MN2"] => HIỆN
+      final visCustomer1132 = DynamicRuleEvaluator.computeVisibility(
+        blocks: blocks,
+        answers: {},
+        customerContext: {
+          '@customer': {
+            'channel_ids': [1, 4],
+            'territory_codes': ['MN2'],
+          }
+        },
+      );
+      expect(visCustomer1132['form_kpp_mn2'], isTrue);
+
+      // Điểm bán 1895: channel_ids = [6], territory_codes = [] => ẨN
+      final visCustomer1895 = DynamicRuleEvaluator.computeVisibility(
+        blocks: blocks,
+        answers: {},
+        customerContext: {
+          '@customer': {
+            'channel_ids': [6],
+            'territory_codes': [],
+          }
+        },
+      );
+      expect(visCustomer1895['form_kpp_mn2'], isFalse);
+
+      // Điểm bán có channel_ids rỗng, territory_codes kiểm tra is_empty / not_empty
+      final emptyCheckBlocks = <MarketFormBlockEntity>[
+        const MarketFormBlockEntity(
+          ref: 'block_empty_territory',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          showIf: {
+            'field': '@customer.territory_codes',
+            'op': 'is_empty',
+          },
+          resolved: MarketFormResolvedEntity(code: 'block_empty_territory', label: 'Chưa có tuyến', inputType: 'text'),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'block_has_channel',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          showIf: {
+            'field': '@customer.channel_ids',
+            'op': 'not_empty',
+          },
+          resolved: MarketFormResolvedEntity(code: 'block_has_channel', label: 'Đã có kênh', inputType: 'text'),
+        ),
+      ];
+
+      final visEmptyTerritory = DynamicRuleEvaluator.computeVisibility(
+        blocks: emptyCheckBlocks,
+        answers: {},
+        customerContext: {
+          '@customer': {
+            'channel_ids': [1],
+            'territory_codes': [],
+          }
+        },
+      );
+      expect(visEmptyTerritory['block_empty_territory'], isTrue);
+      expect(visEmptyTerritory['block_has_channel'], isTrue);
+    });
   });
 }

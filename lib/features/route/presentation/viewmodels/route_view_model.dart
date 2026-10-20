@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
@@ -899,6 +900,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   final Ref? ref;
 
   Timer? _visitTimer;
+  StreamSubscription<Position>? _geofenceStreamSubscription;
   int _elapsedSeconds = 0;
   DateTime? _targetDoneTime;
   String _sessionClientUuid = const Uuid().v4();
@@ -1037,10 +1039,100 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
   void resetSession() {
     _visitTimer?.cancel();
+    stopGeofenceWatcher();
     _elapsedSeconds = 0;
     _targetDoneTime = null;
     _sessionClientUuid = const Uuid().v4();
     state = const CheckInState(liveVisitDuration: '00:00:00');
+  }
+
+  /// Khởi động giám sát khoảng cách đến điểm bán (Cảnh báo Geofence Exit)
+  void startGeofenceWatcher({
+    required double dealerLat,
+    required double dealerLng,
+    required String dealerName,
+    required double allowedRadius,
+  }) {
+    stopGeofenceWatcher();
+    try {
+      // Bỏ qua nếu chạy trong môi trường Unit Test thuần chưa khởi tạo ServicesBinding
+      try {
+        ServicesBinding.instance;
+      } catch (_) {
+        return;
+      }
+
+      _geofenceStreamSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          distanceFilter: 25, // Chỉ cập nhật khi di chuyển tối thiểu 25m
+        ),
+      ).listen(
+        (Position pos) {
+          _checkGeofenceDistance(
+            pos: pos,
+            dealerLat: dealerLat,
+            dealerLng: dealerLng,
+            dealerName: dealerName,
+            allowedRadius: allowedRadius,
+          );
+        },
+        onError: (err) {
+          debugPrint('[CheckInViewModel] Lỗi theo dõi GPS Geofence: $err');
+        },
+      );
+    } catch (e) {
+      debugPrint('[CheckInViewModel] Không thể khởi động geofence watcher: $e');
+    }
+  }
+
+  void _checkGeofenceDistance({
+    required Position pos,
+    required double dealerLat,
+    required double dealerLng,
+    required String dealerName,
+    required double allowedRadius,
+  }) {
+    final distanceM = Geolocator.distanceBetween(
+      pos.latitude,
+      pos.longitude,
+      dealerLat,
+      dealerLng,
+    );
+    final isOut = distanceM > allowedRadius;
+
+    state = state.copyWith(
+      isOutOfGeofence: isOut,
+      currentDistanceToDealerM: distanceM,
+      allowedGeofenceRadiusM: allowedRadius,
+    );
+
+    if (isOut) {
+      try {
+        HapticFeedback.heavyImpact();
+      } catch (_) {}
+
+      if (ref != null) {
+        try {
+          ref!.read(appNotificationServiceProvider).notifyVisitGeofenceExit(
+                dealerName: dealerName,
+                distanceMeters: distanceM.round(),
+                allowedRadiusMeters: allowedRadius.round(),
+              );
+        } catch (_) {}
+      }
+    }
+  }
+
+  void stopGeofenceWatcher() {
+    _geofenceStreamSubscription?.cancel();
+    _geofenceStreamSubscription = null;
+    if (ref != null) {
+      try {
+        ref!.read(appNotificationServiceProvider).cancelVisitGeofenceExitNotification();
+      } catch (_) {}
+    }
+    state = state.copyWith(isOutOfGeofence: false);
   }
 
   Future<void> loadSurveyForms(int customerId) async {
@@ -1323,6 +1415,21 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
         loadSurveyForms(saved.customerId);
         refreshRequirements(visitResult: saved.visitResult ?? 'visited');
+
+        // Tự động khôi phục giám sát khoảng cách nếu lượt viếng thăm đang mở
+        final dLat = state.checkinData?.dealer.lat ??
+            (state.customer is CustomerEntity ? (state.customer as CustomerEntity).lat : null);
+        final dLng = state.checkinData?.dealer.lng ??
+            (state.customer is CustomerEntity ? (state.customer as CustomerEntity).lng : null);
+        if (saved.isOpen && dLat != null && dLng != null) {
+          final radius = activeMobileRules.visit.defaultRadiusM.toDouble();
+          startGeofenceWatcher(
+            dealerLat: dLat,
+            dealerLng: dLng,
+            dealerName: saved.customerName.isNotEmpty ? saved.customerName : 'Điểm bán',
+            allowedRadius: radius,
+          );
+        }
         return true;
       }
     } catch (_) {}
@@ -1592,6 +1699,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (req == null) {
         refreshRequirements();
       }
+
+      // Kích hoạt giám sát Geofence cảnh báo khi nhân viên rời điểm bán
+      if (dealerLat != null && dealerLng != null) {
+        startGeofenceWatcher(
+          dealerLat: dealerLat,
+          dealerLng: dealerLng,
+          dealerName: custName.isNotEmpty ? custName : (state.checkinData?.dealer.name ?? 'Điểm bán'),
+          allowedRadius: allowedRadius.toDouble(),
+        );
+      }
       return null;
     } catch (e) {
       if (_isNetworkError(e)) {
@@ -1660,6 +1777,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         );
 
         loadSurveyForms(customerId);
+
+        // Kích hoạt giám sát Geofence cho phiên ngoại tuyến
+        if (dealerLat != null && dealerLng != null) {
+          final fallbackName = state.customer is CustomerEntity
+              ? (state.customer as CustomerEntity).name
+              : (state.checkinData?.dealer.name ?? 'Điểm bán');
+          startGeofenceWatcher(
+            dealerLat: dealerLat,
+            dealerLng: dealerLng,
+            dealerName: fallbackName,
+            allowedRadius: allowedRadius.toDouble(),
+          );
+        }
         return null;
       }
 
@@ -2304,6 +2434,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final completedVisit = await checkoutUseCase(visitId: state.visitId, request: request);
 
       _visitTimer?.cancel();
+      stopGeofenceWatcher();
       await visitRepository.clearActiveVisit();
       await visitRepository.saveLocalVisit(completedVisit);
       if (ref != null) {
@@ -2338,6 +2469,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           rawMsg.contains('đã hủy') ||
           rawMsg.contains('already cancelled')) {
         _visitTimer?.cancel();
+        stopGeofenceWatcher();
         await visitRepository.clearActiveVisit();
         await visitRepository.cancelVisit(state.visitId, clientUuid: _sessionClientUuid);
         if (ref != null) {
@@ -2367,6 +2499,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           rawMsg.contains('already checked out') ||
           rawMsg.contains('already closed')) {
         _visitTimer?.cancel();
+        stopGeofenceWatcher();
         await visitRepository.clearActiveVisit();
         if (ref != null) {
           try {
@@ -2456,6 +2589,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       await visitRepository.clearActiveVisit();
 
       _visitTimer?.cancel();
+      stopGeofenceWatcher();
       state = state.copyWith(
         status: CheckInStatus.checkedOut,
         visitEntity: completedVisit,
@@ -2631,6 +2765,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             );
           }
           _visitTimer?.cancel();
+          stopGeofenceWatcher();
           resetSession();
           return (
             true,

@@ -45,17 +45,19 @@ class MarketFormFillArgs {
   bool get isCustomerLocked =>
       lockCustomer ?? (kind == 'survey' && customerId != null);
 
-  /// Dựng ngữ cảnh @customer.* từ các thuộc tính điểm bán theo spec 25/09/2026 (§4)
+  /// Dựng ngữ cảnh @customer.* từ các thuộc tính điểm bán theo spec 20/10/2026 (§2)
   static Map<String, dynamic> buildCustomerContext({
     int? typeId,
-    int? channelId,
+    List<int>? channelIds,
+    List<String>? territoryCodes,
     int? regionId,
     int? groupId,
   }) {
     return {
       '@customer': {
         'type_id': typeId,
-        'channel_id': channelId,
+        'channel_ids': channelIds ?? <int>[],
+        'territory_codes': territoryCodes ?? <String>[],
         'region_id': regionId,
         'group_id': groupId,
       }

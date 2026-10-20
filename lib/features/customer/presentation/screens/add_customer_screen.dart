@@ -434,15 +434,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      if (payload['channel_id'] != null) {
-        final selectedChannelId = int.tryParse(payload['channel_id'].toString());
-        if (selectedChannelId != null) {
-          final match = meta.channels.where((c) => c.id == selectedChannelId).firstOrNull;
-          if (match != null) {
-            payload['channel_name'] = match.name.isNotEmpty ? match.name : match.code;
-          }
-        }
-      }
+      // Spec 20/10/2026 (§3): Bỏ qua channel_id, app không gửi trường này
+      payload.remove('channel_id');
+      payload.remove('crm_channel');
 
       if (payload['region_id'] != null) {
         final selectedRegionId = int.tryParse(payload['region_id'].toString());
@@ -794,6 +788,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           }
           defaultRouteId ??= userRoutes.firstOrNull?.id ?? (dynamicRouteOptions.firstOrNull?.value as int? ?? 0);
 
+          // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
+          fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
+
           // Cập nhật options cho các trường phân loại nếu schema chưa có options.
           // Để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.
           for (var i = 0; i < fields.length; i++) {
@@ -802,13 +799,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               fields[i] = f.copyWith(
                 options: f.options.isEmpty && meta.customerTypes.isNotEmpty
                     ? meta.customerTypes.map((t) => DynamicFormOption(label: t.name.isNotEmpty ? t.name : t.code, value: t.id)).toList()
-                    : f.options,
-                clearInitialValue: true,
-              );
-            } else if (f.code == 'channel_id') {
-              fields[i] = f.copyWith(
-                options: f.options.isEmpty && meta.channels.isNotEmpty
-                    ? meta.channels.map((c) => DynamicFormOption(label: c.name.isNotEmpty ? c.name : c.code, value: c.id)).toList()
                     : f.options,
                 clearInitialValue: true,
               );
@@ -850,35 +840,13 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             );
           }
 
-          // Tự động chèn channel_id nếu schema thiếu (mặc định để trống)
-          if (!fields.any((f) => f.code == 'channel_id')) {
-            final channelOptions = meta.channels.isNotEmpty
-                ? meta.channels.map((c) => DynamicFormOption(label: c.name.isNotEmpty ? c.name : c.code, value: c.id)).toList()
-                : [const DynamicFormOption(label: 'GT (Truyền thống)', value: 1)];
-
-            final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
-            fields.insert(
-              insertIdx != -1 ? insertIdx + 1 : 1,
-              DynamicFormField(
-                code: 'channel_id',
-                label: 'Kênh bán hàng',
-                type: DynamicFormFieldType.singleChoice,
-                isRequired: false,
-                options: channelOptions,
-                initialValue: null,
-                placeholder: 'Chọn kênh bán hàng...',
-                section: 'Thông tin chung',
-              ),
-            );
-          }
-
           // 🔴 Bắt buộc theo API POST /crm/customers: region_id để backend sinh mã KH (4 số khu vực + 4 số thứ tự)
           if (!fields.any((f) => f.code == 'region_id')) {
             final regionOptions = meta.regions.isNotEmpty
                 ? meta.regions.map((r) => DynamicFormOption(label: '${r.code} - ${r.name}', value: r.id)).toList()
                 : [const DynamicFormOption(label: '08 - Miền Trung', value: 8)];
 
-            final insertIdx = fields.indexWhere((f) => f.code == 'channel_id');
+            final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
             fields.insert(
               insertIdx != -1 ? insertIdx + 1 : 1,
               DynamicFormField(
