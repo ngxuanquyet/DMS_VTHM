@@ -29,7 +29,7 @@ void main() {
       'default_channel_ids': [4],
       'default_territory_code': 'MN2',
     }));
-    final fields = ownChannelTerritoryFields(meta);
+    final fields = ownChannelTerritoryFields(meta, schema: kScopeFieldStubs);
     expect(fields.map((f) => f.code), ['own_channel_ids', 'territory_code']);
     expect(fields[0].type, DynamicFormFieldType.multipleChoice);
     expect(fields[0].options.map((o) => o.value), [4]);
@@ -46,19 +46,19 @@ void main() {
       'default_channel_ids': [7],
       'default_territory_code': null,
     }));
-    final f1 = ownChannelTerritoryFields(toanKenh);
+    final f1 = ownChannelTerritoryFields(toanKenh, schema: kScopeFieldStubs);
     expect(f1[0].options.map((o) => o.value), [7]);
     expect(f1[1].options.map((o) => o.value), ['MB1', 'MN2']);
     expect(f1[1].initialValue, isNull);
 
     final admin = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [], 'default_territory_code': null}));
-    expect(ownChannelTerritoryFields(admin)[0].options.map((o) => o.value), [1, 4, 7]);
+    expect(ownChannelTerritoryFields(admin, schema: kScopeFieldStubs)[0].options.map((o) => o.value), [1, 4, 7]);
   });
 
   test('không cặp nào / server cũ chưa trả createChoices ⇒ không vẽ ô (server tự gán)', () {
     final rong = CustomerMetaData.fromJson(metaJson({'pairs': [], 'default_channel_ids': [], 'default_territory_code': null}));
-    expect(ownChannelTerritoryFields(rong), isEmpty);
-    expect(ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null))), isEmpty);
+    expect(ownChannelTerritoryFields(rong, schema: kScopeFieldStubs), isEmpty);
+    expect(ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null)), schema: kScopeFieldStubs), isEmpty);
   });
 
   test('meta lưu máy giữ nguyên createChoices qua toJson/fromJson', () {
@@ -74,6 +74,24 @@ void main() {
     expect(back.createChoices?.defaultChannelIds, [4]);
     expect(back.salesChannels.length, 3);
     expect(back.territories.map((t) => t.code), ['MB1', 'MN2']);
+  });
+
+  test('nhãn / bắt buộc / ẩn theo dòng cấu hình trong schema (ô cứng ở Cấu hình trường điểm bán)', () {
+    final meta = CustomerMetaData.fromJson(metaJson({
+      'pairs': [
+        {'channel_id': 4, 'territory_code': 'MN2'},
+      ],
+      'default_channel_ids': [4],
+      'default_territory_code': 'MN2',
+    }));
+    final f = ownChannelTerritoryFields(meta, schema: const [
+      DynamicFormField(code: 'territory_code', label: 'Tuyến bán hàng', type: DynamicFormFieldType.singleChoice, isRequired: true),
+    ]);
+    expect(f.map((x) => x.code), ['territory_code'], reason: 'admin ẩn Kênh ⇒ schema không gửi ⇒ không vẽ');
+    expect(f.single.label, 'Tuyến bán hàng');
+    expect(f.single.isRequired, isTrue);
+    expect(f.single.options.map((o) => o.value), ['MN2'], reason: 'lựa chọn vẫn bó theo phòng, không theo schema');
+    expect(ownChannelTerritoryFields(meta, schema: const []), isEmpty, reason: 'ẩn cả hai / server cũ');
   });
 
   test('allows(): cùng luật khớp cặp server; bộ trùng mặc định luôn qua (phòng nhiều tuyến)', () {

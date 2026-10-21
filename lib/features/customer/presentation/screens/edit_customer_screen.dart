@@ -831,6 +831,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
 
               // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
               fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
+              // Kênh/Tuyến tự khai chỉ CHỌN lúc tạo (21/10/2026) — sửa vẫn chỉ quản trị (server 403 với nhân viên).
+              fields.removeWhere((f) => f.code == 'own_channel_ids' || f.code == 'territory_code');
 
               // Cập nhật options cho các trường phân loại
               for (var i = 0; i < fields.length; i++) {
