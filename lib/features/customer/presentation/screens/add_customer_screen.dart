@@ -130,16 +130,21 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
   final channels = meta.salesChannels;
   final territories = meta.territories;
   final defaultChannels = choices.defaultChannelIds.where((id) => channels.any((c) => c.id == id)).toList();
+  // Kiểu chọn / hiển thị admin đặt ở Cấu hình trường điểm bán (chốt 21/10/2026); server cũ không gửi ⇒ chọn nhiều, bày ra.
+  final nhieuKenh = kenhCH?.choiceMultiple ?? true;
   return [
     if (kenhCH != null && channels.isNotEmpty)
       DynamicFormField(
         code: 'own_channel_ids',
         label: kenhCH.label.isNotEmpty ? kenhCH.label : 'Kênh',
-        type: DynamicFormFieldType.multipleChoice,
+        type: nhieuKenh ? DynamicFormFieldType.multipleChoice : DynamicFormFieldType.singleChoice,
         isRequired: kenhCH.isRequired,
-        options: channels.map((c) => DynamicFormOption(label: '${c.code} - ${c.name}', value: c.id)).toList(),
-        initialValue: defaultChannels,
+        options: channels.map((c) => DynamicFormOption(label: optionLabel(c.code, c.name), value: c.id)).toList(),
+        // Chọn một mà phòng có nhiều kênh ⇒ không đoán, để trống.
+        initialValue: nhieuKenh ? defaultChannels : (defaultChannels.length == 1 ? defaultChannels.first : null),
         helperText: 'Mặc định theo phòng của bạn — có thể chọn kênh khác.',
+        choiceMultiple: nhieuKenh,
+        choiceDisplay: kenhCH.choiceDisplay == 'dropdown' ? 'dropdown' : 'list',
         section: 'Thông tin chung',
       ),
     if (tuyenCH != null && territories.isNotEmpty)
@@ -149,7 +154,7 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         type: DynamicFormFieldType.singleChoice,
         isRequired: tuyenCH.isRequired,
         options: territories
-            .map((t) => DynamicFormOption(label: t.name.isNotEmpty ? '${t.code} - ${t.name}' : t.code, value: t.code))
+            .map((t) => DynamicFormOption(label: optionLabel(t.code, t.name), value: t.code))
             .toList(),
         initialValue: choices.defaultTerritoryCode != null && territories.any((t) => t.code == choices.defaultTerritoryCode)
             ? choices.defaultTerritoryCode
@@ -159,6 +164,12 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         catalog: 'dropdown',
       ),
   ];
+}
+
+/// Nhãn lựa chọn danh mục: `mã - tên`; tên trống hoặc trùng mã (tuyến Bravo không có tên: MB1 = MB1) ⇒ chỉ mã.
+String optionLabel(String code, String name) {
+  final ten = name.trim();
+  return ten.isEmpty || ten == code.trim() ? code : '$code - $ten';
 }
 
 /// Gán MỤC theo Cấu hình trường điểm bán, giữ nguyên thứ tự: ô `heading` (mã trong [headingCodes]) mở một mục cho mọi ô
@@ -372,12 +383,15 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     var boGuiKenhTuyen = false;
     final meta3b = ref.read(customerMetaProvider).valueOrNull;
     final createChoices = meta3b?.createChoices;
-    if (createChoices != null && formData['own_channel_ids'] is List) {
-      final kenh = (formData['own_channel_ids'] as List).map((e) => int.tryParse(e.toString())).whereType<int>().toSet();
+    final rawKenh = formData['own_channel_ids'];
+    if (createChoices != null && rawKenh != null) {
+      // Ô Kênh "chọn một" giữ MỘT giá trị, "chọn nhiều" giữ danh sách — gom về tập id cho cả hai.
+      final kenh = (rawKenh is List ? rawKenh : [rawKenh]).map((e) => int.tryParse(e.toString())).whereType<int>().toSet();
       final tuyen = formData['territory_code']?.toString().trim() ?? '';
       // Giá trị ĐIỀN SẴN (không phụ thuộc admin ẩn ô nào) — dựng như thể cả hai ô đều có mặt.
       final dienSan = ownChannelTerritoryFields(meta3b!, schema: kScopeFieldStubs);
-      final kenhSan = dienSan.where((f) => f.code == 'own_channel_ids').firstOrNull?.initialValue;
+      final kenhSanRaw = dienSan.where((f) => f.code == 'own_channel_ids').firstOrNull?.initialValue;
+      final kenhSan = kenhSanRaw == null ? null : (kenhSanRaw is List ? kenhSanRaw : [kenhSanRaw]);
       final tuyenSan = dienSan.where((f) => f.code == 'territory_code').firstOrNull?.initialValue?.toString() ?? '';
       final giuNguyen = kenhSan is List &&
           kenh.length == kenhSan.length &&
@@ -421,6 +435,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
+      // Ô Kênh "chọn một" giữ giá trị ĐƠN — gom về danh sách: bản lưu máy (điểm bán chờ đồng bộ) chỉ đọc mảng.
+      final kenhDon = payload['own_channel_ids'];
+      if (kenhDon != null && kenhDon is! List) payload['own_channel_ids'] = [kenhDon];
       if (boGuiKenhTuyen) {
         payload.remove('own_channel_ids');
         payload.remove('territory_code');

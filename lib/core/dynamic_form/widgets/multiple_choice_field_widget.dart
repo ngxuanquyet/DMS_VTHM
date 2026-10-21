@@ -30,10 +30,117 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
     onChanged(list);
   }
 
+  /// Kiểu "xổ xuống" (`choiceDisplay == 'dropdown'`, admin đặt cho ô Kênh — chốt 21/10/2026): bảng chọn tick từ dưới lên.
+  void _showPicker(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) {
+        final chon = List<dynamic>.from(selectedValues);
+        return StatefulBuilder(
+          builder: (ctx, setSheet) => SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            field.label,
+                            style: AppTypography.titleMedium(
+                              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            onChanged(chon);
+                          },
+                          child: const Text('Xong'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: field.options.map((opt) {
+                        final daChon = chon.contains(opt.value);
+                        return CheckboxListTile(
+                          value: daChon,
+                          title: Text(opt.label),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (_) => setSheet(() => daChon ? chon.remove(opt.value) : chon.add(opt.value)),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final options = field.options;
+
+    if (field.choiceDisplay == 'dropdown') {
+      final nhan = options.where((o) => selectedValues.contains(o.value)).map((o) => o.label).toList();
+      return DynamicFormFieldWrapper(
+        field: field,
+        errorText: errorText,
+        child: InkWell(
+          onTap: field.isReadOnly ? null : () => _showPicker(context),
+          borderRadius: AppRadius.roundedMd,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest,
+              borderRadius: AppRadius.roundedMd,
+              border: Border.all(
+                color: errorText != null
+                    ? AppColors.error
+                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    nhan.isEmpty ? (field.placeholder ?? 'Chọn ${field.label.toLowerCase()}') : nhan.join(', '),
+                    style: AppTypography.bodyMedium(
+                      color: nhan.isEmpty
+                          ? (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline)
+                          : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return DynamicFormFieldWrapper(
       field: field,

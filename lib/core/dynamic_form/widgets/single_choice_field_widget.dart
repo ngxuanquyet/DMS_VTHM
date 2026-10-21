@@ -58,6 +58,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     final isDropdown = field.code == 'route_ids' ||
         field.code == 'route_id' ||
         field.catalog == 'dropdown' ||
+        field.choiceDisplay == 'dropdown' ||
         field.catalog == 'route' ||
         field.source == 'dropdown' ||
         field.badge == 'Danh sách chọn' ||
@@ -158,8 +159,9 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
       );
     }
 
-    // Nếu options > 4 hoặc catalog != null, render ô chọn modal/bottomsheet tìm kiếm
-    if (options.length > 4 || field.catalog != null) {
+    // Nếu options > 4 hoặc catalog != null, render ô chọn modal/bottomsheet tìm kiếm — trừ khi admin đặt "bày hết ra"
+    // (`choiceDisplay == 'list'`, ô Kênh): luôn vẽ nút chọn bên dưới dù nhiều lựa chọn.
+    if (field.choiceDisplay != 'list' && (options.length > 4 || field.catalog != null)) {
       return DynamicFormFieldWrapper(
         field: field,
         errorText: errorText,

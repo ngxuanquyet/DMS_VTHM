@@ -81,6 +81,56 @@ void main() {
     expect(ownChannelTerritoryFields(meta, schema: const []), isEmpty, reason: 'ẩn cả hai / server cũ');
   });
 
+  test('ô Kênh theo choice admin đặt: chọn một / xổ xuống; server cũ không gửi ⇒ chọn nhiều, bày ra', () {
+    final meta = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [4], 'default_territory_code': null}));
+    DynamicFormField kenh(Map<String, dynamic>? choice) => ownChannelTerritoryFields(meta, schema: [
+          DynamicFormField.fromJson({
+            'code': 'own_channel_ids',
+            'label': 'Kênh',
+            'input_type': 'multiselect',
+            if (choice != null) 'choice': choice,
+          }),
+        ]).single;
+
+    final mot = kenh({'multiple': false, 'display': 'dropdown'});
+    expect(mot.type, DynamicFormFieldType.singleChoice);
+    expect(mot.initialValue, 4, reason: 'phòng đúng một kênh ⇒ điền sẵn giá trị đơn');
+    expect(mot.choiceDisplay, 'dropdown');
+
+    final nhieu = kenh({'multiple': true, 'display': 'list'});
+    expect(nhieu.type, DynamicFormFieldType.multipleChoice);
+    expect(nhieu.initialValue, [4]);
+    expect(nhieu.choiceDisplay, 'list');
+
+    final cu = kenh(null);
+    expect(cu.type, DynamicFormFieldType.multipleChoice);
+    expect(cu.choiceDisplay, 'list');
+
+    final haiKenh = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [1, 4], 'default_territory_code': null}));
+    final f = ownChannelTerritoryFields(haiKenh, schema: [
+      DynamicFormField.fromJson({'code': 'own_channel_ids', 'label': 'Kênh', 'choice': {'multiple': false, 'display': 'list'}}),
+    ]).single;
+    expect(f.initialValue, isNull, reason: 'chọn một mà phòng nhiều kênh ⇒ không đoán');
+  });
+
+  test('nhãn lựa chọn: tên trùng mã / trống ⇒ chỉ mã (tuyến Bravo MB1)', () {
+    expect(optionLabel('MB1', 'MB1'), 'MB1');
+    expect(optionLabel('MB1', ''), 'MB1');
+    expect(optionLabel('KPP', 'Kênh phân phối'), 'KPP - Kênh phân phối');
+    final meta = CustomerMetaData.fromJson({
+      'data': {
+        'salesChannels': [
+          {'id': 1, 'code': 'KPP', 'name': 'Kênh phân phối'},
+        ],
+        'territories': [
+          {'code': 'MB1', 'name': 'MB1'},
+        ],
+        'createChoices': {'pairs': null, 'default_channel_ids': [], 'default_territory_code': null},
+      },
+    });
+    expect(ownChannelTerritoryFields(meta, schema: kScopeFieldStubs)[1].options.single.label, 'MB1');
+  });
+
   test('payload POST /crm/customers mang own_channel_ids + territory_code ở GỐC, không lọt vào data', () {
     final payload = CustomerPayloadHelper.buildCustomerApiPayload(
       sourceData: {

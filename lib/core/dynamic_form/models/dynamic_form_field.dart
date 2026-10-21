@@ -257,6 +257,14 @@ class DynamicFormField {
   /// Ô Khách hàng pháp nhân (`ref_erp_partner`) cho chọn nhiều khách — đọc từ `erp_partner.multiple` của schema
   final bool erpPartnerMultiple;
 
+  /// Kiểu chọn admin đặt cho ô cứng chọn từ danh mục (ô Kênh — khoá `choice.multiple` của schema, chốt 21/10/2026);
+  /// `null` = server không gửi (ô khác / server cũ).
+  final bool? choiceMultiple;
+
+  /// Kiểu hiển thị admin đặt (`choice.display`): `list` = bày hết lựa chọn ra (nút tròn / ô tick), `dropdown` = xổ
+  /// xuống; `null` = theo mặc định của widget.
+  final String? choiceDisplay;
+
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
@@ -291,6 +299,8 @@ class DynamicFormField {
     this.catalog,
     this.defaultValue,
     this.erpPartnerMultiple = false,
+    this.choiceMultiple,
+    this.choiceDisplay,
     this.section,
     this.badge,
     this.order = 0,
@@ -417,6 +427,10 @@ class DynamicFormField {
       catalog: json['catalog']?.toString(),
       defaultValue: json['default'],
       erpPartnerMultiple: json['erp_partner'] is Map && (json['erp_partner'] as Map)['multiple'] == true,
+      choiceMultiple: json['choice'] is Map && (json['choice'] as Map)['multiple'] is bool
+          ? (json['choice'] as Map)['multiple'] as bool
+          : null,
+      choiceDisplay: json['choice'] is Map ? (json['choice'] as Map)['display']?.toString() : null,
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -446,6 +460,8 @@ class DynamicFormField {
     String? catalog,
     dynamic defaultValue,
     bool? erpPartnerMultiple,
+    bool? choiceMultiple,
+    String? choiceDisplay,
     String? section,
     String? badge,
     int? order,
@@ -472,6 +488,8 @@ class DynamicFormField {
       catalog: catalog ?? this.catalog,
       defaultValue: defaultValue ?? this.defaultValue,
       erpPartnerMultiple: erpPartnerMultiple ?? this.erpPartnerMultiple,
+      choiceMultiple: choiceMultiple ?? this.choiceMultiple,
+      choiceDisplay: choiceDisplay ?? this.choiceDisplay,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,
