@@ -12,7 +12,7 @@ void main() {
   });
 
   group('AppNotificationService 8 Notification Types Tests', () {
-    test('Can trigger and store all 8 required notification types', () async {
+    test('Can trigger and store all 6 local notification types (attendance reminders are server push only)', () async {
       final service = AppNotificationService();
 
       // 2. Nhắc lộ trình đầu ngày

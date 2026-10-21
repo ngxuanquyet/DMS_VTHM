@@ -498,7 +498,7 @@ class AppNotificationService {
     await sendNotification(
       id: 999,
       title: 'Kiểm tra thông báo DMS VTHM',
-      message: 'Hệ thống thông báo hoạt động tốt! Bạn sẽ nhận được thông báo nhắc chấm công Vào ca (07:50) và Ra ca (17:00).',
+      message: 'Hệ thống thông báo hoạt động tốt! Bạn sẽ nhận được nhắc chấm công vào ca, ra ca theo đúng ca làm việc.',
       type: 'test_notification',
       category: 'system',
       routePath: '/home',
@@ -539,7 +539,7 @@ class AppNotificationService {
     await _localNotifications?.zonedSchedule(
       id: 998,
       title: '🔔 Thử nghiệm thông báo khi tắt app!',
-      body: 'Thông báo nền DMS VTHM hoạt động thành công! Lịch nhắc Vào ca (07:50) & Ra ca (17:00) sẽ tự động đổ chuông đúng giờ.',
+      body: 'Thông báo nền DMS VTHM hoạt động thành công! Nhắc chấm công theo ca sẽ tới cả khi đã tắt app.',
       scheduledDate: scheduledDate,
       notificationDetails: details,
       androidScheduleMode: scheduleMode,
@@ -820,28 +820,53 @@ class AppNotificationService {
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
-  /// Huỷ mọi lịch nhắc CHẤM CÔNG cục bộ mà bản app cũ đã đặt với hệ điều hành (gọi mỗi lần khởi động).
+  /// Huỷ mọi lịch nhắc CHẤM CÔNG cục bộ mà bản app cũ đã đặt với hệ điều hành — một lần cho mỗi máy.
   ///
   /// 🔴 Gỡ code đặt lịch là CHƯA đủ: lịch `zonedSchedule` lặp hằng tuần (`DateTimeComponents.dayOfWeekAndTime`) nằm trong
-  /// hệ điều hành và vẫn kêu sau khi cập nhật app. Dải id là của bản cũ: 101/107 (nhắc tức thời), 1011–1016 (vào ca 7:50
-  /// T2–T7), 1071–1076 (ra ca 17:00 T2–T7), 2001/2002 (theo ca hôm nay), 20000–39999 (theo ca từng ngày).
+  /// hệ điều hành và vẫn kêu sau khi cập nhật app. Id của bản cũ: 101/107 (nhắc tức thời), 1011–1016 (vào ca 7:50
+  /// T2–T7), 1071–1076 (ra ca 17:00 T2–T7), 2001/2002 (theo ca hôm nay), và theo ca từng ngày `20000 + dateKey` (vào) /
+  /// `30000 + dateKey` (ra) với `dateKey = (năm % 100) * 500 + tháng * 32 + ngày` ≤ 49915 ⇒ dải 20000–79999 (năm 2026 ra
+  /// ca là 43xxx — dải hẹp 20000–39999 bỏ sót, /code-review 21/10/2026). Không id nào khác của app nằm trong dải đó
+  /// (thông báo khác: 101–999; tin FCM khi app mở: id theo epoch giây).
+  ///
+  /// Id cố định huỷ TRƯỚC, mỗi id một lượt: `pendingNotificationRequests()` có thể ném lỗi trên bản release, khi đó vẫn
+  /// phải dọn được lịch tuần. Chỉ đánh dấu "đã dọn" khi cả hai bước không lỗi — lỗi thì lần mở sau làm lại.
   Future<void> cancelLegacyAttendanceReminders() async {
     if (_localNotifications == null) return;
+    const doneKey = 'legacy_att_reminders_cancelled_v1';
     try {
-      final ids = <int>{101, 107, legacyShiftRemindInTodayId, legacyShiftRemindOutTodayId};
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(doneKey) == true) return;
+
+      var ok = true;
+      final fixed = <int>[101, 107, legacyShiftRemindInTodayId, legacyShiftRemindOutTodayId];
       for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
-        ids
+        fixed
           ..add(1010 + day)
           ..add(1070 + day);
       }
-      final pending = await _localNotifications!.pendingNotificationRequests();
-      for (final req in pending) {
-        if (req.id >= 20000 && req.id < 40000) ids.add(req.id);
+      for (final id in fixed) {
+        try {
+          await _localNotifications?.cancel(id: id);
+        } catch (_) {
+          ok = false;
+        }
       }
-      for (final id in ids) {
-        await _localNotifications?.cancel(id: id);
+
+      try {
+        final pending = await _localNotifications!.pendingNotificationRequests();
+        for (final req in pending) {
+          if (req.id >= 20000 && req.id < 80000) {
+            await _localNotifications?.cancel(id: req.id);
+          }
+        }
+      } catch (e) {
+        ok = false;
+        debugPrint('[NotificationService] Không đọc được lịch đang chờ để huỷ nhắc ca cũ: $e');
       }
-      debugPrint('[NotificationService] Đã huỷ ${ids.length} lịch nhắc chấm công cục bộ của bản cũ');
+
+      if (ok) await prefs.setBool(doneKey, true);
+      debugPrint('[NotificationService] Dọn lịch nhắc chấm công cục bộ của bản cũ: ${ok ? 'xong' : 'còn lỗi, thử lại lần sau'}');
     } catch (e) {
       debugPrint('[NotificationService] Lỗi huỷ lịch nhắc chấm công cục bộ cũ: $e');
     }

@@ -66,11 +66,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkNotificationPermissionOnResume();
+      _refreshAttendanceOnResume();
     }
   }
 
-  Future<void> _checkNotificationPermissionOnResume() async {
+  Future<void> _refreshAttendanceOnResume() async {
     try {
       // Tự động kiểm tra và cập nhật ca làm việc mới nhất nếu admin vừa đổi ca
       ref.read(attendanceViewModelProvider.notifier).loadInitialData();

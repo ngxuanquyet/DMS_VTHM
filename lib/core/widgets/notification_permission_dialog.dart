@@ -260,7 +260,7 @@ class NotificationPermissionDialog extends StatelessWidget {
                     context,
                     icon: Icons.alarm_rounded,
                     color: AppColors.primary,
-                    text: 'Nhắc Vào ca (07:50) & Ra ca (17:00) đúng giờ',
+                    text: 'Nhắc vào ca, ra ca đúng giờ theo ca làm việc',
                   ),
                   const SizedBox(height: 8),
                   _buildBenefitRow(

@@ -304,8 +304,8 @@ class AppStrings {
   String get notificationPermissionDeniedForeverTitle =>
       isVietnamese ? 'Thông báo ứng dụng bị tắt' : 'App Notifications Disabled';
   String get notificationPermissionDeniedDesc => isVietnamese
-      ? 'Ứng dụng cần quyền thông báo để tự động nhắc bạn chấm công Vào ca (08:00), Ra ca (17:00), cập nhật tiến độ lộ trình và nhắc đồng bộ dữ liệu ngay cả khi đã tắt app.'
-      : 'The app requires notification permission to remind you of check-in (08:00), check-out (17:00), route progress, and sync status even when the app is closed.';
+      ? 'Ứng dụng cần quyền thông báo để nhắc bạn chấm công vào ca, ra ca theo đúng ca làm việc, cập nhật tiến độ lộ trình và nhắc đồng bộ dữ liệu ngay cả khi đã tắt app.'
+      : 'The app requires notification permission to remind you to check in and out on your actual shift, route progress, and sync status even when the app is closed.';
   String get notificationPermissionDeniedForeverDesc => isVietnamese
       ? 'Quyền thông báo hiện đang bị tắt trên thiết bị của bạn. Vui lòng mở Cài đặt ứng dụng và bật thông báo để đảm bảo không bị bỏ lỡ thông báo chấm công và tiến độ công việc.'
       : 'Notification permission is disabled on your device. Please open App Settings and enable notifications so you do not miss attendance reminders and work progress updates.';
