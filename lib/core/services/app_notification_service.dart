@@ -826,11 +826,14 @@ class AppNotificationService {
   /// hệ điều hành và vẫn kêu sau khi cập nhật app. Id của bản cũ: 101/107 (nhắc tức thời), 1011–1016 (vào ca 7:50
   /// T2–T7), 1071–1076 (ra ca 17:00 T2–T7), 2001/2002 (theo ca hôm nay), và theo ca từng ngày `20000 + dateKey` (vào) /
   /// `30000 + dateKey` (ra) với `dateKey = (năm % 100) * 500 + tháng * 32 + ngày` ≤ 49915 ⇒ dải 20000–79999 (năm 2026 ra
-  /// ca là 43xxx — dải hẹp 20000–39999 bỏ sót, /code-review 21/10/2026). Không id nào khác của app nằm trong dải đó
-  /// (thông báo khác: 101–999; tin FCM khi app mở: id theo epoch giây).
+  /// ca là 43xxx — dải hẹp 20000–39999 bỏ sót, /code-review 21/10/2026). Quét dải chỉ đụng lịch ĐANG CHỜ (thông báo
+  /// tự đặt khác của app: 102–999). ⚠️ Thông báo yêu cầu vị trí (`employee_tracking_service`) dùng id do SERVER cấp nên có
+  /// thể trùng một id cố định ở dưới — `cancel()` khi đó gỡ luôn tin đang hiện trên khay; chấp nhận vì chỉ xảy ra một lần
+  /// mỗi máy. Đặt id cố định mới thì tránh các id trên.
   ///
   /// Id cố định huỷ TRƯỚC, mỗi id một lượt: `pendingNotificationRequests()` có thể ném lỗi trên bản release, khi đó vẫn
-  /// phải dọn được lịch tuần. Chỉ đánh dấu "đã dọn" khi cả hai bước không lỗi — lỗi thì lần mở sau làm lại.
+  /// phải dọn được lịch tuần. Đánh dấu "đã dọn" khi phần id cố định (lịch tuần — lặp mãi) xong; lịch theo ngày còn sót
+  /// do quét dải lỗi chỉ kêu một lần và tự hết trong ≤ 7 ngày, không đáng chạy lại ở mọi lần mở app.
   Future<void> cancelLegacyAttendanceReminders() async {
     if (_localNotifications == null) return;
     const doneKey = 'legacy_att_reminders_cancelled_v1';
@@ -838,7 +841,7 @@ class AppNotificationService {
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(doneKey) == true) return;
 
-      var ok = true;
+      var fixedOk = true;
       final fixed = <int>[101, 107, legacyShiftRemindInTodayId, legacyShiftRemindOutTodayId];
       for (int day = DateTime.monday; day <= DateTime.saturday; day++) {
         fixed
@@ -849,7 +852,7 @@ class AppNotificationService {
         try {
           await _localNotifications?.cancel(id: id);
         } catch (_) {
-          ok = false;
+          fixedOk = false;
         }
       }
 
@@ -861,12 +864,11 @@ class AppNotificationService {
           }
         }
       } catch (e) {
-        ok = false;
         debugPrint('[NotificationService] Không đọc được lịch đang chờ để huỷ nhắc ca cũ: $e');
       }
 
-      if (ok) await prefs.setBool(doneKey, true);
-      debugPrint('[NotificationService] Dọn lịch nhắc chấm công cục bộ của bản cũ: ${ok ? 'xong' : 'còn lỗi, thử lại lần sau'}');
+      if (fixedOk) await prefs.setBool(doneKey, true);
+      debugPrint('[NotificationService] Dọn lịch nhắc chấm công cục bộ của bản cũ: ${fixedOk ? 'xong' : 'còn lỗi, thử lại lần sau'}');
     } catch (e) {
       debugPrint('[NotificationService] Lỗi huỷ lịch nhắc chấm công cục bộ cũ: $e');
     }
