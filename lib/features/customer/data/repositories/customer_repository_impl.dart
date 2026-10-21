@@ -146,8 +146,36 @@ class CustomerRepositoryImpl implements CustomerRepository {
     } catch (_) {}
   }
 
+  /// Tài khoản mà [_cachedMeta] / [_cachedColumns] đang giữ — đổi tài khoản thì bỏ cả hai bản trong bộ nhớ.
+  String? _cachedMetaAccount;
+
+  /// Khoá lưu danh mục điểm bán trong máy, TÁCH theo tài khoản (cùng lý do với schema). `logout()` xoá `cached_customer_meta*`.
+  String _metaPrefsKey(String account) => 'cached_customer_meta_$account';
+
+  /// Bỏ bản danh mục/cột trong bộ nhớ nếu nó của tài khoản khác tài khoản đang đăng nhập.
+  void _dropMetaOfOtherAccount(String? account) {
+    if (_cachedMetaAccount == account) return;
+    _cachedMeta = null;
+    _cachedColumns = [];
+    _cachedMetaAccount = account;
+  }
+
+  /// Giữ danh mục vừa có cho [account] — CHỈ khi đó vẫn là tài khoản đang đăng nhập (xem [cacheAccountKey]).
+  Future<bool> _keepMeta(SharedPreferences prefs, String? account, Map<String, dynamic> raw, {bool persist = true}) async {
+    if (cacheAccountKey(prefs) != account) return false;
+    if (account == null) return true;
+    _cachedMeta = CustomerMetaData.fromJson(raw);
+    _cachedMetaAccount = account;
+    if (_cachedMeta!.dynamicColumns.isNotEmpty) {
+      _cachedColumns = _cachedMeta!.dynamicColumns;
+    }
+    if (persist) await prefs.setString(_metaPrefsKey(account), jsonEncode(raw));
+    return true;
+  }
+
   @override
   Future<List<CustomerDynamicColumn>> getDynamicColumns({bool forceRefresh = false}) async {
+    _dropMetaOfOtherAccount(cacheAccountKey(await SharedPreferences.getInstance()));
     if (!forceRefresh && _cachedColumns.isNotEmpty) {
       return _cachedColumns;
     }
@@ -157,62 +185,73 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   @override
   Future<CustomerMetaData> getCustomerMeta({bool forceRefresh = false}) async {
-    if (!forceRefresh && _cachedMeta != null) {
+    final prefs = await SharedPreferences.getInstance();
+    final account = cacheAccountKey(prefs);
+    _dropMetaOfOtherAccount(account);
+    if (!forceRefresh && account != null && _cachedMeta != null) {
       return _cachedMeta!;
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    // Bản lưu trong máy của đúng tài khoản; chưa rõ tài khoản thì không đọc.
+    Map<String, dynamic>? fromDisk() {
+      final raw = account == null ? null : prefs.getString(_metaPrefsKey(account));
+      if (raw == null || raw.isEmpty) return null;
+      try {
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    }
+
     if (!forceRefresh) {
-      final cachedJson = prefs.getString('cached_customer_meta');
-      if (cachedJson != null && cachedJson.isNotEmpty) {
+      final disk = fromDisk();
+      if (disk != null) {
         try {
-          final decoded = jsonDecode(cachedJson) as Map<String, dynamic>;
-          _cachedMeta = CustomerMetaData.fromJson(decoded);
-          if (_cachedMeta!.dynamicColumns.isNotEmpty) {
-            _cachedColumns = _cachedMeta!.dynamicColumns;
+          if (await _keepMeta(prefs, account, disk, persist: false)) {
+            unawaited(_refreshMetaInBackground());
+            return _cachedMeta ?? CustomerMetaData.fromJson(disk);
           }
-          unawaited(_refreshMetaInBackground());
-          return _cachedMeta!;
         } catch (_) {}
       }
     }
 
     try {
       final meta = await _apiService.getCustomerMeta(context: 'mobile');
+      // 🔴 Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ danh mục của người cũ: không giữ, không ghi lại bản lưu logout()
+      // vừa xoá; còn tài khoản khác thì làm lại cho người đang đăng nhập.
+      if (cacheAccountKey(prefs) != account) {
+        if (cacheAccountKey(prefs) == null) return kDefaultCustomerMeta;
+        return await getCustomerMeta(forceRefresh: forceRefresh);
+      }
       if (meta.isNotEmpty) {
-        _cachedMeta = CustomerMetaData.fromJson(meta);
-        if (_cachedMeta!.dynamicColumns.isNotEmpty) {
-          _cachedColumns = _cachedMeta!.dynamicColumns;
-        }
-        await prefs.setString('cached_customer_meta', jsonEncode(meta));
-        return _cachedMeta!;
+        await _keepMeta(prefs, account, meta);
+        return _cachedMeta ?? CustomerMetaData.fromJson(meta);
       }
     } catch (_) {
-      if (_cachedMeta != null) return _cachedMeta!;
-      final cachedJson = prefs.getString('cached_customer_meta');
-      if (cachedJson != null && cachedJson.isNotEmpty) {
+      if (cacheAccountKey(prefs) != account) {
+        if (cacheAccountKey(prefs) == null) return kDefaultCustomerMeta;
+        return await getCustomerMeta(forceRefresh: forceRefresh);
+      }
+      if (account != null && _cachedMeta != null) return _cachedMeta!;
+      final disk = fromDisk();
+      if (disk != null) {
         try {
-          final decoded = jsonDecode(cachedJson) as Map<String, dynamic>;
-          _cachedMeta = CustomerMetaData.fromJson(decoded);
-          return _cachedMeta!;
+          await _keepMeta(prefs, account, disk, persist: false);
+          return _cachedMeta ?? CustomerMetaData.fromJson(disk);
         } catch (_) {}
       }
     }
 
-    return _cachedMeta ?? kDefaultCustomerMeta;
+    return (account != null ? _cachedMeta : null) ?? kDefaultCustomerMeta;
   }
 
   Future<void> _refreshMetaInBackground() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final account = cacheAccountKey(prefs);
+      if (account == null) return;
       final meta = await _apiService.getCustomerMeta(context: 'mobile');
-      if (meta.isNotEmpty) {
-        _cachedMeta = CustomerMetaData.fromJson(meta);
-        if (_cachedMeta!.dynamicColumns.isNotEmpty) {
-          _cachedColumns = _cachedMeta!.dynamicColumns;
-        }
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('cached_customer_meta', jsonEncode(meta));
-      }
+      if (meta.isNotEmpty) await _keepMeta(prefs, account, meta);
     } catch (_) {}
   }
 

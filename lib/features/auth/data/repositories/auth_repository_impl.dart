@@ -127,6 +127,8 @@ class AuthRepositoryImpl implements AuthRepository {
         .where((k) =>
             k.startsWith('dms_attendance_config_cache') ||
             k.startsWith('cached_customer_form_schema') ||
+            k.startsWith('cached_customer_meta') ||
+            k.startsWith('dms_route_customers_cache') ||
             k.startsWith('dms_market_forms_'))
         .toList();
     for (final k in keys) {
