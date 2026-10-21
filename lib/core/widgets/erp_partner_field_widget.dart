@@ -952,8 +952,9 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
                 ],
               ),
             ),
-            // Nút sổ thẻ: vùng chạm riêng (InkWell/IconButton trong cùng thắng) — bấm KHÔNG chọn khách
-            if (!item.isExtra) ...[
+            // Nút sổ thẻ: vùng chạm riêng (InkWell/IconButton trong cùng thắng) — bấm KHÔNG chọn khách. Chỉ hiện khi có kênh
+            // hoặc địa chỉ để xem (cùng luật `_canExpand` của ô đã chọn) — sổ ra hai dòng "—" là nút vô nghĩa.
+            if (!item.isExtra && subtitleParts.isNotEmpty) ...[
               const SizedBox(width: 4),
               _ExpandToggle(
                 key: Key('erp-partner-expand-${item.code}'),
