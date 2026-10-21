@@ -15,7 +15,6 @@ import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
-import '../../../../core/widgets/top_app_bar.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
 import '../widgets/route_circular_menu.dart';
@@ -398,7 +397,6 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: const VthmTopAppBar(),
       endDrawer: RouteFilterDrawer(state: state, vm: vm),
       body: Stack(
         children: [

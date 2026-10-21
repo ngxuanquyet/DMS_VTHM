@@ -11,7 +11,6 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
-import '../../../../core/widgets/top_app_bar.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
@@ -304,7 +303,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: const VthmTopAppBar(),
       body: homeState.status == HomeStatus.loading && homeState.dashboard == null
           ? const Center(
               child: AppLoading(size: 220),

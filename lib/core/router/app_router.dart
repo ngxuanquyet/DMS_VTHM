@@ -29,6 +29,7 @@ import '../../features/travel/presentation/screens/my_travel_screen.dart';
 import '../../features/travel/presentation/screens/travel_leg_detail_screen.dart';
 import '../../features/employee_tracking/presentation/screens/location_access_log_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../widgets/top_app_bar.dart';
 import '../services/route_restoration_service.dart';
 import 'branch_animated_slide_container.dart';
 import 'page_transitions.dart';
@@ -45,6 +46,9 @@ class MainShellScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
+      // Topbar thuộc KHUNG CHUNG của 5 tab, không thuộc từng màn: chuyển tab chỉ nội dung trượt, topbar đứng yên, không vẽ
+      // lại (avatar không tải lại) — chủ hệ thống yêu cầu 21/10/2026.
+      appBar: const VthmTopAppBar(),
       body: navigationShell,
       bottomNavigationBar: VthmBottomNavBar(
         currentIndex: navigationShell.currentIndex,

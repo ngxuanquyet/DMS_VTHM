@@ -18,7 +18,6 @@ import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/search_target_chips.dart';
-import '../../../../core/widgets/top_app_bar.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
@@ -503,7 +502,6 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: const VthmTopAppBar(),
       endDrawer: CustomerFilterDrawer(state: state, vm: vm),
       body: Stack(
         children: [

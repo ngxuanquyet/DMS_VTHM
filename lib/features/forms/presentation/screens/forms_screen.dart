@@ -11,7 +11,6 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
-import '../../../../core/widgets/top_app_bar.dart';
 import '../states/forms_state.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../widgets/forms_circular_menu.dart';
@@ -215,7 +214,6 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      appBar: const VthmTopAppBar(),
       body: Stack(
         fit: StackFit.expand,
         children: [

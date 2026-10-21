@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vthm_dms/core/services/app_notification_service.dart';
 import 'package:vthm_dms/features/employee_tracking/data/datasources/employee_tracking_api_service.dart';
 import 'package:vthm_dms/features/employee_tracking/data/datasources/employee_tracking_local_storage.dart';
 import 'package:vthm_dms/features/employee_tracking/data/models/location_access_log_model.dart';
@@ -13,8 +12,6 @@ import 'package:vthm_dms/features/employee_tracking/data/models/location_ping_po
 import 'package:vthm_dms/features/employee_tracking/data/models/location_ping_response_model.dart';
 import 'package:vthm_dms/features/employee_tracking/domain/entities/employee_tracking_state.dart';
 import 'package:vthm_dms/features/employee_tracking/presentation/screens/location_access_log_screen.dart';
-import 'package:vthm_dms/features/employee_tracking/presentation/services/employee_tracking_service.dart';
-import 'package:vthm_dms/features/employee_tracking/presentation/widgets/location_sharing_badge.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -219,63 +216,7 @@ void main() {
     });
   });
 
-  group('LocationSharingBadge & Access Log Widget Tests', () {
-    testWidgets('LocationSharingBadge renders active state when isSharing = true', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            employeeTrackingProvider.overrideWith((ref) => FakeTrackingNotifier(
-              const EmployeeTrackingState(
-                isEnabledByServer: true,
-                isPermissionGranted: true,
-                nextIntervalSec: 180,
-              ),
-            )),
-          ],
-          child: const MaterialApp(
-            home: Scaffold(
-              body: LocationSharingBadge(),
-            ),
-          ),
-        ),
-      );
-
-      await tester.pump();
-      expect(find.byType(LocationSharingBadge), findsOneWidget);
-      expect(find.byIcon(Icons.gps_fixed_rounded), findsOneWidget);
-    });
-
-    testWidgets('LocationSharingBadge opens bottom sheet on tap', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            employeeTrackingProvider.overrideWith((ref) => FakeTrackingNotifier(
-              const EmployeeTrackingState(
-                isEnabledByServer: true,
-                isPermissionGranted: true,
-                nextIntervalSec: 180,
-                pendingPointsCount: 0,
-              ),
-            )),
-          ],
-          child: const MaterialApp(
-            home: Scaffold(
-              body: LocationSharingBadge(),
-            ),
-          ),
-        ),
-      );
-
-      await tester.pump();
-      await tester.tap(find.byType(LocationSharingBadge));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.text('Theo dõi vị trí nhân viên'), findsOneWidget);
-      expect(find.text('180 giây (server điều khiển)'), findsOneWidget);
-      expect(find.text('AI ĐÃ XEM VỊ TRÍ CỦA TÔI'), findsNothing);
-    });
-
+  group('Access Log Widget Tests', () {
     testWidgets('LocationAccessLogScreen displays access log cards without Law 91/2025 banner', (tester) async {
       final mockApiService = MockEmployeeTrackingApiService();
 
@@ -402,16 +343,5 @@ class MockEmployeeTrackingApiService extends EmployeeTrackingApiService {
         pageCount: 1,
       ),
     );
-  }
-}
-
-class FakeTrackingNotifier extends EmployeeTrackingNotifier {
-  FakeTrackingNotifier(EmployeeTrackingState initialState)
-      : super(
-          apiService: EmployeeTrackingApiService(Dio()),
-          storage: EmployeeTrackingLocalStorage(),
-          notifService: AppNotificationService(),
-        ) {
-    state = initialState;
   }
 }

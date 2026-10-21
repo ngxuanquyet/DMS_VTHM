@@ -208,7 +208,7 @@ void main() {
     expect(find.byIcon(Icons.my_location_rounded), findsOneWidget);
   });
 
-  testWidgets('CustomerScreen renders VthmTopAppBar and omits header add button and dot', (WidgetTester tester) async {
+  testWidgets('CustomerScreen không tự vẽ topbar (topbar thuộc khung chung 5 tab) and omits header add button and dot', (WidgetTester tester) async {
     await tester.pumpWidget(
       const ProviderScope(
         child: MaterialApp(
@@ -218,7 +218,7 @@ void main() {
     );
 
     await tester.pump();
-    expect(find.byType(VthmTopAppBar), findsOneWidget);
+    expect(find.byType(VthmTopAppBar), findsNothing, reason: 'topbar ở MainShellScaffold — chuyển tab không vẽ lại');
     // Add button in header removed (only accessible via floating circular menu)
     expect(find.text('Thêm'), findsNothing);
     expect(find.text('Thêm khách hàng'), findsNothing);
