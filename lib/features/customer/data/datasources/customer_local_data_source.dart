@@ -169,7 +169,8 @@ class CustomerLocalDataSource {
 
     // 🔴 Sử dụng CustomerPayloadHelper đóng gói payload chuẩn theo hợp đồng 30/09/2026:
     // - Chỉ đúng 25 khoá gốc được phép
-    // - Không client_boot_id, queued_seconds
+    // - Không lưu client_boot_id/queued_seconds/client_time vào payload: SyncService gắn lúc gửi từ
+    //   createdAt/createdElapsed/bootId của mục hàng đợi (§9.1, nghiệp vụ 21/10/2026)
     // - Toàn bộ ô động (mw_*) gom vào 'data'
     // - lat/lng đi thành cặp
     // - route_ids là List<int>

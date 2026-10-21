@@ -8,6 +8,7 @@ import 'package:vthm_dms/core/database/database_provider.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
+import 'package:vthm_dms/core/utils/system_clock.dart';
 import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_source.dart';
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
 import 'package:vthm_dms/features/customer/data/services/customer_api_service.dart';
@@ -265,8 +266,11 @@ void main() {
       expect(sentData['data'], isA<Map<String, dynamic>>());
       expect((sentData['data'] as Map)['mw_huyen'], 'Nghi Lộc');
       expect((sentData['data'] as Map)['mw_khach_hang_vthm'], 'KH-TEST');
-      expect(sentData.containsKey('client_boot_id'), isFalse);
-      expect(sentData.containsKey('queued_seconds'), isFalse);
+      // Nghiệp vụ 21/10/2026: khoá đồng hồ hàng đợi do SyncService gắn (không lấy từ dữ liệu nguồn)
+      expect(sentData['client_boot_id'], SystemClock.bootId);
+      expect(sentData['queued_seconds'], isA<int>());
+      expect(sentData['client_time'], isA<String>());
+      expect((sentData['data'] as Map).containsKey('queued_seconds'), isFalse);
 
       await db.close();
       container.dispose();

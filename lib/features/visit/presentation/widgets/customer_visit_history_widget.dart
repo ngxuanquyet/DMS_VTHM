@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/visit_history_entity.dart';
 import '../../domain/usecases/visit_usecases.dart';
 import 'visit_history_detail_sheet.dart';
+import 'visit_kind_badge.dart';
 
 /// Widget hiển thị danh sách lịch sử viếng thăm của một điểm bán (§2.4 SPEC 16/10/2026)
 /// Dùng hiển thị trực tiếp trong màn Viếng thăm (CheckInScreen) và Chi tiết điểm bán (CustomerDetailScreen)
@@ -350,6 +351,14 @@ class _CustomerVisitHistoryWidgetState
                       ],
                     ),
                   ),
+                  if (visit.isNewOutlet) ...[
+                    const SizedBox(width: 8),
+                    VisitKindBadge(
+                      label: visit.visitKindLabel,
+                      color: visit.visitKindBootstrapColor,
+                      fontSize: 10,
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

@@ -32,8 +32,10 @@ const Set<String> kAllowedCustomerRootKeys = {
   'data',
 };
 
-/// Các khoá cấm tuyệt đối không được gửi lên POST /crm/customers
+/// Các khoá cấm tuyệt đối không được lấy từ dữ liệu nguồn để gửi lên POST /crm/customers
 /// (kể cả ở gốc body lẫn bên trong map `data`).
+/// Ngoại lệ (nghiệp vụ 21/10/2026): `queued_seconds`/`client_time`/`client_boot_id` được SyncService gắn
+/// thẳng vào body khi gửi từ hàng đợi ngoại tuyến (đo bằng đồng hồ hàng đợi §9.1) — helper này không sinh chúng.
 const Set<String> kForbiddenCustomerKeys = {
   // #23682: kênh MobiWork cũ — gỡ khỏi khoá gốc thì PHẢI cấm ở đây, nếu không vòng gom ô động coi nó là ô động
   // và gửi lên trong `data`.

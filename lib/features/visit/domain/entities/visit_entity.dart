@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'visit_requirements_entity.dart';
 
+/// Loại lượt viếng thăm (`visit_kind`) — nghiệp vụ 21/10/2026.
+const String kVisitKindCheckin = 'checkin';
+const String kVisitKindNewOutlet = 'new_outlet';
+
 class VisitEntity {
   final int id;
   final String? visitDate;
@@ -59,6 +63,16 @@ class VisitEntity {
   /// Lý do từ chối điểm bán (nếu có) gắn với lượt viếng thăm này (§3c SPEC-2026-10-15 chốt 16/10/2026).
   final String? customerApprovalNote;
 
+  /// Loại lượt (nghiệp vụ 21/10/2026): 'checkin' = lượt check-in/check-out thường ·
+  /// 'new_outlet' = lượt server tự ghi khi nhân viên tạo điểm bán mới (đã đóng sẵn, thời gian ở lại 0).
+  final String visitKind;
+
+  /// Nhãn loại lượt server phát: 'Lượt check-in' | 'Tạo điểm bán'
+  final String? visitKindLabel;
+
+  /// Màu Bootstrap của nhãn loại lượt: 'secondary' | 'info'
+  final String? visitKindColor;
+
   const VisitEntity({
     required this.id,
     this.visitDate,
@@ -95,13 +109,25 @@ class VisitEntity {
     this.customerApprovalNote,
     this.visitResultLabel,
     this.visitResultColor,
+    this.visitKind = kVisitKindCheckin,
+    this.visitKindLabel,
+    this.visitKindColor,
   });
 
   bool get isCustomerApproved => customerApprovalStatus == 'approved';
 
+  /// Lượt "Tạo điểm bán" (server tự ghi, đã đóng) — không có thao tác check-out/huỷ.
+  bool get isNewOutlet => visitKind == kVisitKindNewOutlet;
+
   /// Ánh xạ màu Bootstrap từ server sang Color của Flutter (§2.1 & §2.3 SPEC-2026-10-18)
-  Color? get resultBootstrapColor {
-    switch (visitResultColor?.toLowerCase()) {
+  Color? get resultBootstrapColor => bootstrapColorOf(visitResultColor);
+
+  /// Màu nhãn loại lượt (visit_kind_color)
+  Color? get visitKindBootstrapColor => bootstrapColorOf(visitKindColor);
+
+  /// Ánh xạ mã màu Bootstrap server phát sang Color — dùng chung cho mọi nhãn của lượt viếng thăm.
+  static Color? bootstrapColorOf(String? bootstrapColor) {
+    switch (bootstrapColor?.toLowerCase()) {
       case 'success':
         return const Color(0xFF16A34A);
       case 'warning':
@@ -153,14 +179,15 @@ class VisitEntity {
   bool get isTravelMissingAnchor => travelM == 0;
   bool get isTravelPending => travelM == null;
 
-  /// Phiên viếng thăm đang mở (chưa hoàn thành check-out và chưa huỷ)
-  bool get isOpen => checkoutAt == null && cancelledAt == null;
+  /// Phiên viếng thăm đang mở (chưa hoàn thành check-out và chưa huỷ).
+  /// Lượt "Tạo điểm bán" luôn coi là đã đóng.
+  bool get isOpen => checkoutAt == null && cancelledAt == null && !isNewOutlet;
 
   /// Đã huỷ lượt viếng thăm (§3.1 HUY-LUOT-VIENG-THAM-2026-09-30)
   bool get isCancelled => cancelledAt != null;
 
-  /// Đã hoàn thành check-out
-  bool get isCompleted => checkoutAt != null && cancelledAt == null;
+  /// Đã hoàn thành check-out (lượt "Tạo điểm bán" tính là đã hoàn tất)
+  bool get isCompleted => (checkoutAt != null || isNewOutlet) && cancelledAt == null;
 
   factory VisitEntity.fromJson(Map<String, dynamic> json) {
     DateTime? parseDateTime(dynamic val) {
@@ -277,6 +304,9 @@ class VisitEntity {
       customerApprovalNote: json['customer_approval_note']?.toString(),
       visitResultLabel: json['visit_result_label']?.toString(),
       visitResultColor: json['visit_result_color']?.toString(),
+      visitKind: json['visit_kind']?.toString() ?? kVisitKindCheckin,
+      visitKindLabel: json['visit_kind_label']?.toString(),
+      visitKindColor: json['visit_kind_color']?.toString(),
     );
   }
 
@@ -313,6 +343,9 @@ class VisitEntity {
         'customer_approval_note': customerApprovalNote,
         'visit_result_label': visitResultLabel,
         'visit_result_color': visitResultColor,
+        'visit_kind': visitKind,
+        'visit_kind_label': visitKindLabel,
+        'visit_kind_color': visitKindColor,
       };
 
   VisitEntity copyWith({
@@ -351,6 +384,9 @@ class VisitEntity {
     String? customerApprovalNote,
     String? visitResultLabel,
     String? visitResultColor,
+    String? visitKind,
+    String? visitKindLabel,
+    String? visitKindColor,
   }) {
     return VisitEntity(
       id: id ?? this.id,
@@ -388,6 +424,9 @@ class VisitEntity {
       customerApprovalNote: customerApprovalNote ?? this.customerApprovalNote,
       visitResultLabel: visitResultLabel ?? this.visitResultLabel,
       visitResultColor: visitResultColor ?? this.visitResultColor,
+      visitKind: visitKind ?? this.visitKind,
+      visitKindLabel: visitKindLabel ?? this.visitKindLabel,
+      visitKindColor: visitKindColor ?? this.visitKindColor,
     );
   }
 }

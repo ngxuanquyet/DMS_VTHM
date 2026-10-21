@@ -4,6 +4,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/widgets/app_fullscreen_image_viewer.dart';
 import '../../domain/entities/visit_history_entity.dart';
 import '../../domain/usecases/visit_usecases.dart';
+import 'visit_kind_badge.dart';
 
 /// Modal bottom sheet hiển thị chi tiết một lượt viếng thăm lịch sử (§2.4 SPEC 16/10/2026)
 /// Hiển thị ảnh (ghép URL tương đối / MobiWork) và các biểu mẫu đã nộp kèm câu hỏi & câu trả lời.
@@ -329,22 +330,35 @@ class _VisitHistoryDetailSheetState
                 ],
               ),
 
-              // Kết quả viếng thăm badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: statusBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: statusColor, width: 0.8),
-                ),
-                child: Text(
-                  item.visitResultLabel ?? (isClosed ? 'Đóng cửa' : 'Mở cửa'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
+              // Kết quả viếng thăm badge (+ nhãn "Tạo điểm bán" bên dưới cho lượt new_outlet)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: statusBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: statusColor, width: 0.8),
+                    ),
+                    child: Text(
+                      item.visitResultLabel ?? (isClosed ? 'Đóng cửa' : 'Mở cửa'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor,
+                      ),
+                    ),
                   ),
-                ),
+                  if (item.isNewOutlet) ...[
+                    const SizedBox(height: 4),
+                    VisitKindBadge(
+                      label: item.visitKindLabel,
+                      color: item.visitKindBootstrapColor,
+                      fontSize: 10,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -358,7 +372,7 @@ class _VisitHistoryDetailSheetState
             children: [
               _buildTimeColumn('Giờ vào', item.checkinAt, isDark),
               Container(width: 1, height: 28, color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
-              _buildTimeColumn('Giờ ra', item.checkoutAt ?? 'Đang mở', isDark),
+              _buildTimeColumn('Giờ ra', item.checkoutAt ?? (item.isOpen ? 'Đang mở' : '—'), isDark),
               Container(width: 1, height: 28, color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
               _buildTimeColumn('Thời gian', item.formattedDuration, isDark),
             ],

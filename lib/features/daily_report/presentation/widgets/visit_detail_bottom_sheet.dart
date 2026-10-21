@@ -100,6 +100,12 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
 
               // Các trường thông tin
               _detailRow('Mã lượt viếng thăm', '#${visit.id}'),
+              if (visit.isNewOutlet)
+                _detailRow(
+                  'Loại lượt',
+                  visit.visitKindLabel ?? 'Tạo điểm bán',
+                  valueColor: visit.visitKindBootstrapColor,
+                ),
               if (visit.customerAddress != null &&
                   visit.customerAddress!.isNotEmpty)
                 _detailRow('Địa chỉ điểm bán', visit.customerAddress!),
@@ -140,10 +146,15 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
               ),
               if (visit.closedNote != null && visit.closedNote!.isNotEmpty)
                 _detailRow('Lý do đóng cửa', visit.closedNote!),
-              _detailRow('Giờ Check-in', formatTime(visit.checkinAt)),
-              if (visit.checkoutAt != null)
-                _detailRow('Giờ Check-out', formatTime(visit.checkoutAt)),
-              _detailRow('Thời lượng viếng thăm', formatDuration(visit.durationSeconds)),
+              // Lượt "Tạo điểm bán" không có check-in/check-out thật (đóng sẵn, ở lại 0) ⇒ chỉ hiện giờ tạo
+              if (visit.isNewOutlet)
+                _detailRow('Giờ tạo điểm bán', formatTime(visit.checkinAt))
+              else ...[
+                _detailRow('Giờ Check-in', formatTime(visit.checkinAt)),
+                if (visit.checkoutAt != null)
+                  _detailRow('Giờ Check-out', formatTime(visit.checkoutAt)),
+                _detailRow('Thời lượng viếng thăm', formatDuration(visit.durationSeconds)),
+              ],
               _detailRow('Số ảnh chụp thực địa', '${visit.photoCount} ảnh'),
               _detailRow('Số biểu mẫu nộp', '${visit.formCount} phiếu'),
               if (visit.checkoutLat != null && visit.checkoutLng != null)

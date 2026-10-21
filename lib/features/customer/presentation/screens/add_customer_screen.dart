@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
@@ -474,7 +473,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      final newCustomer = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -501,11 +500,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    !hasPending
-                        ? 'Đã tạo điểm bán thành công! Đang chuyển vào màn viếng thăm...'
-                        : 'Đã lưu điểm bán ngoại tuyến! Đang chuyển vào màn viếng thăm...',
-                  ),
+                  child: Text(addCustomerSuccessMessage(hasPending: hasPending)),
                 ),
               ],
             ),
@@ -515,29 +510,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           ),
         );
 
-        final dealer = DealerEntity(
-          id: newCustomer.id.toString(),
-          order: '01',
-          name: newCustomer.name,
-          code: newCustomer.code.isNotEmpty ? newCustomer.code : null,
-          phone: newCustomer.phone.isNotEmpty ? newCustomer.phone : null,
-          contactPerson: newCustomer.contactPerson.isNotEmpty ? newCustomer.contactPerson : null,
-          type: newCustomer.type.isNotEmpty ? newCustomer.type : null,
-          address: newCustomer.address,
-          status: DealerVisitStatus.pending,
-          statusLabel: 'Chưa ghé',
-          isVip: false,
-          lat: newCustomer.lat,
-          lng: newCustomer.lng,
-          geofenceRadiusM: newCustomer.geofenceRadiusM,
-          customer: newCustomer,
-        );
-
-        ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(dealer);
-
-        // 🔴 Theo nghiệp vụ: Khi tạo điểm bán mới xong là navigate vào màn viếng thăm luôn,
-        // chứ không phải là ghi nhận viếng thăm luôn, nhân viên vẫn phải thực hiện đầy đủ các bước viếng thăm thông thường.
-        context.pushReplacement('/check-in', extra: dealer);
+        // 🔴 Nghiệp vụ 21/10/2026: tạo điểm bán mới = server tự ghi MỘT lượt viếng thăm đã đóng
+        // (visit_kind = new_outlet) ⇒ KHÔNG mở màn check-in cho điểm bán vừa tạo, về màn trước như lưu thường.
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -1167,3 +1142,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 );
   }
 }
+
+/// Thông báo sau khi tạo điểm bán (nghiệp vụ 21/10/2026: tạo điểm bán = tính luôn một lượt viếng thăm).
+/// Ngoại tuyến thì lượt được ghi khi hàng đợi đồng bộ xong.
+String addCustomerSuccessMessage({required bool hasPending}) => hasPending
+    ? 'Đã lưu điểm bán ngoại tuyến — lượt viếng thăm sẽ được ghi nhận khi đồng bộ.'
+    : 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.';

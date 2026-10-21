@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
+import 'package:vthm_dms/features/visit/presentation/widgets/visit_kind_badge.dart';
 import 'visit_detail_bottom_sheet.dart';
 
 /// Thẻ hiển thị một lượt viếng thăm trong Báo cáo viếng thăm
@@ -39,6 +40,9 @@ class VisitReportCard extends StatelessWidget {
       }
     } else if (visit.isOpen) {
       durationStr = 'Đang đếm';
+    } else if (visit.isNewOutlet) {
+      // Lượt "Tạo điểm bán" ghi thời gian ở lại 0 — không hiện "0 phút"
+      durationStr = '—';
     }
 
     // Trạng thái kết quả
@@ -129,7 +133,10 @@ class VisitReportCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          Row(
+                          // Wrap: thêm nhãn loại lượt (Tạo điểm bán) cạnh cờ duyệt mà không tràn dòng trên máy hẹp
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            runSpacing: 2,
                             children: [
                               if (visit.customerCode != null &&
                                   visit.customerCode!.isNotEmpty) ...[
@@ -206,6 +213,13 @@ class VisitReportCard extends StatelessWidget {
                                       ),
                                     );
                                   }(),
+                              ],
+                              if (visit.isNewOutlet) ...[
+                                const SizedBox(width: 6),
+                                VisitKindBadge(
+                                  label: visit.visitKindLabel,
+                                  color: visit.visitKindBootstrapColor,
+                                ),
                               ],
                             ],
                           ),

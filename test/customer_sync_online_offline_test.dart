@@ -8,6 +8,7 @@ import 'package:vthm_dms/core/database/database_provider.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
+import 'package:vthm_dms/core/utils/system_clock.dart';
 import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_source.dart';
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
 import 'package:vthm_dms/features/customer/data/services/customer_api_service.dart';
@@ -192,8 +193,12 @@ void main() {
 
     expect(adapter.lastOptions?.path, '/crm/customers');
     final sentData = adapter.lastData as Map<String, dynamic>;
-    expect(sentData.containsKey('queued_seconds'), isFalse);
-    expect(sentData.containsKey('client_boot_id'), isFalse);
+    // Nghiệp vụ 21/10/2026: gửi từ hàng đợi ⇒ kèm đồng hồ hàng đợi (§9.1) để lượt "Tạo điểm bán" rơi đúng giờ bấm tạo
+    expect(sentData['queued_seconds'], isA<int>());
+    expect(sentData['queued_seconds'] as int, greaterThanOrEqualTo(0));
+    expect(sentData['client_boot_id'], SystemClock.bootId);
+    expect(sentData['client_time'], isA<String>());
+    expect(DateTime.tryParse(sentData['client_time'] as String), isNotNull);
     // Theo spec 30/09 §2 & §6: photo_tokens và photo_token đều nằm trong 25 khoá gốc được nhận
     expect(sentData['photo_tokens'], ['9a8e3cf14b7ad4f6d13d4988ae2f484c']);
     expect(sentData['photo_token'], '9a8e3cf14b7ad4f6d13d4988ae2f484c');

@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
+import 'visit_entity.dart';
 
 /// Entity tóm tắt một lượt viếng thăm trong lịch sử của điểm bán (§2.4 SPEC 16/10/2026)
 /// GET /dms/customers/{customerId}/visit-history
@@ -23,6 +25,9 @@ class VisitHistoryItemEntity {
   final int formCount;
   final String customerApprovalStatus;
   final String? customerApprovalNote;
+  final String visitKind; // 'checkin' | 'new_outlet' (nghiệp vụ 21/10/2026)
+  final String? visitKindLabel; // 'Lượt check-in' | 'Tạo điểm bán'
+  final String? visitKindColor; // 'secondary' | 'info'
 
   const VisitHistoryItemEntity({
     required this.id,
@@ -45,9 +50,17 @@ class VisitHistoryItemEntity {
     this.formCount = 0,
     this.customerApprovalStatus = 'approved',
     this.customerApprovalNote,
+    this.visitKind = kVisitKindCheckin,
+    this.visitKindLabel,
+    this.visitKindColor,
   });
 
-  bool get isOpen => checkoutAt == null;
+  /// Lượt "Tạo điểm bán": server tự ghi, đã đóng sẵn, thời gian ở lại 0.
+  bool get isNewOutlet => visitKind == kVisitKindNewOutlet;
+
+  Color? get visitKindBootstrapColor => VisitEntity.bootstrapColorOf(visitKindColor);
+
+  bool get isOpen => checkoutAt == null && !isNewOutlet;
   bool get isClosedStore => visitResult == 'closed';
 
   String get formattedDuration {
@@ -94,6 +107,9 @@ class VisitHistoryItemEntity {
           : (int.tryParse(json['form_count']?.toString() ?? '') ?? 0),
       customerApprovalStatus: json['customer_approval_status']?.toString() ?? 'approved',
       customerApprovalNote: json['customer_approval_note']?.toString(),
+      visitKind: json['visit_kind']?.toString() ?? kVisitKindCheckin,
+      visitKindLabel: json['visit_kind_label']?.toString(),
+      visitKindColor: json['visit_kind_color']?.toString(),
     );
   }
 
@@ -118,6 +134,9 @@ class VisitHistoryItemEntity {
         'form_count': formCount,
         'customer_approval_status': customerApprovalStatus,
         'customer_approval_note': customerApprovalNote,
+        'visit_kind': visitKind,
+        'visit_kind_label': visitKindLabel,
+        'visit_kind_color': visitKindColor,
       };
 }
 

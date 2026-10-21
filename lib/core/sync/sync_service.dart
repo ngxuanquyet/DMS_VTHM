@@ -428,6 +428,19 @@ class SyncService {
       isOfflineSync: true,
     );
 
+    // Nghiệp vụ 21/10/2026: tạo điểm bán = server tự ghi một lượt viếng thăm (visit_kind = new_outlet).
+    // Gửi kèm đồng hồ hàng đợi (§9.1, cùng cách check-in/check-out) để lượt rơi ĐÚNG giờ/ngày bấm tạo,
+    // kể cả khi hôm sau mới có mạng. Ba khoá này KHÔNG lấy từ dữ liệu nguồn (helper chặn), chỉ gắn ở đây.
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    if (queuedSec != null) {
+      payloadMap['queued_seconds'] = queuedSec;
+    }
+    payloadMap['client_boot_id'] = entry.bootId;
+    payloadMap['client_time'] = DateTime.fromMillisecondsSinceEpoch(entry.createdAt).toIso8601String();
+
     // 3. Gửi lên API /crm/customers kèm client_uuid
     final response = await _apiClient.post(
       '/crm/customers',
@@ -437,6 +450,7 @@ class SyncService {
     int? serverId;
     String? serverCode;
     String? serverType;
+    int? newOutletVisitId;
 
     if (response is Map<String, dynamic>) {
       final data = response['data'] is Map<String, dynamic>
@@ -453,6 +467,7 @@ class SyncService {
           data['customer_type_code']?.toString() ??
           data['customer_type']?.toString() ??
           data['type']?.toString();
+      newOutletVisitId = int.tryParse(data['new_outlet_visit_id']?.toString() ?? '');
     }
 
     // 4. Đánh dấu hoàn thành trong hàng đợi (§3.2, §4.3, §7)
@@ -490,6 +505,12 @@ class SyncService {
       try {
         _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
       } catch (_) {}
+      // Server vừa ghi lượt "Tạo điểm bán" ⇒ tải lại tuyến để điểm bán hiện "Đã ghé" (tiến độ tuyến)
+      if (newOutletVisitId != null) {
+        try {
+          _ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+        } catch (_) {}
+      }
     }
 
     // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server
