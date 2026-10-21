@@ -627,57 +627,70 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   Map<String, dynamic>? _cachedSchema;
 
-  /// Tài khoản mà [_cachedSchema] đang giữ — đổi tài khoản trong cùng phiên mở app thì bỏ bản trong bộ nhớ.
+  /// Tài khoản mà [_cachedSchema] đang giữ (`null` = chưa rõ tài khoản) — bản trong bộ nhớ chỉ trả cho ĐÚNG tài khoản này.
   String? _cachedSchemaAccount;
 
   /// Khoá lưu schema trong máy, TÁCH theo tài khoản: schema mang giá trị "tự điền theo phòng ban" (`default`) tính riêng
   /// cho người tải về — dùng chung một khoá thì người sau đăng nhập lúc mất mạng được điền theo phòng của người trước.
+  /// `logout()` xoá mọi khoá `cached_customer_form_schema*`.
   String _schemaPrefsKey(String account) => 'cached_customer_form_schema_$account';
+
+  /// Giữ schema vừa có cho [account] — CHỈ khi đó vẫn là tài khoản đang đăng nhập (xem [cacheAccountKey]).
+  Future<bool> _keepSchema(SharedPreferences prefs, String? account, Map<String, dynamic> schema, {bool persist = true}) async {
+    if (cacheAccountKey(prefs) != account) return false;
+    _cachedSchema = schema;
+    _cachedSchemaAccount = account;
+    if (persist && account != null) await prefs.setString(_schemaPrefsKey(account), jsonEncode(schema));
+    return true;
+  }
 
   @override
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    final account = currentAccountKey(prefs);
-    if (_cachedSchemaAccount != account) {
-      _cachedSchema = null;
-      _cachedSchemaAccount = account;
-    }
-    if (!forceRefresh && _cachedSchema != null) {
+    final account = cacheAccountKey(prefs);
+    if (!forceRefresh && _cachedSchema != null && _cachedSchemaAccount == account) {
       return _cachedSchema!;
     }
 
-    // Chưa rõ tài khoản (`'default'` — đang đăng xuất / mất hồ sơ) ⇒ KHÔNG đọc, KHÔNG ghi bản lưu: ngăn chung đó ai cũng
-    // rơi vào được, đọc nó là đọc dữ liệu của một người không xác định.
-    final key = account == 'default' ? null : _schemaPrefsKey(account);
-    if (!forceRefresh && key != null) {
-      final cachedJson = prefs.getString(key);
-      if (cachedJson != null && cachedJson.isNotEmpty) {
-        try {
-          _cachedSchema = jsonDecode(cachedJson) as Map<String, dynamic>;
-          unawaited(_refreshSchemaInBackground());
-          return _cachedSchema!;
-        } catch (_) {}
+    // Bản lưu trong máy của đúng tài khoản; chưa rõ tài khoản thì không đọc.
+    Map<String, dynamic>? fromDisk() {
+      final raw = account == null ? null : prefs.getString(_schemaPrefsKey(account));
+      if (raw == null || raw.isEmpty) return null;
+      try {
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (!forceRefresh) {
+      final disk = fromDisk();
+      if (disk != null) {
+        await _keepSchema(prefs, account, disk, persist: false);
+        unawaited(_refreshSchemaInBackground());
+        return disk;
       }
     }
 
     try {
       final res = await _apiService.getCustomerFormSchema();
-      // Đổi tài khoản trong lúc chờ mạng ⇒ bản này của người trước: trả cho lượt gọi này nhưng KHÔNG giữ trong bộ nhớ của
-      // người mới (bản lưu đĩa vẫn đúng khoá người trước).
-      if (_cachedSchemaAccount == account) _cachedSchema = res;
-      if (key != null) await prefs.setString(key, jsonEncode(res));
+      // 🔴 Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ đây là schema của người cũ: không giữ, không ghi lại bản lưu mà
+      // `logout()` vừa xoá, và tải lại cho người đang đăng nhập thay vì đưa schema người cũ cho màn hình của người mới.
+      if (!await _keepSchema(prefs, account, res)) {
+        return getCustomerFormSchema(forceRefresh: forceRefresh);
+      }
       return res;
     } catch (e) {
+      if (cacheAccountKey(prefs) != account) {
+        return getCustomerFormSchema(forceRefresh: forceRefresh);
+      }
       if (_cachedSchema != null && _cachedSchemaAccount == account) return _cachedSchema!;
-      final cachedJson = key == null ? null : prefs.getString(key);
-      if (cachedJson != null && cachedJson.isNotEmpty) {
-        try {
-          _cachedSchema = jsonDecode(cachedJson) as Map<String, dynamic>;
-          return _cachedSchema!;
-        } catch (_) {}
+      final disk = fromDisk();
+      if (disk != null) {
+        await _keepSchema(prefs, account, disk, persist: false);
+        return disk;
       }
       // Offline fallback: Trả về schema mặc định khi không có mạng và chưa từng lưu cache
-      _cachedSchema = kDefaultCustomerFormSchema;
       return kDefaultCustomerFormSchema;
     }
   }
@@ -685,13 +698,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<void> _refreshSchemaInBackground() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final account = currentAccountKey(prefs);
+      final account = cacheAccountKey(prefs);
+      if (account == null) return;
       final res = await _apiService.getCustomerFormSchema();
-      // Đã đổi tài khoản trong lúc chờ mạng ⇒ bản này của người trước, không ghi đè.
-      if (currentAccountKey(prefs) != account) return;
-      _cachedSchema = res;
-      _cachedSchemaAccount = account;
-      await prefs.setString(_schemaPrefsKey(account), jsonEncode(res));
+      await _keepSchema(prefs, account, res);
     } catch (_) {}
   }
 

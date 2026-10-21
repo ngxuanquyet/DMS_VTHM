@@ -26,9 +26,9 @@ class FormsRepositoryImpl implements FormsRepository {
   }) async {
     // TÁCH theo tài khoản: biểu mẫu mang giá trị "tự điền theo phòng ban" (`config.default`) và danh sách kênh đã thu
     // hẹp theo phòng của người tải về — người sau dùng chung máy mà đọc nhầm bản này khi mất mạng là điền sai phòng.
-    final account = currentAccountKey(await SharedPreferences.getInstance());
-    // Chưa rõ tài khoản (`'default'`) ⇒ không đọc/ghi bản lưu (ngăn chung ai cũng rơi vào được).
-    final cacheKey = account == 'default' ? null : 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
+    // Chưa rõ tài khoản ⇒ không đọc/ghi bản lưu ([cacheAccountKey]). `logout()` xoá mọi khoá `dms_market_forms_*`.
+    final account = cacheAccountKey(await SharedPreferences.getInstance());
+    final cacheKey = account == null ? null : 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
 
     try {
       final models = await _apiService.getAvailableForms(
@@ -40,7 +40,8 @@ class FormsRepositoryImpl implements FormsRepository {
       try {
         final prefs = await SharedPreferences.getInstance();
         final rawJson = jsonEncode(models.map((m) => m.toJson()).toList());
-        if (cacheKey != null) await prefs.setString(cacheKey, rawJson);
+        // Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ không ghi lại bản lưu của người cũ mà logout() vừa xoá.
+        if (cacheKey != null && cacheAccountKey(prefs) == account) await prefs.setString(cacheKey, rawJson);
       } catch (cacheErr) {
         debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
       }
