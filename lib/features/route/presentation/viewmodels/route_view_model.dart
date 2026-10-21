@@ -806,13 +806,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
           final notifService = ref!.read(appNotificationServiceProvider);
 
-          // Nhắc lộ trình đầu ngày (07:00 - 11:00) và Nhắc Chấm công Vào ca nếu chưa vào ca
+          // Nhắc lộ trình đầu ngày (07:00 - 11:00). Nhắc chấm công chỉ qua push server (21/10/2026).
           if (hour >= 7 && hour < 11) {
-            final hasIn = await notifService.checkHasCheckedInToday();
-            if (!hasIn && now.weekday != DateTime.sunday) {
-              await notifService.notifyAttendanceCheckinReminder(isLate: hour >= 8);
-            }
-
             await notifService.notifyRouteBriefing(
               totalDealers: total,
               routeName: routeName,

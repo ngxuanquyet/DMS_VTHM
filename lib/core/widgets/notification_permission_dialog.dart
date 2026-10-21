@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../localization/app_language.dart';
 import '../localization/app_strings.dart';
-import '../services/app_notification_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -119,8 +118,6 @@ class NotificationPermissionDialog extends StatelessWidget {
       final status = await Permission.notification.status;
 
       if (status.isGranted) {
-        // Đã có quyền -> Đồng bộ lại lịch hẹn thông báo nền với Hệ điều hành
-        await AppNotificationService().setupDefaultWeeklySchedules();
         return true;
       }
 
@@ -148,7 +145,6 @@ class NotificationPermissionDialog extends StatelessWidget {
       // Yêu cầu quyền hệ thống (Android 13+ & iOS sẽ hiện popup của OS)
       final result = await Permission.notification.request();
       if (result.isGranted) {
-        await AppNotificationService().setupDefaultWeeklySchedules();
         return true;
       }
 

@@ -27,11 +27,11 @@ void main() async {
     );
   };
 
-  // Khởi tạo dịch vụ thông báo cục bộ và thiết lập lịch báo thức nền T2-T7
+  // Khởi tạo dịch vụ thông báo cục bộ + huỷ lịch nhắc chấm công cục bộ của bản cũ (nhắc ca nay chỉ qua push server)
   try {
     final notifService = AppNotificationService();
     await notifService.init();
-    await notifService.setupDefaultWeeklySchedules();
+    await notifService.cancelLegacyAttendanceReminders();
   } catch (e) {
     debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
   }

@@ -23,7 +23,6 @@ import '../states/home_state.dart';
 import '../viewmodels/home_view_model.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/database/database_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../../../core/localization/app_strings.dart';
 import '../../../../core/services/app_notification_service.dart';
 import '../../../../core/widgets/notification_permission_dialog.dart';
@@ -73,11 +72,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   Future<void> _checkNotificationPermissionOnResume() async {
     try {
-      final isGranted = await Permission.notification.isGranted;
-      if (isGranted) {
-        final notifService = ref.read(appNotificationServiceProvider);
-        await notifService.setupDefaultWeeklySchedules();
-      }
       // Tự động kiểm tra và cập nhật ca làm việc mới nhất nếu admin vừa đổi ca
       ref.read(attendanceViewModelProvider.notifier).loadInitialData();
     } catch (_) {}
@@ -118,20 +112,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final pendingCount = await db.countPendingSync();
       final notifService = ref.read(appNotificationServiceProvider);
       final routeState = ref.read(routeViewModelProvider);
-      final attState = ref.read(attendanceViewModelProvider);
-      final todayStr = DateFormat('yyyy-MM-dd').format(now);
-
-      final stateHasIn = attState.history.any((p) => p.punchAt.startsWith(todayStr));
-      final stateHasOut = attState.history.where((p) => p.punchAt.startsWith(todayStr)).length >= 2;
-      final cachedHasIn = await notifService.checkHasCheckedInToday();
-      final cachedHasOut = await notifService.checkHasCheckedOutToday();
-
-      final hasIn = stateHasIn || cachedHasIn;
-      final hasOut = stateHasOut || cachedHasOut;
 
       await notifService.checkDailyReminders(
-            hasCheckedInToday: hasIn,
-            hasCheckedOutToday: hasOut,
             totalDealers: routeState.routeDetail?.totalDealers,
             completedDealers: routeState.routeDetail?.completedDealers,
             routeName: routeState.selectedRoute,

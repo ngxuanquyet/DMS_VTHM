@@ -6,7 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../../core/services/app_notification_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../data/repositories/attendance_repository_impl.dart';
 import '../../domain/entities/attendance_entity.dart';
@@ -52,7 +51,6 @@ final attendanceViewModelProvider =
     getAttendanceDetailUseCase: ref.read(getAttendanceDetailUseCaseProvider),
     toggleAttendanceUseCase: ref.read(toggleAttendanceUseCaseProvider),
     getMobileShiftsUseCase: ref.read(getMobileShiftsUseCaseProvider),
-    notificationService: ref.read(appNotificationServiceProvider),
     attendanceRepository: ref.read(attendanceRepositoryProvider),
     syncService: ref.read(syncServiceProvider),
   );
@@ -66,7 +64,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final GetAttendanceDetailUseCase getAttendanceDetailUseCase;
   final ToggleAttendanceUseCase toggleAttendanceUseCase;
   final GetMobileShiftsUseCase? getMobileShiftsUseCase;
-  final AppNotificationService? notificationService;
   final AttendanceRepository? attendanceRepository;
   final SyncService? syncService;
 
@@ -80,7 +77,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     required this.getAttendanceDetailUseCase,
     required this.toggleAttendanceUseCase,
     this.getMobileShiftsUseCase,
-    this.notificationService,
     this.attendanceRepository,
     this.syncService,
   }) : super(const AttendanceState()) {
@@ -158,22 +154,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         debugPrint('[AttendanceViewModel] Không tải được lịch ca tuần: $shiftErr');
       }
 
-      // 5. Lên lịch nhắc ca làm việc với Local Notifications (§8)
-      try {
-        if (shiftsList.isNotEmpty) {
-          await notificationService?.scheduleMultiDayShiftReminders(
-            shiftsList,
-            todayPunchCount: config.today?.punchCount ?? 0,
-          );
-        } else if (config.today?.shift != null) {
-          await notificationService?.scheduleShiftReminders(
-            config.today!.shift,
-            punchCount: config.today?.punchCount ?? 0,
-          );
-        }
-      } catch (notifErr) {
-        debugPrint('[AttendanceViewModel] Lỗi lên lịch nhắc ca: $notifErr');
-      }
+      // Nhắc vào/ra ca: CHỈ push của server theo ca thật (21/10/2026) — app không tự đặt lịch nhắc cục bộ nữa.
 
       // Lựa chọn địa điểm chấm công: giữ lựa chọn cũ hoặc chọn địa điểm gần nhất
       AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
@@ -274,9 +255,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
           ? 'Lượt chấm này đã có trên hệ thống trước đó.'
           : 'Đã ghi nhận chấm công lúc ${punchResult.timeFormatted}.';
 
-      // Hủy nhắc vào ca khi đã chấm công thành công (§8)
-      notificationService?.cancelShiftInReminder();
-
       if (addToHistory) {
         // Cập nhật danh sách lịch sử
         final updatedHistory = List<AttendancePunchEntity>.from(state.history);
@@ -372,9 +350,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       syncService?.syncQueue();
 
       onProgress?.call(1.0, 'Đã chấm công thành công!');
-
-      // Hủy nhắc vào ca khi đã chấm công thành công (§8)
-      notificationService?.cancelShiftInReminder();
 
       final updatedRequirements = AttendanceRequirementsEntity(
         photoCount: attachedPhotos.length,

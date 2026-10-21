@@ -15,9 +15,6 @@ void main() {
     test('Can trigger and store all 8 required notification types', () async {
       final service = AppNotificationService();
 
-      // 1. Nhắc Chấm công Vào ca buổi sáng
-      await service.notifyAttendanceCheckinReminder();
-
       // 2. Nhắc lộ trình đầu ngày
       await service.notifyRouteBriefing(
         totalDealers: 12,
@@ -44,9 +41,6 @@ void main() {
         dealerId: 'dealer_102',
       );
 
-      // 6. Nhắc Chấm công Ra ca cuối ngày
-      await service.notifyAttendanceCheckoutReminder();
-
       // 7. Thông báo đồng bộ ngoại tuyến thành công
       await service.notifyOfflineSyncSuccess(successCount: 5);
 
@@ -54,21 +48,20 @@ void main() {
       await service.notifyOfflineQueuePending(pendingCount: 3);
 
       final data = await service.getSavedNotifications();
-      expect(data.today.length, 8);
+      // Nhắc chấm công không còn nhắc cục bộ (chỉ push server, 21/10/2026) ⇒ 6 loại.
+      expect(data.today.length, 6);
 
       final types = data.today.map((e) => e.type).toSet();
-      expect(types, contains('attendance_checkin'));
       expect(types, contains('route_briefing'));
       expect(types, contains('route_progress'));
       expect(types, contains('forgot_checkout'));
       expect(types, contains('nearby_suggestion'));
-      expect(types, contains('attendance_checkout'));
       expect(types, contains('sync_success'));
       expect(types, contains('offline_queue_warning'));
 
       // Check unread count
       final unreadCount = await service.getUnreadCount();
-      expect(unreadCount, 8);
+      expect(unreadCount, 6);
 
       // Check mark all as read
       await service.markAllAsRead();
@@ -150,43 +143,6 @@ void main() {
       );
       expect(stateSystem.filteredToday.length, 1);
       expect(stateSystem.filteredToday.first.id, '3');
-    });
-
-    test('Shift 8h - 17h Mon-Sat scheduling and cancellation methods execute properly', () async {
-      final service = AppNotificationService();
-
-      // Test scheduling methods
-      await service.scheduleDailyCheckinReminder(hour: 7, minute: 50);
-      await service.scheduleDailyCheckoutReminder(hour: 17, minute: 0);
-
-      // Test cancel for today or all days
-      await service.cancelCheckinReminder(todayOnly: true);
-      await service.cancelCheckoutReminder(todayOnly: true);
-
-      await service.cancelCheckinReminder(todayOnly: false);
-      await service.cancelCheckoutReminder(todayOnly: false);
-
-      expect(true, isTrue);
-    });
-
-    test('Late checkin and overdue checkout reminders produce informative messages', () async {
-      SharedPreferences.setMockInitialValues({});
-      final service = AppNotificationService();
-
-      // Test late checkin
-      await service.notifyAttendanceCheckinReminder(isLate: true);
-      // Test overdue checkout
-      await service.notifyAttendanceCheckoutReminder(isOverdue: true);
-
-      final data = await service.getSavedNotifications();
-      final checkinNotif = data.today.firstWhere((e) => e.type == 'attendance_checkin');
-      final checkoutNotif = data.today.firstWhere((e) => e.type == 'attendance_checkout');
-
-      expect(checkinNotif.title, 'Cảnh báo chưa chấm công vào ca');
-      expect(checkinNotif.message, contains('08:00'));
-
-      expect(checkoutNotif.title, 'Cảnh báo chưa chấm công ra ca');
-      expect(checkoutNotif.message, contains('17:00'));
     });
 
     test('Visit geofence exit warning triggers alert notification and respects throttling', () async {
