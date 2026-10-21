@@ -55,10 +55,16 @@ void main() {
     expect(ownChannelTerritoryFields(admin, schema: kScopeFieldStubs)[0].options.map((o) => o.value), [1, 4, 7]);
   });
 
-  test('không cặp nào / server cũ chưa trả createChoices ⇒ không vẽ ô (server tự gán)', () {
+  test('phòng chưa gắn cặp / chưa có createChoices ⇒ vẫn hiện hai ô nhưng KHOÁ + ghi chú (server tự gán)', () {
     final rong = CustomerMetaData.fromJson(metaJson({'pairs': [], 'default_channel_ids': [], 'default_territory_code': null}));
-    expect(ownChannelTerritoryFields(rong, schema: kScopeFieldStubs), isEmpty);
-    expect(ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null)), schema: kScopeFieldStubs), isEmpty);
+    for (final f in [
+      ownChannelTerritoryFields(rong, schema: kScopeFieldStubs),
+      ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null)), schema: kScopeFieldStubs),
+    ]) {
+      expect(f.map((x) => x.code), ['own_channel_ids', 'territory_code']);
+      expect(f.every((x) => x.isReadOnly && !x.isRequired && x.options.isEmpty && x.initialValue == null), isTrue);
+    }
+    expect(ownChannelTerritoryFields(rong, schema: kScopeFieldStubs).first.helperText, contains('chưa được gắn'));
   });
 
   test('meta lưu máy giữ nguyên createChoices qua toJson/fromJson', () {

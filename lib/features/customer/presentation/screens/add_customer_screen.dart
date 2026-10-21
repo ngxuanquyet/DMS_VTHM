@@ -43,7 +43,15 @@ final customerFormSchemaProvider = StreamProvider.autoDispose<Map<String, dynami
 /// Provider lấy danh mục meta (khu vực, loại khách hàng, kênh...)
 final customerMetaProvider = FutureProvider.autoDispose<CustomerMetaData>((ref) async {
   final repo = ref.watch(customerRepositoryProvider);
-  return repo.getCustomerMeta(forceRefresh: false);
+  final meta = await repo.getCustomerMeta(forceRefresh: false);
+  // Bản lưu máy từ app/server đời trước chưa có `createChoices` ⇒ hai ô Kênh/Tuyến không có dữ liệu: tải lại ngay khi có
+  // mạng thay vì chờ lượt làm mới nền (21/10/2026).
+  if (meta.createChoices == null && ref.read(connectivityProvider).isOnline) {
+    try {
+      return await repo.getCustomerMeta(forceRefresh: true);
+    } catch (_) {}
+  }
+  return meta;
 });
 
 /// Provider lấy danh sách tuyến của chính nhân viên đăng nhập (GET /dms/routes/mine)
@@ -100,9 +108,29 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
   final tuyenCH = cauHinh['territory_code'];
   if (kenhCH == null && tuyenCH == null) return const [];
   final choices = meta.createChoices;
-  if (choices == null || meta.salesChannels.isEmpty) return const [];
-  final pairs = choices.pairs;
-  if (pairs != null && pairs.isEmpty) return const [];
+  final pairs = choices?.pairs;
+
+  // Không có lựa chọn nào (phòng chưa gắn kênh/tuyến ở danh mục "Kênh & tuyến bán hàng", hoặc chưa tải được danh mục)
+  // ⇒ vẫn HIỆN hai ô nhưng khoá + ghi chú (chủ hệ thống 21/10/2026); để trống ⇒ server tự gán, người duyệt chỉnh.
+  List<DynamicFormField> khoa(String ghiChu) => [
+        for (final (ch, ma, nhan) in [(kenhCH, 'own_channel_ids', 'Kênh'), (tuyenCH, 'territory_code', 'Tuyến')])
+          if (ch != null)
+            DynamicFormField(
+              code: ma,
+              label: ch.label.isNotEmpty ? ch.label : nhan,
+              type: DynamicFormFieldType.singleChoice,
+              isReadOnly: true,
+              placeholder: 'Chưa có lựa chọn',
+              helperText: ghiChu,
+              section: 'Thông tin chung',
+            ),
+      ];
+  if (choices == null || meta.salesChannels.isEmpty) {
+    return khoa('Chưa tải được danh mục kênh/tuyến — kết nối mạng rồi mở lại form; để trống thì hệ thống tự gán.');
+  }
+  if (pairs != null && pairs.isEmpty) {
+    return khoa('Phòng của bạn chưa được gắn kênh/tuyến — liên hệ quản trị. Để trống thì người duyệt sẽ chỉnh.');
+  }
 
   final channelIds = pairs?.map((p) => p.channelId).toSet();
   final channels = meta.salesChannels.where((c) => channelIds == null || channelIds.contains(c.id)).toList();
