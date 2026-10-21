@@ -38,6 +38,10 @@ class DynamicFormBuilder extends StatefulWidget {
   /// Đang submit (loading)
   final bool isSubmitting;
 
+  /// Giữ ĐÚNG thứ tự [fields]: mỗi đoạn ô liền nhau cùng `section` là một khối, không gom ô cùng mục ở xa về một chỗ
+  /// (màn tạo điểm bán theo Cấu hình trường điểm bán — chủ hệ thống 21/10/2026). Mặc định gom như cũ.
+  final bool keepFieldOrder;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -46,6 +50,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.onSubmit,
     this.submitButtonText,
     this.isSubmitting = false,
+    this.keepFieldOrder = false,
   });
 
   @override
@@ -370,22 +375,28 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Phân nhóm các trường theo Section (nếu có)
-    final sections = <String, List<DynamicFormField>>{};
+    final sections = <MapEntry<String, List<DynamicFormField>>>[];
     for (final field in widget.fields) {
-      if (field.isCoordsField) {
-        sections.putIfAbsent('Vị trí trên bản đồ', () => []).add(field);
+      final sec = field.isCoordsField ? 'Vị trí trên bản đồ' : (field.section ?? 'Thông tin chung');
+      final khoi = widget.keepFieldOrder
+          ? (sections.isNotEmpty && sections.last.key == sec ? sections.last : null)
+          : sections.where((e) => e.key == sec).firstOrNull;
+      if (khoi != null) {
+        khoi.value.add(field);
       } else {
-        final sec = field.section ?? 'Thông tin chung';
-        sections.putIfAbsent(sec, () => []).add(field);
+        sections.add(MapEntry(sec, [field]));
       }
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ...sections.entries.map((secEntry) {
+        ...sections.indexed.map((cap) {
+          final secEntry = cap.$2;
           final sectionTitle = secEntry.key;
           final sectionFields = secEntry.value;
+          // keepFieldOrder: mục bị bản đồ (hoặc khối khác) chia đôi — phần sau vẫn trong khung nhưng KHÔNG lặp tiêu đề.
+          final noiTiep = sections.take(cap.$1).any((e) => e.key == sectionTitle);
 
           // 🔴 Bỏ hẳn card thông tin mở rộng (động): không vẽ Card container và không vẽ Header bar,
           // các field được vẽ trực tiếp ra ngoài layout form
@@ -442,7 +453,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Section Header Bar
-                Container(
+                if (!noiTiep) Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isDark

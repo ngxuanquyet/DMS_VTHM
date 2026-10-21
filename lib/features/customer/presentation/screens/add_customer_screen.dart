@@ -144,6 +144,21 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
   ];
 }
 
+/// Gán MỤC theo Cấu hình trường điểm bán, giữ nguyên thứ tự: ô `heading` (mã trong [headingCodes]) mở một mục cho mọi ô
+/// sau nó và không vẽ thành ô; ô đứng trước tiêu đề đầu tiên thuộc mục chung "Thông tin điểm bán".
+List<DynamicFormField> sectionsFromConfig(List<DynamicFormField> fields, Set<String?> headingCodes) {
+  var muc = 'Thông tin điểm bán';
+  final out = <DynamicFormField>[];
+  for (final f in fields) {
+    if (headingCodes.contains(f.code)) {
+      muc = f.label.isNotEmpty ? f.label : muc;
+      continue;
+    }
+    out.add(f.copyWith(section: muc));
+  }
+  return out;
+}
+
 /// Cấu hình mặc định của hai ô (Kênh bắt buộc, Tuyến không; nhãn gốc) cho [ownChannelTerritoryFields] — dùng khi schema
 /// không mang cờ `scope_fields`, hoặc khi chỉ cần giá trị điền sẵn (bước 3b).
 const List<DynamicFormField> kScopeFieldStubs = [
@@ -982,17 +997,28 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             );
           }
 
-          // Kênh + Tuyến tự khai (chốt 21/10/2026): ô cứng ở Cấu hình trường điểm bán — nhãn / bắt buộc / ẩn theo schema
-          // (`scope_fields` bật ⇒ vắng ô = admin ẩn); schema không mang cờ (server cũ, bản lưu máy cũ, bộ mặc định ngoại
-          // tuyến) ⇒ vẽ cả hai như trước. Lựa chọn + điền sẵn theo cặp phòng. Luôn đứng ngay sau ô Tuyến bán hàng.
-          final scopeFields = ownChannelTerritoryFields(
-            meta,
-            schema: schemaData['data']?['scope_fields'] == true ? fields : kScopeFieldStubs,
-          );
-          fields.removeWhere((f) => f.code == 'own_channel_ids' || f.code == 'territory_code');
+          // Kênh + Tuyến tự khai (chốt 21/10/2026): ô cứng ở Cấu hình trường điểm bán — nhãn / bắt buộc / ẩn và VỊ TRÍ
+          // theo schema (`scope_fields` bật ⇒ vắng ô = admin ẩn); schema không mang cờ (server cũ, bản lưu máy cũ, bộ mặc
+          // định ngoại tuyến) ⇒ vẽ cả hai ngay sau ô Tuyến bán hàng như trước. Lựa chọn + điền sẵn theo cặp phòng.
+          final theoCauHinh = schemaData['data']?['scope_fields'] == true;
+          final scopeFields = ownChannelTerritoryFields(meta, schema: theoCauHinh ? fields : kScopeFieldStubs);
+          // Thay TỪNG ô tại đúng chỗ của nó trong schema (admin có thể đặt Kênh, Tuyến ở hai nơi khác nhau).
+          final dungSan = {for (final f in scopeFields) f.code: f};
+          final thayTaiCho = <DynamicFormField>[
+            for (final f in fields)
+              if (f.code != 'own_channel_ids' && f.code != 'territory_code')
+                f
+              else if (theoCauHinh && dungSan[f.code] != null)
+                dungSan[f.code]!,
+          ];
+          fields
+            ..clear()
+            ..addAll(thayTaiCho);
 
-          final routeIdx = fields.indexWhere((f) => f.code == 'route_ids' || f.code == 'route_id');
-          fields.insertAll(routeIdx != -1 ? routeIdx + 1 : fields.length, scopeFields);
+          if (!theoCauHinh) {
+            final routeIdx = fields.indexWhere((f) => f.code == 'route_ids' || f.code == 'route_id');
+            fields.insertAll(routeIdx != -1 ? routeIdx + 1 : fields.length, scopeFields);
+          }
 
           // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
           // Ở màn nhập khách hàng: chỉ cho phép chụp ảnh từ camera, không cho chọn từ thư viện
@@ -1066,33 +1092,19 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             }
           }
 
-          // 🔴 Bổ sung các trường thông tin mở rộng (động) từ meta.dynamicColumns nếu schema chưa có
-          if (meta.dynamicColumns.isNotEmpty) {
-            for (final col in meta.dynamicColumns) {
-              final colCode = col.code.toLowerCase().trim();
-              if (colCode == 'region_name' || colCode == 'status' || colCode == 'is_active' || colCode == 'code' || colCode == 'id') {
-                continue;
-              }
-              final exists = fields.any((f) =>
-                  f.code.toLowerCase() == colCode ||
-                  (col.legacyKey != null && f.code.toLowerCase() == col.legacyKey!.toLowerCase()) ||
-                  f.code.toLowerCase() == 'mw_$colCode' ||
-                  f.code.toLowerCase().replaceFirst('mw_', '') == colCode.replaceFirst('mw_', ''));
-              if (!exists) {
-                fields.add(
-                  DynamicFormField(
-                    code: col.code,
-                    label: col.label,
-                    type: DynamicFormFieldType.fromString(col.inputType),
-                    isRequired: col.required,
-                    isReadOnly: col.readOnly,
-                    options: col.options,
-                    section: 'Thông tin mở rộng (Động)',
-                  ),
-                );
-              }
-            }
-          }
+          // 🔴 THỨ TỰ + MỤC theo đúng Cấu hình trường điểm bán (mẫu chuẩn — chủ hệ thống 21/10/2026): không gom ô theo
+          // nhóm app tự đặt theo mã ô, không tự thêm ô động ngoài cấu hình. Mục = ô `heading` của cấu hình (mở một mục cho
+          // mọi ô sau nó); chưa có tiêu đề nào thì một mục chung. Ô app tự chèn (tuyến bán hàng, kênh/tuyến khi schema
+          // cũ, ô dự phòng thiếu) nằm ngay cạnh ô liên quan nên đi theo mục của ô đứng trước.
+          final headingCodes = fieldsJson
+              .whereType<Map>()
+              .where((f) => f['input_type']?.toString() == 'heading')
+              .map((f) => f['code']?.toString())
+              .toSet();
+          final theoMuc = sectionsFromConfig(fields, headingCodes);
+          fields
+            ..clear()
+            ..addAll(theoMuc);
 
           // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
           for (int i = 0; i < fields.length; i++) {
@@ -1159,6 +1171,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                         DynamicFormBuilder(
                           key: _formKey,
                           fields: fields,
+                          keepFieldOrder: true,
                           initialData: {
                             'route_ids': defaultRouteId,
                             ..._savedFormData,
