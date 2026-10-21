@@ -638,6 +638,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
   /// Giữ schema vừa có cho [account] — CHỈ khi đó vẫn là tài khoản đang đăng nhập (xem [cacheAccountKey]).
   Future<bool> _keepSchema(SharedPreferences prefs, String? account, Map<String, dynamic> schema, {bool persist = true}) async {
     if (cacheAccountKey(prefs) != account) return false;
+    // Chưa rõ tài khoản ⇒ không giữ cả trong bộ nhớ (ngăn "không rõ ai" không được đọc lại).
+    if (account == null) return true;
     _cachedSchema = schema;
     _cachedSchemaAccount = account;
     if (persist && account != null) await prefs.setString(_schemaPrefsKey(account), jsonEncode(schema));
@@ -648,7 +650,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final account = cacheAccountKey(prefs);
-    if (!forceRefresh && _cachedSchema != null && _cachedSchemaAccount == account) {
+    if (!forceRefresh && account != null && _cachedSchema != null && _cachedSchemaAccount == account) {
       return _cachedSchema!;
     }
 
@@ -677,12 +679,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
       // 🔴 Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ đây là schema của người cũ: không giữ, không ghi lại bản lưu mà
       // `logout()` vừa xoá, và tải lại cho người đang đăng nhập thay vì đưa schema người cũ cho màn hình của người mới.
       if (!await _keepSchema(prefs, account, res)) {
-        return getCustomerFormSchema(forceRefresh: forceRefresh);
+        // Phiên vừa hết (tài khoản thành null) ⇒ trả luôn, gọi lại lúc không có token chỉ là một lượt 401 vô ích.
+        if (cacheAccountKey(prefs) == null) return res;
+        return await getCustomerFormSchema(forceRefresh: forceRefresh);
       }
       return res;
     } catch (e) {
       if (cacheAccountKey(prefs) != account) {
-        return getCustomerFormSchema(forceRefresh: forceRefresh);
+        if (cacheAccountKey(prefs) == null) return kDefaultCustomerFormSchema;
+        return await getCustomerFormSchema(forceRefresh: forceRefresh);
       }
       if (_cachedSchema != null && _cachedSchemaAccount == account) return _cachedSchema!;
       final disk = fromDisk();

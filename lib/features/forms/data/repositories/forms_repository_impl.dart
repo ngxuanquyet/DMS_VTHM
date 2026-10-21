@@ -36,12 +36,19 @@ class FormsRepositoryImpl implements FormsRepository {
         customerId: customerId,
       );
 
+      // 🔴 Đổi tài khoản trong lúc chờ mạng ⇒ đây là biểu mẫu (tự điền, kênh thu hẹp) của người CŨ: không ghi lại bản lưu
+      // mà logout() vừa xoá, và tải lại cho người đang đăng nhập. Phiên vừa hết (null) thì trả luôn, đừng gọi lại không token.
+      final prefsNow = await SharedPreferences.getInstance();
+      final accountNow = cacheAccountKey(prefsNow);
+      if (accountNow != account) {
+        if (accountNow == null) return models.map((m) => m.toEntity()).toList();
+        return await getAvailableForms(kind: kind, customerId: customerId);
+      }
+
       // Lưu cache cục bộ phục vụ chế độ offline
       try {
-        final prefs = await SharedPreferences.getInstance();
         final rawJson = jsonEncode(models.map((m) => m.toJson()).toList());
-        // Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ không ghi lại bản lưu của người cũ mà logout() vừa xoá.
-        if (cacheKey != null && cacheAccountKey(prefs) == account) await prefs.setString(cacheKey, rawJson);
+        if (cacheKey != null) await prefsNow.setString(cacheKey, rawJson);
       } catch (cacheErr) {
         debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
       }
@@ -49,10 +56,10 @@ class FormsRepositoryImpl implements FormsRepository {
       return models.map((m) => m.toEntity()).toList();
     } catch (e) {
       debugPrint('[FormsRepository] Không kết nối được server, đọc cache cục bộ: $e');
-      // Đọc từ cache
+      // Đọc từ cache — CHỈ của tài khoản đang đăng nhập (đổi tài khoản giữa chừng thì khoá lúc đầu là của người cũ).
       try {
         final prefs = await SharedPreferences.getInstance();
-        final cached = cacheKey == null ? null : prefs.getString(cacheKey);
+        final cached = cacheKey == null || cacheAccountKey(prefs) != account ? null : prefs.getString(cacheKey);
         if (cached != null && cached.isNotEmpty) {
           final list = jsonDecode(cached) as List<dynamic>;
           return list
