@@ -41,7 +41,7 @@ class FormsRepositoryImpl implements FormsRepository {
       final prefsNow = await SharedPreferences.getInstance();
       final accountNow = cacheAccountKey(prefsNow);
       if (accountNow != account) {
-        if (accountNow == null) return const <MarketFormConfigEntity>[];
+        if (accountNow == null) return <MarketFormConfigEntity>[];
         return await getAvailableForms(kind: kind, customerId: customerId);
       }
 
