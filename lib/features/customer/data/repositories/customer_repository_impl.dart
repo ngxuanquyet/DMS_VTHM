@@ -646,8 +646,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
       return _cachedSchema!;
     }
 
-    final key = _schemaPrefsKey(account);
-    if (!forceRefresh) {
+    // Chưa rõ tài khoản (`'default'` — đang đăng xuất / mất hồ sơ) ⇒ KHÔNG đọc, KHÔNG ghi bản lưu: ngăn chung đó ai cũng
+    // rơi vào được, đọc nó là đọc dữ liệu của một người không xác định.
+    final key = account == 'default' ? null : _schemaPrefsKey(account);
+    if (!forceRefresh && key != null) {
       final cachedJson = prefs.getString(key);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
@@ -660,12 +662,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     try {
       final res = await _apiService.getCustomerFormSchema();
-      _cachedSchema = res;
-      await prefs.setString(key, jsonEncode(res));
+      // Đổi tài khoản trong lúc chờ mạng ⇒ bản này của người trước: trả cho lượt gọi này nhưng KHÔNG giữ trong bộ nhớ của
+      // người mới (bản lưu đĩa vẫn đúng khoá người trước).
+      if (_cachedSchemaAccount == account) _cachedSchema = res;
+      if (key != null) await prefs.setString(key, jsonEncode(res));
       return res;
     } catch (e) {
-      if (_cachedSchema != null) return _cachedSchema!;
-      final cachedJson = prefs.getString(key);
+      if (_cachedSchema != null && _cachedSchemaAccount == account) return _cachedSchema!;
+      final cachedJson = key == null ? null : prefs.getString(key);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
           _cachedSchema = jsonDecode(cachedJson) as Map<String, dynamic>;

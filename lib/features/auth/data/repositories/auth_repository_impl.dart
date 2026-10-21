@@ -120,7 +120,15 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyUserData);
 
     // Xoá cache cấu hình chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
-    final keys = prefs.getKeys().where((k) => k.startsWith('dms_attendance_config_cache')).toList();
+    // Cùng lý do: biểu mẫu điểm bán / thị trường mang giá trị "tự điền theo phòng ban" tính riêng cho người này
+    // (cả khoá cũ dùng chung lẫn khoá theo tài khoản).
+    final keys = prefs
+        .getKeys()
+        .where((k) =>
+            k.startsWith('dms_attendance_config_cache') ||
+            k.startsWith('cached_customer_form_schema') ||
+            k.startsWith('dms_market_forms_'))
+        .toList();
     for (final k in keys) {
       await prefs.remove(k);
     }

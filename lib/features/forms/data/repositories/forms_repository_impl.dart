@@ -27,7 +27,8 @@ class FormsRepositoryImpl implements FormsRepository {
     // TÁCH theo tài khoản: biểu mẫu mang giá trị "tự điền theo phòng ban" (`config.default`) và danh sách kênh đã thu
     // hẹp theo phòng của người tải về — người sau dùng chung máy mà đọc nhầm bản này khi mất mạng là điền sai phòng.
     final account = currentAccountKey(await SharedPreferences.getInstance());
-    final cacheKey = 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
+    // Chưa rõ tài khoản (`'default'`) ⇒ không đọc/ghi bản lưu (ngăn chung ai cũng rơi vào được).
+    final cacheKey = account == 'default' ? null : 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
 
     try {
       final models = await _apiService.getAvailableForms(
@@ -39,7 +40,7 @@ class FormsRepositoryImpl implements FormsRepository {
       try {
         final prefs = await SharedPreferences.getInstance();
         final rawJson = jsonEncode(models.map((m) => m.toJson()).toList());
-        await prefs.setString(cacheKey, rawJson);
+        if (cacheKey != null) await prefs.setString(cacheKey, rawJson);
       } catch (cacheErr) {
         debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
       }
@@ -50,7 +51,7 @@ class FormsRepositoryImpl implements FormsRepository {
       // Đọc từ cache
       try {
         final prefs = await SharedPreferences.getInstance();
-        final cached = prefs.getString(cacheKey);
+        final cached = cacheKey == null ? null : prefs.getString(cacheKey);
         if (cached != null && cached.isNotEmpty) {
           final list = jsonDecode(cached) as List<dynamic>;
           return list
