@@ -4,7 +4,7 @@ import 'package:vthm_dms/features/customer/data/utils/customer_payload_helper.da
 import 'package:vthm_dms/features/customer/domain/entities/customer_meta_entity.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 
-/// Màn tạo điểm bán: hai ô Kênh / Tuyến tự khai chọn trong cặp phòng người đăng nhập (chốt 21/10/2026).
+/// Màn tạo điểm bán: hai ô Kênh / Tuyến tự khai chọn tuỳ ý toàn danh mục, điền sẵn theo phòng (chốt 21/10/2026).
 void main() {
   Map<String, dynamic> metaJson(Object? createChoices) => {
         'data': {
@@ -21,62 +21,45 @@ void main() {
         },
       };
 
-  test('cặp phòng cụ thể ⇒ chỉ kênh/tuyến của phòng, điền sẵn mặc định', () {
+  test('có phòng ⇒ toàn danh mục, điền sẵn mặc định theo phòng', () {
     final meta = CustomerMetaData.fromJson(metaJson({
-      'pairs': [
-        {'channel_id': 4, 'territory_code': 'MN2'},
-      ],
+      'pairs': null,
       'default_channel_ids': [4],
       'default_territory_code': 'MN2',
     }));
     final fields = ownChannelTerritoryFields(meta, schema: kScopeFieldStubs);
     expect(fields.map((f) => f.code), ['own_channel_ids', 'territory_code']);
     expect(fields[0].type, DynamicFormFieldType.multipleChoice);
-    expect(fields[0].options.map((o) => o.value), [4]);
+    expect(fields[0].options.map((o) => o.value), [1, 4, 7]);
     expect(fields[0].initialValue, [4]);
-    expect(fields[1].options.map((o) => o.value), ['MN2']);
+    expect(fields[1].options.map((o) => o.value), ['MB1', 'MN2']);
     expect(fields[1].initialValue, 'MN2');
   });
 
-  test('cặp "toàn kênh" ⇒ mọi tuyến; toàn quyền (pairs null) ⇒ mọi kênh', () {
-    final toanKenh = CustomerMetaData.fromJson(metaJson({
-      'pairs': [
-        {'channel_id': 7, 'territory_code': null},
-      ],
-      'default_channel_ids': [7],
-      'default_territory_code': null,
-    }));
-    final f1 = ownChannelTerritoryFields(toanKenh, schema: kScopeFieldStubs);
-    expect(f1[0].options.map((o) => o.value), [7]);
-    expect(f1[1].options.map((o) => o.value), ['MB1', 'MN2']);
-    expect(f1[1].initialValue, isNull);
-
-    final admin = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [], 'default_territory_code': null}));
-    expect(ownChannelTerritoryFields(admin, schema: kScopeFieldStubs)[0].options.map((o) => o.value), [1, 4, 7]);
+  test('không thuộc phòng nào ⇒ toàn danh mục, hai ô trống, chọn được (không khoá)', () {
+    final rong = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [], 'default_territory_code': null}));
+    final f = ownChannelTerritoryFields(rong, schema: kScopeFieldStubs);
+    expect(f[0].options.map((o) => o.value), [1, 4, 7]);
+    expect(f[0].initialValue, isEmpty);
+    expect(f[1].options.map((o) => o.value), ['MB1', 'MN2']);
+    expect(f[1].initialValue, isNull);
+    expect(f.any((x) => x.isReadOnly), isFalse);
   });
 
-  test('phòng chưa gắn cặp / chưa có createChoices ⇒ vẫn hiện hai ô nhưng KHOÁ + ghi chú (server tự gán)', () {
-    final rong = CustomerMetaData.fromJson(metaJson({'pairs': [], 'default_channel_ids': [], 'default_territory_code': null}));
-    for (final f in [
-      ownChannelTerritoryFields(rong, schema: kScopeFieldStubs),
-      ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null)), schema: kScopeFieldStubs),
-    ]) {
-      expect(f.map((x) => x.code), ['own_channel_ids', 'territory_code']);
-      expect(f.every((x) => x.isReadOnly && !x.isRequired && x.options.isEmpty && x.initialValue == null), isTrue);
-    }
-    expect(ownChannelTerritoryFields(rong, schema: kScopeFieldStubs).first.helperText, contains('chưa được gắn'));
+  test('chưa có createChoices (chưa tải được danh mục) ⇒ vẫn hiện hai ô nhưng KHOÁ + ghi chú (server tự gán)', () {
+    final f = ownChannelTerritoryFields(CustomerMetaData.fromJson(metaJson(null)), schema: kScopeFieldStubs);
+    expect(f.map((x) => x.code), ['own_channel_ids', 'territory_code']);
+    expect(f.every((x) => x.isReadOnly && !x.isRequired && x.options.isEmpty && x.initialValue == null), isTrue);
   });
 
   test('meta lưu máy giữ nguyên createChoices qua toJson/fromJson', () {
     final meta = CustomerMetaData.fromJson(metaJson({
-      'pairs': [
-        {'channel_id': 4, 'territory_code': 'MN2'},
-      ],
+      'pairs': null,
       'default_channel_ids': [4],
       'default_territory_code': 'MN2',
     }));
     final back = CustomerMetaData.fromJson(meta.toJson());
-    expect(back.createChoices?.pairs?.single.territoryCode, 'MN2');
+    expect(back.createChoices?.defaultTerritoryCode, 'MN2');
     expect(back.createChoices?.defaultChannelIds, [4]);
     expect(back.salesChannels.length, 3);
     expect(back.territories.map((t) => t.code), ['MB1', 'MN2']);
@@ -84,9 +67,7 @@ void main() {
 
   test('nhãn / bắt buộc / ẩn theo dòng cấu hình trong schema (ô cứng ở Cấu hình trường điểm bán)', () {
     final meta = CustomerMetaData.fromJson(metaJson({
-      'pairs': [
-        {'channel_id': 4, 'territory_code': 'MN2'},
-      ],
+      'pairs': null,
       'default_channel_ids': [4],
       'default_territory_code': 'MN2',
     }));
@@ -96,31 +77,8 @@ void main() {
     expect(f.map((x) => x.code), ['territory_code'], reason: 'admin ẩn Kênh ⇒ schema không gửi ⇒ không vẽ');
     expect(f.single.label, 'Tuyến bán hàng');
     expect(f.single.isRequired, isTrue);
-    expect(f.single.options.map((o) => o.value), ['MN2'], reason: 'lựa chọn vẫn bó theo phòng, không theo schema');
+    expect(f.single.options.map((o) => o.value), ['MB1', 'MN2'], reason: 'lựa chọn = toàn danh mục, không theo schema');
     expect(ownChannelTerritoryFields(meta, schema: const []), isEmpty, reason: 'ẩn cả hai / server cũ');
-  });
-
-  test('allows(): cùng luật khớp cặp server; bộ trùng mặc định luôn qua (phòng nhiều tuyến)', () {
-    const nhieuTuyen = CustomerCreateChoices(
-      pairs: [CustomerScopePair(channelId: 4, territoryCode: 'MB1'), CustomerScopePair(channelId: 4, territoryCode: 'MB2')],
-      defaultChannelIds: [4],
-    );
-    expect(nhieuTuyen.allows([4], null), isTrue, reason: 'bộ mặc định (kênh của phòng, tuyến trống) — server tự gán y vậy');
-    expect(nhieuTuyen.allows([4], 'MB2'), isTrue);
-    expect(nhieuTuyen.allows([4], 'MN2'), isFalse);
-
-    const tron = CustomerCreateChoices(
-      pairs: [CustomerScopePair(channelId: 4, territoryCode: 'MB1'), CustomerScopePair(channelId: 7)],
-      defaultChannelIds: [4, 7],
-      defaultTerritoryCode: 'MB1',
-    );
-    expect(tron.allows([4, 7], 'MB2'), isFalse, reason: 'KBL chỉ ở MB1 ⇒ cả bộ bị chặn');
-    expect(tron.allows([7], 'MB2'), isTrue, reason: 'KDA toàn kênh ⇒ mọi tuyến');
-    expect(tron.allows([], 'MB1'), isTrue);
-    expect(tron.allows([4], null), isTrue, reason: 'tuyến trống ⇒ server thay tuyến mặc định MB1 trước khi kiểm');
-    expect(tron.allows([4], ''), isTrue);
-    expect(tron.allows([1], 'MB1'), isFalse, reason: 'kênh ngoài phòng');
-    expect(const CustomerCreateChoices(pairs: null).allows([1], 'ZZ'), isTrue, reason: 'toàn quyền');
   });
 
   test('payload POST /crm/customers mang own_channel_ids + territory_code ở GỐC, không lọt vào data', () {

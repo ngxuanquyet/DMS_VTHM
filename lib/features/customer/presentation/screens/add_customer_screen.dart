@@ -99,19 +99,17 @@ final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEnti
 /// Là ô CỨNG ở Cấu hình trường điểm bán: nhãn / bắt buộc lấy từ dòng cùng mã trong `schema` (server gửi khi app xin
 /// `with_scope`); `schema` không có dòng nào (admin ẩn, hoặc server cũ) ⇒ không vẽ ô đó.
 ///
-/// Lựa chọn bó trong cặp phòng người đăng nhập (`pairs` NULL ⇒ toàn quyền, mọi mục danh mục; cặp tuyến NULL = "toàn
-/// kênh" ⇒ mọi tuyến); server kiểm lại đúng luật đó (`CustomerScopeService::fitsDepartment()`). Điền sẵn giá trị
-/// server sẽ tự gán khi để trống. Không có lựa chọn nào (server cũ, phòng chưa gắn kênh) ⇒ không vẽ ô — server tự gán.
+/// Lựa chọn = toàn danh mục, người dùng chọn tuỳ ý (chủ hệ thống chốt 21/10/2026); điền sẵn theo phòng người đăng nhập
+/// (giá trị server tự gán khi để trống) — người không thuộc phòng nào được gán kênh/tuyến thì hai ô để trống.
 List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {required List<DynamicFormField> schema}) {
   final cauHinh = {for (final f in schema) f.code: f};
   final kenhCH = cauHinh['own_channel_ids'];
   final tuyenCH = cauHinh['territory_code'];
   if (kenhCH == null && tuyenCH == null) return const [];
   final choices = meta.createChoices;
-  final pairs = choices?.pairs;
 
-  // Không có lựa chọn nào (phòng chưa gắn kênh/tuyến ở danh mục "Kênh & tuyến bán hàng", hoặc chưa tải được danh mục)
-  // ⇒ vẫn HIỆN hai ô nhưng khoá + ghi chú (chủ hệ thống 21/10/2026); để trống ⇒ server tự gán, người duyệt chỉnh.
+  // Chưa tải được danh mục ⇒ vẫn HIỆN hai ô nhưng khoá + ghi chú (chủ hệ thống 21/10/2026); để trống ⇒ server tự gán,
+  // người duyệt chỉnh.
   List<DynamicFormField> khoa(String ghiChu) => [
         for (final (ch, ma, nhan) in [(kenhCH, 'own_channel_ids', 'Kênh'), (tuyenCH, 'territory_code', 'Tuyến')])
           if (ch != null)
@@ -128,18 +126,9 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
   if (choices == null || meta.salesChannels.isEmpty) {
     return khoa('Chưa tải được danh mục kênh/tuyến — kết nối mạng rồi mở lại form; để trống thì hệ thống tự gán.');
   }
-  if (pairs != null && pairs.isEmpty) {
-    return khoa('Phòng của bạn chưa được gắn kênh/tuyến — liên hệ quản trị. Để trống thì người duyệt sẽ chỉnh.');
-  }
 
-  final channelIds = pairs?.map((p) => p.channelId).toSet();
-  final channels = meta.salesChannels.where((c) => channelIds == null || channelIds.contains(c.id)).toList();
-  final allTerritories = pairs == null || pairs.any((p) => p.territoryCode == null);
-  final territoryCodes = pairs?.map((p) => p.territoryCode).whereType<String>().toSet() ?? <String>{};
-  final territories = allTerritories
-      ? meta.territories
-      : meta.territories.where((t) => territoryCodes.contains(t.code)).toList();
-
+  final channels = meta.salesChannels;
+  final territories = meta.territories;
   final defaultChannels = choices.defaultChannelIds.where((id) => channels.any((c) => c.id == id)).toList();
   return [
     if (kenhCH != null && channels.isNotEmpty)
@@ -150,7 +139,7 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         isRequired: kenhCH.isRequired,
         options: channels.map((c) => DynamicFormOption(label: '${c.code} - ${c.name}', value: c.id)).toList(),
         initialValue: defaultChannels,
-        helperText: 'Mặc định theo phòng của bạn — chọn lại nếu điểm bán thuộc kênh khác của phòng.',
+        helperText: 'Mặc định theo phòng của bạn — có thể chọn kênh khác.',
         section: 'Thông tin chung',
       ),
     if (tuyenCH != null && territories.isNotEmpty)
@@ -378,9 +367,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       return;
     }
 
-    // 3b. Kênh + Tuyến tự khai phải là một bộ trong phạm vi phòng (server kiểm lại; lệch thì 403 — mục ngoại tuyến lệch
-    // thì server về mặc định) — báo ngay tại ô thay vì để server từ chối. Giữ nguyên giá trị điền sẵn ⇒ KHÔNG gửi, server tự
-    // gán mặc định (danh sách kênh điền sẵn đã lọc theo danh mục đang dùng nên có thể ít hơn bộ mặc định của server).
+    // 3b. Kênh + Tuyến tự khai chọn tuỳ ý trong toàn danh mục (chốt 21/10/2026). Giữ nguyên giá trị điền sẵn ⇒ KHÔNG gửi,
+    // server tự gán mặc định (danh sách kênh điền sẵn đã lọc theo danh mục đang dùng nên có thể ít hơn bộ mặc định của server).
     var boGuiKenhTuyen = false;
     final meta3b = ref.read(customerMetaProvider).valueOrNull;
     final createChoices = meta3b?.createChoices;
@@ -397,15 +385,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           (tuyen.isEmpty || tuyen == tuyenSan);
       if (giuNguyen) {
         boGuiKenhTuyen = true;
-      } else if (kenh.isNotEmpty && !createChoices.allows(kenh.toList(), tuyen)) {
-        _formKey.currentState?.focusField('territory_code');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kênh và tuyến đã chọn không thuộc phạm vi phòng của bạn — hãy chọn tuyến khớp với kênh.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-        return;
       }
     }
 
