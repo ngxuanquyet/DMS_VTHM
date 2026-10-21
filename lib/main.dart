@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/constants/app_constants.dart';
 import 'core/localization/language_provider.dart';
 import 'core/network/connectivity_provider.dart';
@@ -9,6 +10,7 @@ import 'core/services/app_notification_service.dart';
 import 'core/services/error_tracker_service.dart';
 import 'core/services/fcm_push_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/utils/account_key.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 
 void main() async {
@@ -32,6 +34,8 @@ void main() async {
     final notifService = AppNotificationService();
     await notifService.init();
     await notifService.cancelLegacyAttendanceReminders();
+    // Dọn bộ nhớ đệm dùng chung kiểu cũ (trước khi tách theo tài khoản).
+    await removeLegacySharedCaches(await SharedPreferences.getInstance());
   } catch (e) {
     debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
   }

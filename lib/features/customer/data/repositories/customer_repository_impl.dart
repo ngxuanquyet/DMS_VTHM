@@ -242,6 +242,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
       }
     }
 
+    // Server trả rỗng (không lỗi) ⇒ vẫn ưu tiên bản lưu của chính tài khoản này trước bộ mặc định cứng.
+    if (account != null && _cachedMeta == null) {
+      final disk = fromDisk();
+      if (disk != null) {
+        try {
+          await _keepMeta(prefs, account, disk, persist: false);
+        } catch (_) {}
+      }
+    }
+
     return (account != null ? _cachedMeta : null) ?? kDefaultCustomerMeta;
   }
 

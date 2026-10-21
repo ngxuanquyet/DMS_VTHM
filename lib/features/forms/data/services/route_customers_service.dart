@@ -51,6 +51,11 @@ class RouteCustomersService {
         if (dataJson is Map<String, dynamic>) {
           var data = RouteCustomersData.fromJson(dataJson);
           data = await _enrichCoordinates(data);
+          // Kiểm lại sau `await` đọc SQLite — đổi tài khoản trong lúc đó thì đây vẫn là tuyến người cũ.
+          if (cacheAccountKey(prefs) != account) {
+            if (cacheAccountKey(prefs) == null) return empty;
+            return await getRouteCustomers(forceRefresh: forceRefresh);
+          }
           // Lưu vào local cache để dùng khi offline
           await _saveToCache(data, account);
           return data;

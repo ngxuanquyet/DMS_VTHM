@@ -35,3 +35,18 @@ String? cacheAccountKey(SharedPreferences prefs) {
 
   return key == 'default' ? null : key;
 }
+
+/// Xoá các khoá bộ nhớ đệm DÙNG CHUNG kiểu cũ (trước khi tách theo tài khoản, 21/10/2026) — gọi mỗi lần khởi động, rẻ.
+///
+/// Bản cũ còn nằm trong máy thì dữ liệu của người dùng trước (tuyến được giao, biểu mẫu có tự điền theo phòng ban) ở lại
+/// vô thời hạn trên máy dùng chung, dù không code nào đọc nữa. Khoá mới luôn có mã tài khoản sau tiền tố nên không trùng:
+/// biểu mẫu thị trường cũ là `dms_market_forms_<kind>_<khách>`, mới là `dms_market_forms_<tk>_<kind>_<khách>`.
+Future<void> removeLegacySharedCaches(SharedPreferences prefs) async {
+  const exact = ['cached_customer_form_schema', 'cached_customer_meta', 'dms_route_customers_cache_v1'];
+  final oldForms = RegExp(r'^dms_market_forms_(survey|collect)_-?\d+$');
+  for (final k in prefs.getKeys().toList()) {
+    if (exact.contains(k) || oldForms.hasMatch(k)) {
+      await prefs.remove(k);
+    }
+  }
+}
