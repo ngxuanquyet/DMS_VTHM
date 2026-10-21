@@ -37,25 +37,27 @@ class RouteCustomersService {
     const empty = RouteCustomersData(items: [], truncated: false);
     final prefs = await SharedPreferences.getInstance();
     final account = cacheAccountKey(prefs);
+
+    // 🔴 Gọi SAU MỖI `await`: đổi tài khoản / đăng xuất trong lúc chờ ⇒ dữ liệu đang có là tuyến của người cũ — không ghi
+    // lại bản lưu, không đưa ra; phiên hết ⇒ rỗng, tài khoản khác ⇒ làm lại cho người đang đăng nhập. `null` = không đổi.
+    Future<RouteCustomersData?> neuDoiTaiKhoan() async {
+      final now = cacheAccountKey(prefs);
+      if (now == account) return null;
+      if (now == null) return empty;
+      return getRouteCustomers(forceRefresh: forceRefresh);
+    }
+
     try {
       final response = await _apiClient.get('/dms/routes/customers');
-
-      // 🔴 Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ đây là tuyến của người cũ: không ghi lại bản lưu, không đưa ra;
-      // tài khoản khác thì làm lại cho người đang đăng nhập.
-      if (cacheAccountKey(prefs) != account) {
-        if (cacheAccountKey(prefs) == null) return empty;
-        return await getRouteCustomers(forceRefresh: forceRefresh);
-      }
+      final doi = await neuDoiTaiKhoan();
+      if (doi != null) return doi;
       if (response is Map<String, dynamic>) {
         final dataJson = response['data'];
         if (dataJson is Map<String, dynamic>) {
           var data = RouteCustomersData.fromJson(dataJson);
           data = await _enrichCoordinates(data);
-          // Kiểm lại sau `await` đọc SQLite — đổi tài khoản trong lúc đó thì đây vẫn là tuyến người cũ.
-          if (cacheAccountKey(prefs) != account) {
-            if (cacheAccountKey(prefs) == null) return empty;
-            return await getRouteCustomers(forceRefresh: forceRefresh);
-          }
+          final doiSauDb = await neuDoiTaiKhoan();
+          if (doiSauDb != null) return doiSauDb;
           // Lưu vào local cache để dùng khi offline
           await _saveToCache(data, account);
           return data;
@@ -63,16 +65,16 @@ class RouteCustomersService {
       }
     } catch (_) {
       // Khi gặp lỗi mạng hoặc server error, đọc từ cache
-      if (cacheAccountKey(prefs) != account) {
-        if (cacheAccountKey(prefs) == null) return empty;
-        return await getRouteCustomers(forceRefresh: forceRefresh);
-      }
+      final doi = await neuDoiTaiKhoan();
+      if (doi != null) return doi;
     }
 
-    // Đọc từ cache
+    // Đọc từ cache (của đúng tài khoản đang đăng nhập)
     final cached = await getCachedData();
     if (cached != null) {
-      return _enrichCoordinates(cached);
+      final data = await _enrichCoordinates(cached);
+      final doi = await neuDoiTaiKhoan();
+      return doi ?? data;
     }
 
     return empty;

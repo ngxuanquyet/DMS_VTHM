@@ -34,10 +34,15 @@ void main() async {
     final notifService = AppNotificationService();
     await notifService.init();
     await notifService.cancelLegacyAttendanceReminders();
-    // Dọn bộ nhớ đệm dùng chung kiểu cũ (trước khi tách theo tài khoản).
-    await removeLegacySharedCaches(await SharedPreferences.getInstance());
   } catch (e) {
     debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
+  }
+
+  // Dọn bộ nhớ đệm dùng chung kiểu cũ (trước khi tách theo tài khoản) — try RIÊNG: thông báo lỗi không được chặn việc dọn.
+  try {
+    await removeLegacySharedCaches(await SharedPreferences.getInstance());
+  } catch (e) {
+    debugPrint('[Main] Dọn bộ nhớ đệm dùng chung kiểu cũ lỗi: $e');
   }
 
   // Khởi tạo dịch vụ thông báo đẩy Firebase Cloud Messaging (§1, §5.2 API-THONG-BAO-DAY-MOBILE-2026-10-19)
