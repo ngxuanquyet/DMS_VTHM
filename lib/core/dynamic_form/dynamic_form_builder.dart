@@ -58,6 +58,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   final Map<String, FocusNode> _fieldFocusNodes = {};
   final Map<String, GlobalKey> _fieldKeys = {};
 
+  /// Địa chỉ bản đồ vừa tự điền vào `address` — lấy lại vị trí thì được thay, còn người dùng đã sửa tay thì giữ.
+  String? _autoAddress;
+
   FocusNode _getFocusNode(String code) {
     return _fieldFocusNodes.putIfAbsent(code, () => FocusNode());
   }
@@ -124,6 +127,23 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             _formData[field.code] = null;
         }
       }
+    }
+
+    // `address` không có ô riêng (admin ẩn) vẫn được ô Vị trí ghi vào — giữ qua mỗi lần dựng lại, không thì mất địa chỉ.
+    if (!widget.fields.any((f) => f.code == 'address')) {
+      final addr = existingData['address'] ?? widget.initialData['address'];
+      if (addr != null) _formData['address'] = addr;
+    }
+  }
+
+  /// Điền địa chỉ tra từ vị trí bản đồ vào `address` khi ô đang trống hoặc vẫn là địa chỉ tự điền lần trước (lấy lại vị
+  /// trí thì địa chỉ đi theo); người dùng đã gõ / sửa thì giữ nguyên.
+  void _fillAddressFromMap(String? newAddress) {
+    if (newAddress == null || newAddress.trim().isEmpty) return;
+    final current = _formData['address']?.toString().trim() ?? '';
+    if (current.isEmpty || current == _autoAddress) {
+      _autoAddress = newAddress.trim();
+      updateFieldValue('address', _autoAddress);
     }
   }
 
@@ -734,7 +754,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           final initialAddr = _formData['address']?.toString() ??
               _formData['delivery_address']?.toString();
 
-          return AppMapLocationCard(
+          final card = AppMapLocationCard(
             title: (field.label.isEmpty || field.label == 'Toạ độ' || field.label == 'coords')
                 ? 'Vị trí điểm bán trên bản đồ'
                 : field.label,
@@ -758,12 +778,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
                 'accuracy': accuracy ?? 8.0,
                 'mock': isMock ?? false,
               });
-              // Đồng bộ điền địa chỉ nếu trường address chưa có giá trị (giống form sửa điểm bán)
-              if ((_formData['address'] == null || _formData['address'].toString().trim().isEmpty) &&
-                  newAddress != null &&
-                  newAddress.isNotEmpty) {
-                updateFieldValue('address', newAddress);
-              }
+              _fillAddressFromMap(newAddress);
             },
             onCoordinatesDetailsChanged: (newLat, newLng, newAddress, newAcc, newMock) {
               updateFieldValue(field.code, {
@@ -772,15 +787,34 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
                 'accuracy': newAcc != null ? double.parse(newAcc.toStringAsFixed(1)) : 8.0,
                 'mock': newMock ?? false,
               });
-              if ((_formData['address'] == null || _formData['address'].toString().trim().isEmpty) &&
-                  newAddress != null &&
-                  newAddress.isNotEmpty) {
-                updateFieldValue('address', newAddress);
-              }
+              _fillAddressFromMap(newAddress);
             },
             onCleared: () {
               updateFieldValue(field.code, null);
             },
+          );
+
+          // Ô Vị trí lưu CẢ địa chỉ lẫn toạ độ (chủ hệ thống 21/10/2026): schema không có ô Địa chỉ riêng (admin ẩn) thì
+          // vẽ ô chữ Địa chỉ ngay dưới bản đồ — tự điền theo vị trí, người dùng sửa được; lưu vào khoá gốc `address`.
+          if (widget.fields.any((f) => f.code == 'address')) return card;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              card,
+              const SizedBox(height: 12),
+              DynamicLongTextFieldWidget(
+                field: const DynamicFormField(
+                  code: 'address',
+                  label: 'Địa chỉ',
+                  type: DynamicFormFieldType.longText,
+                  max: 500,
+                  placeholder: 'Địa chỉ điểm bán — tự điền khi lấy vị trí, có thể sửa',
+                ),
+                value: _formData['address']?.toString(),
+                focusNode: _getFocusNode('address'),
+                onChanged: (val) => updateFieldValue('address', val),
+              ),
+            ],
           );
         }
 
