@@ -627,7 +627,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   Map<String, dynamic>? _cachedSchema;
 
-  /// Tài khoản mà [_cachedSchema] đang giữ (`null` = chưa rõ tài khoản) — bản trong bộ nhớ chỉ trả cho ĐÚNG tài khoản này.
+  /// Tài khoản mà [_cachedSchema] đang giữ — bản trong bộ nhớ chỉ trả cho ĐÚNG tài khoản này (không bao giờ giữ khi chưa
+  /// rõ tài khoản).
   String? _cachedSchemaAccount;
 
   /// Khoá lưu schema trong máy, TÁCH theo tài khoản: schema mang giá trị "tự điền theo phòng ban" (`default`) tính riêng
@@ -642,7 +643,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
     if (account == null) return true;
     _cachedSchema = schema;
     _cachedSchemaAccount = account;
-    if (persist && account != null) await prefs.setString(_schemaPrefsKey(account), jsonEncode(schema));
+    if (persist) await prefs.setString(_schemaPrefsKey(account), jsonEncode(schema));
     return true;
   }
 
@@ -679,8 +680,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
       // 🔴 Đổi tài khoản / đăng xuất trong lúc chờ mạng ⇒ đây là schema của người cũ: không giữ, không ghi lại bản lưu mà
       // `logout()` vừa xoá, và tải lại cho người đang đăng nhập thay vì đưa schema người cũ cho màn hình của người mới.
       if (!await _keepSchema(prefs, account, res)) {
-        // Phiên vừa hết (tài khoản thành null) ⇒ trả luôn, gọi lại lúc không có token chỉ là một lượt 401 vô ích.
-        if (cacheAccountKey(prefs) == null) return res;
+        // Phiên vừa hết (tài khoản thành null) ⇒ không đưa schema người cũ ra, cũng không gọi lại lúc không có token (401).
+        if (cacheAccountKey(prefs) == null) return kDefaultCustomerFormSchema;
         return await getCustomerFormSchema(forceRefresh: forceRefresh);
       }
       return res;

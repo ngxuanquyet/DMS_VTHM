@@ -41,7 +41,7 @@ class FormsRepositoryImpl implements FormsRepository {
       final prefsNow = await SharedPreferences.getInstance();
       final accountNow = cacheAccountKey(prefsNow);
       if (accountNow != account) {
-        if (accountNow == null) return models.map((m) => m.toEntity()).toList();
+        if (accountNow == null) return const <MarketFormConfigEntity>[];
         return await getAvailableForms(kind: kind, customerId: customerId);
       }
 
@@ -56,6 +56,11 @@ class FormsRepositoryImpl implements FormsRepository {
       return models.map((m) => m.toEntity()).toList();
     } catch (e) {
       debugPrint('[FormsRepository] Không kết nối được server, đọc cache cục bộ: $e');
+      // Đổi sang tài khoản KHÁC trong lúc chờ ⇒ làm lại cho người đang đăng nhập (đọc đúng bản lưu của họ).
+      final nowAccount = cacheAccountKey(await SharedPreferences.getInstance());
+      if (nowAccount != account && nowAccount != null) {
+        return await getAvailableForms(kind: kind, customerId: customerId);
+      }
       // Đọc từ cache — CHỈ của tài khoản đang đăng nhập (đổi tài khoản giữa chừng thì khoá lúc đầu là của người cũ).
       try {
         final prefs = await SharedPreferences.getInstance();
