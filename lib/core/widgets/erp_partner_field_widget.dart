@@ -13,6 +13,7 @@ import 'app_loading.dart';
 /// 🔴 Giá trị là MÃ khách dạng CHUỖI (thường có số 0 đầu) — không bao giờ parse sang số.
 /// Widget luôn làm việc với danh sách mã [selectedCodes]; nơi gọi tự quy về một chuỗi (ô chọn một)
 /// hoặc mảng chuỗi (ô chọn nhiều) trước khi lưu.
+/// Giá trị ngoại lệ admin khai (mã `"_:<tên>"`, vd "Khách lẻ") chỉ hiện TÊN, có nhãn "Giá trị khác".
 class ErpPartnerFieldWidget extends ConsumerStatefulWidget {
   /// Mã ô (`code`) — bắt buộc gửi lên server ở tham số `field`
   final String fieldCode;
@@ -74,6 +75,9 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
   /// Mã đã gửi đi tra nhãn — tránh gọi lặp mỗi lần build
   final Set<String> _lookupRequested = {};
 
+  /// Mã khách đã chọn đang sổ thẻ xem đủ kênh/địa chỉ
+  final Set<String> _expanded = {};
+
   @override
   void initState() {
     super.initState();
@@ -108,19 +112,31 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
     }
   }
 
-  /// Tên khách; chưa tra được (offline) thì hiện chính mã
+  /// Tên khách; chưa tra được (offline) thì hiện chính mã (ngoại lệ `"_:<tên>"` hiện phần tên)
   String _nameOf(String code) {
     final known = _known[code];
-    return (known != null && known.name.isNotEmpty) ? known.name : code;
+    return (known != null && known.name.isNotEmpty) ? known.name : ErpPartnerOption.fallbackLabel(code);
   }
 
-  /// Nhãn đầy đủ `"<tên> (<mã>)"`; chưa tra được thì hiện mã
-  String _labelOf(String code) => _known[code]?.displayLabel ?? code;
+  /// Nhãn đầy đủ `"<tên> (<mã>)"` (ngoại lệ chỉ tên); chưa tra được thì hiện nhãn dự phòng
+  String _labelOf(String code) => _known[code]?.displayLabel ?? ErpPartnerOption.fallbackLabel(code);
+
+  /// Khách ERP đã biết kênh/địa chỉ thì mới có gì để sổ ra xem
+  bool _canExpand(String code) {
+    final known = _known[code];
+    return known != null && !known.isExtra && (known.address != null || known.channelName != null);
+  }
+
+  void _toggleExpanded(String code) {
+    setState(() {
+      if (!_expanded.remove(code)) _expanded.add(code);
+    });
+  }
 
   void _openPicker(BuildContext context) {
     if (widget.isReadOnly) return;
     final initialSelected = widget.selectedCodes
-        .map((c) => _known[c] ?? ErpPartnerOption(code: c, name: ''))
+        .map((c) => _known[c] ?? ErpPartnerOption.placeholder(c))
         .toList();
     showModalBottomSheet(
       context: context,
@@ -250,7 +266,11 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
   }
 
   Widget _buildSingleValue(String code, bool isDark) {
-    final address = _known[code]?.address;
+    final known = _known[code];
+    final address = known?.address;
+    final isExtra = known?.isExtra ?? ErpPartnerOption.isExtraCode(code);
+    final canExpand = _canExpand(code);
+    final expanded = canExpand && _expanded.contains(code);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -263,57 +283,90 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
         const SizedBox(height: 2),
         Row(
           children: [
-            _codeBadge(code, isDark),
-            if (address != null) ...[
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  address,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodySmall(
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                  ),
-                ),
+            // Ngoại lệ không có mã ERP — thay huy hiệu mã bằng nhãn "Giá trị khác"
+            if (isExtra) const _ExtraTag() else _codeBadge(code, isDark),
+            const SizedBox(width: 6),
+            Expanded(
+              child: (address != null && !expanded)
+                  ? Text(
+                      address,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodySmall(
+                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            if (canExpand)
+              _ExpandToggle(
+                key: Key('erp-partner-selected-expand-$code'),
+                expanded: expanded,
+                isDark: isDark,
+                onPressed: () => _toggleExpanded(code),
               ),
-            ],
           ],
         ),
+        if (expanded && known != null) ...[
+          const SizedBox(height: 4),
+          _PartnerDetails(item: known, isDark: isDark),
+        ],
       ],
     );
   }
 
   Widget _buildChip(String code, bool isDark, bool isLocked) {
+    final known = _known[code];
+    final canExpand = _canExpand(code);
+    final expanded = canExpand && _expanded.contains(code);
     return Container(
-      padding: EdgeInsets.only(left: 8, right: isLocked ? 8 : 4, top: 4, bottom: 4),
+      padding: EdgeInsets.only(left: 8, right: isLocked && !canExpand ? 8 : 4, top: 4, bottom: 4),
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppColors.primary.withValues(alpha: 0.35), width: 0.8),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Text(
-              _labelOf(code),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-              ).copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          if (!isLocked) ...[
-            const SizedBox(width: 2),
-            GestureDetector(
-              onTap: () => _removeCode(code),
-              child: Icon(
-                Icons.close_rounded,
-                size: 16,
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  _labelOf(code),
+                  maxLines: expanded ? null : 2,
+                  overflow: expanded ? null : TextOverflow.ellipsis,
+                  style: AppTypography.bodySmall(
+                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
               ),
-            ),
+              if (canExpand)
+                _ExpandToggle(
+                  key: Key('erp-partner-selected-expand-$code'),
+                  expanded: expanded,
+                  isDark: isDark,
+                  compact: true,
+                  onPressed: () => _toggleExpanded(code),
+                ),
+              if (!isLocked) ...[
+                const SizedBox(width: 2),
+                GestureDetector(
+                  onTap: () => _removeCode(code),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (expanded && known != null) ...[
+            const SizedBox(height: 4),
+            _PartnerDetails(item: known, isDark: isDark),
           ],
         ],
       ),
@@ -401,6 +454,9 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
 
   /// Đang chọn (giữ thứ tự chọn) — chỉ dùng ở chế độ chọn nhiều
   final Map<String, ErpPartnerOption> _selected = {};
+
+  /// Mã khách đang sổ thẻ xem đủ thông tin — mỗi thẻ mở/đóng độc lập
+  final Set<String> _expanded = {};
 
   final List<ErpPartnerOption> _items = [];
   int _page = 0;
@@ -506,6 +562,13 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
         if (_selected.containsKey(item.code)) {
           _selected.remove(item.code);
         } else {
+          // Loại trừ (server cũng chặn trộn — 400): chọn ngoại lệ thì bỏ mọi lựa chọn khác;
+          // đang có ngoại lệ mà chọn khách ERP thì bỏ ngoại lệ
+          if (item.isExtra) {
+            _selected.clear();
+          } else {
+            _selected.removeWhere((_, v) => v.isExtra);
+          }
           _selected[item.code] = item;
         }
       });
@@ -778,8 +841,15 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
     );
   }
 
+  void _toggleExpanded(String code) {
+    setState(() {
+      if (!_expanded.remove(code)) _expanded.add(code);
+    });
+  }
+
   Widget _buildItem(ErpPartnerOption item, bool isDark) {
     final isSelected = _isSelected(item);
+    final expanded = !item.isExtra && _expanded.contains(item.code);
     final subtitleParts = [
       if (item.channelName != null) item.channelName!,
       if (item.address != null) item.address!,
@@ -814,7 +884,8 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
-                Icons.business_rounded,
+                // Giá trị ngoại lệ dùng icon nhãn để nhận ra không phải khách ERP
+                item.isExtra ? Icons.label_outline_rounded : Icons.business_rounded,
                 size: 20,
                 color: isSelected
                     ? AppColors.primary
@@ -827,7 +898,7 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.name.isNotEmpty ? item.name : item.code,
+                    item.name.isNotEmpty ? item.name : ErpPartnerOption.fallbackLabel(item.code),
                     style: AppTypography.titleMedium(
                       color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                     ).copyWith(
@@ -835,41 +906,62 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainer,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.code,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  if (item.isExtra)
+                    const _ExtraTag()
+                  else
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainer,
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        ),
-                      ),
-                      if (subtitleParts.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Expanded(
                           child: Text(
-                            subtitleParts.join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.bodySmall(
+                            item.code,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                             ),
                           ),
                         ),
+                        if (subtitleParts.isNotEmpty && !expanded) ...[
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              subtitleParts.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.bodySmall(
+                                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
+                  if (expanded) ...[
+                    const SizedBox(height: 6),
+                    _PartnerDetails(
+                      key: Key('erp-partner-details-${item.code}'),
+                      item: item,
+                      isDark: isDark,
+                    ),
+                  ],
                 ],
               ),
             ),
+            // Nút sổ thẻ: vùng chạm riêng (InkWell/IconButton trong cùng thắng) — bấm KHÔNG chọn khách
+            if (!item.isExtra) ...[
+              const SizedBox(width: 4),
+              _ExpandToggle(
+                key: Key('erp-partner-expand-${item.code}'),
+                expanded: expanded,
+                isDark: isDark,
+                onPressed: () => _toggleExpanded(item.code),
+              ),
+            ],
             if (widget.multiple) ...[
               const SizedBox(width: 8),
               Icon(
@@ -884,6 +976,117 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
               const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 22),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Nút mũi tên sổ/thu thẻ khách (xoay lên khi đang mở). Là vùng chạm RIÊNG: bấm không chọn khách
+/// trong danh sách, không mở ô chọn ở ô đã chọn.
+class _ExpandToggle extends StatelessWidget {
+  final bool expanded;
+  final bool isDark;
+  final VoidCallback onPressed;
+
+  /// Bản nhỏ cho chip ô chọn nhiều
+  final bool compact;
+
+  const _ExpandToggle({
+    super.key,
+    required this.expanded,
+    required this.isDark,
+    required this.onPressed,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 24.0 : 32.0;
+    return IconButton(
+      tooltip: expanded ? 'Thu gọn' : 'Xem đầy đủ thông tin',
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: BoxConstraints.tightFor(width: size, height: size),
+      iconSize: compact ? 18 : 22,
+      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+      icon: AnimatedRotation(
+        turns: expanded ? 0.5 : 0,
+        duration: const Duration(milliseconds: 200),
+        child: const Icon(Icons.keyboard_arrow_down),
+      ),
+    );
+  }
+}
+
+/// Phần sổ ra của thẻ khách ERP: kênh + địa chỉ đầy đủ, xuống nhiều dòng (không cắt `…`)
+class _PartnerDetails extends StatelessWidget {
+  final ErpPartnerOption item;
+  final bool isDark;
+
+  const _PartnerDetails({super.key, required this.item, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _line(Icons.hub_outlined, 'Kênh', item.channelName),
+        const SizedBox(height: 2),
+        _line(Icons.location_on_outlined, 'Địa chỉ', item.address),
+      ],
+    );
+  }
+
+  Widget _line(IconData icon, String label, String? value) {
+    final color = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 14, color: color),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+              children: [
+                TextSpan(
+                  text: value ?? '—',
+                  style: const TextStyle(fontWeight: FontWeight.w400),
+                ),
+              ],
+            ),
+            style: AppTypography.bodySmall(color: color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Nhãn nhỏ "Giá trị khác" — đánh dấu giá trị ngoại lệ (không phải khách ERP, không có mã)
+class _ExtraTag extends StatelessWidget {
+  const _ExtraTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text(
+        'Giá trị khác',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,10 +20,25 @@ import '../viewmodels/customer_view_model.dart';
 import '../../../route/domain/entities/route_entity.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 
-/// Provider lấy schema form khách hàng từ API (hoặc cache)
-final customerFormSchemaProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+/// Provider lấy schema form khách hàng (dùng chung màn thêm / sửa điểm bán + hộp sửa nhanh).
+/// Hiện bản cache NGAY (app phải chạy offline, mạng chậm không treo màn), rồi khi có mạng tải bản
+/// mới từ server; khác bản cache thì phát lại để form dựng theo cấu hình mới (admin vừa bật chọn
+/// nhiều, thêm/bỏ ô…). DynamicFormBuilder giữ dữ liệu đã gõ khi danh sách ô đổi (didUpdateWidget).
+/// autoDispose ⇒ mỗi lần MỞ màn là chạy lại một lượt.
+final customerFormSchemaProvider = StreamProvider.autoDispose<Map<String, dynamic>>((ref) async* {
   final repo = ref.watch(customerRepositoryProvider);
-  return repo.getCustomerFormSchema(forceRefresh: false);
+  final cached = await repo.getCustomerFormSchema(forceRefresh: false);
+  yield cached;
+
+  if (!ref.read(connectivityProvider).isOnline) return;
+  // forceRefresh lỗi mạng thì repo tự trả lại bản cache ⇒ so khớp, không phát lại.
+  // Nuốt mọi lỗi còn lại: đã có bản cache đang hiện, không được đẩy màn sang trạng thái lỗi.
+  try {
+    final fresh = await repo.getCustomerFormSchema(forceRefresh: true);
+    if (jsonEncode(fresh) != jsonEncode(cached)) {
+      yield fresh;
+    }
+  } catch (_) {}
 });
 
 /// Provider lấy danh mục meta (khu vực, loại khách hàng, kênh...)

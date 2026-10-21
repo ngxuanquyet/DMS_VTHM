@@ -685,7 +685,7 @@ void main() {
   testWidgets('AddCustomerScreen exits immediately when form is empty', (tester) async {
     final container = ProviderContainer(
       overrides: [
-        customerFormSchemaProvider.overrideWith((ref) async => {
+        customerFormSchemaProvider.overrideWith((ref) => Stream.value({
           'status': 'success',
           'data': {
             'form': {'name': 'Hồ sơ điểm bán'},
@@ -700,7 +700,7 @@ void main() {
               }
             ],
           }
-        }),
+        })),
         customerMetaProvider.overrideWith((ref) async => kDefaultCustomerMeta),
       ],
     );
@@ -736,7 +736,7 @@ void main() {
   testWidgets('AddCustomerScreen shows warning dialog when data is entered and user taps HỦY BỎ', (tester) async {
     final container = ProviderContainer(
       overrides: [
-        customerFormSchemaProvider.overrideWith((ref) async => {
+        customerFormSchemaProvider.overrideWith((ref) => Stream.value({
           'status': 'success',
           'data': {
             'form': {'name': 'Hồ sơ điểm bán'},
@@ -751,7 +751,7 @@ void main() {
               }
             ],
           }
-        }),
+        })),
         customerMetaProvider.overrideWith((ref) async => kDefaultCustomerMeta),
       ],
     );

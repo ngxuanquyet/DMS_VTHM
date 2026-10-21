@@ -92,7 +92,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            customerFormSchemaProvider.overrideWith((ref) => Future.value({})),
+            customerFormSchemaProvider.overrideWith((ref) => Stream.value({})),
           ],
           child: const MaterialApp(
             home: EditCustomerScreen(

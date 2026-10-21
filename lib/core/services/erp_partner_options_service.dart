@@ -3,30 +3,59 @@ import '../network/api_client.dart';
 
 /// Một khách hàng pháp nhân (khách ERP Bravo) cho ô biểu mẫu `ref_erp_partner`.
 /// 🔴 [code] là MÃ dạng CHUỖI, thường có số 0 đầu (`"01200001"`) — tuyệt đối không parse sang số.
+///
+/// Ngoài khách ERP, admin có thể khai thêm GIÁ TRỊ NGOẠI LỆ cho ô (ví dụ "Khách lẻ"): server trả
+/// `is_extra: true`, `code` = `"_:" + tên`, không có địa chỉ/kênh. Ô chọn nhiều không được trộn
+/// ngoại lệ với khách ERP (server chặn 400) — xem `_ErpPartnerPickerSheetState._onTapItem`.
 class ErpPartnerOption {
+  /// Tiền tố mã của giá trị ngoại lệ
+  static const String extraPrefix = '_:';
+
   final String code;
   final String name;
   final String? address;
   final String? channelName;
+
+  /// Giá trị ngoại lệ (không phải khách ERP)
+  final bool isExtra;
 
   const ErpPartnerOption({
     required this.code,
     required this.name,
     this.address,
     this.channelName,
+    this.isExtra = false,
   });
 
-  /// Nhãn hiển thị chuẩn: `"<tên> (<mã>)"`
-  String get displayLabel => name.isNotEmpty ? '$name ($code)' : code;
+  /// Mã có phải giá trị ngoại lệ (`"_:<tên>"`) không
+  static bool isExtraCode(String code) => code.startsWith(extraPrefix);
+
+  /// Nhãn dự phòng khi chưa tra được tên (offline): ngoại lệ hiện phần tên sau `"_:"`, khách ERP hiện mã
+  static String fallbackLabel(String code) =>
+      isExtraCode(code) ? code.substring(extraPrefix.length) : code;
+
+  /// Bản tạm cho mã chưa tra được tên — ngoại lệ vẫn suy ra được tên từ chính mã
+  factory ErpPartnerOption.placeholder(String code) {
+    final extra = isExtraCode(code);
+    return ErpPartnerOption(code: code, name: extra ? fallbackLabel(code) : '', isExtra: extra);
+  }
+
+  /// Nhãn hiển thị chuẩn: `"<tên> (<mã>)"`; giá trị ngoại lệ chỉ hiện tên
+  String get displayLabel {
+    if (isExtra) return name.isNotEmpty ? name : fallbackLabel(code);
+    return name.isNotEmpty ? '$name ($code)' : code;
+  }
 
   factory ErpPartnerOption.fromJson(Map<String, dynamic> json) {
+    final code = json['code']?.toString() ?? '';
     final address = json['address']?.toString();
     final channelName = json['channel_name']?.toString();
     return ErpPartnerOption(
-      code: json['code']?.toString() ?? '',
+      code: code,
       name: json['name']?.toString() ?? '',
       address: (address != null && address.trim().isNotEmpty) ? address : null,
       channelName: (channelName != null && channelName.trim().isNotEmpty) ? channelName : null,
+      isExtra: json['is_extra'] == true || isExtraCode(code),
     );
   }
 }

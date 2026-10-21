@@ -13,10 +13,11 @@ import 'package:vthm_dms/features/forms/presentation/widgets/dynamic_renderer/ma
 class FakeErpPartnerOptionsService implements ErpPartnerOptionsService {
   final List<ErpPartnerOption> all;
   final bool failSearch;
+  final bool failLookup;
   final List<Map<String, dynamic>> searchCalls = [];
   final List<Map<String, dynamic>> lookupCalls = [];
 
-  FakeErpPartnerOptionsService(this.all, {this.failSearch = false});
+  FakeErpPartnerOptionsService(this.all, {this.failSearch = false, this.failLookup = false});
 
   @override
   Future<ErpPartnerOptionsPage> search({
@@ -41,6 +42,9 @@ class FakeErpPartnerOptionsService implements ErpPartnerOptionsService {
     required List<String> codes,
   }) async {
     lookupCalls.add({'field': field, 'codes': codes});
+    if (failLookup) {
+      throw const NetworkException('Không có kết nối mạng. Vui lòng kiểm tra lại.');
+    }
     return all.where((e) => codes.contains(e.code)).toList();
   }
 }
@@ -50,6 +54,10 @@ const _partners = [
   ErpPartnerOption(code: '01200001', name: 'NPP Minh Phát', address: 'Hà Nội'),
   ErpPartnerOption(code: '01200002', name: 'NPP Hoàng Long'),
 ];
+
+/// Giá trị ngoại lệ admin khai cho ô — server trả ĐẦU danh sách trang 1
+const _extra = ErpPartnerOption(code: '_:Khách lẻ', name: 'Khách lẻ', isExtra: true);
+const _partnersWithExtra = [_extra, ..._partners];
 
 MarketFormBlockEntity _block({bool multiple = false}) => MarketFormBlockEntity(
       ref: 'npp_cap_hang',
@@ -111,6 +119,32 @@ void main() {
       expect(page.items.single.displayLabel, 'ABUL KHAIR (00160001)');
       expect(page.page, 2);
       expect(page.hasMore, isTrue);
+    });
+
+    test('Giá trị ngoại lệ: đọc is_extra, nhãn chỉ có tên; nhãn dự phòng bỏ tiền tố "_:"', () {
+      final page = ErpPartnerOptionsPage.fromResponse({
+        'success': true,
+        'data': {
+          'items': [
+            {'code': '_:Khách lẻ', 'name': 'Khách lẻ', 'address': null, 'channel_name': null, 'is_extra': true},
+            {'code': '00160001', 'name': 'ABUL KHAIR', 'is_extra': false},
+          ],
+          'page': 1,
+          'has_more': false,
+        },
+      });
+      expect(page.items.first.isExtra, isTrue);
+      expect(page.items.first.code, '_:Khách lẻ');
+      expect(page.items.first.displayLabel, 'Khách lẻ');
+      expect(page.items.last.isExtra, isFalse);
+      expect(page.items.last.displayLabel, 'ABUL KHAIR (00160001)');
+
+      expect(ErpPartnerOption.fallbackLabel('_:Khách lẻ'), 'Khách lẻ');
+      expect(ErpPartnerOption.fallbackLabel('01200001'), '01200001');
+      final placeholder = ErpPartnerOption.placeholder('_:Khách lẻ');
+      expect(placeholder.isExtra, isTrue);
+      expect(placeholder.displayLabel, 'Khách lẻ');
+      expect(ErpPartnerOption.placeholder('01200001').isExtra, isFalse);
     });
   });
 
@@ -204,6 +238,115 @@ void main() {
         'codes': ['01200001'],
       });
       expect(find.text('NPP Minh Phát'), findsOneWidget);
+    });
+
+    testWidgets('Giá trị ngoại lệ: thẻ hiện TÊN + "Giá trị khác", không mã, không nút sổ; chọn lưu "_:<tên>"',
+        (tester) async {
+      final fake = FakeErpPartnerOptionsService(_partnersWithExtra);
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(_wrapMarketForm(fake, key));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Khách lẻ'), findsOneWidget);
+      expect(find.textContaining('_:'), findsNothing);
+      expect(find.text('Giá trị khác'), findsOneWidget);
+      expect(find.byKey(const Key('erp-partner-expand-_:Khách lẻ')), findsNothing);
+      expect(find.byKey(const Key('erp-partner-expand-00160001')), findsOneWidget);
+
+      await tester.tap(find.text('Khách lẻ'));
+      await tester.pumpAndSettle();
+
+      expect(key.currentState?.currentAnswers['npp_cap_hang'], '_:Khách lẻ');
+      expect(find.text('Khách lẻ'), findsOneWidget);
+      expect(find.text('Giá trị khác'), findsOneWidget);
+      expect(find.textContaining('_:'), findsNothing);
+    });
+
+    testWidgets('Chọn nhiều: ngoại lệ LOẠI TRỪ khách ERP và ngược lại', (tester) async {
+      final fake = FakeErpPartnerOptionsService(_partnersWithExtra);
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(_wrapMarketForm(fake, key, multiple: true));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('ABUL KHAIR STEEL'));
+      await tester.pump();
+      await tester.tap(find.text('NPP Hoàng Long'));
+      await tester.pump();
+      expect(find.text('Xong (đã chọn 2)'), findsOneWidget);
+
+      // Chọn ngoại lệ ⇒ bỏ hết khách ERP đã chọn
+      await tester.tap(find.text('Khách lẻ'));
+      await tester.pump();
+      expect(find.text('Xong (đã chọn 1)'), findsOneWidget);
+
+      // Đang có ngoại lệ mà chọn khách ERP ⇒ bỏ ngoại lệ
+      await tester.tap(find.text('ABUL KHAIR STEEL'));
+      await tester.pump();
+      expect(find.text('Xong (đã chọn 1)'), findsOneWidget);
+
+      await tester.tap(find.text('Xong (đã chọn 1)'));
+      await tester.pumpAndSettle();
+
+      final answers = key.currentState?.validateAndGetAnswers();
+      expect(answers, isNotNull);
+      expect(answers!['npp_cap_hang'], ['00160001']);
+    });
+
+    testWidgets('Nút mũi tên sổ thẻ: hiện đủ kênh/địa chỉ, KHÔNG chọn khách, mỗi thẻ độc lập', (tester) async {
+      final fake = FakeErpPartnerOptionsService(_partners);
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(_wrapMarketForm(fake, key));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('erp-partner-details-01200001')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('erp-partner-expand-01200001')));
+      await tester.pumpAndSettle();
+
+      // Sheet vẫn mở (ô chọn một sẽ đóng sheet nếu bấm trúng vùng chọn), chưa có giá trị
+      expect(find.byType(TextField), findsOneWidget);
+      expect(key.currentState?.currentAnswers['npp_cap_hang'], isNull);
+      expect(find.byKey(const Key('erp-partner-details-01200001')), findsOneWidget);
+      expect(find.textContaining('Địa chỉ: Hà Nội'), findsOneWidget);
+      // Thẻ khác không bị sổ theo
+      expect(find.byKey(const Key('erp-partner-details-00160001')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('erp-partner-expand-00160001')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('erp-partner-details-00160001')), findsOneWidget);
+      expect(find.textContaining('Kênh: Kênh xuất khẩu'), findsOneWidget);
+
+      // Bấm lại thì thu gọn đúng thẻ đó
+      await tester.tap(find.byKey(const Key('erp-partner-expand-01200001')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('erp-partner-details-01200001')), findsNothing);
+      expect(find.byKey(const Key('erp-partner-details-00160001')), findsOneWidget);
+      expect(key.currentState?.currentAnswers['npp_cap_hang'], isNull);
+    });
+
+    testWidgets('Offline không tra được nhãn: mã "_:<tên>" hiện phần tên, không hiện "_:"', (tester) async {
+      final fake = FakeErpPartnerOptionsService(_partnersWithExtra, failLookup: true);
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(_wrapMarketForm(
+        fake,
+        key,
+        initialAnswers: const {'npp_cap_hang': '_:Khách lẻ'},
+      ));
+      await tester.pumpAndSettle();
+
+      expect(fake.lookupCalls, isNotEmpty);
+      expect(find.text('Khách lẻ'), findsOneWidget);
+      expect(find.text('Giá trị khác'), findsOneWidget);
+      expect(find.textContaining('_:'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('Bắt buộc mà chưa chọn thì không qua validate', (tester) async {
