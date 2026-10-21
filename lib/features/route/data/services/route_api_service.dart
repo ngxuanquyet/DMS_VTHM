@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../domain/entities/route_entity.dart';
 import '../models/route_model.dart';
@@ -18,23 +19,6 @@ class RouteApiService {
   static const String _legacyDealerCheckinCacheKey = 'dms_dealer_checkin_data_cache_v1';
 
   RouteApiService(this._apiClient, [this._db]);
-
-  /// Lấy mã định danh tài khoản đăng nhập hiện tại từ SharedPreferences
-  Future<String> _getCurrentAccountKey(SharedPreferences prefs) async {
-    try {
-      final userJson = prefs.getString(AppConstants.keyUserData);
-      if (userJson != null && userJson.isNotEmpty) {
-        final map = jsonDecode(userJson) as Map<String, dynamic>;
-        final id = map['id']?.toString().trim();
-        final username = map['username']?.toString().trim();
-        final employeeCode = map['employee_code']?.toString().trim() ?? map['employeeId']?.toString().trim();
-        if (id != null && id.isNotEmpty) return id;
-        if (username != null && username.isNotEmpty) return username;
-        if (employeeCode != null && employeeCode.isNotEmpty) return employeeCode;
-      }
-    } catch (_) {}
-    return 'default';
-  }
 
   /// Lấy họ tên hiển thị của tài khoản hiện tại
   Future<String> _getCurrentUserName(SharedPreferences prefs) async {
@@ -53,17 +37,17 @@ class RouteApiService {
 
   /// Cache key phân vùng theo từng tài khoản
   Future<String> _getUserRoutesCacheKey(SharedPreferences prefs) async {
-    final accountKey = await _getCurrentAccountKey(prefs);
+    final accountKey = currentAccountKey(prefs);
     return 'dms_user_routes_${accountKey}_v2';
   }
 
   Future<String> _getRouteDetailCacheKey(SharedPreferences prefs) async {
-    final accountKey = await _getCurrentAccountKey(prefs);
+    final accountKey = currentAccountKey(prefs);
     return 'dms_route_detail_${accountKey}_v2';
   }
 
   Future<String> _getDealerCheckinCacheKey(SharedPreferences prefs) async {
-    final accountKey = await _getCurrentAccountKey(prefs);
+    final accountKey = currentAccountKey(prefs);
     return 'dms_dealer_checkin_${accountKey}_v2';
   }
 

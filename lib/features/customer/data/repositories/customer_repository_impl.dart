@@ -9,6 +9,7 @@ import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
@@ -626,15 +627,28 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   Map<String, dynamic>? _cachedSchema;
 
+  /// Tài khoản mà [_cachedSchema] đang giữ — đổi tài khoản trong cùng phiên mở app thì bỏ bản trong bộ nhớ.
+  String? _cachedSchemaAccount;
+
+  /// Khoá lưu schema trong máy, TÁCH theo tài khoản: schema mang giá trị "tự điền theo phòng ban" (`default`) tính riêng
+  /// cho người tải về — dùng chung một khoá thì người sau đăng nhập lúc mất mạng được điền theo phòng của người trước.
+  String _schemaPrefsKey(String account) => 'cached_customer_form_schema_$account';
+
   @override
   Future<Map<String, dynamic>> getCustomerFormSchema({bool forceRefresh = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final account = currentAccountKey(prefs);
+    if (_cachedSchemaAccount != account) {
+      _cachedSchema = null;
+      _cachedSchemaAccount = account;
+    }
     if (!forceRefresh && _cachedSchema != null) {
       return _cachedSchema!;
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    final key = _schemaPrefsKey(account);
     if (!forceRefresh) {
-      final cachedJson = prefs.getString('cached_customer_form_schema');
+      final cachedJson = prefs.getString(key);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
           _cachedSchema = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -647,11 +661,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
     try {
       final res = await _apiService.getCustomerFormSchema();
       _cachedSchema = res;
-      await prefs.setString('cached_customer_form_schema', jsonEncode(res));
+      await prefs.setString(key, jsonEncode(res));
       return res;
     } catch (e) {
       if (_cachedSchema != null) return _cachedSchema!;
-      final cachedJson = prefs.getString('cached_customer_form_schema');
+      final cachedJson = prefs.getString(key);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
           _cachedSchema = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -666,10 +680,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   Future<void> _refreshSchemaInBackground() async {
     try {
-      final res = await _apiService.getCustomerFormSchema();
-      _cachedSchema = res;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cached_customer_form_schema', jsonEncode(res));
+      final account = currentAccountKey(prefs);
+      final res = await _apiService.getCustomerFormSchema();
+      // Đã đổi tài khoản trong lúc chờ mạng ⇒ bản này của người trước, không ghi đè.
+      if (currentAccountKey(prefs) != account) return;
+      _cachedSchema = res;
+      _cachedSchemaAccount = account;
+      await prefs.setString(_schemaPrefsKey(account), jsonEncode(res));
     } catch (_) {}
   }
 

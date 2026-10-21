@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/market_form_entity.dart';
 import '../../domain/repositories/forms_repository.dart';
@@ -23,7 +24,10 @@ class FormsRepositoryImpl implements FormsRepository {
     required String kind,
     int? customerId,
   }) async {
-    final cacheKey = 'dms_market_forms_${kind}_${customerId ?? 0}';
+    // TÁCH theo tài khoản: biểu mẫu mang giá trị "tự điền theo phòng ban" (`config.default`) và danh sách kênh đã thu
+    // hẹp theo phòng của người tải về — người sau dùng chung máy mà đọc nhầm bản này khi mất mạng là điền sai phòng.
+    final account = currentAccountKey(await SharedPreferences.getInstance());
+    final cacheKey = 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
 
     try {
       final models = await _apiService.getAvailableForms(
