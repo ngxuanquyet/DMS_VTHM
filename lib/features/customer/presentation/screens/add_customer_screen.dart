@@ -153,10 +153,14 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         label: tuyenCH.label.isNotEmpty ? tuyenCH.label : 'Tuyến',
         type: DynamicFormFieldType.singleChoice,
         isRequired: tuyenCH.isRequired,
-        options: territories
-            .map((t) => DynamicFormOption(label: optionLabel(t.code, t.name), value: t.code))
-            .toList(),
-        initialValue: choices.defaultTerritoryCode != null && territories.any((t) => t.code == choices.defaultTerritoryCode)
+        // "Toàn kênh" đứng đầu (chốt 21/10/2026): không gắn tuyến — server lưu trống, không gán tuyến mặc định; ô Tuyến bắt buộc
+        // vẫn điền được với phòng phụ trách cả kênh. Server điền sẵn mục này cho phòng chỉ có dòng toàn kênh.
+        options: [
+          const DynamicFormOption(label: 'Toàn kênh', value: kTerritoryAll),
+          ...territories.map((t) => DynamicFormOption(label: optionLabel(t.code, t.name), value: t.code)),
+        ],
+        initialValue: choices.defaultTerritoryCode == kTerritoryAll ||
+                (choices.defaultTerritoryCode != null && territories.any((t) => t.code == choices.defaultTerritoryCode))
             ? choices.defaultTerritoryCode
             : null,
         placeholder: 'Chọn tuyến...',

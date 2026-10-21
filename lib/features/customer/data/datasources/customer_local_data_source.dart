@@ -9,6 +9,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../domain/entities/customer_meta_entity.dart';
 import '../utils/customer_payload_helper.dart';
 
 class CustomerLocalDataSource {
@@ -735,7 +736,9 @@ class CustomerLocalDataSource {
     }
 
     final bool localErpLinked = dynFields['erp_linked'] == true;
-    final String? localTerritoryCode = dynFields['territory_code']?.toString();
+    // "_ALL" = Toàn kênh (không gắn tuyến) — server lưu trống, bản lưu máy cũng vậy.
+    final rawTerritory = dynFields['territory_code']?.toString();
+    final String? localTerritoryCode = rawTerritory == kTerritoryAll ? null : rawTerritory;
 
     List<int> localOwnChannelIds = [];
     if (dynFields['own_channel_ids'] is List) {

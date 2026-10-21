@@ -32,7 +32,7 @@ void main() {
     expect(fields[0].type, DynamicFormFieldType.multipleChoice);
     expect(fields[0].options.map((o) => o.value), [1, 4, 7]);
     expect(fields[0].initialValue, [4]);
-    expect(fields[1].options.map((o) => o.value), ['MB1', 'MN2']);
+    expect(fields[1].options.map((o) => o.value), ['_ALL', 'MB1', 'MN2']);
     expect(fields[1].initialValue, 'MN2');
   });
 
@@ -41,7 +41,7 @@ void main() {
     final f = ownChannelTerritoryFields(rong, schema: kScopeFieldStubs);
     expect(f[0].options.map((o) => o.value), [1, 4, 7]);
     expect(f[0].initialValue, isEmpty);
-    expect(f[1].options.map((o) => o.value), ['MB1', 'MN2']);
+    expect(f[1].options.map((o) => o.value), ['_ALL', 'MB1', 'MN2']);
     expect(f[1].initialValue, isNull);
     expect(f.any((x) => x.isReadOnly), isFalse);
   });
@@ -77,7 +77,7 @@ void main() {
     expect(f.map((x) => x.code), ['territory_code'], reason: 'admin ẩn Kênh ⇒ schema không gửi ⇒ không vẽ');
     expect(f.single.label, 'Tuyến bán hàng');
     expect(f.single.isRequired, isTrue);
-    expect(f.single.options.map((o) => o.value), ['MB1', 'MN2'], reason: 'lựa chọn = toàn danh mục, không theo schema');
+    expect(f.single.options.map((o) => o.value), ['_ALL', 'MB1', 'MN2'], reason: 'lựa chọn = toàn danh mục, không theo schema');
     expect(ownChannelTerritoryFields(meta, schema: const []), isEmpty, reason: 'ẩn cả hai / server cũ');
   });
 
@@ -128,7 +128,20 @@ void main() {
         'createChoices': {'pairs': null, 'default_channel_ids': [], 'default_territory_code': null},
       },
     });
-    expect(ownChannelTerritoryFields(meta, schema: kScopeFieldStubs)[1].options.single.label, 'MB1');
+    expect(ownChannelTerritoryFields(meta, schema: kScopeFieldStubs)[1].options.map((o) => o.label), ['Toàn kênh', 'MB1']);
+  });
+
+  test('Tuyến: mục Toàn kênh (_ALL) đứng đầu; phòng chỉ toàn kênh ⇒ server điền sẵn _ALL', () {
+    final meta = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [7], 'default_territory_code': '_ALL'}));
+    final tuyen = ownChannelTerritoryFields(meta, schema: kScopeFieldStubs)[1];
+    expect(tuyen.options.first.label, 'Toàn kênh');
+    expect(tuyen.options.first.value, kTerritoryAll);
+    expect(tuyen.initialValue, kTerritoryAll);
+    final payload = CustomerPayloadHelper.buildCustomerApiPayload(
+      sourceData: {'name': 'Điểm bán', 'region_id': 1, 'territory_code': kTerritoryAll},
+      clientUuid: 'test-uuid-all',
+    );
+    expect(payload['territory_code'], '_ALL', reason: 'server nhận _ALL ⇒ lưu trống, không gán tuyến mặc định');
   });
 
   test('payload POST /crm/customers mang own_channel_ids + territory_code ở GỐC, không lọt vào data', () {

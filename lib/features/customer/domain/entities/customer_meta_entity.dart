@@ -57,6 +57,9 @@ class CustomerProvinceItem {
   }
 }
 
+/// Giá trị "Toàn kênh" của ô Tuyến — khớp `ChoiceCatalogService::TERRITORY_ALL` phía server (lưu tuyến trống, chốt 21/10/2026).
+const String kTerritoryAll = '_ALL';
+
 /// Kênh + tuyến tự khai ĐIỀN SẴN khi tạo điểm bán (`GET /crm/customers/meta` → `createChoices`): theo phòng người đăng
 /// nhập, chỉ là tiện ích — người dùng chọn tuỳ ý trong toàn danh mục (chủ hệ thống chốt 21/10/2026). Server vẫn gửi khoá
 /// `pairs` (luôn `null`), app không đọc.
