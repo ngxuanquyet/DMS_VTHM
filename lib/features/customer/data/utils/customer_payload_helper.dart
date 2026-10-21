@@ -29,6 +29,9 @@ const Set<String> kAllowedCustomerRootKeys = {
   'client_uuid',
   'is_offline_sync',
   'route_ids',
+  // Kênh + tuyến tự khai nhân viên chọn khi tạo (chốt 21/10/2026) — server kiểm trong cặp phòng người tạo.
+  'own_channel_ids',
+  'territory_code',
   'data',
 };
 
@@ -108,6 +111,8 @@ const Set<String> kCustomerFixedKeys = {
   'client_uuid',
   'is_offline_sync',
   'route_ids',
+  'own_channel_ids',
+  'territory_code',
 };
 
 class CustomerPayloadHelper {
@@ -226,6 +231,18 @@ class CustomerPayloadHelper {
       final gId = int.tryParse(sourceData['customer_group_id'].toString());
       if (gId != null) payload['customer_group_id'] = gId;
     }
+
+    // 7b. Kênh + tuyến tự khai (chốt 21/10/2026): gửi khi nhân viên chọn; vắng ⇒ server gán theo phòng người tạo.
+    final rawOwnChannels = sourceData['own_channel_ids'];
+    if (rawOwnChannels is List) {
+      final ids = rawOwnChannels.map((e) => int.tryParse(e.toString())).whereType<int>().toSet().toList();
+      if (ids.isNotEmpty) payload['own_channel_ids'] = ids;
+    } else if (rawOwnChannels != null) {
+      final id = int.tryParse(rawOwnChannels.toString());
+      if (id != null) payload['own_channel_ids'] = [id];
+    }
+    final territory = sourceData['territory_code']?.toString().trim() ?? '';
+    if (territory.isNotEmpty) payload['territory_code'] = territory;
 
     // 8. Thông tin liên hệ & địa chỉ (fixed fields)
     void addStringIfNotEmpty(String key, dynamic value) {

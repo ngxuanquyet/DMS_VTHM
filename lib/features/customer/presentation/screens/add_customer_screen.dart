@@ -86,6 +86,56 @@ final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEnti
   return [];
 });
 
+/// Hai ô Kênh / Tuyến tự khai cho màn TẠO điểm bán (chốt 21/10/2026) — dựng từ `meta.createChoices`.
+///
+/// Lựa chọn bó trong cặp phòng người đăng nhập (`pairs` NULL ⇒ toàn quyền, mọi mục danh mục; cặp tuyến NULL = "toàn
+/// kênh" ⇒ mọi tuyến); server kiểm lại đúng luật đó (`CustomerScopeService::fitsDepartment()`). Điền sẵn giá trị
+/// server sẽ tự gán khi để trống. Không có lựa chọn nào (server cũ, phòng chưa gắn kênh) ⇒ không vẽ ô — server tự gán.
+List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta) {
+  final choices = meta.createChoices;
+  if (choices == null || meta.salesChannels.isEmpty) return const [];
+  final pairs = choices.pairs;
+  if (pairs != null && pairs.isEmpty) return const [];
+
+  final channelIds = pairs?.map((p) => p.channelId).toSet();
+  final channels = meta.salesChannels.where((c) => channelIds == null || channelIds.contains(c.id)).toList();
+  final allTerritories = pairs == null || pairs.any((p) => p.territoryCode == null);
+  final territoryCodes = pairs?.map((p) => p.territoryCode).whereType<String>().toSet() ?? <String>{};
+  final territories = allTerritories
+      ? meta.territories
+      : meta.territories.where((t) => territoryCodes.contains(t.code)).toList();
+
+  final defaultChannels = choices.defaultChannelIds.where((id) => channels.any((c) => c.id == id)).toList();
+  return [
+    if (channels.isNotEmpty)
+      DynamicFormField(
+        code: 'own_channel_ids',
+        label: 'Kênh',
+        type: DynamicFormFieldType.multipleChoice,
+        isRequired: true,
+        options: channels.map((c) => DynamicFormOption(label: '${c.code} - ${c.name}', value: c.id)).toList(),
+        initialValue: defaultChannels,
+        helperText: 'Mặc định theo phòng của bạn — chọn lại nếu điểm bán thuộc kênh khác của phòng.',
+        section: 'Thông tin chung',
+      ),
+    if (territories.isNotEmpty)
+      DynamicFormField(
+        code: 'territory_code',
+        label: 'Tuyến',
+        type: DynamicFormFieldType.singleChoice,
+        options: territories
+            .map((t) => DynamicFormOption(label: t.name.isNotEmpty ? '${t.code} - ${t.name}' : t.code, value: t.code))
+            .toList(),
+        initialValue: choices.defaultTerritoryCode != null && territories.any((t) => t.code == choices.defaultTerritoryCode)
+            ? choices.defaultTerritoryCode
+            : null,
+        placeholder: 'Chọn tuyến...',
+        section: 'Thông tin chung',
+        catalog: 'dropdown',
+      ),
+  ];
+}
+
 class AddCustomerScreen extends ConsumerStatefulWidget {
   const AddCustomerScreen({super.key});
 
@@ -270,6 +320,36 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       return;
     }
 
+    // 3b. Kênh + Tuyến tự khai phải là một bộ trong phạm vi phòng (server kiểm lại; lệch thì 403 — mục ngoại tuyến lệch
+    // thì server về mặc định) — báo ngay tại ô thay vì để server từ chối. Giữ nguyên giá trị điền sẵn ⇒ KHÔNG gửi, server tự
+    // gán mặc định (danh sách kênh điền sẵn đã lọc theo danh mục đang dùng nên có thể ít hơn bộ mặc định của server).
+    var boGuiKenhTuyen = false;
+    final meta3b = ref.read(customerMetaProvider).valueOrNull;
+    final createChoices = meta3b?.createChoices;
+    if (createChoices != null && formData['own_channel_ids'] is List) {
+      final kenh = (formData['own_channel_ids'] as List).map((e) => int.tryParse(e.toString())).whereType<int>().toSet();
+      final tuyen = formData['territory_code']?.toString().trim() ?? '';
+      final dienSan = ownChannelTerritoryFields(meta3b!);
+      final kenhSan = dienSan.where((f) => f.code == 'own_channel_ids').firstOrNull?.initialValue;
+      final tuyenSan = dienSan.where((f) => f.code == 'territory_code').firstOrNull?.initialValue?.toString() ?? '';
+      final giuNguyen = kenhSan is List &&
+          kenh.length == kenhSan.length &&
+          kenh.containsAll(kenhSan.cast<int>()) &&
+          (tuyen.isEmpty || tuyen == tuyenSan);
+      if (giuNguyen) {
+        boGuiKenhTuyen = true;
+      } else if (kenh.isNotEmpty && !createChoices.allows(kenh.toList(), tuyen)) {
+        _formKey.currentState?.focusField('territory_code');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kênh và tuyến đã chọn không thuộc phạm vi phòng của bạn — hãy chọn tuyến khớp với kênh.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    }
+
     // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu)
     bool hasPhoto = false;
     for (final key in formData.keys) {
@@ -303,6 +383,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
+      if (boGuiKenhTuyen) {
+        payload.remove('own_channel_ids');
+        payload.remove('territory_code');
+      }
       
       // 🔴 Tuyệt đối không gửi 'code', 'id' và 'status' theo spec 22/09 & 30/09:
       // Server tự động sinh mã theo region_id và đặt trạng thái mặc định active
@@ -880,6 +964,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 catalog: 'dropdown',
               ),
             );
+          }
+
+          // Kênh + Tuyến tự khai (chốt 21/10/2026): điền sẵn theo phòng người đăng nhập, chọn được trong cặp phòng mình.
+          if (!fields.any((f) => f.code == 'own_channel_ids' || f.code == 'territory_code')) {
+            final insertIdx = fields.indexWhere((f) => f.code == 'route_ids' || f.code == 'route_id');
+            fields.insertAll(insertIdx != -1 ? insertIdx + 1 : fields.length, ownChannelTerritoryFields(meta));
           }
 
           // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
