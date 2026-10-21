@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/services/erp_link_request_service.dart';
+import '../../../../core/services/erp_partner_options_service.dart';
+import '../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -209,6 +212,13 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
+
+  /// #23709: bộ (tên, SĐT, MST, địa chỉ) đã dùng để hỏi "có phải khách ERP?" — lưu lỗi 4xx rồi bấm lại mà không sửa các
+  /// ô đó thì KHÔNG hỏi lại; sửa thì hỏi lại (gợi ý cũ có thể không còn khớp). `null` = chưa hỏi được lần nào.
+  String? _khoaDaHoi;
+
+  /// Khách ERP NV xác nhận là chính điểm bán này (null = không phải / không có gợi ý).
+  ErpLinkSuggestion? _chinhKhach;
 
   bool _isCustomerPhotoKey(String key) {
     final k = key.toLowerCase();
@@ -436,6 +446,27 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     try {
       final repo = ref.read(customerRepositoryProvider);
       final isOnline = ref.read(connectivityProvider).isOnline;
+
+      // #23709: có mạng ⇒ hỏi "điểm bán này có phải khách ERP đã có?" (đề xuất vai chính khách), một lần mỗi form.
+      // Mất mạng ⇒ bỏ qua. Đóng khung hỏi (Back/vuốt) = HUỶ lưu, quay lại form.
+      final khoaHoi = erpSuggestKey(formData);
+      if (isOnline && _khoaDaHoi != khoaHoi) {
+        final (huy, daHoi, chon) = await _hoiChinhKhach(formData);
+        if (!mounted) return;
+        if (huy) {
+          setState(() => _isSubmitting = false);
+          return;
+        }
+        _chinhKhach = chon;
+        // Gọi gợi ý lỗi/quá hạn ⇒ CHƯA tính là đã hỏi — lần lưu sau thử lại.
+        _khoaDaHoi = daHoi ? khoaHoi : null;
+      } else if (!isOnline) {
+        _chinhKhach = null;
+      }
+      // Lấy sẵn TRƯỚC khi await tạo điểm bán: màn có thể bị đóng giữa chừng (ref hết dùng được), schema có thể đang nạp lại.
+      final linkSvc = ref.read(erpLinkRequestServiceProvider);
+      final schemaNow = ref.read(customerFormSchemaProvider).valueOrNull;
+      final schemaFields = (schemaNow?['data'] is Map ? schemaNow!['data']['fields'] : null) as List? ?? const [];
       
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
@@ -616,7 +647,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      final taoXong = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      // Đề xuất nối chỉ gửi được khi điểm bán ĐÃ có id trên server (tạo online thành công).
+      final soDeXuat = isOnline && taoXong.id > 0
+          ? await guiDeXuatNoiErp(linkSvc, taoXong.id, _chinhKhach, erpPartnerCodesForC2(schemaFields, formData))
+          : 0;
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -643,7 +678,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(addCustomerSuccessMessage(hasPending: hasPending)),
+                  child: Text(addCustomerSuccessMessage(hasPending: hasPending, linkProposals: soDeXuat)),
                 ),
               ],
             ),
@@ -666,6 +701,91 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  /// Gợi ý khách ERP trùng/gần trùng (SĐT, MST, tên + địa chỉ) và hỏi NV điểm bán này có PHẢI khách đó không.
+  /// Trả `(huỷ, đã hỏi xong, khách chọn)`: huỷ = NV đóng khung (Back/vuốt) ⇒ quay lại form; lỗi mạng ⇒ `(false, false,
+  /// null)`; không có gợi ý / "Không phải" ⇒ `(false, true, null)` — không bao giờ chặn việc tạo điểm bán.
+  Future<(bool, bool, ErpLinkSuggestion?)> _hoiChinhKhach(Map<String, dynamic> formData) async {
+    List<ErpLinkSuggestion> goiY;
+    try {
+      goiY = await ref
+          .read(erpLinkRequestServiceProvider)
+          .suggest(
+            name: formData['name']?.toString(),
+            phone: formData['phone']?.toString(),
+            taxCode: (formData['tax_code'] ?? formData['ma_so_thue'])?.toString(),
+            address: formData['address']?.toString(),
+          )
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {
+      return (false, false, null);
+    }
+    if (!mounted) return (false, false, null);
+    if (goiY.isEmpty) return (false, true, null);
+
+    const khongPhai = ErpLinkSuggestion(code: '', name: '');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chon = await showModalBottomSheet<ErpLinkSuggestion>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                child: Text(
+                  'Điểm bán này đã là khách hàng ERP?',
+                  style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'Chọn đúng khách nếu điểm bán chính là khách đó — quản lý sẽ duyệt mối nối.',
+                  style: AppTypography.bodySmall(
+                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final s in goiY)
+                      ListTile(
+                        leading: const Icon(Icons.storefront_rounded, color: AppColors.primary),
+                        title: Text('${s.name} (${s.code})'),
+                        subtitle: Text([
+                          if (s.address != null && s.address!.isNotEmpty) s.address!,
+                          if (s.channelName != null && s.channelName!.isNotEmpty) s.channelName!,
+                          if (s.matchReasonLabel.isNotEmpty) s.matchReasonLabel,
+                        ].join(' · ')),
+                        onTap: () => Navigator.pop(ctx, s),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, khongPhai),
+                  child: const Text('Không phải — tạo điểm bán mới'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (chon == null) return (true, false, null);
+    return (false, true, chon.code.isEmpty ? null : chon);
   }
 
   @override
@@ -1298,6 +1418,55 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
 /// Thông báo sau khi tạo điểm bán (nghiệp vụ 21/10/2026: tạo điểm bán = tính luôn một lượt viếng thăm).
 /// Ngoại tuyến thì lượt được ghi khi hàng đợi đồng bộ xong.
-String addCustomerSuccessMessage({required bool hasPending}) => hasPending
-    ? 'Đã lưu điểm bán ngoại tuyến — lượt viếng thăm sẽ được ghi nhận khi đồng bộ.'
-    : 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.';
+String addCustomerSuccessMessage({required bool hasPending, int linkProposals = 0}) {
+  final base = hasPending
+      ? 'Đã lưu điểm bán ngoại tuyến — lượt viếng thăm sẽ được ghi nhận khi đồng bộ.'
+      : 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.';
+  return linkProposals > 0 ? '$base Đã gửi $linkProposals đề xuất nối khách ERP, chờ quản lý duyệt.' : base;
+}
+
+/// Mã khách ERP chọn ở các ô "khách hàng pháp nhân" (`ref_erp_partner`, vd "Thuộc nhà phân phối") của form điểm bán ⇒
+/// đề xuất nối vai C2 (#23709, chốt 21/10/2026). Nhận diện ô + đọc giá trị bằng ĐÚNG hàm form dùng
+/// ([DynamicFormField.fromJson], [ErpPartnerFieldWidget.codesFromValue]); bỏ giá trị ngoại lệ (`"_:…"`) và mã trùng.
+List<String> erpPartnerCodesForC2(List<dynamic> schemaFields, Map<String, dynamic> formData) {
+  final out = <String>[];
+  for (final f in schemaFields.whereType<Map>()) {
+    final field = DynamicFormField.fromJson(Map<String, dynamic>.from(f));
+    if (field.type != DynamicFormFieldType.erpPartner) continue;
+    for (final code in ErpPartnerFieldWidget.codesFromValue(formData[field.code])) {
+      if (ErpPartnerOption.isExtraCode(code) || out.contains(code)) continue;
+      out.add(code);
+    }
+  }
+  return out;
+}
+
+/// Khoá bộ thông tin dùng để gợi ý khách ERP (tên, SĐT, MST, địa chỉ) — đổi khoá ⇒ phải hỏi lại "có phải khách ERP?".
+String erpSuggestKey(Map<String, dynamic> formData) => [
+      formData['name'],
+      formData['phone'],
+      formData['tax_code'] ?? formData['ma_so_thue'],
+      formData['address'],
+    ].map((v) => v?.toString().trim() ?? '').join('\u0001');
+
+/// Gửi đề xuất nối cho điểm bán vừa tạo — vai CHÍNH KHÁCH (nếu NV xác nhận) + vai C2 cho mỗi mã trong [c2Codes]. Gửi
+/// SONG SONG, mỗi lượt tối đa 8 giây; lượt lỗi (đã nối, trùng đề xuất, mạng) bỏ qua — điểm bán đã tạo xong.
+/// @return Số đề xuất gửi được.
+Future<int> guiDeXuatNoiErp(
+  ErpLinkRequestService svc,
+  int customerId,
+  ErpLinkSuggestion? chinhKhach,
+  List<String> c2Codes,
+) async {
+  final deXuat = <(String, String, String?)>[
+    if (chinhKhach != null) (chinhKhach.code, ErpLinkRole.owner, chinhKhach.matchReason),
+    for (final code in c2Codes)
+      if (code != chinhKhach?.code) (code, ErpLinkRole.c2, null),
+  ];
+  final ketQua = await Future.wait(deXuat.map((d) => svc
+      .propose(customerId: customerId, erpPartnerCode: d.$1, role: d.$2, matchReason: d.$3)
+      .timeout(const Duration(seconds: 8))
+      .then((_) => true)
+      .catchError((_) => false)));
+  return ketQua.where((ok) => ok).length;
+}
