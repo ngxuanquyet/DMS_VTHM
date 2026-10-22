@@ -26,6 +26,9 @@ class ErrorTrackerService {
 
   bool _isInitialized = false;
 
+  /// Giữ sẵn từ `initialize()` để các hàm ghi lỗi (đồng bộ) đọc được người đang đăng nhập.
+  SharedPreferences? _prefs;
+
   /// Danh sách lỗi gần đây (tối đa 100 lỗi trong bộ nhớ)
   List<ErrorRecord> get recentErrors => List.unmodifiable(_recentErrors);
 
@@ -35,6 +38,7 @@ class ErrorTrackerService {
     _isInitialized = true;
     try {
       final prefs = await SharedPreferences.getInstance();
+      _prefs = prefs;
       final savedLogs = prefs.getString(AppConstants.keyRecentErrorLogs);
       if (savedLogs != null && savedLogs.isNotEmpty) {
         final decoded = jsonDecode(savedLogs);
@@ -48,6 +52,30 @@ class ErrorTrackerService {
       }
     } catch (e) {
       debugPrint('[ErrorTrackerService] Lỗi tải lịch sử lỗi: $e');
+    }
+  }
+
+  /// Người đang đăng nhập để gắn vào lỗi: "Tên hiển thị (TK: username, mã NV: VTG123)" — đọc hồ sơ lưu trong máy
+  /// (`AppConstants.keyUserData`). Bỏ phần trống; chưa đăng nhập / chưa khởi tạo ⇒ `null` (tin hiện "Chưa xác định").
+  String? currentAccountLabel() => accountLabelFromJson(_prefs?.getString(AppConstants.keyUserData));
+
+  /// Định dạng của [currentAccountLabel] từ chuỗi JSON hồ sơ — tách riêng để test không phụ thuộc bộ nhớ máy.
+  static String? accountLabelFromJson(String? raw) {
+    try {
+      if (raw == null || raw.isEmpty) return null;
+      final map = jsonDecode(raw);
+      if (map is! Map) return null;
+      final name = (map['display_name'] ?? map['name'])?.toString().trim() ?? '';
+      final username = map['username']?.toString().trim() ?? '';
+      final code = (map['employee_code'] ?? map['employeeId'])?.toString().trim() ?? '';
+      final ids = [
+        if (username.isNotEmpty) 'TK: $username',
+        if (code.isNotEmpty) 'mã NV: $code',
+      ].join(', ');
+      if (name.isEmpty) return ids.isEmpty ? null : ids;
+      return ids.isEmpty ? name : '$name ($ids)';
+    } catch (_) {
+      return null;
     }
   }
 
@@ -130,7 +158,7 @@ class ErrorTrackerService {
       requestData: sanitizedRequest,
       responseData: responseData,
       curlCommand: curl,
-      username: currentUsername,
+      username: currentUsername ?? currentAccountLabel(),
       deviceInfo: '${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
       lat: lat,
       lng: lng,
@@ -170,7 +198,7 @@ class ErrorTrackerService {
       requestData: _maskSensitiveData(requestData),
       responseData: responseData,
       stackTrace: stackTrace?.toString(),
-      username: currentUsername,
+      username: currentUsername ?? currentAccountLabel(),
       deviceInfo: '${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
     );
 
@@ -332,7 +360,7 @@ Kính gửi Quản trị viên,
     buffer.writeln('📌 <b>1. THÔNG TIN ĐỊNH DANH</b>');
     buffer.writeln('• <b>Mã tra cứu:</b> <code>${record.id}</code>');
     buffer.writeln('• <b>Thời gian:</b> $timeStr');
-    buffer.writeln('• <b>Tài khoản:</b> $userStr');
+    buffer.writeln('• <b>Tài khoản:</b> ${_escapeHtml(userStr)}');
     buffer.writeln('• <b>Thiết bị:</b> ${_escapeHtml(deviceStr)}');
 
     buffer.writeln('\n🌐 <b>2. THÔNG TIN API & LỖI</b>');

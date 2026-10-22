@@ -43,6 +43,23 @@ void main() {
       );
     });
 
+    test('2b. accountLabelFromJson ghép tên tài khoản kèm mã cho tin báo lỗi', () {
+      expect(
+        ErrorTrackerService.accountLabelFromJson(
+            '{"display_name":"Nguyễn Văn A","username":"vtg926","employee_code":"VTG926"}'),
+        equals('Nguyễn Văn A (TK: vtg926, mã NV: VTG926)'),
+      );
+      // Hồ sơ kiểu cũ chỉ có khoá legacy
+      expect(
+        ErrorTrackerService.accountLabelFromJson('{"name":"Trần B","employeeId":"VPL12"}'),
+        equals('Trần B (mã NV: VPL12)'),
+      );
+      expect(ErrorTrackerService.accountLabelFromJson('{"username":"partner1"}'), equals('TK: partner1'));
+      expect(ErrorTrackerService.accountLabelFromJson(null), isNull);
+      expect(ErrorTrackerService.accountLabelFromJson('{}'), isNull);
+      expect(ErrorTrackerService.accountLabelFromJson('không phải json'), isNull);
+    });
+
     test('3. AppException đính kèm errorId và format userMessage chính xác', () {
       const ex1 = AppException('Lỗi nghiệp vụ', 422, 'VALIDATION_ERROR', 'ERR-VISIT-422-A1B2');
       expect(ex1.errorId, equals('ERR-VISIT-422-A1B2'));
