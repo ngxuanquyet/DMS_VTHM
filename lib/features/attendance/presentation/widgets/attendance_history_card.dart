@@ -86,24 +86,6 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     return 'Đi muộn $lateDays ngày ($lateMin phút) · Về sớm $earlyDays ngày ($earlyMin phút)';
   }
 
-  /// Màu theo mã Bootstrap server trả (`day_status_color`) — ngày vắng / thiếu giờ ra không bị tô xanh như ngày đủ công.
-  Color _bsColor(String code) {
-    switch (code) {
-      case 'success':
-        return const Color(0xFF10B981);
-      case 'warning':
-        return AppColors.warning;
-      case 'danger':
-        return Colors.red.shade600;
-      case 'info':
-        return Colors.blue.shade600;
-      case 'primary':
-        return AppColors.primary;
-      default:
-        return Colors.grey.shade600;
-    }
-  }
-
   /// Nhãn kết quả công của một ngày — mỗi bảng công một cụm; nhiều mã thì ghi kèm mã cho người đọc biết của vị trí nào.
   Widget _buildDayResults(List<AttendanceDayResultEntity> rows) {
     return Column(
@@ -126,14 +108,15 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
           ),
         );
 
+    // TẠM ẨN nhãn trạng thái ngày (chủ hệ thống chốt 22/10/2026): ngày chỉ một lượt chấm, bảng công đoán Vào/Ra theo nửa ca
+    // nên lượt bấm "Vào" buổi chiều hiện "Thiếu giờ vào" — ngược nhãn "Vào" của app. Chỉ hiện phút muộn/sớm.
     final chips = <Widget>[
-      if (code != null && code.isNotEmpty) chip(code, Colors.grey.shade600),
-      if (result.dayStatusLabel.isNotEmpty) chip(result.dayStatusLabel, _bsColor(result.dayStatusColor)),
       if (result.isLate) chip('Muộn ${result.lateMinutes} phút', AppColors.warning),
       if (result.isEarly) chip('Sớm ${result.earlyMinutes} phút', AppColors.warning),
       if (result.lateEarlyExcused) chip('Đã giải trình', AppColors.primary),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
+    if (code != null && code.isNotEmpty) chips.insert(0, chip(code, Colors.grey.shade600));
 
     return Padding(
       padding: const EdgeInsets.only(top: 6),
