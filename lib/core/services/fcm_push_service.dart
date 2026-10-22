@@ -235,33 +235,27 @@ class FcmPushService {
     }
   }
 
-  /// Đăng xuất chủ động: DELETE /notification/device-token (§3.2)
-  /// Gọi TRƯỚC khi xóa access token để tránh nhận tin của người cũ.
+  /// Đăng xuất chủ động: nhả máy qua POST /notification/device-token/release (§3.2, #23920).
+  /// Gọi TRƯỚC khi xóa access token để tránh nhận tin của người cũ. Cửa cũ DELETE /notification/device-token
+  /// sắp bị gỡ (#23634); cửa /release không cần phiên nên vẫn nhả được khi access token đã hết hạn.
   Future<void> unregisterDeviceToken() async {
     if (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS) {
       return;
     }
 
+    String? token;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = _fcmToken ?? prefs.getString(_prefsTokenKey);
+      token = _fcmToken ?? prefs.getString(_prefsTokenKey);
       if (token == null || token.trim().isEmpty) return;
 
-      final apiClient = _getApiClient();
-      if (apiClient != null) {
-        debugPrint('[FcmPushService] Gửi DELETE /notification/device-token');
-        await apiClient.delete(
-          '/notification/device-token',
-          data: {'token': token},
-        );
-        debugPrint('[FcmPushService] Hủy đăng ký máy thành công');
-      }
+      await _postRelease(token);
+      debugPrint('[FcmPushService] Hủy đăng ký máy thành công');
 
       await prefs.remove(_prefsTokenKey);
       _fcmToken = null;
     } catch (e) {
       debugPrint('[FcmPushService] Hủy đăng ký máy lỗi (lưu vào pending release): $e');
-      final token = _fcmToken;
       if (token != null && token.isNotEmpty) {
         await _savePendingRelease(token);
       }
@@ -276,24 +270,7 @@ class FcmPushService {
       final tokenToRelease = token ?? _fcmToken ?? prefs.getString(_prefsTokenKey);
       if (tokenToRelease == null || tokenToRelease.trim().isEmpty) return;
 
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: AppConstants.baseUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            AppConstants.headerClientKey: AppConstants.headerClientValue,
-          },
-        ),
-      );
-
-      debugPrint('[FcmPushService] Gửi POST /notification/device-token/release (Công khai)');
-      await dio.post(
-        '/notification/device-token/release',
-        data: {'token': tokenToRelease},
-      );
+      await _postRelease(tokenToRelease);
       debugPrint('[FcmPushService] Nhả máy qua cửa công khai /release thành công');
 
       await prefs.remove(_prefsTokenKey);
@@ -302,6 +279,28 @@ class FcmPushService {
     } catch (e) {
       debugPrint('[FcmPushService] Gửi /release thất bại: $e');
     }
+  }
+
+  /// Gọi cửa công khai POST /notification/device-token/release — ném lỗi để nơi gọi tự quyết lưu pending hay bỏ qua.
+  Future<void> _postRelease(String token) async {
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: AppConstants.baseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          AppConstants.headerClientKey: AppConstants.headerClientValue,
+        },
+      ),
+    );
+
+    debugPrint('[FcmPushService] Gửi POST /notification/device-token/release (Công khai)');
+    await dio.post(
+      '/notification/device-token/release',
+      data: {'token': token},
+    );
   }
 
   // ===========================================================================

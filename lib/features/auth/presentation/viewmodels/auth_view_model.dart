@@ -194,7 +194,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    // Hủy đăng ký máy DELETE /notification/device-token trước khi xóa access token (§3.2)
+    // Nhả máy push (POST /notification/device-token/release) trước khi xóa access token (§3.2)
     try {
       ref?.read(fcmPushServiceProvider).setCurrentUserId(null);
       await ref?.read(fcmPushServiceProvider).unregisterDeviceToken();
