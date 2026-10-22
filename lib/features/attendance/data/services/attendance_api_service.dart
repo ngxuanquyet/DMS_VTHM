@@ -134,6 +134,23 @@ class AttendanceApiService {
     return [];
   }
 
+  /// Kết quả bảng công của tháng — đi muộn / về sớm do server tính (§8.4 API-NHAC-CA-MOBILE-2026-10-17.md)
+  /// GET /attendance/mobile/days?month={yyyy-MM}
+  Future<List<AttendanceDayResultModel>> getMobileDays(String month) async {
+    final response = await _apiClient.get(
+      '/attendance/mobile/days',
+      queryParameters: {'month': month},
+    );
+
+    if (response is Map && response['data'] is List) {
+      return (response['data'] as List<dynamic>)
+          .whereType<Map>()
+          .map((item) => AttendanceDayResultModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    return [];
+  }
+
   /// Phương thức cũ hỗ trợ tương thích ngược (không gọi mạng vì backend dùng spec /attendance/mobile/*)
   Future<AttendanceDetailModel> getAttendanceDetail() async {
     return AttendanceDetailModel(

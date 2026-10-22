@@ -442,6 +442,15 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     return const [];
   }
 
+  /// Kết quả công theo tháng: chỉ đọc mạng, KHÔNG ghi đè bộ đệm lịch ca 7 ngày (`_shifts`). Mất mạng thì NÉM lỗi — trả rỗng
+  /// sẽ bị hiểu là "tháng này không đi muộn ngày nào".
+  @override
+  Future<List<AttendanceDayResultEntity>> getMobileDays(String month) async {
+    if (!_isOnline) throw StateError('offline');
+    final models = await _apiService.getMobileDays(month);
+    return models.map((m) => m.toEntity()).toList();
+  }
+
   // ===========================================================================
   // HÀM TIỆN ÍCH QUẢN LÝ LỊCH SỬ CỤC BỘ
   // ===========================================================================

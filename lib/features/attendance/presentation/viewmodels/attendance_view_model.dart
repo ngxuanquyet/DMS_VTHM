@@ -41,6 +41,10 @@ final getMobileShiftsUseCaseProvider = Provider<GetMobileShiftsUseCase>((ref) {
   return GetMobileShiftsUseCase(ref.read(attendanceRepositoryProvider));
 });
 
+final getMobileDaysUseCaseProvider = Provider<GetMobileDaysUseCase>((ref) {
+  return GetMobileDaysUseCase(ref.read(attendanceRepositoryProvider));
+});
+
 final attendanceViewModelProvider =
     StateNotifierProvider.autoDispose<AttendanceViewModel, AttendanceState>((ref) {
   return AttendanceViewModel(
@@ -51,6 +55,7 @@ final attendanceViewModelProvider =
     getAttendanceDetailUseCase: ref.read(getAttendanceDetailUseCaseProvider),
     toggleAttendanceUseCase: ref.read(toggleAttendanceUseCaseProvider),
     getMobileShiftsUseCase: ref.read(getMobileShiftsUseCaseProvider),
+    getMobileDaysUseCase: ref.read(getMobileDaysUseCaseProvider),
     attendanceRepository: ref.read(attendanceRepositoryProvider),
     syncService: ref.read(syncServiceProvider),
   );
@@ -64,6 +69,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final GetAttendanceDetailUseCase getAttendanceDetailUseCase;
   final ToggleAttendanceUseCase toggleAttendanceUseCase;
   final GetMobileShiftsUseCase? getMobileShiftsUseCase;
+  final GetMobileDaysUseCase? getMobileDaysUseCase;
   final AttendanceRepository? attendanceRepository;
   final SyncService? syncService;
 
@@ -77,6 +83,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     required this.getAttendanceDetailUseCase,
     required this.toggleAttendanceUseCase,
     this.getMobileShiftsUseCase,
+    this.getMobileDaysUseCase,
     this.attendanceRepository,
     this.syncService,
   }) : super(const AttendanceState()) {
@@ -176,12 +183,45 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         shifts: shiftsList,
         errorMessage: null,
       );
+      unawaited(loadMonthResults());
     } catch (e) {
       debugPrint('[AttendanceViewModel] Lỗi load dữ liệu: $e');
       state = state.copyWith(
         status: AttendanceStatus.error,
         errorMessage: e.toString().replaceAll('AppException: ', ''),
       );
+    }
+  }
+
+  /// Tháng lịch chấm công đang xem — lần tải lại toàn màn (`loadInitialData`) giữ đúng tháng này, không nhảy về tháng hiện tại.
+  DateTime _viewedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+
+  /// Số thứ tự lượt tải gần nhất — lượt cũ về muộn (bấm chuyển tháng liên tục) bị bỏ, không đè tháng đang xem.
+  int _monthRequest = 0;
+
+  /// Tải kết quả bảng công (vào muộn / ra sớm) của một tháng cho lịch chấm công — server đã tính, app không tự đếm.
+  /// GET /attendance/mobile/days?month=yyyy-MM (§8.4). Người nhiều mã NV có thể ra nhiều dòng một ngày ⇒ giữ TỪNG dòng.
+  Future<void> loadMonthResults([DateTime? month]) async {
+    if (getMobileDaysUseCase == null) return;
+    if (month != null) _viewedMonth = DateTime(month.year, month.month, 1);
+    final req = ++_monthRequest;
+    try {
+      final monthKey = DateFormat('yyyy-MM').format(_viewedMonth);
+      final rows = await getMobileDaysUseCase!(monthKey);
+      if (req != _monthRequest || !mounted) return;
+      final results = <String, List<AttendanceDayResultEntity>>{};
+      for (final r in rows) {
+        results.putIfAbsent(r.workDate, () => []).add(r);
+      }
+      // copyWith xoá thông báo khi không truyền — giữ nguyên để lần tải chạy ngầm này không nuốt câu báo vừa hiện.
+      state = state.copyWith(
+        dayResults: results,
+        dayResultsMonth: monthKey,
+        errorMessage: state.errorMessage,
+        successMessage: state.successMessage,
+      );
+    } catch (e) {
+      debugPrint('[AttendanceViewModel] Không tải được kết quả công tháng: $e');
     }
   }
 

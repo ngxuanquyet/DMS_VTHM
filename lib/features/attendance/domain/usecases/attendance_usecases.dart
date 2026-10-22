@@ -99,3 +99,13 @@ class GetMobileShiftsUseCase {
     return _repository.getMobileShifts(from: from, days: days);
   }
 }
+
+class GetMobileDaysUseCase {
+  final AttendanceRepository _repository;
+
+  GetMobileDaysUseCase(this._repository);
+
+  Future<List<AttendanceDayResultEntity>> call(String month) {
+    return _repository.getMobileDays(month);
+  }
+}

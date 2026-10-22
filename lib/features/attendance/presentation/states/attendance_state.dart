@@ -19,6 +19,11 @@ class AttendanceState {
   final AttendanceDetailEntity? detail;
   final Position? currentPosition;
   final List<AttendanceShiftScheduleEntity> shifts;
+  /// Kết quả bảng công theo ngày `yyyy-MM-dd` của tháng [dayResultsMonth] (server tính — vào muộn / ra sớm). Mỗi ngày một
+  /// danh sách: người nhiều mã NV có nhiều bảng công cùng ngày.
+  final Map<String, List<AttendanceDayResultEntity>> dayResults;
+  /// Tháng `yyyy-MM` mà [dayResults] thuộc về; `null` = chưa tải được tháng nào.
+  final String? dayResultsMonth;
 
   const AttendanceState({
     this.status = AttendanceStatus.initial,
@@ -36,6 +41,8 @@ class AttendanceState {
     this.detail,
     this.currentPosition,
     this.shifts = const [],
+    this.dayResults = const {},
+    this.dayResultsMonth,
   });
 
   /// Kiểm tra tài khoản có được phép chấm công hay không (§1.2 & §2)
@@ -105,6 +112,8 @@ class AttendanceState {
     AttendanceDetailEntity? detail,
     Position? currentPosition,
     List<AttendanceShiftScheduleEntity>? shifts,
+    Map<String, List<AttendanceDayResultEntity>>? dayResults,
+    String? dayResultsMonth,
   }) {
     return AttendanceState(
       status: status ?? this.status,
@@ -122,6 +131,8 @@ class AttendanceState {
       detail: detail ?? this.detail,
       currentPosition: currentPosition ?? this.currentPosition,
       shifts: shifts ?? this.shifts,
+      dayResults: dayResults ?? this.dayResults,
+      dayResultsMonth: dayResultsMonth ?? this.dayResultsMonth,
     );
   }
 }

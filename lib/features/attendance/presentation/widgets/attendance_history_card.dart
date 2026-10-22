@@ -37,26 +37,108 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     final now = DateTime.now();
     _focusedMonth = DateTime(now.year, now.month, 1);
     _selectedDate = DateTime(now.year, now.month, now.day);
+    // Thẻ dựng lại (màn tải lại) thì tháng đang xem về tháng hiện tại — tải đúng tháng đó, không để VM giữ tháng cũ.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadResults();
+    });
   }
 
   void _previousMonth() {
     setState(() {
       _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1);
     });
+    _loadResults();
   }
 
   void _nextMonth() {
     setState(() {
       _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 1);
     });
+    _loadResults();
   }
 
   void _goToToday() {
     final now = DateTime.now();
+    final changed = _focusedMonth.year != now.year || _focusedMonth.month != now.month;
     setState(() {
       _focusedMonth = DateTime(now.year, now.month, 1);
       _selectedDate = DateTime(now.year, now.month, now.day);
     });
+    if (changed) _loadResults();
+  }
+
+  /// Kết quả công (vào muộn / ra sớm) của tháng đang xem — server tính (§8.4), app không tự đếm.
+  void _loadResults() {
+    ref.read(attendanceViewModelProvider.notifier).loadMonthResults(_focusedMonth);
+  }
+
+  /// Tổng muộn/sớm của tháng đang xem, vd "Đi muộn 3 ngày (25 phút) · Về sớm 1 ngày (10 phút)".
+  /// Số ngày = ngày có ÍT NHẤT một bảng công muộn/sớm; số phút = cộng theo từng bảng công (người nhiều mã).
+  /// `null` khi dữ liệu đang có không phải của tháng này (chưa tải / tải lỗi) — hiện câu "chưa có kết quả" thay vì số 0.
+  String? _monthSummary(Map<String, List<AttendanceDayResultEntity>> results, String? loadedMonth) {
+    if (loadedMonth != DateFormat('yyyy-MM').format(_focusedMonth)) return null;
+    final days = results.values.toList();
+    final lateDays = days.where((rows) => rows.any((r) => r.isLate)).length;
+    final earlyDays = days.where((rows) => rows.any((r) => r.isEarly)).length;
+    final all = days.expand((rows) => rows);
+    final lateMin = all.fold<int>(0, (sum, r) => sum + r.lateMinutes);
+    final earlyMin = all.fold<int>(0, (sum, r) => sum + r.earlyMinutes);
+    return 'Đi muộn $lateDays ngày ($lateMin phút) · Về sớm $earlyDays ngày ($earlyMin phút)';
+  }
+
+  /// Màu theo mã Bootstrap server trả (`day_status_color`) — ngày vắng / thiếu giờ ra không bị tô xanh như ngày đủ công.
+  Color _bsColor(String code) {
+    switch (code) {
+      case 'success':
+        return const Color(0xFF10B981);
+      case 'warning':
+        return AppColors.warning;
+      case 'danger':
+        return Colors.red.shade600;
+      case 'info':
+        return Colors.blue.shade600;
+      case 'primary':
+        return AppColors.primary;
+      default:
+        return Colors.grey.shade600;
+    }
+  }
+
+  /// Nhãn kết quả công của một ngày — mỗi bảng công một cụm; nhiều mã thì ghi kèm mã cho người đọc biết của vị trí nào.
+  Widget _buildDayResults(List<AttendanceDayResultEntity> rows) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: rows.map((r) => _buildDayResultChips(r, rows.length > 1 ? r.employeeCode : null)).toList(),
+    );
+  }
+
+  /// Nhãn kết quả công của một bảng công: trạng thái + số phút muộn/sớm.
+  Widget _buildDayResultChips(AttendanceDayResultEntity result, String? code) {
+    Widget chip(String text, Color color) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: AppRadius.roundedSm,
+          ),
+          child: Text(
+            text,
+            style: AppTypography.labelSmall(color: color).copyWith(fontWeight: FontWeight.w700),
+          ),
+        );
+
+    final chips = <Widget>[
+      if (code != null && code.isNotEmpty) chip(code, Colors.grey.shade600),
+      if (result.dayStatusLabel.isNotEmpty) chip(result.dayStatusLabel, _bsColor(result.dayStatusColor)),
+      if (result.isLate) chip('Muộn ${result.lateMinutes} phút', AppColors.warning),
+      if (result.isEarly) chip('Sớm ${result.earlyMinutes} phút', AppColors.warning),
+      if (result.lateEarlyExcused) chip('Đã giải trình', AppColors.primary),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(spacing: 6, runSpacing: 6, children: chips),
+    );
   }
 
   List<AttendancePunchEntity> _getPunchesForDate(DateTime date) {
@@ -251,6 +333,12 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     final now = DateTime.now();
     final isCurrentMonth = _focusedMonth.year == now.year && _focusedMonth.month == now.month;
     final punchesForSelectedDay = _getPunchesForDate(_selectedDate);
+    final dayResults = ref.watch(attendanceViewModelProvider.select((s) => s.dayResults));
+    final dayResultsMonth = ref.watch(attendanceViewModelProvider.select((s) => s.dayResultsMonth));
+    final selectedResults = dayResultsMonth == DateFormat('yyyy-MM').format(_selectedDate)
+        ? dayResults[DateFormat('yyyy-MM-dd').format(_selectedDate)]
+        : null;
+    final monthSummary = _monthSummary(dayResults, dayResultsMonth);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,6 +427,17 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
         _buildCalendarGrid(isDark),
         const SizedBox(height: 12),
 
+        // Tổng vào muộn / ra sớm của tháng — số server đã tính trên bảng công; chưa tải được thì nói rõ, không hiện số 0
+        ...[
+          Text(
+            monthSummary ?? 'Chưa có kết quả công của tháng này',
+            style: AppTypography.bodySmall(
+              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            ).copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+        ],
+
         // Bảng chú thích màu sắc trạng thái (§A3)
         _buildLegendBar(isDark),
         const SizedBox(height: 14),
@@ -355,7 +454,8 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
+            Expanded(
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -372,7 +472,9 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
                     color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
                   ),
                 ),
+                if (selectedResults != null && selectedResults.isNotEmpty) _buildDayResults(selectedResults),
               ],
+              ),
             ),
             if (punchesForSelectedDay.isNotEmpty)
               Container(
@@ -492,6 +594,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
                 _focusedMonth = DateTime(cellDate.year, cellDate.month, 1);
               }
             });
+            if (!isCurrentMonth) _loadResults();
           },
           borderRadius: AppRadius.roundedSm,
           child: Container(

@@ -42,6 +42,9 @@ abstract class AttendanceRepository {
   /// Lấy lịch ca làm việc nhiều ngày (§8.2 API-NHAC-CA-MOBILE-2026-10-17.md)
   Future<List<AttendanceShiftScheduleEntity>> getMobileShifts({String? from, int days = 7});
 
+  /// Kết quả bảng công của tháng `yyyy-MM` — đi muộn / về sớm do server tính (§8.4 API-NHAC-CA-MOBILE-2026-10-17.md)
+  Future<List<AttendanceDayResultEntity>> getMobileDays(String month);
+
   /// Hỗ trợ tương thích ngược
   Future<AttendanceDetailEntity> getAttendanceDetail();
   Future<AttendanceDetailEntity> toggleAttendanceCheck();

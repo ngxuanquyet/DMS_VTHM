@@ -774,3 +774,24 @@ class AttendanceDetailModel {
         history: history.map((e) => e.toEntity()).toList(),
       );
 }
+
+/// Một dòng của GET /attendance/mobile/days (§8.4 API-NHAC-CA-MOBILE).
+class AttendanceDayResultModel {
+  final Map<String, dynamic> json;
+
+  const AttendanceDayResultModel(this.json);
+
+  factory AttendanceDayResultModel.fromJson(Map<String, dynamic> json) => AttendanceDayResultModel(json);
+
+  AttendanceDayResultEntity toEntity() => AttendanceDayResultEntity(
+        workDate: json['work_date']?.toString() ?? '',
+        employeeCode: json['employee_code']?.toString() ?? '',
+        workMinutes: (json['work_minutes'] as num?)?.toInt() ?? 0,
+        lateMinutes: (json['late_minutes'] as num?)?.toInt() ?? 0,
+        earlyMinutes: (json['early_minutes'] as num?)?.toInt() ?? 0,
+        lateEarlyExcused: json['late_early_excused'] == true,
+        dayStatus: json['day_status']?.toString() ?? '',
+        dayStatusLabel: json['day_status_label']?.toString() ?? '',
+        dayStatusColor: json['day_status_color']?.toString() ?? 'secondary',
+      );
+}

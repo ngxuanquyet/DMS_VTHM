@@ -442,3 +442,35 @@ class AttendanceDetailEntity {
     required this.history,
   });
 }
+
+/// Kết quả bảng công server ĐÃ TÍNH cho một ngày — GET /attendance/mobile/days (§8.4 API-NHAC-CA-MOBILE).
+/// Phút muộn/sớm đã trừ phút cho phép của ca, = 0 khi ca tắt tính muộn/sớm hoặc giải trình đã duyệt.
+/// Người nhiều mã NV có thể có nhiều dòng một ngày (mỗi mã một bảng công riêng) — hiện TỪNG dòng, KHÔNG cộng.
+class AttendanceDayResultEntity {
+  final String workDate;
+  final String employeeCode;
+  final int workMinutes;
+  final int lateMinutes;
+  final int earlyMinutes;
+  final bool lateEarlyExcused;
+  final String dayStatus;
+  final String dayStatusLabel;
+  /// Mã màu Bootstrap của trạng thái ngày (`success/warning/danger/info/primary/secondary/dark`).
+  final String dayStatusColor;
+
+  const AttendanceDayResultEntity({
+    required this.workDate,
+    this.employeeCode = '',
+    this.workMinutes = 0,
+    this.lateMinutes = 0,
+    this.earlyMinutes = 0,
+    this.lateEarlyExcused = false,
+    this.dayStatus = '',
+    this.dayStatusLabel = '',
+    this.dayStatusColor = 'secondary',
+  });
+
+  bool get isLate => lateMinutes > 0;
+  bool get isEarly => earlyMinutes > 0;
+}
+
