@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/widgets/app_fullscreen_image_viewer.dart';
+import '../../../forms/data/models/market_form_model.dart';
 import '../../domain/entities/visit_history_entity.dart';
 import '../../domain/usecases/visit_usecases.dart';
 import 'visit_kind_badge.dart';
@@ -773,17 +774,22 @@ class _VisitHistoryDetailSheetState
       ];
     }
 
-    // Tra tên câu hỏi từ schema snapshot nếu có
+    // Tra tên câu hỏi + nhãn lựa chọn từ schema snapshot — snapshot là `blocks[].resolved` (cùng
+    // khuôn biểu mẫu lúc nộp), đọc bằng chính MarketFormSchemaModel của màn điền phiếu.
     final schemaFields = <String, String>{};
-    if (form.formSchemaSnapshot != null &&
-        form.formSchemaSnapshot!['fields'] is List) {
-      for (final f in form.formSchemaSnapshot!['fields']) {
-        if (f is Map) {
-          final code = f['code']?.toString();
-          final label = f['label']?.toString();
-          if (code != null && label != null) {
-            schemaFields[code] = label;
-          }
+    final optionLabels = <String, Map<String, String>>{};
+    if (form.formSchemaSnapshot != null) {
+      final schema = MarketFormSchemaModel.fromJson(form.formSchemaSnapshot!);
+      for (final block in schema.blocks) {
+        final r = block.resolved;
+        if (r.code.isEmpty) continue;
+        if (r.label.isNotEmpty) schemaFields[r.code] = r.label;
+        final options = r.config is Map ? r.config['options'] : null;
+        if (options is List) {
+          optionLabels[r.code] = {
+            for (final o in options.whereType<Map>())
+              if (o['value'] != null) o['value'].toString(): (o['label'] ?? o['value']).toString(),
+          };
         }
       }
     }
@@ -794,12 +800,13 @@ class _VisitHistoryDetailSheetState
       final questionLabel = schemaFields[code] ?? code;
 
       // Tra nhãn nếu là kiểu khách hàng hoặc có answerLabels
-      String displayValue = val.toString();
+      final opts = optionLabels[code] ?? const <String, String>{};
+      String displayValue = opts[val.toString()] ?? val.toString();
       if (form.answerLabels != null &&
           form.answerLabels!.containsKey(val.toString())) {
         displayValue = form.answerLabels![val.toString()].toString();
       } else if (val is List) {
-        displayValue = val.join(', ');
+        displayValue = val.map((v) => opts[v.toString()] ?? v.toString()).join(', ');
       }
 
       // Kiểm tra xem có phải ảnh (trong answerPhotos) không
