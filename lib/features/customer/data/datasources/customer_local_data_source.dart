@@ -63,11 +63,9 @@ class CustomerLocalDataSource {
       final parsedRouteId = int.tryParse(data['route_id'].toString());
       if (parsedRouteId != null) routeIds.add(parsedRouteId);
     }
-    if (routeIds.isEmpty) {
-      routeIds = [1];
-    }
+    // KHÔNG tự điền tuyến khi người dùng chưa chọn: id 1 là một tuyến thật trên prod — điểm bán bị gắn nhầm tuyến.
 
-    final route = (data['route'] ?? (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : 'Tuyến 1')).toString().trim();
+    final route = (data['route'] ?? (routeIds.isNotEmpty ? 'Tuyến ${routeIds.first}' : '')).toString().trim();
 
     double? lat;
     double? lng;
@@ -231,7 +229,7 @@ class CustomerLocalDataSource {
           if (deliveryAddress != null && deliveryAddress.isNotEmpty) 'delivery_address': deliveryAddress,
           if (birthday != null && birthday.isNotEmpty) 'birthday': birthday,
           if (customerGroupId != null) 'customer_group_id': customerGroupId,
-          'routes': [route],
+          'routes': [if (route.isNotEmpty) route],
           'route_ids': routeIds,
           if (allPhotos.isNotEmpty) 'photo_tokens': allPhotos,
           if (allPhotos.isNotEmpty) 'photo_urls': allPhotos,
@@ -266,7 +264,7 @@ class CustomerLocalDataSource {
       name: name,
       type: type,
       route: route,
-      routes: [route],
+      routes: [if (route.isNotEmpty) route],
       routeIds: routeIds,
       address: address,
       contactPerson: contactName,

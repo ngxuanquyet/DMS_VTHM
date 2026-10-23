@@ -152,9 +152,8 @@ class CustomerPayloadHelper {
       final parsed = int.tryParse(rawRouteIds.toString());
       if (parsed != null) routeIds = [parsed];
     }
-    if (routeIds.isEmpty) {
-      routeIds = [1];
-    }
+    // KHÔNG tự điền tuyến khi người dùng chưa chọn: id 1 là một tuyến thật trên prod — điểm bán bị gắn nhầm
+    // tuyến. Gửi mảng rỗng để server trả đúng câu "chọn ít nhất một tuyến".
     payload['route_ids'] = routeIds;
 
     // 4. Định danh ngoại tuyến & cờ đồng bộ
