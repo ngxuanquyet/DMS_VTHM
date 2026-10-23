@@ -189,6 +189,7 @@ void main() {
         'address': '456 Lê Duẩn',
         'route': 'Tuyến 1',
         'type': 'Đại lý cấp 1',
+        'region_id': 3,
         'dynamic_fields': {'tax_code': '0102030405'},
       });
 
@@ -211,10 +212,23 @@ void main() {
       expect(pendingQueue.first.op, 'create');
       expect(pendingQueue.first.payload, contains('Tiệm Tạp Hóa Bình Minh'));
       expect(pendingQueue.first.payload, contains(entity.clientUuid));
-      expect(pendingQueue.first.payload, contains('"region_id":'));
+      expect(pendingQueue.first.payload, contains('"region_id":3'));
       expect(pendingQueue.first.payload, contains('"data":'));
       // 🔴 Xác nhận payload tuyệt đối KHÔNG chứa trường code (do server tự sinh)
       expect(pendingQueue.first.payload, isNot(contains('"code":')));
+    });
+
+    test('createCustomerOffline không tự điền khu vực khi người dùng chưa chọn', () async {
+      // Mã điểm bán sinh theo khu vực — điền id 1 thay người dùng là mã sai vùng (commit 8ccca85).
+      final entity = await localDataSource.createCustomerOffline({
+        'name': 'Tiệm Tạp Hóa Bình Minh',
+        'address': '456 Lê Duẩn',
+      });
+
+      final pendingQueue = await database.getPendingQueueEntries();
+      expect(pendingQueue.length, 1);
+      expect(pendingQueue.first.clientUuid, entity.clientUuid);
+      expect(pendingQueue.first.payload, isNot(contains('"region_id":')));
     });
   });
 }
