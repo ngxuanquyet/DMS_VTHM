@@ -13,6 +13,8 @@ import 'currency_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/erp_partner_field_widget.dart';
+import '../../../../../core/widgets/geo_select_field_widget.dart';
+import '../../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
@@ -579,9 +581,59 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             ErpPartnerFieldWidget.valueFromCodes(codes, multiple: multiple),
           ),
         );
+      case 'ref_province':
+      case 'ref_ward':
+        return _buildGeoField(block);
       default:
         return _buildTextField(block, isDark, isMultiline: false);
     }
+  }
+
+  // ==========================================
+  // Ô TỈNH/THÀNH → XÃ/PHƯỜNG (#24072)
+  // ==========================================
+
+  /// Ô Tỉnh/Xã theo danh mục đã lưu máy (chạy offline). Ô xã lọc theo ô tỉnh ở `config.depends_on` (server tự nối với ô
+  /// tỉnh đứng trên); đổi tỉnh ⇒ bỏ giá trị mọi ô xã phụ thuộc. Giá trị là ID.
+  Widget _buildGeoField(MarketFormBlockEntity block) {
+    final r = block.resolved;
+    final laXa = r.inputType.toLowerCase() == 'ref_ward';
+    final cha = _geoParentOf(block);
+    final field = DynamicFormField(
+      code: r.code,
+      label: r.label.isNotEmpty ? r.label : r.code,
+      type: laXa ? DynamicFormFieldType.geoWard : DynamicFormFieldType.geoProvince,
+      helperText: r.description,
+      isRequired: block.required,
+    );
+    return GeoSelectFieldWidget(
+      field: field,
+      wardLevel: laXa,
+      provinceId: cha == null ? null : GeoSelectFieldWidget.idOf(_answers[cha]),
+      value: _answers[r.code],
+      errorText: _errors[r.code],
+      onChanged: (id) {
+        final truoc = GeoSelectFieldWidget.idOf(_answers[r.code]);
+        _updateValue(r.code, id);
+        if (!laXa && truoc != id) {
+          for (final b in widget.blocks) {
+            if (_geoParentOf(b) == r.code && _answers.containsKey(b.resolved.code)) {
+              _updateValue(b.resolved.code, null);
+            }
+          }
+        }
+      },
+    );
+  }
+
+  /// Mã ô tỉnh mà ô [block] lọc theo (`config.depends_on[0].field_code`), hoặc null.
+  String? _geoParentOf(MarketFormBlockEntity block) {
+    final cfg = block.resolved.config;
+    final dep = cfg is Map ? cfg['depends_on'] : null;
+    if (dep is List && dep.isNotEmpty && dep.first is Map) {
+      return (dep.first as Map)['field_code']?.toString();
+    }
+    return null;
   }
 
   // ==========================================

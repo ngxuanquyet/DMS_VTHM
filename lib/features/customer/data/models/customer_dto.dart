@@ -109,6 +109,12 @@ class CustomerDto {
     } else if (json['dynamic_fields'] is Map) {
       dynamicMap = Map<String, dynamic>.from(json['dynamic_fields'] as Map);
     }
+    // Tỉnh/xã theo danh mục (#24072) giữ trong dynamicFields: màn sửa nạp mọi khoá ở đây làm giá trị ban đầu của ô cứng
+    // `province_id`/`ward_id`, SQLite lưu kèm (`dynamicFieldsJson`) nên offline vẫn còn. Payload lọc lại khoá cố định / cấm
+    // (`customer_payload_helper`), nên chúng không lọt vào `data`.
+    for (final k in const ['province_id', 'ward_id', 'geo_source']) {
+      if (json[k] != null) dynamicMap[k] = json[k];
+    }
 
     final rawCustomerTypeId = json['customer_type_id'] is int
         ? json['customer_type_id'] as int

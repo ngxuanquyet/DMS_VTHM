@@ -71,6 +71,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
   final Map<String, dynamic> _savedFormData = {};
   late Map<String, dynamic> _initialData;
+
+  /// Người dùng đã bấm "Xác nhận đúng" cho cặp tỉnh/xã đang mang nhãn "suy từ địa chỉ cũ" (#24072).
+  bool _geoXacNhan = false;
   bool _isSubmitting = false;
 
   @override
@@ -380,6 +383,15 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       if (newWard != null && newWard != (c.wardName ?? '')) {
         changes['ward_name'] = newWard.isNotEmpty ? newWard : null;
       }
+      // Tỉnh / Xã theo danh mục (#24072): chỉ gửi ô THỰC SỰ đổi (PATCH). Đổi tỉnh thì form đã bỏ xã ⇒ gửi `ward_id: null`.
+      int? geoId(dynamic v) => v == null ? null : int.tryParse(v.toString());
+      for (final k in const ['province_id', 'ward_id']) {
+        if (!formData.containsKey(k)) continue;
+        final moi = geoId(formData[k]);
+        // Hồ sơ "suy từ địa chỉ cũ" mà người dùng đã bấm "Xác nhận đúng": gửi cả khi không đổi ⇒ server gỡ nhãn. Không bấm thì
+        // chỉ gửi khi ĐỔI — sửa số điện thoại không được coi là đã soát tỉnh/xã.
+        if (moi != geoId(c.dynamicFields[k]) || (_geoXacNhan && c.dynamicFields['geo_source'] == 'inferred')) changes[k] = moi;
+      }
 
       // Thông tin liên hệ
       final newContactName = (formData['contact_name'] ?? formData['contact_person'])?.toString().trim();
@@ -485,6 +497,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         'route_ids', 'route_id', 'address', 'delivery_address', 'province_name', 'ward_name',
         'contact_name', 'contact_person', 'contact_title', 'phone', 'email', 'coords', 'lat', 'lng',
         'photo_file_id', 'photos', 'photo_tokens', 'code', 'id', 'status', 'is_active',
+        'province_id', 'ward_id', 'geo_source',
       };
       final dynamicChanges = <String, dynamic>{};
       for (final entry in formData.entries) {
@@ -836,6 +849,36 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                                 ],
                               ),
                             ),
+
+                            // Tỉnh/xã của hồ sơ này SUY từ địa chỉ cũ (#24072) — nhắc nhân viên đang đứng tại điểm bán soát lại.
+                            if (widget.customer.dynamicFields['geo_source'] == 'inferred')
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.15),
+                                  borderRadius: AppRadius.roundedMd,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _geoXacNhan
+                                            ? 'Đã xác nhận tỉnh/thành, xã/phường — bấm Lưu để gỡ nhãn.'
+                                            : 'Tỉnh/thành, xã/phường của điểm bán này được SUY từ địa chỉ cũ — hãy kiểm tra, chọn lại nếu chưa đúng hoặc bấm "Xác nhận đúng".',
+                                        style: AppTypography.bodySmall(
+                                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                        ),
+                                      ),
+                                    ),
+                                    if (!_geoXacNhan)
+                                      TextButton(
+                                        onPressed: () => setState(() => _geoXacNhan = true),
+                                        child: const Text('Xác nhận đúng'),
+                                      ),
+                                  ],
+                                ),
+                              ),
 
                             // Dynamic form builder với dữ liệu đã điền sẵn
                             DynamicFormBuilder(

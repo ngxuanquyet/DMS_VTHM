@@ -17,6 +17,7 @@ import 'widgets/single_choice_field_widget.dart';
 import 'widgets/text_field_widget.dart';
 import '../widgets/location_field_widget.dart';
 import '../widgets/erp_partner_field_widget.dart';
+import '../widgets/geo_select_field_widget.dart';
 import '../map/app_map_location_card.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
@@ -149,6 +150,18 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     if (current.isEmpty || current == _autoAddress) {
       _autoAddress = newAddress.trim();
       updateFieldValue('address', _autoAddress);
+    }
+  }
+
+  /// Ô Tỉnh/Xã (#24072): đổi tỉnh ⇒ BỎ giá trị mọi ô xã lọc theo ô tỉnh này (xã cũ không còn thuộc tỉnh mới — server
+  /// cũng từ chối cặp lệch). Chọn lại đúng tỉnh cũ thì không bỏ.
+  void _updateGeo(DynamicFormField field, int? id) {
+    final truoc = GeoSelectFieldWidget.idOf(_formData[field.code]);
+    updateFieldValue(field.code, id);
+    if (field.type == DynamicFormFieldType.geoProvince && truoc != id) {
+      for (final f in widget.fields) {
+        if (f.dependsOn == field.code && _formData[f.code] != null) updateFieldValue(f.code, null);
+      }
     }
   }
 
@@ -869,6 +882,19 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             field.code,
             ErpPartnerFieldWidget.valueFromCodes(codes, multiple: field.erpPartnerMultiple),
           ),
+        );
+
+      case DynamicFormFieldType.geoProvince:
+      case DynamicFormFieldType.geoWard:
+        // Tỉnh/Xã theo danh mục đã lưu máy (chạy offline). Ô xã đọc tỉnh đang chọn ở ô cha (`dependsOn`).
+        final laXa = field.type == DynamicFormFieldType.geoWard;
+        return GeoSelectFieldWidget(
+          field: field,
+          wardLevel: laXa,
+          provinceId: laXa ? GeoSelectFieldWidget.idOf(_formData[field.dependsOn ?? 'province_id']) : null,
+          value: value,
+          errorText: errorText,
+          onChanged: (id) => _updateGeo(field, id),
         );
     }
   }

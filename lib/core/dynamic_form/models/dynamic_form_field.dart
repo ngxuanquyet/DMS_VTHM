@@ -45,7 +45,13 @@ enum DynamicFormFieldType {
   signature,
 
   /// Khách hàng pháp nhân (khách ERP Bravo) — tìm trên server, giá trị là MÃ chuỗi
-  erpPartner;
+  erpPartner,
+
+  /// Tỉnh/thành theo danh mục đơn vị hành chính (`ref_province`, #24072) — giá trị là ID, danh sách ở danh mục đã lưu máy
+  geoProvince,
+
+  /// Xã/phường (`ref_ward`) — lọc theo ô tỉnh ở [DynamicFormField.dependsOn], giá trị là ID
+  geoWard;
 
   /// Chuyển đổi chuỗi type từ API (case-insensitive) sang enum
   static DynamicFormFieldType fromString(String? typeStr) {
@@ -149,6 +155,12 @@ enum DynamicFormFieldType {
 
       case 'ref_erp_partner':
         return DynamicFormFieldType.erpPartner;
+
+      case 'ref_province':
+        return DynamicFormFieldType.geoProvince;
+
+      case 'ref_ward':
+        return DynamicFormFieldType.geoWard;
 
       default:
         return DynamicFormFieldType.text;
@@ -265,6 +277,9 @@ class DynamicFormField {
   /// xuống; `null` = theo mặc định của widget.
   final String? choiceDisplay;
 
+  /// Mã ô CHA mà ô này lọc theo (`depends_on[0].field_code` của schema — ô Xã → ô Tỉnh, #24072); `null` = không phụ thuộc.
+  final String? dependsOn;
+
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
@@ -301,6 +316,7 @@ class DynamicFormField {
     this.erpPartnerMultiple = false,
     this.choiceMultiple,
     this.choiceDisplay,
+    this.dependsOn,
     this.section,
     this.badge,
     this.order = 0,
@@ -386,7 +402,7 @@ class DynamicFormField {
         section = 'Thông tin chung';
       } else if (['phone', 'email', 'contact_name', 'contact_title', 'birthday'].contains(code)) {
         section = 'Thông tin liên hệ';
-      } else if (['address', 'delivery_address', 'province_name', 'ward_name'].contains(code)) {
+      } else if (['address', 'delivery_address', 'province_name', 'ward_name', 'province_id', 'ward_id'].contains(code)) {
         section = 'Địa chỉ giao dịch';
       } else if (['lat', 'lng', 'coords'].contains(code)) {
         section = 'Vị trí trên bản đồ';
@@ -431,6 +447,9 @@ class DynamicFormField {
           ? (json['choice'] as Map)['multiple'] as bool
           : null,
       choiceDisplay: json['choice'] is Map ? (json['choice'] as Map)['display']?.toString() : null,
+      dependsOn: json['depends_on'] is List && (json['depends_on'] as List).isNotEmpty && (json['depends_on'] as List).first is Map
+          ? ((json['depends_on'] as List).first as Map)['field_code']?.toString()
+          : null,
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -462,6 +481,7 @@ class DynamicFormField {
     bool? erpPartnerMultiple,
     bool? choiceMultiple,
     String? choiceDisplay,
+    String? dependsOn,
     String? section,
     String? badge,
     int? order,
@@ -490,6 +510,7 @@ class DynamicFormField {
       erpPartnerMultiple: erpPartnerMultiple ?? this.erpPartnerMultiple,
       choiceMultiple: choiceMultiple ?? this.choiceMultiple,
       choiceDisplay: choiceDisplay ?? this.choiceDisplay,
+      dependsOn: dependsOn ?? this.dependsOn,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,

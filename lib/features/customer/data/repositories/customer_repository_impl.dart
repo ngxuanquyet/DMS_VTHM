@@ -8,6 +8,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/services/geo_catalog_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/utils/account_key.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
@@ -392,6 +393,25 @@ class CustomerRepositoryImpl implements CustomerRepository {
       newDynamicFields.addAll(changes['data'] as Map<String, dynamic>);
     }
 
+    // Tỉnh/xã theo danh mục (#24072): ghi id MỚI vào bản nhớ (cả RAM lẫn SQLite qua cacheRemoteCustomers) và gỡ cờ "suy từ
+    // địa chỉ cũ" — để nguyên id cũ + cờ cũ thì lần sửa sau gửi lại cặp CŨ và đè mất lựa chọn vừa lưu (review 23/10).
+    String? geoProvinceName = current.provinceName;
+    String? geoWardName = current.wardName;
+    if (changes.containsKey('province_id') || changes.containsKey('ward_id')) {
+      for (final k in const ['province_id', 'ward_id']) {
+        if (changes.containsKey(k)) newDynamicFields[k] = int.tryParse(changes[k]?.toString() ?? '');
+      }
+      // Server: xoá tỉnh ⇒ xoá luôn xã; đổi tỉnh không kèm xã ⇒ bỏ xã cũ.
+      if (changes.containsKey('province_id') && !changes.containsKey('ward_id')) newDynamicFields['ward_id'] = null;
+      final pid = newDynamicFields['province_id'] as int?;
+      newDynamicFields['geo_source'] = pid == null ? null : 'entered';
+      final catalog = GeoCatalogService.memory;
+      // Chưa nạp danh mục ⇒ để TRỐNG tên (lần làm mới sau server trả tên đúng) — rơi về tên cũ là hiện tỉnh A cạnh id tỉnh B.
+      geoProvinceName = pid == null ? null : catalog?.province(pid)?.fullName;
+      final wid = newDynamicFields['ward_id'] as int?;
+      geoWardName = wid == null ? null : catalog?.ward(wid)?.fullName;
+    }
+
     List<String> newPhotoUrls = List<String>.from(current.photoUrls);
     String? newPhotoUrl = current.photoUrl;
     if (changes['photo_tokens'] is List) {
@@ -420,10 +440,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
           : current.regionName,
       provinceName: changes.containsKey('province_name')
           ? changes['province_name']?.toString()
-          : current.provinceName,
+          : geoProvinceName,
       wardName: changes.containsKey('ward_name')
           ? changes['ward_name']?.toString()
-          : current.wardName,
+          : geoWardName,
       contactPerson: changes['contact_name']?.toString() ??
           changes['contact_person']?.toString() ??
           current.contactPerson,

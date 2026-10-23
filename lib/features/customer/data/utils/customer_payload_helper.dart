@@ -14,6 +14,9 @@ const Set<String> kAllowedCustomerRootKeys = {
   'delivery_address',
   'province_name',
   'ward_name',
+  // Tỉnh/xã theo danh mục (#24072) — app mới gửi id; `*_name` chỉ còn cho dữ liệu hàng đợi đời cũ.
+  'province_id',
+  'ward_id',
   'contact_name',
   'contact_title',
   'phone',
@@ -82,6 +85,8 @@ const Set<String> kForbiddenCustomerKeys = {
   'mobiwork_id',
   'legacy_source',
   'legacy_key',
+  // Nguồn cặp tỉnh/xã (#24072) — server tự đặt, đọc từ hồ sơ để hiện nhãn; gửi lên (kể cả trong `data`) là 422.
+  'geo_source',
 };
 
 /// Danh sách các trường cố định (fixed) theo schema/hợp đồng gửi ở gốc body
@@ -96,6 +101,9 @@ const Set<String> kCustomerFixedKeys = {
   'delivery_address',
   'province_name',
   'ward_name',
+  // Tỉnh/xã theo danh mục (#24072) — app mới gửi id; `*_name` chỉ còn cho dữ liệu hàng đợi đời cũ.
+  'province_id',
+  'ward_id',
   'contact_name',
   'contact_title',
   'phone',
@@ -257,8 +265,17 @@ class CustomerPayloadHelper {
     addStringIfNotEmpty('phone', sourceData['phone']);
     addStringIfNotEmpty('address', sourceData['address']);
     addStringIfNotEmpty('delivery_address', sourceData['delivery_address']);
-    addStringIfNotEmpty('province_name', sourceData['province_name']);
-    addStringIfNotEmpty('ward_name', sourceData['ward_name']);
+    // Tỉnh/xã (#24072): có id ⇒ gửi id, KHÔNG gửi kèm chữ (server từ chối gửi cả hai — mà hồ sơ đọc về có sẵn cả
+    // `province_name` lẫn `province_id`). Không có id (dữ liệu hàng đợi tạo bởi bản app cũ) ⇒ gửi chữ, server tự dịch.
+    final provinceId = int.tryParse(sourceData['province_id']?.toString() ?? '');
+    final wardId = int.tryParse(sourceData['ward_id']?.toString() ?? '');
+    if (provinceId != null || wardId != null) {
+      if (provinceId != null) payload['province_id'] = provinceId;
+      if (wardId != null) payload['ward_id'] = wardId;
+    } else {
+      addStringIfNotEmpty('province_name', sourceData['province_name']);
+      addStringIfNotEmpty('ward_name', sourceData['ward_name']);
+    }
     addStringIfNotEmpty(
       'contact_name',
       sourceData['contact_name'] ?? sourceData['contact_person'] ?? sourceData['contactPerson'],

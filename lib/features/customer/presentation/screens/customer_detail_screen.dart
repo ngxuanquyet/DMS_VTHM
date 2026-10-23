@@ -1565,6 +1565,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     'updated_by', 'updated_by_name', 'updated_by_code', 'updater_name', 'updater', 'user_update', 'user_update_name', 'updated_user', 'last_modified_by',
     'created_at', 'updated_at',
     'approval_status', 'approval_label', 'approval_color', 'approval_note', 'approval_at',
+    // Tỉnh/xã theo danh mục (#24072) — id + nguồn giữ trong dynamicFields cho màn sửa, tên đã hiện ở ô tỉnh/xã riêng.
+    'province_id', 'ward_id', 'geo_source',
   };
 
   bool _hasDynamicFields() {

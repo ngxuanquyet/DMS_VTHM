@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
+import '../../../../core/services/geo_catalog_service.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../utils/customer_payload_helper.dart';
@@ -225,6 +226,9 @@ class CustomerLocalDataSource {
         syncStatus: const Value('pending'),
         dynamicFieldsJson: Value(jsonEncode({
           ...dynamicData,
+          // Tỉnh/xã theo danh mục (#24072) — bảng không có cột riêng, giữ id ở đây để màn sửa / hiển thị offline đọc lại.
+          if (payloadMap['province_id'] != null) 'province_id': payloadMap['province_id'],
+          if (payloadMap['ward_id'] != null) 'ward_id': payloadMap['ward_id'],
           if (deliveryAddress != null && deliveryAddress.isNotEmpty) 'delivery_address': deliveryAddress,
           if (birthday != null && birthday.isNotEmpty) 'birthday': birthday,
           if (customerGroupId != null) 'customer_group_id': customerGroupId,
@@ -462,12 +466,18 @@ class CustomerLocalDataSource {
     final regionId = changes.containsKey('region_id')
         ? (changes['region_id'] as int?)
         : existing.regionId;
-    final provinceName = changes.containsKey('province_name')
-        ? changes['province_name']?.toString()
-        : existing.provinceName;
-    final wardName = changes.containsKey('ward_name')
-        ? changes['ward_name']?.toString()
-        : existing.wardName;
+    // Tỉnh/xã theo danh mục (#24072): lần sửa đụng cặp id ⇒ tên hiển thị lấy theo id mới (danh mục đã nạp), không giữ chữ cũ;
+    // đổi tỉnh mà không gửi xã ⇒ bỏ xã (như server).
+    final suaGeo = changes.containsKey('province_id') || changes.containsKey('ward_id');
+    final geoCatalog = GeoCatalogService.memory;
+    final pidMoi = int.tryParse(changes['province_id']?.toString() ?? '');
+    final widMoi = changes.containsKey('ward_id') ? int.tryParse(changes['ward_id']?.toString() ?? '') : null;
+    final provinceName = suaGeo
+        ? (changes.containsKey('province_id') ? (pidMoi == null ? null : geoCatalog?.province(pidMoi)?.fullName) : existing.provinceName)
+        : (changes.containsKey('province_name') ? changes['province_name']?.toString() : existing.provinceName);
+    final wardName = suaGeo
+        ? (widMoi == null ? null : geoCatalog?.ward(widMoi)?.fullName)
+        : (changes.containsKey('ward_name') ? changes['ward_name']?.toString() : existing.wardName);
     final contactPerson = changes['contact_name']?.toString() ??
         changes['contact_person']?.toString() ??
         existing.contactPerson;
@@ -508,6 +518,11 @@ class CustomerLocalDataSource {
     if (changes['data'] is Map<String, dynamic>) {
       dynFields.addAll(changes['data'] as Map<String, dynamic>);
     }
+    // Tỉnh/xã theo danh mục (#24072) — giữ id trong dynFields (bảng SQLite không có cột riêng).
+    for (final k in const ['province_id', 'ward_id']) {
+      if (changes.containsKey(k)) dynFields[k] = int.tryParse(changes[k]?.toString() ?? '');
+    }
+    if (changes.containsKey('province_id') && !changes.containsKey('ward_id')) dynFields['ward_id'] = null;
 
     if (changes['photo_tokens'] is List) {
       final photos = (changes['photo_tokens'] as List).map((e) => e.toString()).toList();
@@ -575,6 +590,17 @@ class CustomerLocalDataSource {
       if (regionId != null) queuePayload['region_id'] = regionId;
       if (provinceName != null) queuePayload['province_name'] = provinceName;
       if (wardName != null) queuePayload['ward_name'] = wardName;
+      // Có id tỉnh/xã ⇒ gửi id, bỏ chữ (server từ chối gửi cả hai).
+      for (final k in const ['province_id', 'ward_id']) {
+        if (changes.containsKey(k)) queuePayload[k] = dynFields[k];
+      }
+      // Lần sửa có đụng cặp id (kể cả XOÁ = null) ⇒ bỏ chữ cũ: để lại thì lúc đồng bộ bộ dựng payload thấy id null, gửi chữ,
+      // server dịch lại đúng tỉnh vừa xoá (review 23/10).
+      if (changes.containsKey('province_id') || changes.containsKey('ward_id') ||
+          queuePayload['province_id'] != null || queuePayload['ward_id'] != null) {
+        queuePayload.remove('province_name');
+        queuePayload.remove('ward_name');
+      }
       if (contactPerson.isNotEmpty) queuePayload['contact_name'] = contactPerson;
       if (contactTitle != null) queuePayload['contact_title'] = contactTitle;
       if (phone.isNotEmpty) queuePayload['phone'] = phone;
@@ -612,8 +638,14 @@ class CustomerLocalDataSource {
         'customer_type_id': customerTypeId,
         // #23682: không gửi `channel_id` (kênh MobiWork cũ) — server bỏ qua, sẽ gỡ ở bước 2.
         'region_id': regionId,
-        'province_name': provinceName,
-        'ward_name': wardName,
+        // Có id tỉnh/xã (#24072) ⇒ gửi id, bỏ chữ (server từ chối gửi cả hai).
+        if (dynFields.containsKey('province_id') || dynFields.containsKey('ward_id')) ...{
+          'province_id': dynFields['province_id'],
+          'ward_id': dynFields['ward_id'],
+        } else ...{
+          'province_name': provinceName,
+          'ward_name': wardName,
+        },
         'contact_name': contactPerson,
         'contact_title': contactTitle,
         'phone': phone,

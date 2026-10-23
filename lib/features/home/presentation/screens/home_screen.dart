@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -24,6 +25,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/localization/app_strings.dart';
 import '../../../../core/services/app_notification_service.dart';
+import '../../../../core/services/geo_catalog_service.dart';
 import '../../../../core/widgets/notification_permission_dialog.dart';
 import '../../../attendance/presentation/viewmodels/attendance_view_model.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
@@ -202,6 +204,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi làm mới schema form: $e');
     }
+
+    // 3b'. Danh mục đơn vị hành chính (/geo/catalog, #24072) — tải về máy LÚC CÓ MẠNG để ô Tỉnh → Xã chạy được khi ra
+    // thị trường mất sóng. Hỏi kèm `version`: không đổi thì server trả vài chục byte. Lỗi không ném (dùng bản đã lưu).
+    // KHÔNG chờ: lần đầu là ~450 KB — chờ ở đây là chặn các bước đồng bộ sau trên mạng yếu. Không `force`: service tự hỏi
+    // lại server theo nhịp 6 giờ (danh mục chỉ đổi khi có nghị quyết) — review 23/10.
+    unawaited(ref.read(geoCatalogServiceProvider).load());
 
     // 3c. Cập nhật biểu mẫu thị trường (/dms/forms)
     try {
