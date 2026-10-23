@@ -133,12 +133,13 @@ class CustomerPayloadHelper {
       payload['name'] = rawName;
     }
 
-    // 2. Khu vực (region_id) - Bắt buộc (int, mặc định 1 nếu không truyền)
+    // 2. Khu vực (region_id) - Bắt buộc. KHÔNG tự điền khu vực khi người dùng chưa chọn: id 1 là một khu vực
+    // thật, mã điểm bán sinh theo nó sẽ sai vùng. Thiếu thì để server trả đúng câu "thiếu khu vực".
     int? regionId;
     if (sourceData['region_id'] != null) {
       regionId = int.tryParse(sourceData['region_id'].toString());
     }
-    payload['region_id'] = regionId ?? 1;
+    if (regionId != null) payload['region_id'] = regionId;
 
     // 3. Tuyến bán hàng (route_ids) - Bắt buộc với nhân viên thị trường (List<int>)
     List<int> routeIds = [];

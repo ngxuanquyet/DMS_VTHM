@@ -43,10 +43,9 @@ class CustomerLocalDataSource {
     final birthday = data['birthday']?.toString().trim();
     final type = (data['type'] ?? data['customer_type_name'] ?? data['customer_type_code'] ?? '').toString().trim();
 
-    int regionId = 1;
-    if (data['region_id'] != null) {
-      regionId = int.tryParse(data['region_id'].toString()) ?? 1;
-    }
+    // KHÔNG tự điền khu vực: id 1 là một khu vực thật — mã điểm bán sinh theo nó sẽ sai vùng.
+    final int? regionId =
+        data['region_id'] != null ? int.tryParse(data['region_id'].toString()) : null;
     int? customerTypeId = data['customer_type_id'] != null ? int.tryParse(data['customer_type_id'].toString()) : null;
     int? customerGroupId = data['customer_group_id'] != null ? int.tryParse(data['customer_group_id'].toString()) : null;
     int? channelId = data['channel_id'] != null ? int.tryParse(data['channel_id'].toString()) : null;

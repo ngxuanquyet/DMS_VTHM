@@ -586,7 +586,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     final regionId = cleanPayload['region_id'] is int
         ? cleanPayload['region_id'] as int
-        : int.tryParse(cleanPayload['region_id']?.toString() ?? '') ?? 1;
+        : int.tryParse(cleanPayload['region_id']?.toString() ?? '');
 
     final customerTypeId = cleanPayload['customer_type_id'] is int
         ? cleanPayload['customer_type_id'] as int
