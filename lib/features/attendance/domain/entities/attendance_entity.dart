@@ -362,13 +362,13 @@ class AttendancePunchEntity {
     return '';
   }
 
-  /// Ảnh camera trước (front)
+  /// Ảnh chân dung (`front`) — tên loại giữ theo API, chụp bằng camera nào cũng được
   AttendancePunchPhotoEntity? get frontPhoto {
     final match = photos.where((p) => p.photoType == 'front').toList();
     return match.isNotEmpty ? match.first : null;
   }
 
-  /// Ảnh camera sau (back)
+  /// Ảnh khung cảnh (`back`) — tên loại giữ theo API, chụp bằng camera nào cũng được
   AttendancePunchPhotoEntity? get backPhoto {
     final match = photos.where((p) => p.photoType == 'back').toList();
     return match.isNotEmpty ? match.first : null;

@@ -91,7 +91,6 @@ class _AttendancePhotoCaptureDialogState
 
   Future<void> _capturePhoto({
     required String photoType,
-    required CameraDevice preferredCamera,
   }) async {
     final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
       context,
@@ -103,7 +102,6 @@ class _AttendancePhotoCaptureDialogState
     try {
       final xFile = await _picker.pickImage(
         source: ImageSource.camera,
-        preferredCameraDevice: preferredCamera,
         maxWidth: 1920,
         maxHeight: 1920,
         imageQuality: 85,
@@ -252,7 +250,7 @@ class _AttendancePhotoCaptureDialogState
       if (_localFrontFile == null || _localBackFile == null) {
         AppSnackBar.showError(
           context,
-          'Vui lòng chụp đủ cả 2 ảnh: camera trước và camera sau!',
+          'Vui lòng chụp đủ cả 2 ảnh: ảnh chân dung và ảnh khung cảnh!',
         );
         return;
       }
@@ -390,7 +388,7 @@ class _AttendancePhotoCaptureDialogState
               // Description
               Text(
                 isNewPunch
-                    ? 'Vui lòng chụp đủ 2 ảnh (camera trước và camera sau) để thực hiện lượt chấm công.'
+                    ? 'Vui lòng chụp đủ 2 ảnh (ảnh chân dung và ảnh khung cảnh) để thực hiện lượt chấm công. Dùng camera nào cũng được.'
                     : 'Lượt chấm đã ghi nhận lúc ${punch!.timeFormatted}. Vui lòng chụp bổ sung ảnh theo quy định.',
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium(
@@ -433,7 +431,7 @@ class _AttendancePhotoCaptureDialogState
               ),
               const SizedBox(height: 20),
 
-              // 2 Nút chụp ảnh: Camera trước + Camera sau (§2)
+              // 2 Nút chụp ảnh: Ảnh chân dung + Ảnh khung cảnh (§2) — không ép camera nào, máy hỏng một camera vẫn chụp đủ
               Builder(
                 builder: (context) {
                   final bool isFrontLoading = _isUploadingFront ||
@@ -452,11 +450,11 @@ class _AttendancePhotoCaptureDialogState
 
                   return Row(
                     children: [
-                      // Nút 1: Camera trước (Ảnh chân dung)
+                      // Nút 1: Ảnh chân dung (selfie)
                       Expanded(
                         child: _buildPhotoSlot(
-                          title: 'Camera trước',
-                          subtitle: 'Ảnh chân dung',
+                          title: 'Ảnh chân dung',
+                          subtitle: 'Selfie của bạn',
                           isFront: true,
                           isUploaded: hasFrontPhoto && !isFrontLoading,
                           isLoading: isFrontLoading,
@@ -464,17 +462,16 @@ class _AttendancePhotoCaptureDialogState
                           serverPhoto: punch?.frontPhoto,
                           onTap: () => _capturePhoto(
                             photoType: 'front',
-                            preferredCamera: CameraDevice.front,
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
 
-                      // Nút 2: Camera sau (Ảnh khung cảnh)
+                      // Nút 2: Ảnh khung cảnh
                       Expanded(
                         child: _buildPhotoSlot(
-                          title: 'Camera sau',
-                          subtitle: 'Ảnh khung cảnh',
+                          title: 'Ảnh khung cảnh',
+                          subtitle: 'Nơi làm việc',
                           isFront: false,
                           isUploaded: hasBackPhoto && !isBackLoading,
                           isLoading: isBackLoading,
@@ -482,7 +479,6 @@ class _AttendancePhotoCaptureDialogState
                           serverPhoto: punch?.backPhoto,
                           onTap: () => _capturePhoto(
                             photoType: 'back',
-                            preferredCamera: CameraDevice.rear,
                           ),
                         ),
                       ),
