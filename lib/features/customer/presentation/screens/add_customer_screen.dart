@@ -201,6 +201,321 @@ const List<DynamicFormField> kScopeFieldStubs = [
   DynamicFormField(code: 'territory_code', label: '', type: DynamicFormFieldType.singleChoice),
 ];
 
+/// Ô ảnh của form điểm bán (theo mã ô) — dùng chung màn Thêm mới và Sửa.
+bool isCustomerPhotoKey(String key) {
+  final k = key.toLowerCase();
+  const nonPhotoKeys = {
+    'route_ids',
+    'route_id',
+    'customer_type_id',
+    'channel_id',
+    'region_id',
+    'sale_group_id',
+    'id',
+    'code',
+    'status',
+    'lat',
+    'lng',
+    'data',
+    'customer_type_name',
+    'channel_name',
+    'region_name',
+    'route',
+    'route_name',
+    'type',
+    'name',
+    'phone',
+    'email',
+    'address',
+    'tax_code',
+    'notes',
+    'description',
+    'contact_name',
+    'contact_title',
+    'birthday',
+    'delivery_address',
+    'province_name',
+    'ward_name',
+  };
+  if (nonPhotoKeys.contains(k)) return false;
+  return k.contains('photo') || k.contains('image') || k.contains('anh_') || k.contains('hinh_');
+}
+
+
+/// Dựng danh sách ô form điểm bán từ schema Cấu hình trường — DÙNG CHUNG màn Thêm mới và Sửa (chủ hệ thống 23/10/2026:
+/// form sửa = form tạo, không đắp thêm khoá dữ liệu như erp_linked, created_by_name… thành ô).
+///
+/// [editing] khác null ⇒ màn sửa: không điền sẵn mặc định theo phòng; giữ lựa chọn loại/khu vực hiện tại của điểm bán
+/// trong danh sách; bỏ hai ô Kênh/Tuyến tự khai (chỉ CHỌN lúc tạo, sửa là việc quản trị — server 403 với nhân viên).
+List<DynamicFormField> buildCustomerFormFields(
+  Map<String, dynamic> schemaData, {
+  required CustomerMetaData meta,
+  required List<DynamicFormOption> routeOptions,
+  int? defaultRouteId,
+  CustomerEntity? editing,
+}) {
+  final c = editing;
+  final fieldsJson = schemaData['data']?['fields'] as List? ?? [];
+  // 🔴 Loại bỏ các trường:
+  // - code, id: do hệ thống tự sinh
+  // - status, is_active: điểm bán mới luôn mặc định là active (hoạt động), không cần người dùng nhập
+  final fields = fieldsJson
+      .map((f) => DynamicFormField.fromJson(f as Map<String, dynamic>))
+      .where((f) {
+        final code = f.code.toLowerCase();
+        final label = f.label.toLowerCase();
+        if (code == 'code' || code == 'id') return false;
+        if (code == 'status' || code == 'is_active') return false;
+        if (label.contains('hoạt động') || label.contains('ngừng hoạt động')) return false;
+        return true;
+      })
+      .toList();
+
+  // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
+  fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
+
+  if (c != null) {
+    fields.removeWhere((f) => f.code == 'own_channel_ids' || f.code == 'territory_code');
+  } else {
+    // #23819: ô Kênh/Tuyến bật "tự điền theo phòng ban" — server gửi `default` tính cho chính người đang đăng nhập.
+    // Chỉ màn TẠO mới điền sẵn (nhân viên vẫn sửa được); dữ liệu đã gõ (`_savedFormData`) vẫn thắng vì
+    // DynamicFormBuilder ưu tiên `initialData` hơn `initialValue`.
+    for (var i = 0; i < fields.length; i++) {
+      final f = fields[i];
+      if (f.defaultValue != null && f.initialValue == null) {
+        fields[i] = f.copyWith(initialValue: f.defaultValue);
+      }
+    }
+  }
+
+  // Lựa chọn loại / khu vực: lấy từ meta khi schema chưa có; màn sửa giữ giá trị hiện tại của điểm bán trong danh sách.
+  List<DynamicFormOption> typeOptions(List<DynamicFormOption> fromSchema) {
+    final opts = fromSchema.isEmpty && meta.customerTypes.isNotEmpty
+        ? meta.customerTypes.map((t) => DynamicFormOption(label: t.name.isNotEmpty ? t.name : t.code, value: t.id)).toList()
+        : List<DynamicFormOption>.from(fromSchema);
+    if (c?.customerTypeId != null && !opts.any((o) => o.value == c!.customerTypeId)) {
+      opts.insert(0, DynamicFormOption(label: c!.type.isNotEmpty ? c.type : 'Loại ${c.customerTypeId}', value: c.customerTypeId!));
+    }
+    return opts;
+  }
+
+  List<DynamicFormOption> regionOptions(List<DynamicFormOption> fromSchema) {
+    final opts = fromSchema.isEmpty && meta.regions.isNotEmpty
+        ? meta.regions.map((r) => DynamicFormOption(label: '${r.code} - ${r.name}', value: r.id)).toList()
+        : List<DynamicFormOption>.from(fromSchema);
+    if (c?.regionId != null && !opts.any((o) => o.value == c!.regionId)) {
+      opts.insert(0, DynamicFormOption(label: c!.regionName ?? 'Khu vực ${c.regionId}', value: c.regionId!));
+    }
+    return opts;
+  }
+
+  // Cập nhật options cho các trường phân loại nếu schema chưa có options.
+  // Màn tạo để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.
+  for (var i = 0; i < fields.length; i++) {
+    final f = fields[i];
+    if (f.code == 'customer_type_id') {
+      fields[i] = f.copyWith(options: typeOptions(f.options), clearInitialValue: c == null);
+    } else if (f.code == 'region_id') {
+      fields[i] = f.copyWith(options: regionOptions(f.options), clearInitialValue: c == null);
+    } else if (f.code == 'route_ids' || f.code == 'route_id') {
+      fields[i] = f.copyWith(
+        options: routeOptions,
+        initialValue: defaultRouteId,
+        catalog: 'dropdown',
+      );
+    }
+  }
+
+  // Tên điểm bán bắt buộc ở cả hai màn — schema rỗng/thiếu (lỗi server, bản lưu máy hỏng) vẫn phải có ô để nhập.
+  if (!fields.any((f) => f.code == 'name')) {
+    fields.insert(
+      0,
+      const DynamicFormField(
+        code: 'name',
+        label: 'Tên điểm bán',
+        type: DynamicFormFieldType.text,
+        isRequired: true,
+        section: 'Thông tin chung',
+      ),
+    );
+  }
+
+  // Tự động chèn customer_type_id nếu schema thiếu (mặc định để trống)
+  if (!fields.any((f) => f.code == 'customer_type_id')) {
+    final opts = typeOptions(const []);
+    final insertIdx = fields.indexWhere((f) => f.code == 'name');
+    fields.insert(
+      insertIdx != -1 ? insertIdx + 1 : 0,
+      DynamicFormField(
+        code: 'customer_type_id',
+        label: 'Loại điểm bán',
+        type: DynamicFormFieldType.singleChoice,
+        isRequired: true,
+        options: opts.isNotEmpty ? opts : const [DynamicFormOption(label: 'Đại lý', value: 1)],
+        initialValue: null,
+        placeholder: 'Chọn loại điểm bán...',
+        section: 'Thông tin chung',
+      ),
+    );
+  }
+
+  // 🔴 Bắt buộc theo API POST /crm/customers: region_id để backend sinh mã KH (4 số khu vực + 4 số thứ tự)
+  if (!fields.any((f) => f.code == 'region_id')) {
+    final opts = regionOptions(const []);
+    final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
+    fields.insert(
+      insertIdx != -1 ? insertIdx + 1 : 1,
+      DynamicFormField(
+        code: 'region_id',
+        label: 'Khu vực quản lý',
+        type: DynamicFormFieldType.singleChoice,
+        isRequired: true,
+        options: opts.isNotEmpty ? opts : const [DynamicFormOption(label: '08 - Miền Trung', value: 8)],
+        initialValue: null,
+        placeholder: 'Chọn khu vực quản lý...',
+        section: 'Thông tin chung',
+      ),
+    );
+  }
+
+  // 🔴 Bắt buộc theo API spec 22/09/2026: route_ids (mảng tuyến bán hàng cho nhân viên thị trường từ GET /dms/routes/mine)
+  if (!fields.any((f) => f.code == 'route_ids' || f.code == 'route_id')) {
+    final insertIdx = fields.indexWhere((f) => f.code == 'region_id');
+    fields.insert(
+      insertIdx != -1 ? insertIdx + 1 : 1,
+      DynamicFormField(
+        code: 'route_ids',
+        label: 'Tuyến bán hàng',
+        type: DynamicFormFieldType.singleChoice,
+        isRequired: true,
+        options: routeOptions,
+        initialValue: defaultRouteId,
+        placeholder: 'Chọn tuyến bán hàng...',
+        section: 'Thông tin chung',
+        catalog: 'dropdown',
+      ),
+    );
+  }
+
+  if (c == null) {
+    // Kênh + Tuyến tự khai (chốt 21/10/2026): ô cứng ở Cấu hình trường điểm bán — nhãn / bắt buộc / ẩn và VỊ TRÍ
+    // theo schema (`scope_fields` bật ⇒ vắng ô = admin ẩn); schema không mang cờ (server cũ, bản lưu máy cũ, bộ mặc
+    // định ngoại tuyến) ⇒ vẽ cả hai ngay sau ô Tuyến bán hàng như trước. Lựa chọn + điền sẵn theo cặp phòng.
+    final theoCauHinh = schemaData['data']?['scope_fields'] == true;
+    final scopeFields = ownChannelTerritoryFields(meta, schema: theoCauHinh ? fields : kScopeFieldStubs);
+    // Thay TỪNG ô tại đúng chỗ của nó trong schema (admin có thể đặt Kênh, Tuyến ở hai nơi khác nhau).
+    final dungSan = {for (final f in scopeFields) f.code: f};
+    final thayTaiCho = <DynamicFormField>[
+      for (final f in fields)
+        if (f.code != 'own_channel_ids' && f.code != 'territory_code')
+          f
+        else if (theoCauHinh && dungSan[f.code] != null)
+          dungSan[f.code]!,
+    ];
+    fields
+      ..clear()
+      ..addAll(thayTaiCho);
+
+    if (!theoCauHinh) {
+      final routeIdx = fields.indexWhere((f) => f.code == 'route_ids' || f.code == 'route_id');
+      fields.insertAll(routeIdx != -1 ? routeIdx + 1 : fields.length, scopeFields);
+    }
+  }
+
+  // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
+  // Ở màn nhập khách hàng: chỉ cho phép chụp ảnh từ camera, không cho chọn từ thư viện
+  if (!fields.any((f) => f.code == 'photo_file_id' || f.code == 'photo')) {
+    fields.add(
+      const DynamicFormField(
+        code: 'photo_file_id',
+        label: 'Ảnh điểm bán',
+        type: DynamicFormFieldType.photo,
+        maxPhotos: 10,
+        isRequired: true,
+        allowGallery: false,
+        helperText: 'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
+        section: 'Hình ảnh điểm bán',
+      ),
+    );
+  } else {
+    final photoIdx = fields.indexWhere((f) => f.code == 'photo_file_id' || f.code == 'photo');
+    if (photoIdx != -1) {
+      final existing = fields[photoIdx];
+      fields[photoIdx] = existing.copyWith(
+        isRequired: true,
+        type: DynamicFormFieldType.photo,
+        allowGallery: false,
+        maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
+        label: existing.label.isEmpty ? 'Ảnh điểm bán' : existing.label,
+        helperText: existing.helperText?.replaceAll('hoặc tải lên ', '') ??
+            'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
+        section: existing.section == null || existing.section!.isEmpty
+            ? 'Hình ảnh điểm bán'
+            : existing.section,
+      );
+    }
+  }
+
+  // Cấu hình toàn bộ các trường ảnh ở màn nhập khách hàng: chỉ cho phép chụp từ camera, không cho chọn từ thư viện
+  for (int i = 0; i < fields.length; i++) {
+    if (fields[i].type == DynamicFormFieldType.photo || isCustomerPhotoKey(fields[i].code)) {
+      fields[i] = fields[i].copyWith(
+        type: DynamicFormFieldType.photo,
+        allowGallery: false,
+        helperText: fields[i].helperText?.replaceAll('hoặc tải lên ', '') ??
+            'Chụp tối đa ${fields[i].maxPhotos} ảnh thực tế điểm bán từ máy ảnh',
+      );
+    }
+  }
+
+  // 🔴 Đảm bảo có ô cứng coords (Toạ độ GPS) theo spec 15/10/2026 thay thế cho lat/lng cũ
+  if (!fields.any((f) => f.code == 'coords')) {
+    fields.removeWhere((f) => f.code == 'lat' || f.code == 'lng');
+    final insertIdx = fields.indexWhere((f) => f.code == 'address');
+    fields.insert(
+      insertIdx != -1 ? insertIdx + 1 : fields.length,
+      const DynamicFormField(
+        code: 'coords',
+        label: 'Vị trí điểm bán trên bản đồ',
+        type: DynamicFormFieldType.location,
+        isRequired: true,
+        section: 'Vị trí trên bản đồ',
+      ),
+    );
+  } else {
+    final coordsIdx = fields.indexWhere((f) => f.code == 'coords');
+    if (coordsIdx != -1) {
+      fields[coordsIdx] = fields[coordsIdx].copyWith(
+        label: 'Vị trí điểm bán trên bản đồ',
+        section: 'Vị trí trên bản đồ',
+        isRequired: true,
+      );
+    }
+  }
+
+  // 🔴 THỨ TỰ + MỤC theo đúng Cấu hình trường điểm bán (mẫu chuẩn — chủ hệ thống 21/10/2026): không gom ô theo
+  // nhóm app tự đặt theo mã ô, không tự thêm ô động ngoài cấu hình. Mục = ô `heading` của cấu hình (mở một mục cho
+  // mọi ô sau nó); chưa có tiêu đề nào thì một mục chung. Ô app tự chèn (tuyến bán hàng, kênh/tuyến khi schema
+  // cũ, ô dự phòng thiếu) nằm ngay cạnh ô liên quan nên đi theo mục của ô đứng trước.
+  final headingCodes = fieldsJson
+      .whereType<Map>()
+      .where((f) => f['input_type']?.toString() == 'heading')
+      .map((f) => f['code']?.toString())
+      .toSet();
+  final theoMuc = sectionsFromConfig(fields, headingCodes);
+
+  // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
+  return [
+    for (final f in theoMuc)
+      f.copyWith(
+        label: f.label
+            .replaceAll(RegExp(r'\s*\((?:bắt buộc|Bắt buộc|Region\s*-\s*bắt buộc để sinh mã)\)', caseSensitive: false), '')
+            .replaceAll(RegExp(r'\s*-\s*bắt buộc\b', caseSensitive: false), '')
+            .trim(),
+      ),
+  ];
+}
+
 class AddCustomerScreen extends ConsumerStatefulWidget {
   const AddCustomerScreen({super.key});
 
@@ -219,45 +534,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
   /// Khách ERP NV xác nhận là chính điểm bán này (null = không phải / không có gợi ý).
   ErpLinkSuggestion? _chinhKhach;
-
-  bool _isCustomerPhotoKey(String key) {
-    final k = key.toLowerCase();
-    const nonPhotoKeys = {
-      'route_ids',
-      'route_id',
-      'customer_type_id',
-      'channel_id',
-      'region_id',
-      'sale_group_id',
-      'id',
-      'code',
-      'status',
-      'lat',
-      'lng',
-      'data',
-      'customer_type_name',
-      'channel_name',
-      'region_name',
-      'route',
-      'route_name',
-      'type',
-      'name',
-      'phone',
-      'email',
-      'address',
-      'tax_code',
-      'notes',
-      'description',
-      'contact_name',
-      'contact_title',
-      'birthday',
-      'delivery_address',
-      'province_name',
-      'ward_name',
-    };
-    if (nonPhotoKeys.contains(k)) return false;
-    return k.contains('photo') || k.contains('image') || k.contains('anh_') || k.contains('hinh_');
-  }
 
   bool _hasUserInput() {
     if (_formKey.currentState != null) {
@@ -419,7 +695,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu)
     bool hasPhoto = false;
     for (final key in formData.keys) {
-      if (_isCustomerPhotoKey(key)) {
+      if (isCustomerPhotoKey(key)) {
         final val = formData[key];
         if (val is List && val.isNotEmpty) {
           hasPhoto = true;
@@ -502,7 +778,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             : (payload['lng'] is num ? (payload['lng'] as num).toDouble() : null);
 
         for (final key in payload.keys.toList()) {
-          if (!_isCustomerPhotoKey(key)) continue;
+          if (!isCustomerPhotoKey(key)) continue;
 
           final val = payload[key];
           if (val is List) {
@@ -589,7 +865,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         // 🔴 Khi offline: Gom toàn bộ ảnh vào photo_tokens và photo_token để chuẩn bị lưu SQLite & sync_queue
         final List<String> offlinePhotos = [];
         for (final key in payload.keys.toList()) {
-          if (!_isCustomerPhotoKey(key)) continue;
+          if (!isCustomerPhotoKey(key)) continue;
           final val = payload[key];
           if (val is List) {
             for (final item in val) {
@@ -989,22 +1265,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           ),
         ),
         data: (schemaData) {
-          final fieldsJson = schemaData['data']?['fields'] as List? ?? [];
-          // 🔴 Loại bỏ các trường:
-          // - code, id: do hệ thống tự sinh
-          // - status, is_active: điểm bán mới luôn mặc định là active (hoạt động), không cần người dùng nhập
-          final fields = fieldsJson
-              .map((f) => DynamicFormField.fromJson(f as Map<String, dynamic>))
-              .where((f) {
-                final code = f.code.toLowerCase();
-                final label = f.label.toLowerCase();
-                if (code == 'code' || code == 'id') return false;
-                if (code == 'status' || code == 'is_active') return false;
-                if (label.contains('hoạt động') || label.contains('ngừng hoạt động')) return false;
-                return true;
-              })
-              .toList();
-
           // 🔴 Lấy danh sách tuyến thực tế của user (GET /dms/routes/mine)
           final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
           final currentRouteState = ref.watch(routeViewModelProvider);
@@ -1042,226 +1302,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
           }
           defaultRouteId ??= userRoutes.firstOrNull?.id ?? (dynamicRouteOptions.firstOrNull?.value as int? ?? 0);
 
-          // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
-          fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
-
-          // #23819: ô Kênh/Tuyến bật "tự điền theo phòng ban" — server gửi `default` tính cho chính người đang đăng nhập.
-          // Chỉ màn TẠO mới điền sẵn (nhân viên vẫn sửa được); dữ liệu đã gõ (`_savedFormData`) vẫn thắng vì
-          // DynamicFormBuilder ưu tiên `initialData` hơn `initialValue`.
-          for (var i = 0; i < fields.length; i++) {
-            final f = fields[i];
-            if (f.defaultValue != null && f.initialValue == null) {
-              fields[i] = f.copyWith(initialValue: f.defaultValue);
-            }
-          }
-
-          // Cập nhật options cho các trường phân loại nếu schema chưa có options.
-          // Để trống toàn bộ (initialValue = null) để người dùng chủ động lựa chọn.
-          for (var i = 0; i < fields.length; i++) {
-            final f = fields[i];
-            if (f.code == 'customer_type_id') {
-              fields[i] = f.copyWith(
-                options: f.options.isEmpty && meta.customerTypes.isNotEmpty
-                    ? meta.customerTypes.map((t) => DynamicFormOption(label: t.name.isNotEmpty ? t.name : t.code, value: t.id)).toList()
-                    : f.options,
-                clearInitialValue: true,
-              );
-            } else if (f.code == 'region_id') {
-              fields[i] = f.copyWith(
-                options: f.options.isEmpty && meta.regions.isNotEmpty
-                    ? meta.regions.map((r) => DynamicFormOption(label: '${r.code} - ${r.name}', value: r.id)).toList()
-                    : f.options,
-                clearInitialValue: true,
-              );
-            } else if (f.code == 'route_ids' || f.code == 'route_id') {
-              fields[i] = f.copyWith(
-                options: dynamicRouteOptions,
-                initialValue: defaultRouteId,
-                catalog: 'dropdown',
-              );
-            }
-          }
-
-          // Tự động chèn customer_type_id nếu schema thiếu (mặc định để trống)
-          if (!fields.any((f) => f.code == 'customer_type_id')) {
-            final typeOptions = meta.customerTypes.isNotEmpty
-                ? meta.customerTypes.map((t) => DynamicFormOption(label: t.name.isNotEmpty ? t.name : t.code, value: t.id)).toList()
-                : [const DynamicFormOption(label: 'Đại lý', value: 1)];
-
-            final insertIdx = fields.indexWhere((f) => f.code == 'name');
-            fields.insert(
-              insertIdx != -1 ? insertIdx + 1 : 0,
-              DynamicFormField(
-                code: 'customer_type_id',
-                label: 'Loại điểm bán',
-                type: DynamicFormFieldType.singleChoice,
-                isRequired: true,
-                options: typeOptions,
-                initialValue: null,
-                placeholder: 'Chọn loại điểm bán...',
-                section: 'Thông tin chung',
-              ),
-            );
-          }
-
-          // 🔴 Bắt buộc theo API POST /crm/customers: region_id để backend sinh mã KH (4 số khu vực + 4 số thứ tự)
-          if (!fields.any((f) => f.code == 'region_id')) {
-            final regionOptions = meta.regions.isNotEmpty
-                ? meta.regions.map((r) => DynamicFormOption(label: '${r.code} - ${r.name}', value: r.id)).toList()
-                : [const DynamicFormOption(label: '08 - Miền Trung', value: 8)];
-
-            final insertIdx = fields.indexWhere((f) => f.code == 'customer_type_id');
-            fields.insert(
-              insertIdx != -1 ? insertIdx + 1 : 1,
-              DynamicFormField(
-                code: 'region_id',
-                label: 'Khu vực quản lý',
-                type: DynamicFormFieldType.singleChoice,
-                isRequired: true,
-                options: regionOptions,
-                initialValue: null,
-                placeholder: 'Chọn khu vực quản lý...',
-                section: 'Thông tin chung',
-              ),
-            );
-          }
-
-          // 🔴 Bắt buộc theo API spec 22/09/2026: route_ids (mảng tuyến bán hàng cho nhân viên thị trường từ GET /dms/routes/mine)
-          if (!fields.any((f) => f.code == 'route_ids' || f.code == 'route_id')) {
-            final insertIdx = fields.indexWhere((f) => f.code == 'region_id');
-            fields.insert(
-              insertIdx != -1 ? insertIdx + 1 : 1,
-              DynamicFormField(
-                code: 'route_ids',
-                label: 'Tuyến bán hàng',
-                type: DynamicFormFieldType.singleChoice,
-                isRequired: true,
-                options: dynamicRouteOptions,
-                initialValue: defaultRouteId,
-                placeholder: 'Chọn tuyến bán hàng...',
-                section: 'Thông tin chung',
-                catalog: 'dropdown',
-              ),
-            );
-          }
-
-          // Kênh + Tuyến tự khai (chốt 21/10/2026): ô cứng ở Cấu hình trường điểm bán — nhãn / bắt buộc / ẩn và VỊ TRÍ
-          // theo schema (`scope_fields` bật ⇒ vắng ô = admin ẩn); schema không mang cờ (server cũ, bản lưu máy cũ, bộ mặc
-          // định ngoại tuyến) ⇒ vẽ cả hai ngay sau ô Tuyến bán hàng như trước. Lựa chọn + điền sẵn theo cặp phòng.
-          final theoCauHinh = schemaData['data']?['scope_fields'] == true;
-          final scopeFields = ownChannelTerritoryFields(meta, schema: theoCauHinh ? fields : kScopeFieldStubs);
-          // Thay TỪNG ô tại đúng chỗ của nó trong schema (admin có thể đặt Kênh, Tuyến ở hai nơi khác nhau).
-          final dungSan = {for (final f in scopeFields) f.code: f};
-          final thayTaiCho = <DynamicFormField>[
-            for (final f in fields)
-              if (f.code != 'own_channel_ids' && f.code != 'territory_code')
-                f
-              else if (theoCauHinh && dungSan[f.code] != null)
-                dungSan[f.code]!,
-          ];
-          fields
-            ..clear()
-            ..addAll(thayTaiCho);
-
-          if (!theoCauHinh) {
-            final routeIdx = fields.indexWhere((f) => f.code == 'route_ids' || f.code == 'route_id');
-            fields.insertAll(routeIdx != -1 ? routeIdx + 1 : fields.length, scopeFields);
-          }
-
-          // 🔴 Đảm bảo có trường ảnh photo_file_id với giới hạn 10 ảnh theo đúng API thực tế (§5: Bắt buộc)
-          // Ở màn nhập khách hàng: chỉ cho phép chụp ảnh từ camera, không cho chọn từ thư viện
-          if (!fields.any((f) => f.code == 'photo_file_id' || f.code == 'photo')) {
-            fields.add(
-              const DynamicFormField(
-                code: 'photo_file_id',
-                label: 'Ảnh điểm bán',
-                type: DynamicFormFieldType.photo,
-                maxPhotos: 10,
-                isRequired: true,
-                allowGallery: false,
-                helperText: 'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
-                section: 'Hình ảnh điểm bán',
-              ),
-            );
-          } else {
-            final photoIdx = fields.indexWhere((f) => f.code == 'photo_file_id' || f.code == 'photo');
-            if (photoIdx != -1) {
-              final existing = fields[photoIdx];
-              fields[photoIdx] = existing.copyWith(
-                isRequired: true,
-                type: DynamicFormFieldType.photo,
-                allowGallery: false,
-                maxPhotos: existing.maxPhotos < 10 ? 10 : existing.maxPhotos,
-                label: existing.label.isEmpty ? 'Ảnh điểm bán' : existing.label,
-                helperText: existing.helperText?.replaceAll('hoặc tải lên ', '') ??
-                    'Chụp tối đa 10 ảnh thực tế điểm bán từ máy ảnh',
-                section: existing.section == null || existing.section!.isEmpty
-                    ? 'Hình ảnh điểm bán'
-                    : existing.section,
-              );
-            }
-          }
-
-          // Cấu hình toàn bộ các trường ảnh ở màn nhập khách hàng: chỉ cho phép chụp từ camera, không cho chọn từ thư viện
-          for (int i = 0; i < fields.length; i++) {
-            if (fields[i].type == DynamicFormFieldType.photo || _isCustomerPhotoKey(fields[i].code)) {
-              fields[i] = fields[i].copyWith(
-                type: DynamicFormFieldType.photo,
-                allowGallery: false,
-                helperText: fields[i].helperText?.replaceAll('hoặc tải lên ', '') ??
-                    'Chụp tối đa ${fields[i].maxPhotos} ảnh thực tế điểm bán từ máy ảnh',
-              );
-            }
-          }
-
-          // 🔴 Đảm bảo có ô cứng coords (Toạ độ GPS) theo spec 15/10/2026 thay thế cho lat/lng cũ,
-          // định dạng giống form sửa điểm bán (EditCustomerScreen)
-          if (!fields.any((f) => f.code == 'coords')) {
-            fields.removeWhere((f) => f.code == 'lat' || f.code == 'lng');
-            final insertIdx = fields.indexWhere((f) => f.code == 'address');
-            fields.insert(
-              insertIdx != -1 ? insertIdx + 1 : fields.length,
-              const DynamicFormField(
-                code: 'coords',
-                label: 'Vị trí điểm bán trên bản đồ',
-                type: DynamicFormFieldType.location,
-                isRequired: true,
-                section: 'Vị trí trên bản đồ',
-              ),
-            );
-          } else {
-            final coordsIdx = fields.indexWhere((f) => f.code == 'coords');
-            if (coordsIdx != -1) {
-              fields[coordsIdx] = fields[coordsIdx].copyWith(
-                label: 'Vị trí điểm bán trên bản đồ',
-                section: 'Vị trí trên bản đồ',
-                isRequired: true,
-              );
-            }
-          }
-
-          // 🔴 THỨ TỰ + MỤC theo đúng Cấu hình trường điểm bán (mẫu chuẩn — chủ hệ thống 21/10/2026): không gom ô theo
-          // nhóm app tự đặt theo mã ô, không tự thêm ô động ngoài cấu hình. Mục = ô `heading` của cấu hình (mở một mục cho
-          // mọi ô sau nó); chưa có tiêu đề nào thì một mục chung. Ô app tự chèn (tuyến bán hàng, kênh/tuyến khi schema
-          // cũ, ô dự phòng thiếu) nằm ngay cạnh ô liên quan nên đi theo mục của ô đứng trước.
-          final headingCodes = fieldsJson
-              .whereType<Map>()
-              .where((f) => f['input_type']?.toString() == 'heading')
-              .map((f) => f['code']?.toString())
-              .toSet();
-          final theoMuc = sectionsFromConfig(fields, headingCodes);
-          fields
-            ..clear()
-            ..addAll(theoMuc);
-
-          // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
-          for (int i = 0; i < fields.length; i++) {
-            final cleaned = fields[i].label
-                .replaceAll(RegExp(r'\s*\((?:bắt buộc|Bắt buộc|Region\s*-\s*bắt buộc để sinh mã)\)', caseSensitive: false), '')
-                .replaceAll(RegExp(r'\s*-\s*bắt buộc\b', caseSensitive: false), '')
-                .trim();
-            fields[i] = fields[i].copyWith(label: cleaned);
-          }
+          final fields = buildCustomerFormFields(
+            schemaData,
+            meta: meta,
+            routeOptions: dynamicRouteOptions,
+            defaultRouteId: defaultRouteId,
+          );
 
           if (fields.isEmpty) {
             return const Center(

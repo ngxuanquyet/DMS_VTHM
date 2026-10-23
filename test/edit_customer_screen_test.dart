@@ -172,8 +172,8 @@ void main() {
     expect(find.textContaining('Tuyến bán hàng'), findsOneWidget);
     expect(find.text('TEST-QUYETNX'), findsOneWidget);
 
-    // 2. Trường thông tin mở rộng chỉ hiển thị Vinlux, TUYỆT ĐỐI không hiển thị các trường hệ thống
-    expect(find.text('Vinlux'), findsOneWidget);
+    // 2. Form sửa = form tạo (23/10/2026): khoá dữ liệu ngoài Cấu hình trường (Vinlux, khoá hệ thống) KHÔNG thành ô
+    expect(find.text('Vinlux'), findsNothing);
     expect(find.text('routes'), findsNothing);
     expect(find.text('route_ids'), findsNothing);
     expect(find.text('photo_url'), findsNothing);
@@ -184,65 +184,6 @@ void main() {
     // 3. Phần hình ảnh hiển thị đúng ảnh và nhãn Đại diện, cùng nút Thêm ảnh inline
     expect(find.text('Đại diện'), findsOneWidget);
     expect(find.text('Thêm ảnh'), findsWidgets);
-  });
-
-  testWidgets('EditCustomerScreen renders select dynamic fields as Dropdown and filters region_name', (tester) async {
-    const customerWithSelectFields = CustomerEntity(
-      id: 303,
-      code: '08430113',
-      name: 'Đại Thắng',
-      type: 'Đại lý',
-      route: 'Tuyến Đà Nẵng',
-      address: 'Đà Nẵng',
-      phone: '0905123456',
-      contactPerson: 'Đại Thắng',
-      dynamicFields: {
-        'khach_hang_vthm': '1 - KH VTHM',
-        'nhan_1': '',
-        'nhan_2': '',
-        'nhan_3': 'Maximos',
-        'region_name': 'Thành phố Đà Nẵng',
-      },
-    );
-
-    final mockRepo = MockCustomerRepository(customerWithSelectFields);
-
-    tester.view.physicalSize = const Size(1080, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          customerRepositoryProvider.overrideWithValue(mockRepo),
-        ],
-        child: const MaterialApp(
-          home: EditCustomerScreen(
-            customer: customerWithSelectFields,
-          ),
-        ),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    // 1. region_name TUYỆT ĐỐI không xuất hiện ở mục trường thông tin mở rộng
-    expect(find.text('region_name'), findsNothing);
-
-    // 2. Các trường select được hiển thị kèm badge "Danh sách chọn"
-    expect(find.text('Khách hàng VTHM'), findsOneWidget);
-    expect(find.text('Nhãn 1'), findsOneWidget);
-    expect(find.text('Nhãn 2'), findsOneWidget);
-    expect(find.text('Nhãn 3'), findsOneWidget);
-    expect(find.text('Danh sách chọn'), findsWidgets);
-
-    // 3. Giá trị hiện tại được chọn sẵn trong Dropdown
-    expect(find.text('1 - KH VTHM'), findsOneWidget);
-    expect(find.text('Maximos'), findsOneWidget);
-    expect(find.text('(Chưa chọn)'), findsWidgets); // cho nhãn 1 và nhãn 2
   });
 }
 
