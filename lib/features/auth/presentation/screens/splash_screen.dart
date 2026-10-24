@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -130,35 +132,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Brand Icon Shield
-                    Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.primaryContainer,
-                            AppColors.primary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(22),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.corporate_fare_rounded,
-                          size: 46,
-                          color: Colors.white,
-                        ),
-                      ),
+                    // Brand Logo
+                    SvgPicture.asset(
+                      AppAssets.logo,
+                      width: 120,
+                      height: 120,
                     ),
                     const SizedBox(height: 18),
 
