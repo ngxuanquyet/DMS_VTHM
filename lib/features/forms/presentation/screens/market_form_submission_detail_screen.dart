@@ -276,7 +276,7 @@ class _MarketFormSubmissionDetailScreenState
                 _buildLocationFieldAnswer(value, isDark)
               else
                 Text(
-                  value?.toString() ?? '—',
+                  detail.choiceLabelOf(fieldCode) ?? value?.toString() ?? '—',
                   style: AppTypography.bodyMedium(
                     color: isDark
                         ? AppColors.darkOnSurface

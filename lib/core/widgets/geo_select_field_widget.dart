@@ -223,63 +223,66 @@ class _GeoPickerSheetState extends State<_GeoPickerSheet> {
     final isDark = widget.isDark;
     final rows = widget.units.where((u) => StringUtils.matchesSearch(u.fullName, _query)).toList();
 
-    return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              widget.title,
-              style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _search,
-              autofocus: true,
-              onChanged: (v) => setState(() => _query = v),
-              decoration: const InputDecoration(
-                hintText: 'Gõ để tìm (không cần dấu)…',
-                prefixIcon: Icon(Icons.search_rounded, size: 18),
-                isDense: true,
+    // Nền là Material (không phải BoxDecoration): ListTile vẽ hiệu ứng chạm lên Material gần nhất — nền màu của
+    // Container sẽ che mất, bản debug còn báo lỗi khẳng định.
+    return Material(
+      color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                widget.title,
+                style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
-          Flexible(
-            child: rows.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      'Không tìm thấy',
-                      style: AppTypography.bodyMedium(color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _search,
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: const InputDecoration(
+                  hintText: 'Gõ để tìm (không cần dấu)…',
+                  prefixIcon: Icon(Icons.search_rounded, size: 18),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Flexible(
+              child: rows.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text(
+                        'Không tìm thấy',
+                        style: AppTypography.bodyMedium(color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
+                      ),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: rows.length,
+                      itemBuilder: (_, i) {
+                        final u = rows[i];
+                        final chon = u.id == widget.selectedId;
+                        return ListTile(
+                          dense: true,
+                          title: Text(widget.labelOf(u)),
+                          trailing: chon ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
+                          onTap: () => widget.onSelected(u.id),
+                        );
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: rows.length,
-                    itemBuilder: (_, i) {
-                      final u = rows[i];
-                      final chon = u.id == widget.selectedId;
-                      return ListTile(
-                        dense: true,
-                        title: Text(widget.labelOf(u)),
-                        trailing: chon ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
-                        onTap: () => widget.onSelected(u.id),
-                      );
-                    },
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -214,6 +214,9 @@ class MarketFormSubmissionDetailModel {
   final int? customerId;
   final Map<String, dynamic> answers;
   final Map<String, String> answerPhotos; // map token -> url xem công khai (§4.3)
+  /// Tên LÚC NỘP của ô lấy từ danh mục (chọn từ danh mục, Tỉnh/thành, Xã/phường): `{mã ô: tên | [tên]}` — `answers`
+  /// chỉ giữ id.
+  final Map<String, dynamic> choiceLabels;
   final String? clientUuid;
   final String? createdAt;
 
@@ -224,6 +227,7 @@ class MarketFormSubmissionDetailModel {
     this.customerId,
     required this.answers,
     this.answerPhotos = const {},
+    this.choiceLabels = const {},
     this.clientUuid,
     this.createdAt,
   });
@@ -248,9 +252,17 @@ class MarketFormSubmissionDetailModel {
           ? Map<String, dynamic>.from(json['answers'] as Map)
           : {},
       answerPhotos: photos,
+      choiceLabels: json['choice_labels'] is Map ? Map<String, dynamic>.from(json['choice_labels'] as Map) : const {},
       clientUuid: json['client_uuid']?.toString(),
       createdAt: json['created_at']?.toString(),
     );
+  }
+
+  /// Tên lúc nộp của ô [code] (nhiều lựa chọn nối bằng dấu phẩy), hoặc null nếu ô không lấy từ danh mục.
+  String? choiceLabelOf(String code) {
+    final v = choiceLabels[code];
+    if (v is List) return v.isEmpty ? null : v.join(', ');
+    return v?.toString();
   }
 
   /// §4.3 & §9: Trả về đường xem công khai nếu còn tồn tại, hoặc null nếu tệp đã mất
