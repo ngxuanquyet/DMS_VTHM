@@ -29,7 +29,13 @@ class _CustomerVisitHistoryWidgetState
   bool _isLoading = true;
   String? _errorMessage;
   CustomerVisitHistoryResponse? _historyResponse;
+  /// Các lượt đã tải, cộng dồn qua từng lần bấm "Xem thêm".
+  List<VisitHistoryItemEntity> _items = [];
+  int _page = 1;
+  bool _isLoadingMore = false;
   late bool _isExpanded;
+
+  static const int _perPage = 10;
 
   @override
   void initState() {
@@ -51,6 +57,8 @@ class _CustomerVisitHistoryWidgetState
       setState(() {
         _isLoading = false;
         _historyResponse = const CustomerVisitHistoryResponse();
+        _items = [];
+        _page = 1;
       });
       return;
     }
@@ -63,10 +71,12 @@ class _CustomerVisitHistoryWidgetState
     try {
       final res = await ref
           .read(getCustomerVisitHistoryUseCaseProvider)
-          .call(widget.customerId, page: 1, perPage: 10);
+          .call(widget.customerId, page: 1, perPage: _perPage);
       if (mounted) {
         setState(() {
           _historyResponse = res;
+          _items = List.of(res.items);
+          _page = 1;
           _isLoading = false;
         });
       }
@@ -80,10 +90,38 @@ class _CustomerVisitHistoryWidgetState
     }
   }
 
+  /// Tải trang kế tiếp và nối vào cuối danh sách; lỗi thì giữ nguyên danh sách, báo bằng SnackBar.
+  Future<void> _loadMore() async {
+    if (_isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final res = await ref
+          .read(getCustomerVisitHistoryUseCaseProvider)
+          .call(widget.customerId, page: _page + 1, perPage: _perPage);
+      if (!mounted) return;
+      // Bỏ lượt đã có (lượt mới phát sinh giữa hai lần tải đẩy dòng sang trang sau).
+      final seen = _items.map((e) => e.id).toSet();
+      setState(() {
+        _historyResponse = res;
+        _items = [..._items, ...res.items.where((e) => !seen.contains(e.id))];
+        _page = res.currentPage;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('AppException: ', ''))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final items = _historyResponse?.items ?? [];
+    final items = _items;
+    final total = _historyResponse?.total ?? items.length;
+    final hasMore = _page < (_historyResponse?.pageCount ?? 1);
 
     String dateRangeSub = '2 tháng gần nhất';
     if (_historyResponse?.dateFrom != null && _historyResponse?.dateTo != null) {
@@ -160,7 +198,7 @@ class _CustomerVisitHistoryWidgetState
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
-                                  '${items.length}',
+                                  '$total',
                                   style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -269,6 +307,31 @@ class _CustomerVisitHistoryWidgetState
                   final visit = items[idx];
                   return _buildVisitHistoryTile(ctx, visit, isDark);
                 },
+              ),
+            if (!_isLoading && _errorMessage == null && hasMore)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: _isLoadingMore ? null : _loadMore,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF006E15),
+                      side: const BorderSide(color: Color(0xFF006E15)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: _isLoadingMore
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF006E15)),
+                          )
+                        : Text(
+                            'Xem thêm (còn ${total - items.length > 0 ? total - items.length : 0} lượt)',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
               ),
           ],
         ],
