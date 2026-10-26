@@ -18,7 +18,14 @@ class ErrorRecord {
   final String? stackTrace;
   final double? lat;
   final double? lng;
-  bool sentToTelegram;
+  /// Máy chủ đã nhận lỗi này chưa (`POST /dms/client-errors`) — chưa thì còn trong hàng đợi gửi bù.
+  bool sentToServer;
+
+  /// Khoá tài khoản (`cacheAccountKey` — `usr_user.id`) đang đăng nhập lúc lỗi xảy ra; `null` = lỗi trước khi đăng nhập.
+  ///
+  /// Máy chủ gán lỗi cho người đứng sau PHIÊN gửi, nên hàng đợi chỉ được gửi lỗi của chính người đang đăng nhập —
+  /// máy dùng chung, A gặp lỗi rồi đăng xuất, B đăng nhập: lỗi của A không được đứng tên B.
+  final String? ownerAccountKey;
 
   ErrorRecord({
     required this.id,
@@ -37,7 +44,8 @@ class ErrorRecord {
     this.stackTrace,
     this.lat,
     this.lng,
-    this.sentToTelegram = false,
+    this.sentToServer = false,
+    this.ownerAccountKey,
   });
 
   Map<String, dynamic> toJson() {
@@ -58,7 +66,8 @@ class ErrorRecord {
       'stackTrace': stackTrace,
       'lat': lat,
       'lng': lng,
-      'sentToTelegram': sentToTelegram,
+      'sentToServer': sentToServer,
+      'ownerAccountKey': ownerAccountKey,
     };
   }
 
@@ -95,7 +104,10 @@ class ErrorRecord {
       stackTrace: json['stackTrace'] as String?,
       lat: (json['lat'] as num?)?.toDouble(),
       lng: (json['lng'] as num?)?.toDouble(),
-      sentToTelegram: json['sentToTelegram'] as bool? ?? false,
+      // Bản ghi của bản app cũ (chưa có khoá này — đã đi Telegram, không rõ của ai) coi như ĐÃ gửi: không đẩy hàng loạt
+      // lịch sử cũ lên máy chủ dưới tên người đăng nhập đầu tiên sau khi cập nhật.
+      sentToServer: json['sentToServer'] as bool? ?? true,
+      ownerAccountKey: json['ownerAccountKey']?.toString(),
     );
   }
 }

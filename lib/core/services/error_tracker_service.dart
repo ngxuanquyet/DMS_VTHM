@@ -6,23 +6,36 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
-import '../errors/app_exceptions.dart';
 import '../models/error_record.dart';
+import '../utils/account_key.dart';
 
-/// Dịch vụ theo dõi, sinh mã lỗi định danh và bắn cảnh báo về Telegram
+/// Gửi một mẻ lỗi lên máy chủ; trả về các mã lỗi máy chủ đã có (mới + trùng) để gỡ khỏi hàng đợi.
+typedef ErrorUploader = Future<List<String>> Function(List<Map<String, dynamic>> errors);
+
+/// Dịch vụ theo dõi, sinh mã lỗi định danh và gửi lỗi về máy chủ (`POST /dms/client-errors`).
+///
+/// Thay kênh Telegram cũ (26/10/2026): app không còn giữ bot token. Lỗi lưu trong máy trước, gửi theo mẻ khi đã đăng
+/// nhập; gửi hỏng (mất mạng, chưa đăng nhập) thì để lại hàng đợi, lần ghi lỗi sau hoặc lần đăng nhập sau gửi bù.
 class ErrorTrackerService {
   static final ErrorTrackerService instance = ErrorTrackerService._internal();
 
   ErrorTrackerService._internal();
 
   final List<ErrorRecord> _recentErrors = [];
-  final Map<String, DateTime> _lastSentErrors = {};
-  final Dio _telegramDio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 8),
-    ),
-  );
+
+  /// Trần một mẻ gửi — khớp `ClientErrorService::MAX_PER_CALL` phía máy chủ.
+  static const int _maxPerUpload = 50;
+
+  /// Khoá cấu hình Telegram của bản cũ — xoá khỏi máy ở lần mở đầu (có thể còn bot token người dùng đã lưu).
+  static const List<String> _legacyTelegramPrefKeys = [
+    'vthm_telegram_bot_token',
+    'vthm_telegram_chat_id',
+    'vthm_telegram_log_enabled',
+  ];
+
+  ErrorUploader? _uploader;
+  Timer? _flushTimer;
+  bool _flushing = false;
 
   bool _isInitialized = false;
 
@@ -39,6 +52,9 @@ class ErrorTrackerService {
     try {
       final prefs = await SharedPreferences.getInstance();
       _prefs = prefs;
+      for (final key in _legacyTelegramPrefKeys) {
+        await prefs.remove(key);
+      }
       final savedLogs = prefs.getString(AppConstants.keyRecentErrorLogs);
       if (savedLogs != null && savedLogs.isNotEmpty) {
         final decoded = jsonDecode(savedLogs);
@@ -58,6 +74,12 @@ class ErrorTrackerService {
   /// Người đang đăng nhập để gắn vào lỗi: "Tên hiển thị (TK: username, mã NV: VTG123)" — đọc hồ sơ lưu trong máy
   /// (`AppConstants.keyUserData`). Bỏ phần trống; chưa đăng nhập / chưa khởi tạo ⇒ `null` (tin hiện "Chưa xác định").
   String? currentAccountLabel() => accountLabelFromJson(_prefs?.getString(AppConstants.keyUserData));
+
+  /// Khoá tài khoản đang đăng nhập (`cacheAccountKey` — `usr_user.id`); `null` khi chưa đăng nhập.
+  String? _ownerKey() => _prefs == null ? null : cacheAccountKey(_prefs!);
+
+  /// Khoá tài khoản đang đăng nhập — màn nhật ký lỗi dùng để phân biệt lỗi "chờ chính chủ đăng nhập".
+  String? get currentOwnerKey => _ownerKey();
 
   /// Định dạng của [currentAccountLabel] từ chuỗi JSON hồ sơ — tách riêng để test không phụ thuộc bộ nhớ máy.
   static String? accountLabelFromJson(String? raw) {
@@ -160,14 +182,14 @@ class ErrorTrackerService {
       curlCommand: curl,
       username: currentUsername ?? currentAccountLabel(),
       deviceInfo: '${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
+      ownerAccountKey: _ownerKey(),
       lat: lat,
       lng: lng,
     );
 
     _addRecord(record);
 
-    // Bắn thông báo về Telegram không đồng bộ (chạy ngầm không chặn luồng chính)
-    unawaited(_sendToTelegram(record));
+    _scheduleFlush();
 
     return record;
   }
@@ -200,25 +222,30 @@ class ErrorTrackerService {
       stackTrace: stackTrace?.toString(),
       username: currentUsername ?? currentAccountLabel(),
       deviceInfo: '${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
+      ownerAccountKey: _ownerKey(),
     );
 
     _addRecord(record);
-    unawaited(_sendToTelegram(record));
+    _scheduleFlush();
     return record;
   }
 
   void _addRecord(ErrorRecord record) {
     _recentErrors.insert(0, record);
     if (_recentErrors.length > 100) {
-      _recentErrors.removeLast();
+      // Bỏ bản cũ nhất KHÔNG còn phải gửi (đã gửi, hoặc 401/404 không bao giờ gửi) trước; chỉ khi cả 100 đều đang chờ
+      // gửi mới phải bỏ bản cũ nhất — không thì một màn hỏi 404 liên tục đẩy mất lỗi 500 thật đang chờ.
+      final sentIdx = _recentErrors.lastIndexWhere((e) => e.sentToServer || !shouldUpload(e));
+      _recentErrors.removeAt(sentIdx >= 0 ? sentIdx : _recentErrors.length - 1);
     }
     _saveToStorage();
   }
 
   Future<void> _saveToStorage() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final toSave = _recentErrors.take(50).map((e) => e.toJson()).toList();
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      // Lưu đủ cả 100 — cắt bớt ở đây là mất lỗi chưa gửi khi app bị tắt lúc đang mất sóng.
+      final toSave = _recentErrors.map((e) => e.toJson()).toList();
       await prefs.setString(AppConstants.keyRecentErrorLogs, jsonEncode(toSave));
     } catch (_) {}
   }
@@ -230,207 +257,91 @@ class ErrorTrackerService {
     await prefs.remove(AppConstants.keyRecentErrorLogs);
   }
 
-  /// Lấy cấu hình Telegram hiện tại
-  Future<Map<String, dynamic>> getTelegramConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(AppConstants.keyTelegramBotToken) ?? AppConstants.defaultTelegramBotToken;
-    final chatId = prefs.getString(AppConstants.keyTelegramChatId) ?? AppConstants.defaultTelegramChatId;
-    final enabled = prefs.getBool(AppConstants.keyTelegramLogEnabled) ?? true;
-    return {
-      'botToken': token,
-      'chatId': chatId,
-      'enabled': enabled,
-    };
+  /// Gắn hàm gửi lỗi (do tầng mạng cung cấp — tránh phụ thuộc vòng với `api_client.dart`) rồi gửi bù hàng đợi.
+  void attachUploader(ErrorUploader uploader) {
+    _uploader = uploader;
+    _scheduleFlush();
   }
 
-  /// Cập nhật cấu hình Telegram
-  Future<void> saveTelegramConfig({
-    required String botToken,
-    required String chatId,
-    required bool enabled,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(AppConstants.keyTelegramBotToken, botToken.trim());
-    await prefs.setString(AppConstants.keyTelegramChatId, chatId.trim());
-    await prefs.setBool(AppConstants.keyTelegramLogEnabled, enabled);
+  /// Lỗi có cần gửi lên máy chủ không.
+  ///
+  /// Bỏ 401 (hết phiên — luồng làm mới token tự xử lý) và 404 (không phải sự cố máy chủ hay sập app); lỗi của chính
+  /// lời gọi gửi lỗi cũng bỏ, không thì gửi hỏng sinh lỗi mới để gửi, vòng lặp không dừng.
+  static bool shouldUpload(ErrorRecord record) {
+    if (record.statusCode == 404 || record.statusCode == 401) return false;
+    if (record.endpoint?.contains('/dms/client-errors') ?? false) return false;
+    return true;
   }
 
-  /// Gửi thử một tin nhắn test về Telegram để kiểm tra kết nối
-  Future<bool> testTelegramConnection({
-    String? botToken,
-    String? chatId,
-  }) async {
-    final config = await getTelegramConfig();
-    final token = (botToken != null && botToken.isNotEmpty) ? botToken : config['botToken'] as String;
-    final chat = (chatId != null && chatId.isNotEmpty) ? chatId : config['chatId'] as String;
+  /// Gom lỗi dồn dập (một màn gọi 5 API cùng hỏng) vào một lượt gửi.
+  ///
+  /// KHÔNG đặt lại hẹn giờ đang chờ: lỗi lặp mỗi 2 giây mà cứ dời hẹn thì không bao giờ gửi được, đúng lúc cần nhất.
+  void _scheduleFlush() {
+    if (_flushTimer?.isActive ?? false) return;
+    _flushTimer = Timer(const Duration(seconds: 3), () => unawaited(flushPending()));
+  }
 
-    if (token.isEmpty || chat.isEmpty) {
-      throw const AppException('Vui lòng nhập Bot Token và Chat ID trước khi kiểm tra.');
-    }
-
-    final testMessage = '''
-<b>[DMS TEST ALERT]</b>
-Kính gửi Quản trị viên,
-Đây là tin nhắn kiểm tra cấu hình cảnh báo lỗi hệ thống <b>DMS VTHM</b>.
-• <b>Thời gian:</b> ${DateTime.now().toLocal()}
-• <b>Trạng thái:</b> Kết nối thành công!
-''';
-
+  /// Gửi các lỗi chưa gửi (tối đa một mẻ). Gọi lại an toàn: đang gửi thì bỏ qua lượt này.
+  Future<void> flushPending() async {
+    final uploader = _uploader;
+    if (uploader == null || _flushing) return;
+    // Giữ cờ TRƯỚC mọi `await`: hai lượt gọi gần nhau (đăng nhập + hẹn giờ) không được cùng lọt qua và gửi trùng mẻ.
+    _flushing = true;
     try {
-      final response = await _telegramDio.post(
-        'https://api.telegram.org/bot$token/sendMessage',
-        data: {
-          'chat_id': chat,
-          'text': testMessage,
-          'parse_mode': 'HTML',
-          'disable_web_page_preview': true,
-        },
-      );
-      return response.statusCode == 200;
-    } on DioException catch (e) {
-      final desc = e.response?.data is Map ? e.response?.data['description'] : e.message;
-      throw AppException('Telegram từ chối gửi tin: $desc');
-    } catch (e) {
-      throw AppException('Lỗi gửi tin Telegram: $e');
-    }
-  }
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      final token = prefs.getString(AppConstants.keyAccessToken) ?? prefs.getString(AppConstants.keyAuthToken);
+      if (token == null || token.isEmpty) return; // chưa đăng nhập — máy chủ chỉ nhận lỗi của người đã đăng nhập
+      final me = cacheAccountKey(prefs);
+      if (me == null) return;
 
-  /// Gửi tin nhắn lỗi về Telegram theo định dạng HTML
-  Future<void> _sendToTelegram(ErrorRecord record) async {
-    try {
-      final config = await getTelegramConfig();
-      final bool enabled = config['enabled'] as bool? ?? true;
-      final String token = (config['botToken'] as String?)?.trim() ?? '';
-      final String chatId = (config['chatId'] as String?)?.trim() ?? '';
+      final pending = _recentErrors.where((e) => isQueuedFor(e, me)).take(_maxPerUpload).toList();
+      if (pending.isEmpty) return;
 
-      if (!enabled || token.isEmpty || chatId.isEmpty) {
-        return;
-      }
-
-      // Bỏ qua gửi cảnh báo Telegram đối với mã 404 (Không tìm thấy tài nguyên / trang)
-      // và mã 401 (Hết hạn phiên hoặc sai thông tin đăng nhập cần nhập lại).
-      // Đây là các mã trạng thái chuẩn của HTTP/REST client, không phải sự cố máy chủ (5xx)
-      // hay lỗi sập app. Lỗi này vẫn được lưu đầy đủ trong bộ nhớ Recent Errors của app để tra cứu.
-      if (record.statusCode == 404 || record.statusCode == 401) {
-        debugPrint('[ErrorTrackerService] Bỏ qua gửi Telegram đối với mã ${record.statusCode} (${record.endpoint})');
-        return;
-      }
-
-      // Chống spam (Throttling): Không bắn lại cùng endpoint & statusCode trong vòng 30s
-      final throttleKey = '${record.endpoint}_${record.statusCode}';
-      final now = DateTime.now();
-      if (_lastSentErrors.containsKey(throttleKey)) {
-        final lastSent = _lastSentErrors[throttleKey]!;
-        if (now.difference(lastSent).inSeconds < 30) {
-          debugPrint('[ErrorTrackerService] Bỏ qua gửi Telegram do trùng lặp gần đây ($throttleKey)');
-          return;
+      final refs = (await uploader(pending.map(toUploadJson).toList())).toSet();
+      var acked = 0;
+      for (final e in pending) {
+        if (refs.contains(serverRef(e.id))) {
+          e.sentToServer = true;
+          acked++;
         }
       }
-      _lastSentErrors[throttleKey] = now;
-
-      final messageText = formatTelegramMessage(record);
-
-      final response = await _telegramDio.post(
-        'https://api.telegram.org/bot$token/sendMessage',
-        data: {
-          'chat_id': chatId,
-          'text': messageText,
-          'parse_mode': 'HTML',
-          'disable_web_page_preview': true,
-        },
-      );
-
-      if (response.statusCode == 200) {
-        record.sentToTelegram = true;
+      await _saveToStorage();
+      // Hàng đợi dài hơn một mẻ (máy mất sóng lâu) ⇒ gửi tiếp mẻ sau; mẻ này không được nhận thì dừng, chờ lần sau.
+      if (acked > 0 && _recentErrors.any((e) => isQueuedFor(e, me))) {
+        _scheduleFlush();
       }
     } catch (e) {
-      debugPrint('[ErrorTrackerService] Không thể gửi cảnh báo lỗi về Telegram: $e');
+      debugPrint('[ErrorTrackerService] Chưa gửi được lỗi về máy chủ, giữ lại hàng đợi: $e');
+    } finally {
+      _flushing = false;
     }
   }
 
-  /// Định dạng tin nhắn HTML theo chuẩn Telegram
-  String formatTelegramMessage(ErrorRecord record) {
-    final buffer = StringBuffer();
-    final timeStr = _formatDateTime(record.timestamp);
-    final userStr = record.username != null && record.username!.isNotEmpty ? record.username! : 'Chưa xác định';
-    final deviceStr = record.deviceInfo ?? 'Thiết bị di động';
-
-    buffer.writeln('🚨 <b>[DMS ERROR ALERT]</b> — <code>${record.id}</code>\n');
-
-    buffer.writeln('📌 <b>1. THÔNG TIN ĐỊNH DANH</b>');
-    buffer.writeln('• <b>Mã tra cứu:</b> <code>${record.id}</code>');
-    buffer.writeln('• <b>Thời gian:</b> $timeStr');
-    buffer.writeln('• <b>Tài khoản:</b> ${_escapeHtml(userStr)}');
-    buffer.writeln('• <b>Thiết bị:</b> ${_escapeHtml(deviceStr)}');
-
-    buffer.writeln('\n🌐 <b>2. THÔNG TIN API & LỖI</b>');
-    if (record.endpoint != null) {
-      buffer.writeln('• <b>Endpoint:</b> <code>${record.method ?? 'GET'} ${_escapeHtml(record.endpoint!)}</code>');
-    }
-    buffer.writeln('• <b>Mã HTTP:</b> ${record.statusCode ?? 'N/A'}');
-    if (record.serverCode != null) {
-      buffer.writeln('• <b>Mã server (code):</b> <code>${_escapeHtml(record.serverCode!)}</code>');
-    }
-    buffer.writeln('• <b>Thông báo (message):</b>');
-    buffer.writeln('  <i>${_escapeHtml(record.message)}</i>');
-
-    // Chi tiết trường lỗi errors nếu có
-    if (record.responseData is Map && (record.responseData as Map).containsKey('errors')) {
-      final errors = (record.responseData as Map)['errors'];
-      if (errors != null) {
-        buffer.writeln('\n📋 <b>3. CHI TIẾT LỖI TỪNG TRƯỜNG (errors)</b>');
-        final errorsStr = _formatJson(errors);
-        buffer.writeln('<pre>${_escapeHtml(errorsStr)}</pre>');
-      }
-    }
-
-    // Tọa độ GPS nếu có
-    if (record.lat != null && record.lng != null) {
-      buffer.writeln('\n📍 <b>4. TOẠ ĐỘ GPS</b>');
-      buffer.writeln('• Vị trí: <code>${record.lat}, ${record.lng}</code>');
-    }
-
-    // Lệnh cURL sẵn sàng copy-paste
-    if (record.curlCommand != null && record.curlCommand!.isNotEmpty) {
-      buffer.writeln('\n💻 <b>5. LỆNH cURL ĐỂ TEST LẠI</b>');
-      final safeCurl = record.curlCommand!.length > 800
-          ? '${record.curlCommand!.substring(0, 800)}...'
-          : record.curlCommand!;
-      buffer.writeln('<pre>${_escapeHtml(safeCurl)}</pre>');
-    } else if (record.stackTrace != null && record.stackTrace!.isNotEmpty) {
-      buffer.writeln('\n💻 <b>5. STACK TRACE</b>');
-      final lines = record.stackTrace!.split('\n').take(8).join('\n');
-      buffer.writeln('<pre>${_escapeHtml(lines)}</pre>');
-    }
-
-    return buffer.toString();
+  /// Mã lỗi theo cách máy chủ lưu (cắt khoảng trắng, tối đa 40 ký tự) — so `refs` trả về bằng dạng này, không thì
+  /// lỗi đã được nhận vẫn nằm hàng đợi và bị gửi lại mãi.
+  static String serverRef(String id) {
+    final t = id.trim();
+    return t.length > 40 ? t.substring(0, 40) : t;
   }
 
-  String _formatDateTime(DateTime dt) {
-    final local = dt.toLocal();
-    final d = local.day.toString().padLeft(2, '0');
-    final m = local.month.toString().padLeft(2, '0');
-    final y = local.year;
-    final h = local.hour.toString().padLeft(2, '0');
-    final min = local.minute.toString().padLeft(2, '0');
-    final s = local.second.toString().padLeft(2, '0');
-    return '$d/$m/$y $h:$min:$s';
-  }
+  /// Lỗi còn chờ gửi dưới phiên của [me]: của chính người đó, hoặc lỗi trước khi đăng nhập (chủ hệ thống chốt gửi bù
+  /// khi đăng nhập, 26/10/2026). Lỗi của tài khoản khác nằm lại trong máy, chờ chính chủ đăng nhập.
+  static bool isQueuedFor(ErrorRecord e, String me) =>
+      !e.sentToServer && shouldUpload(e) && (e.ownerAccountKey == null || e.ownerAccountKey == me);
 
-  String _formatJson(dynamic data) {
-    try {
-      const encoder = JsonEncoder.withIndent('  ');
-      return encoder.convert(data);
-    } catch (_) {
-      return data.toString();
-    }
-  }
-
-  String _escapeHtml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
+  /// Hình dạng một lỗi gửi lên máy chủ (khớp `ClientErrorReportForm`). Không gửi tên/TK — máy chủ lấy người từ phiên
+  /// đăng nhập; không gửi toạ độ.
+  static Map<String, dynamic> toUploadJson(ErrorRecord e) {
+    final json = e.toJson()
+      ..remove('username')
+      ..remove('lat')
+      ..remove('lng')
+      ..remove('sentToServer')
+      ..remove('ownerAccountKey');
+    // Giờ máy kèm múi giờ (UTC) — `toIso8601String()` của giờ địa phương không có offset, máy chủ sẽ đoán sai múi.
+    json['timestamp'] = e.timestamp.toUtc().toIso8601String();
+    json['appVersion'] = AppConstants.appVersionBuild.replaceFirst('Phiên bản ', '');
+    return json;
   }
 
   dynamic _maskSensitiveData(dynamic data) {

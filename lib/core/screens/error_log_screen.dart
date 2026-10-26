@@ -71,7 +71,7 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
               ).copyWith(fontWeight: FontWeight.w700),
             ),
             Text(
-              'Tra cứu mã lỗi & Cảnh báo Telegram',
+              'Tra cứu mã lỗi · Tự gửi về máy chủ',
               style: AppTypography.bodySmall(
                 color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
               ).copyWith(fontSize: 11),
@@ -81,11 +81,6 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.telegram_rounded, color: Color(0xFF0088CC)),
-            tooltip: 'Cấu hình Telegram Bot',
-            onPressed: () => _openTelegramConfigDialog(context),
-          ),
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined, color: AppColors.error),
             tooltip: 'Xóa toàn bộ nhật ký',
@@ -434,7 +429,7 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
                       'Tài khoản: ${item.username ?? 'Chưa xác định'}\n'
                       'Thiết bị: ${item.deviceInfo ?? 'Không rõ'}\n'
                       'Toạ độ GPS: ${item.lat != null ? '${item.lat}, ${item.lng}' : 'Không có'}\n'
-                      'Đã gửi Telegram: ${item.sentToTelegram ? 'Có' : 'Chưa'}',
+                      'Đã gửi máy chủ: ${_uploadState(item)}',
                       isCode: false,
                     ),
                     const SizedBox(height: 30),
@@ -488,115 +483,6 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
     );
   }
 
-  void _openTelegramConfigDialog(BuildContext context) async {
-    final config = await ErrorTrackerService.instance.getTelegramConfig();
-    final tokenCtrl = TextEditingController(text: config['botToken'] as String? ?? '');
-    final chatCtrl = TextEditingController(text: config['chatId'] as String? ?? '');
-    bool isEnabled = config['enabled'] as bool? ?? true;
-    bool isTesting = false;
-
-    if (!context.mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.telegram_rounded, color: Color(0xFF0088CC), size: 28),
-              SizedBox(width: 8),
-              Text('Cấu hình Telegram Bot', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Bật bắn cảnh báo lỗi về Telegram', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  value: isEnabled,
-                  onChanged: (val) => setDialogState(() => isEnabled = val),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: tokenCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Bot Token',
-                    hintText: 'VD: 123456789:ABCdefGHIjkl...',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: chatCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Chat ID / Group ID',
-                    hintText: 'VD: -100123456789 hoặc 987654321',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: isTesting
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.send_rounded, size: 16),
-                    label: const Text('Gửi tin nhắn kiểm tra thử'),
-                    onPressed: isTesting
-                        ? null
-                        : () async {
-                            setDialogState(() => isTesting = true);
-                            try {
-                              final ok = await ErrorTrackerService.instance.testTelegramConnection(
-                                botToken: tokenCtrl.text.trim(),
-                                chatId: chatCtrl.text.trim(),
-                              );
-                              if (ok && context.mounted) {
-                                AppSnackBar.showSuccess(context, 'Gửi tin nhắn kiểm tra thành công! Hãy kiểm tra Telegram.');
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                AppSnackBar.showError(context, e);
-                              }
-                            } finally {
-                              setDialogState(() => isTesting = false);
-                            }
-                          },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Đóng'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                await ErrorTrackerService.instance.saveTelegramConfig(
-                  botToken: tokenCtrl.text.trim(),
-                  chatId: chatCtrl.text.trim(),
-                  enabled: isEnabled,
-                );
-                if (context.mounted) {
-                  Navigator.of(ctx).pop();
-                  AppSnackBar.showSuccess(context, 'Đã lưu cấu hình Telegram thành công!');
-                }
-              },
-              child: const Text('Lưu cấu hình'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _confirmClearLogs(BuildContext context) {
     showDialog(
       context: context,
@@ -623,6 +509,17 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
         ],
       ),
     );
+  }
+
+  /// Trạng thái gửi lỗi về máy chủ — tách "của tài khoản khác" khỏi "đang chờ" để không tưởng việc gửi bị hỏng.
+  String _uploadState(ErrorRecord item) {
+    if (item.sentToServer) return 'Có';
+    if (!ErrorTrackerService.shouldUpload(item)) return 'Không gửi (401/404)';
+    final owner = item.ownerAccountKey;
+    if (owner != null && owner != ErrorTrackerService.instance.currentOwnerKey) {
+      return 'Chờ chính chủ đăng nhập (TK $owner)';
+    }
+    return 'Chưa';
   }
 
   String _formatShortTime(DateTime dt) {

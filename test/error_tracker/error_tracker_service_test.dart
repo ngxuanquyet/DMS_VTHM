@@ -76,8 +76,7 @@ void main() {
       expect(netEx.errorId, equals('ERR-NET-000-7C3D'));
     });
 
-    test('4. formatTelegramMessage tạo nội dung HTML chuẩn bị đầy đủ 5 phần', () {
-      final service = ErrorTrackerService.instance;
+    test('4. toUploadJson khớp form máy chủ, không gửi tên/TK và toạ độ', () {
       final record = ErrorRecord(
         id: 'ERR-VISIT-422-TEST',
         timestamp: DateTime(2026, 10, 15, 16, 30, 0),
@@ -87,12 +86,8 @@ void main() {
         message: 'Bạn cần ở lại thêm 5 phút nữa mới check-out được.',
         endpoint: 'https://api-app.vthmgroup.vn/dms/visits/135808/checkout',
         method: 'POST',
-        requestData: {'client_uuid': 'uuid-123', 'lat': 21.028, 'lng': 105.834},
-        responseData: {
-          'success': false,
-          'message': 'Bạn cần ở lại thêm 5 phút nữa mới check-out được.',
-          'errors': {'seconds_remaining': [300]},
-        },
+        requestData: {'client_uuid': 'uuid-123'},
+        responseData: {'errors': {'seconds_remaining': [300]}},
         curlCommand: "curl -X POST 'https://api-app.vthmgroup.vn/dms/visits/135808/checkout'",
         username: 'VTG920',
         deviceInfo: 'Android 14',
@@ -100,25 +95,46 @@ void main() {
         lng: 105.834,
       );
 
-      final message = service.formatTelegramMessage(record);
+      final json = ErrorTrackerService.toUploadJson(record);
 
-      // Kiểm tra chứa Mã lỗi
-      expect(message, contains('ERR-VISIT-422-TEST'));
-      // Kiểm tra thông tin định danh
-      expect(message, contains('VTG920'));
-      expect(message, contains('Android 14'));
-      // Kiểm tra thông tin API
-      expect(message, contains('POST'));
-      expect(message, contains('/dms/visits/135808/checkout'));
-      expect(message, contains('422'));
-      expect(message, contains('VALIDATION_ERROR'));
-      expect(message, contains('Bạn cần ở lại thêm 5 phút'));
-      // Kiểm tra errors
-      expect(message, contains('seconds_remaining'));
-      // Kiểm tra toạ độ
-      expect(message, contains('21.028, 105.834'));
-      // Kiểm tra cURL
-      expect(message, contains('curl -X POST'));
+      // Khoá đúng tên `ClientErrorReportForm::toRows()` đọc.
+      for (final k in ['id', 'timestamp', 'module', 'statusCode', 'serverCode', 'message', 'endpoint', 'method',
+        'requestData', 'responseData', 'curlCommand', 'deviceInfo', 'appVersion']) {
+        expect(json.containsKey(k), isTrue, reason: k);
+      }
+      expect(json['id'], equals('ERR-VISIT-422-TEST'));
+      expect(json['statusCode'], equals(422));
+      // Người gặp lỗi lấy từ phiên đăng nhập phía máy chủ; toạ độ là dữ liệu nhạy cảm — không gửi.
+      expect(json.containsKey('username'), isFalse);
+      expect(json.containsKey('lat'), isFalse);
+      expect(json.containsKey('lng'), isFalse);
+    });
+
+    test('4b. shouldUpload bỏ 401/404 và lỗi của chính lời gọi gửi lỗi', () {
+      ErrorRecord r(int? status, String endpoint) =>
+          ErrorRecord(id: 'X', timestamp: DateTime(2026), module: 'SYS', statusCode: status, message: 'm', endpoint: endpoint);
+
+      expect(ErrorTrackerService.shouldUpload(r(500, 'https://api-app.vthmgroup.vn/dms/visits')), isTrue);
+      expect(ErrorTrackerService.shouldUpload(r(null, '')), isTrue);
+      expect(ErrorTrackerService.shouldUpload(r(401, 'https://api-app.vthmgroup.vn/dms/visits')), isFalse);
+      expect(ErrorTrackerService.shouldUpload(r(404, 'https://api-app.vthmgroup.vn/dms/visits')), isFalse);
+      expect(ErrorTrackerService.shouldUpload(r(500, 'https://api-app.vthmgroup.vn/dms/client-errors')), isFalse);
+    });
+
+    test('4c. isQueuedFor chỉ gửi lỗi của chính người đăng nhập (hoặc lỗi trước đăng nhập)', () {
+      ErrorRecord r(String? owner, {bool sent = false}) => ErrorRecord(
+          id: 'X', timestamp: DateTime(2026), module: 'SYS', message: 'm', ownerAccountKey: owner, sentToServer: sent);
+
+      expect(ErrorTrackerService.isQueuedFor(r('12'), '12'), isTrue);
+      expect(ErrorTrackerService.isQueuedFor(r(null), '12'), isTrue);
+      // Máy dùng chung: lỗi của tài khoản 7 không được gửi dưới phiên của 12.
+      expect(ErrorTrackerService.isQueuedFor(r('7'), '12'), isFalse);
+      expect(ErrorTrackerService.isQueuedFor(r('12', sent: true), '12'), isFalse);
+    });
+
+    test('4d. bản ghi của app cũ (chưa có sentToServer) coi như đã gửi', () {
+      final legacy = ErrorRecord.fromJson({'id': 'ERR-OLD', 'message': 'm', 'sentToTelegram': true});
+      expect(legacy.sentToServer, isTrue);
     });
 
     test('5. trackDioError tự động che giấu mật khẩu và token nhạy cảm', () {

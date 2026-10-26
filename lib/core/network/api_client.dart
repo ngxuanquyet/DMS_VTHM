@@ -30,6 +30,15 @@ final dioProvider = Provider<Dio>((ref) {
     AppApiLoggerInterceptor(),
   ]);
 
+  // Lỗi app gửi về máy chủ (thay Telegram, 26/10/2026). Gọi thẳng `dio`, KHÔNG qua `ApiClient`: lỗi của chính lời gọi
+  // này không được đi vào `trackDioError` — gửi hỏng sinh lỗi mới để gửi là vòng lặp không dừng.
+  ErrorTrackerService.instance.attachUploader((errors) async {
+    final res = await dio.post('/dms/client-errors', data: {'errors': errors});
+    final data = res.data is Map ? res.data['data'] : null;
+    final refs = data is Map ? data['refs'] : null;
+    return refs is List ? refs.map((e) => e.toString()).toList() : <String>[];
+  });
+
   return dio;
 });
 

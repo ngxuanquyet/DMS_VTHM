@@ -550,7 +550,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
-                    // Màn nhật ký lỗi lộ + sửa được cấu hình bot Telegram ⇒ chỉ super admin mở được.
+                    // Màn nhật ký lỗi hiện nội dung request/response của các lỗi trong máy ⇒ chỉ super admin mở được.
                     if (ref.read(authViewModelProvider).user?.isSuperAdmin != true) {
                       return;
                     }
