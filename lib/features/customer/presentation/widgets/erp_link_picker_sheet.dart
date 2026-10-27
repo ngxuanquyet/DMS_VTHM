@@ -138,7 +138,8 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
     final chuPhu = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
     final daChon = _chon.map((p) => p.code).toSet();
     final an = {...daChon, ...widget.excludeCodes};
-    final goiY = widget.suggestions.where((s) => !an.contains(s.code)).toList();
+    // Gợi ý từ server cũ / bản lưu có thể còn khách thuộc kênh không vai nào được nối (vd Kênh bán lẻ) — ẩn, không cho chọn.
+    final goiY = widget.suggestions.where((s) => !an.contains(s.code) && _vaiDuoc(s.channelId).isNotEmpty).toList();
     final ketQua = _ketQua.where((i) => !an.contains(i.code)).toList();
     final trungDaChon = _ketQua.length - ketQua.length;
     final dangTim = _daTim.length >= 2;

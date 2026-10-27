@@ -69,6 +69,22 @@ void main() {
     ]);
   });
 
+  testWidgets('gợi ý khách thuộc kênh không vai nào nối được (bán lẻ) bị ẩn', (tester) async {
+    final chiPhanPhoi = ErpCatalog.fromJson({
+      'roles': {'owner': [1], 'showroom': [1], 'c2': [1]},
+      'items': [
+        {'code': '01380001', 'name': 'NPP Hoàng Long', 'address': 'Hà Nội', 'channel_id': 1, 'channel_name': 'Kênh phân phối'},
+      ],
+    });
+    const goiY2 = [
+      ...goiY,
+      ErpLinkSuggestion(code: '01380001', name: 'NPP Hoàng Long', channelId: 1, channelName: 'Kênh phân phối', matchReason: 'name_address'),
+    ];
+    await moKhung(tester, ErpLinkPickerSheet(catalog: chiPhanPhoi, suggestions: goiY2), (_) {});
+    expect(find.byKey(const Key('erp-link-02700019')), findsNothing);
+    expect(find.byKey(const Key('erp-link-01380001')), findsOneWidget);
+  });
+
   testWidgets('bỏ hết khách đã chọn vẫn xác nhận được (trả danh sách rỗng); không có ô tick trong khung', (tester) async {
     ErpLinkPickResult? kq;
     await moKhung(
