@@ -962,14 +962,14 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     }
   }
 
-  /// Mở bước nối khách ERP: nạp danh mục lưu máy (có mạng thì làm mới khi tới hạn) + gợi ý theo SĐT/MST/tên (chỉ khi có
-  /// mạng, lỗi thì bỏ qua). `null` = NV đóng khung (huỷ lưu).
+  /// Mở bước nối khách ERP: nạp danh mục lưu máy + gợi ý theo SĐT/MST/tên từ máy chủ — chạy SONG SONG (chờ danh mục rồi
+  /// mới hỏi gợi ý thì trên mạng yếu lời gợi ý quá hạn ⇒ danh sách trống). Máy chủ không gợi ý được (mất mạng, quá hạn, không
+  /// khớp) ⇒ gợi ý theo tên ngay trên danh mục lưu máy. `null` = NV đóng khung (huỷ lưu).
   Future<ErpLinkPickResult?> _hoiBuocNoi(Map<String, dynamic> formData, bool isOnline) async {
-    final catalog = await ref.read(erpCatalogServiceProvider).load(online: isOnline);
-    var goiY = const <ErpLinkSuggestion>[];
-    if (isOnline) {
-      try {
-        goiY = await ref
+    final taiDanhMuc = ref.read(erpCatalogServiceProvider).load(online: isOnline);
+    final hoiGoiY = !isOnline
+        ? Future.value(const <ErpLinkSuggestion>[])
+        : ref
             .read(erpLinkRequestServiceProvider)
             .suggest(
               name: formData['name']?.toString(),
@@ -977,10 +977,23 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               taxCode: (formData['tax_code'] ?? formData['ma_so_thue'])?.toString(),
               address: formData['address']?.toString(),
             )
-            .timeout(const Duration(seconds: 6));
-      } catch (_) {
-        // Gợi ý chỉ là tiện ích — lỗi mạng thì NV tự tìm.
-      }
+            .timeout(const Duration(seconds: 10))
+            // Gợi ý chỉ là tiện ích — lỗi mạng thì rơi về gợi ý trên máy.
+            .catchError((_) => const <ErpLinkSuggestion>[]);
+    final catalog = await taiDanhMuc;
+    var goiY = await hoiGoiY;
+    if (goiY.isEmpty && catalog != null) {
+      goiY = catalog
+          .suggestByName(formData['name']?.toString())
+          .map((i) => ErpLinkSuggestion(
+                code: i.code,
+                name: i.name,
+                address: i.address,
+                channelId: i.channelId,
+                channelName: i.channelName,
+                matchReason: 'name_address',
+              ))
+          .toList();
     }
     if (!mounted) return null;
     final isDark = Theme.of(context).brightness == Brightness.dark;

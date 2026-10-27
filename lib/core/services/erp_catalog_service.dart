@@ -87,6 +87,35 @@ class ErpCatalog {
           if ((roles[role] ?? const []).isEmpty || (channelId != null && roles[role]!.contains(channelId))) role,
       ];
 
+  /// Từ chung của tên cửa hàng/pháp nhân — không dùng để so khi gợi ý theo tên (mọi khách đều có "cửa hàng", "công ty").
+  static const Set<String> _tuChung = {
+    'cua', 'hang', 'ch', 'cong', 'ty', 'cty', 'tnhh', 'mtv', 'tm', 'dv', 'sx', 'xd', 'va', 'thuong', 'mai', 'dich', 'vu',
+    'san', 'xuat', 'dai', 'ly', 'npp', 'nha', 'phan', 'phoi', 'shop', 'vlxd', 'vat', 'lieu', 'xay', 'dung', 'co',
+  };
+
+  /// Gợi ý theo TÊN điểm bán ngay trên máy — dự phòng khi máy chủ không gợi ý được (mất mạng, quá hạn): khách có tên chứa
+  /// nhiều từ "riêng" (bỏ [_tuChung]) của tên điểm bán nhất; phải khớp ≥ một nửa số từ riêng. Tên toàn từ chung ⇒ rỗng.
+  List<ErpCatalogItem> suggestByName(String? storeName, {int limit = 8}) {
+    final tu = StringUtils.toUnaccentedLower(storeName ?? '')
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.length >= 2 && !_tuChung.contains(w))
+        .toSet();
+    if (tu.isEmpty) return const [];
+    final can = (tu.length / 2).ceil();
+    final diem = <ErpCatalogItem, int>{};
+    for (final i in items) {
+      final ten = StringUtils.toUnaccentedLower(i.name).split(RegExp(r'[^a-z0-9]+')).toSet();
+      final khop = tu.where(ten.contains).length;
+      if (khop >= can) diem[i] = khop;
+    }
+    final kq = diem.keys.toList()
+      ..sort((a, b) {
+        final d = diem[b]!.compareTo(diem[a]!);
+        return d != 0 ? d : a.name.compareTo(b.name);
+      });
+    return kq.take(limit).toList();
+  }
+
   /// Tìm trên máy theo tên/mã/tên viết tắt/địa chỉ, gõ không dấu được; từ 2 ký tự; khớp đầu tên/mã xếp trước.
   List<ErpCatalogItem> search(String query, {int limit = 30}) {
     final q = StringUtils.toUnaccentedLower(query).trim();

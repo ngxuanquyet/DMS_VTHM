@@ -50,6 +50,22 @@ void main() {
     expect(c.search('m'), isEmpty, reason: 'dưới 2 ký tự');
   });
 
+  test('gợi ý dự phòng trên máy theo tên điểm bán: bỏ từ chung, cần khớp ≥ nửa số từ riêng, nhiều từ khớp xếp trước', () {
+    final c = ErpCatalog.fromJson({
+      'roles': {'owner': [], 'showroom': [], 'c2': []},
+      'items': [
+        {'code': 'A', 'name': 'CỬA HÀNG MINH PHÁT', 'channel_id': 2},
+        {'code': 'B', 'name': 'VLXD HUY MINH PHÁT', 'channel_id': 2},
+        {'code': 'C', 'name': 'Công ty TNHH Thành Công', 'channel_id': 1},
+        {'code': 'D', 'name': 'Cửa hàng Minh Tâm', 'channel_id': 2},
+      ],
+    });
+    expect(c.suggestByName('Cửa hàng VLXD Huy Minh Phát').map((i) => i.code), ['B', 'A'],
+        reason: 'B khớp 3 từ riêng, A khớp 2; D chỉ khớp "minh" (< nửa)');
+    expect(c.suggestByName('Cửa hàng VLXD'), isEmpty, reason: 'toàn từ chung ⇒ không đoán');
+    expect(c.suggestByName(null), isEmpty);
+  });
+
   test('thông báo sau khi tạo nói số đề xuất đã gửi', () {
     expect(addCustomerSuccessMessage(hasPending: false), 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.');
     expect(addCustomerSuccessMessage(hasPending: false, linkProposals: 2), contains('Đã chọn 2 khách ERP để đề xuất nối'));
