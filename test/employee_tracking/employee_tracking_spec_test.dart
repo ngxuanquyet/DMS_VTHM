@@ -240,6 +240,9 @@ void main() {
       expect(find.text('Lý do: Kiểm tra tuyến đột xuất'), findsOneWidget);
       expect(find.text('Đã có vị trí'), findsOneWidget);
       expect(find.text('Mã bản ghi toạ độ: #99'), findsOneWidget);
+
+      // Màn nạp hồ sơ qua API thật; HTTP trong test trả 400 ⇒ ErrorTrackerService hẹn gửi lỗi sau 3 giây — cho hẹn chạy xong.
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 

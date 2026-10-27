@@ -67,6 +67,10 @@ void main() {
 
       // Tuyệt đối không chứa bất kỳ Lottie animation nào trong dialog
       expect(find.byType(Lottie), findsNothing);
+
+      // Dialog gọi API cấu hình; HTTP trong test trả 400 ⇒ ErrorTrackerService hẹn gửi lỗi sau 3 giây — cho hẹn chạy xong
+      // (chưa đăng nhập nên không gửi, không hẹn lại), không thì test đỏ "A Timer is still pending".
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 }

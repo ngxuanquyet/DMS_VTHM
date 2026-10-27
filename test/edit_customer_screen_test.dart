@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/map/app_map_location_card.dart';
 import 'package:vthm_dms/core/services/erp_link_request_service.dart';
+
+import 'helpers/fake_erp_link_request_service.dart';
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_dynamic_column.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
@@ -91,7 +93,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
-          erpLinkRequestServiceProvider.overrideWithValue(_FakeErpLinkSvc()),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
         ],
         child: const MaterialApp(
           home: EditCustomerScreen(
@@ -159,7 +161,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
-          erpLinkRequestServiceProvider.overrideWithValue(_FakeErpLinkSvc()),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
         ],
         child: const MaterialApp(
           home: EditCustomerScreen(
@@ -188,17 +190,4 @@ void main() {
     expect(find.text('Đại diện'), findsOneWidget);
     expect(find.text('Thêm ảnh'), findsWidgets);
   });
-}
-
-/// Mục "Khách hàng ERP" (#24327) gọi API khi mở màn sửa — test màn hình trả trạng thái rỗng ngay, không chạm mạng.
-class _FakeErpLinkSvc implements ErpLinkRequestService {
-  @override
-  Future<ErpLinkStateOfStore> stateOf(int customerId) async =>
-      const ErpLinkStateOfStore(links: [], pending: [], unknown: false);
-
-  @override
-  Future<List<ErpLinkSuggestion>> suggest({String? name, String? phone, String? taxCode, String? address}) async => const [];
-
-  @override
-  Future<void> propose({required int customerId, required String erpPartnerCode, required String role, String? matchReason}) async {}
 }

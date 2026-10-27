@@ -258,9 +258,13 @@ class ErrorTrackerService {
   }
 
   /// Gắn hàm gửi lỗi (do tầng mạng cung cấp — tránh phụ thuộc vòng với `api_client.dart`) rồi gửi bù hàng đợi.
+  ///
+  /// Chỉ hẹn gửi khi CÓ lỗi chưa gửi: [initialize] (chạy trong `main` trước `runApp`) đã nạp lỗi lưu máy, nên lỗi cũ vẫn được
+  /// gửi bù. Hẹn vô điều kiện thì mỗi lần dựng tầng mạng đều để lại một hẹn giờ 3 giây — 11 test màn hình đỏ "A Timer is
+  /// still pending" (27/10/2026).
   void attachUploader(ErrorUploader uploader) {
     _uploader = uploader;
-    _scheduleFlush();
+    if (_recentErrors.any((e) => !e.sentToServer && shouldUpload(e))) _scheduleFlush();
   }
 
   /// Lỗi có cần gửi lên máy chủ không.

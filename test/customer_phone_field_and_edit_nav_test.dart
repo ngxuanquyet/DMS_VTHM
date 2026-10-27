@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
 import 'package:vthm_dms/core/dynamic_form/widgets/text_field_widget.dart';
+import 'package:vthm_dms/core/services/erp_link_request_service.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/edit_customer_screen.dart';
 import 'package:vthm_dms/features/customer/presentation/widgets/customer_card.dart';
+
+import 'helpers/fake_erp_link_request_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +96,7 @@ void main() {
         ProviderScope(
           overrides: [
             customerFormSchemaProvider.overrideWith((ref) => Stream.value({})),
+            erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           ],
           child: const MaterialApp(
             home: EditCustomerScreen(
