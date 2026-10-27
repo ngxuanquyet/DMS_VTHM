@@ -11,6 +11,17 @@ class ErpLinkRole {
 
   /// Điểm bán là showroom của khách ERP.
   static const String showroom = 'showroom';
+
+  /// Mọi vai — thứ tự hiện trên nút chọn vai.
+  static const List<String> all = [owner, showroom, c2];
+
+  /// Nhãn tiếng Việt của vai.
+  static String label(String role) => switch (role) {
+        owner => 'Chính khách',
+        showroom => 'Showroom',
+        c2 => 'Đại lý C2',
+        _ => role,
+      };
 }
 
 /// Một khách ERP trùng/gần trùng với điểm bán đang tạo (`GET /crm/customer-erp-link-requests/suggest`).
@@ -20,6 +31,9 @@ class ErpLinkSuggestion {
   final String code;
   final String name;
   final String? address;
+
+  /// Kênh bán hàng Bravo — quyết vai nào chọn được khách này (#24327).
+  final int? channelId;
   final String? channelName;
 
   /// MÃ lý do khớp (`phone` · `tax_code` · `name_address`) — gửi NGUYÊN mã kèm đề xuất (server chỉ nhận đúng các mã
@@ -38,6 +52,7 @@ class ErpLinkSuggestion {
     required this.code,
     required this.name,
     this.address,
+    this.channelId,
     this.channelName,
     this.matchReason = '',
   });
@@ -46,9 +61,43 @@ class ErpLinkSuggestion {
         code: json['code']?.toString() ?? '',
         name: json['name']?.toString() ?? '',
         address: json['address']?.toString(),
+        channelId: (json['channel_id'] as num?)?.toInt(),
         channelName: json['channel_name']?.toString(),
         matchReason: json['match_reason']?.toString() ?? '',
       );
+}
+
+/// Một mối nối (đã duyệt) hoặc đề xuất đang chờ của điểm bán — mục "Khách hàng ERP" trên màn sửa (#24327).
+class ErpLinkState {
+  final String code;
+  final String? name;
+  final String? channelName;
+  final String role;
+  final String roleLabel;
+
+  const ErpLinkState({required this.code, required this.role, required this.roleLabel, this.name, this.channelName});
+
+  factory ErpLinkState.fromJson(Map<String, dynamic> json) => ErpLinkState(
+        code: json['code']?.toString() ?? '',
+        name: json['name']?.toString(),
+        channelName: json['channel_name']?.toString(),
+        role: json['role']?.toString() ?? '',
+        roleLabel: json['role_label']?.toString() ?? '',
+      );
+}
+
+/// Trạng thái nối khách ERP của một điểm bán (`GET /crm/customers/{id}`: `erp_links`, `erp_link_pending`, `erp_link_unknown`).
+class ErpLinkStateOfStore {
+  final List<ErpLinkState> links;
+  final List<ErpLinkState> pending;
+  final bool unknown;
+
+  const ErpLinkStateOfStore({required this.links, required this.pending, required this.unknown});
+
+  /// Điểm bán đã có chính khách (mối nối hoặc đề xuất chờ) — không đề xuất thêm vai đó.
+  bool get ownerTaken => [...links, ...pending].any((l) => l.role == ErpLinkRole.owner);
+
+  Set<String> get codes => {...links.map((l) => l.code), ...pending.map((l) => l.code)};
 }
 
 final erpLinkRequestServiceProvider = Provider<ErpLinkRequestService>((ref) {
@@ -85,6 +134,20 @@ class ErpLinkRequestService {
         .map((e) => ErpLinkSuggestion.fromJson(Map<String, dynamic>.from(e)))
         .where((s) => s.code.isNotEmpty)
         .toList();
+  }
+
+  /// Trạng thái nối của một điểm bán đã có trên server.
+  Future<ErpLinkStateOfStore> stateOf(int customerId) async {
+    final response = await _apiClient.get('/crm/customers/$customerId');
+    final data = response is Map && response['data'] is Map ? Map<String, dynamic>.from(response['data'] as Map) : const {};
+    List<ErpLinkState> list(dynamic raw) => raw is List
+        ? raw.whereType<Map>().map((e) => ErpLinkState.fromJson(Map<String, dynamic>.from(e))).toList()
+        : const [];
+    return ErpLinkStateOfStore(
+      links: list(data['erp_links']),
+      pending: list(data['erp_link_pending']),
+      unknown: data['erp_link_unknown'] == true,
+    );
   }
 
   /// Gửi một đề xuất nối (chờ quản lý duyệt).

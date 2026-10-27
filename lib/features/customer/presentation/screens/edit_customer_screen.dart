@@ -14,6 +14,7 @@ import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../screens/add_customer_screen.dart';
+import '../widgets/erp_links_section.dart';
 import '../viewmodels/customer_view_model.dart';
 
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
@@ -891,6 +892,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                               },
                               onSubmit: _handleSubmit,
                             ),
+
+                            // Khách hàng ERP (#24327): mối nối + đề xuất chờ + "Đề xuất thêm" — chỉ điểm bán đã có trên server.
+                            if (widget.customer.id > 0) ErpLinksSection(customerId: widget.customer.id),
                           ],
                         ),
                       ),

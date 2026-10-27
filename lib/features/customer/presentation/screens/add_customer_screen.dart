@@ -4,9 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/services/erp_catalog_service.dart';
 import '../../../../core/services/erp_link_request_service.dart';
-import '../../../../core/services/erp_partner_options_service.dart';
-import '../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -19,6 +18,7 @@ import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
+import '../widgets/erp_link_picker_sheet.dart';
 import '../../../route/domain/entities/route_entity.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 
@@ -528,15 +528,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
-  /// #23709: bộ (tên, SĐT, MST, địa chỉ) đã dùng để hỏi "có phải khách ERP?" — lưu lỗi 4xx rồi bấm lại mà không sửa các
-  /// ô đó thì KHÔNG hỏi lại; sửa thì hỏi lại (gợi ý cũ có thể không còn khớp). `null` = chưa hỏi được lần nào.
-  String? _khoaDaHoi;
-
-  /// Khách ERP NV xác nhận là chính điểm bán này (null = không phải / không có gợi ý).
-  ErpLinkSuggestion? _chinhKhach;
-
-  /// Vai NV đã chọn cho từng khách ở ô "khách hàng pháp nhân" (mã ⇒ c2/showroom) — giữ qua các lần bấm lưu lại.
-  final Map<String, String> _vaiTroNoi = {};
+  /// Lựa chọn ở bước nối khách ERP (#24327) — giữ qua các lần bấm lưu lại (lưu lỗi 4xx thì mở lại khung với lựa chọn cũ).
+  ErpLinkPickResult? _buocNoi;
 
   bool _hasUserInput() {
     if (_formKey.currentState != null) {
@@ -726,46 +719,20 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       final repo = ref.read(customerRepositoryProvider);
       final isOnline = ref.read(connectivityProvider).isOnline;
 
-      // #23709: có mạng ⇒ hỏi "điểm bán này có phải khách ERP đã có?" (đề xuất vai chính khách), một lần mỗi form.
-      // Mất mạng ⇒ bỏ qua. Đóng khung hỏi (Back/vuốt) = HUỶ lưu, quay lại form.
-      final khoaHoi = erpSuggestKey(formData);
-      if (isOnline && _khoaDaHoi != khoaHoi) {
-        final (huy, daHoi, chon) = await _hoiChinhKhach(formData);
-        if (!mounted) return;
-        if (huy) {
-          setState(() => _isSubmitting = false);
-          return;
-        }
-        _chinhKhach = chon;
-        // Gọi gợi ý lỗi/quá hạn ⇒ CHƯA tính là đã hỏi — lần lưu sau thử lại.
-        _khoaDaHoi = daHoi ? khoaHoi : null;
-      } else if (!isOnline) {
-        _chinhKhach = null;
+      // Bước nối khách ERP (#24327, BẮT BUỘC khi tạo): ≥1 khách ERP kèm vai, hoặc tick "Chưa xác định NPP". Có mạng thì kèm
+      // gợi ý theo SĐT/MST/tên; tìm trên danh mục lưu máy nên chạy cả khi mất mạng. Lựa chọn đi KÈM payload tạo điểm bán ⇒
+      // lượt ngoại tuyến cũng mang theo qua hàng đợi đồng bộ. Đóng khung (Back/vuốt) = HUỶ lưu, quay lại form.
+      final buocNoi = await _hoiBuocNoi(formData, isOnline);
+      if (!mounted) return;
+      if (buocNoi == null) {
+        setState(() => _isSubmitting = false);
+        return;
       }
-      // Lấy sẵn TRƯỚC khi await tạo điểm bán: màn có thể bị đóng giữa chừng (ref hết dùng được), schema có thể đang nạp lại.
-      final linkSvc = ref.read(erpLinkRequestServiceProvider);
-      final schemaNow = ref.read(customerFormSchemaProvider).valueOrNull;
-      final schemaFields = (schemaNow?['data'] is Map ? schemaNow!['data']['fields'] : null) as List? ?? const [];
-
-      // Khách chọn ở ô "khách hàng pháp nhân" ⇒ NV chọn vai C2 / Showroom cho từng khách. Chỉ hỏi khi có mạng (mất mạng
-      // không gửi đề xuất). Đóng khung (Back/vuốt) = HUỶ lưu, như khung hỏi chính khách.
-      final picks = isOnline
-          ? erpPartnerPicks(schemaFields, formData).where((p) => p.$2 != _chinhKhach?.code).toList()
-          : const <(String, String)>[];
-      var vaiTro = const <String, String>{};
-      if (picks.isNotEmpty) {
-        final chon = await _hoiVaiTro(picks);
-        if (!mounted) return;
-        if (chon == null) {
-          setState(() => _isSubmitting = false);
-          return;
-        }
-        _vaiTroNoi.addAll(chon);
-        vaiTro = chon;
-      }
-      
+      _buocNoi = buocNoi;
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
+      payload['erp_links'] = buocNoi.picks.map((p) => p.toPayload()).toList();
+      payload['erp_link_unknown'] = buocNoi.unknown;
       // Ô Kênh "chọn một" giữ giá trị ĐƠN — gom về danh sách: bản lưu máy (điểm bán chờ đồng bộ) chỉ đọc mảng.
       final kenhDon = payload['own_channel_ids'];
       if (kenhDon != null && kenhDon is! List) payload['own_channel_ids'] = [kenhDon];
@@ -943,11 +910,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         }
       }
 
-      final taoXong = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
-      // Đề xuất nối chỉ gửi được khi điểm bán ĐÃ có id trên server (tạo online thành công).
-      final soDeXuat = isOnline && taoXong.id > 0
-          ? await guiDeXuatNoiErp(linkSvc, taoXong.id, _chinhKhach, vaiTro)
-          : 0;
+      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -974,7 +937,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(addCustomerSuccessMessage(hasPending: hasPending, linkProposals: soDeXuat)),
+                  child: Text(addCustomerSuccessMessage(hasPending: hasPending, linkProposals: buocNoi.picks.length)),
                 ),
               ],
             ),
@@ -999,186 +962,38 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     }
   }
 
-  /// Gợi ý khách ERP trùng/gần trùng (SĐT, MST, tên + địa chỉ) và hỏi NV điểm bán này có PHẢI khách đó không.
-  /// Trả `(huỷ, đã hỏi xong, khách chọn)`: huỷ = NV đóng khung (Back/vuốt) ⇒ quay lại form; lỗi mạng ⇒ `(false, false,
-  /// null)`; không có gợi ý / "Không phải" ⇒ `(false, true, null)` — không bao giờ chặn việc tạo điểm bán.
-  Future<(bool, bool, ErpLinkSuggestion?)> _hoiChinhKhach(Map<String, dynamic> formData) async {
-    List<ErpLinkSuggestion> goiY;
-    try {
-      goiY = await ref
-          .read(erpLinkRequestServiceProvider)
-          .suggest(
-            name: formData['name']?.toString(),
-            phone: formData['phone']?.toString(),
-            taxCode: (formData['tax_code'] ?? formData['ma_so_thue'])?.toString(),
-            address: formData['address']?.toString(),
-          )
-          .timeout(const Duration(seconds: 6));
-    } catch (_) {
-      return (false, false, null);
-    }
-    if (!mounted) return (false, false, null);
-    if (goiY.isEmpty) return (false, true, null);
-
-    const khongPhai = ErpLinkSuggestion(code: '', name: '');
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final chon = await showModalBottomSheet<ErpLinkSuggestion>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                child: Text(
-                  'Điểm bán này đã là khách hàng ERP?',
-                  style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Chọn đúng khách nếu điểm bán chính là khách đó — quản lý sẽ duyệt mối nối.',
-                  style: AppTypography.bodySmall(
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final s in goiY)
-                      ListTile(
-                        leading: const Icon(Icons.storefront_rounded, color: AppColors.primary),
-                        title: Text('${s.name} (${s.code})'),
-                        subtitle: Text([
-                          if (s.address != null && s.address!.isNotEmpty) s.address!,
-                          if (s.channelName != null && s.channelName!.isNotEmpty) s.channelName!,
-                          if (s.matchReasonLabel.isNotEmpty) s.matchReasonLabel,
-                        ].join(' · ')),
-                        onTap: () => Navigator.pop(ctx, s),
-                      ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, khongPhai),
-                  child: const Text('Không phải — tạo điểm bán mới'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (chon == null) return (true, false, null);
-    return (false, true, chon.code.isEmpty ? null : chon);
-  }
-
-  /// Hỏi vai của điểm bán với từng khách ERP chọn ở ô "khách hàng pháp nhân": đại lý C2 (mặc định) hay showroom.
-  /// [picks] = `(mã ô, mã khách)`. Tên khách tra theo từng ô; tra lỗi thì hiện nhãn dự phòng, không chặn lưu.
-  /// @return Mã khách ⇒ vai; `null` = NV đóng khung (huỷ lưu).
-  Future<Map<String, String>?> _hoiVaiTro(List<(String, String)> picks) async {
-    final optionsSvc = ref.read(erpPartnerOptionsServiceProvider);
-    final ten = <String, String>{};
-    final theoO = <String, List<String>>{};
-    for (final p in picks) {
-      theoO.putIfAbsent(p.$1, () => []).add(p.$2);
-    }
-    await Future.wait(theoO.entries.map((e) => optionsSvc
-        .lookup(field: e.key, codes: e.value)
-        .timeout(const Duration(seconds: 6))
-        .then((items) {
-      for (final it in items) {
-        if (it.name.isNotEmpty) ten[it.code] = it.name;
+  /// Mở bước nối khách ERP: nạp danh mục lưu máy (có mạng thì làm mới khi tới hạn) + gợi ý theo SĐT/MST/tên (chỉ khi có
+  /// mạng, lỗi thì bỏ qua). `null` = NV đóng khung (huỷ lưu).
+  Future<ErpLinkPickResult?> _hoiBuocNoi(Map<String, dynamic> formData, bool isOnline) async {
+    final catalog = await ref.read(erpCatalogServiceProvider).load(online: isOnline);
+    var goiY = const <ErpLinkSuggestion>[];
+    if (isOnline) {
+      try {
+        goiY = await ref
+            .read(erpLinkRequestServiceProvider)
+            .suggest(
+              name: formData['name']?.toString(),
+              phone: formData['phone']?.toString(),
+              taxCode: (formData['tax_code'] ?? formData['ma_so_thue'])?.toString(),
+              address: formData['address']?.toString(),
+            )
+            .timeout(const Duration(seconds: 6));
+      } catch (_) {
+        // Gợi ý chỉ là tiện ích — lỗi mạng thì NV tự tìm.
       }
-    }).catchError((_) {})));
+    }
     if (!mounted) return null;
-
-    final chon = {for (final p in picks) p.$2: _vaiTroNoi[p.$2] ?? ErpLinkRole.c2};
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return showModalBottomSheet<Map<String, String>>(
+    return showModalBottomSheet<ErpLinkPickResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Text(
-                    'Điểm bán là gì của khách ERP?',
-                    style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'Chọn vai trò với từng khách — quản lý sẽ duyệt mối nối.',
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final p in picks)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                ten[p.$2] != null ? '${ten[p.$2]} (${p.$2})' : ErpPartnerOption.fallbackLabel(p.$2),
-                                style: AppTypography.bodyMedium(
-                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                ).copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 6),
-                              SegmentedButton<String>(
-                                key: Key('erp-link-role-${p.$2}'),
-                                segments: const [
-                                  ButtonSegment(value: ErpLinkRole.c2, label: Text('Đại lý C2')),
-                                  ButtonSegment(value: ErpLinkRole.showroom, label: Text('Showroom')),
-                                ],
-                                selected: {chon[p.$2]!},
-                                showSelectedIcon: false,
-                                onSelectionChanged: (v) => setSheet(() => chon[p.$2] = v.first),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx, Map<String, String>.from(chon)),
-                    child: const Text('Xác nhận và lưu'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      builder: (_) => ErpLinkPickerSheet(
+        catalog: catalog,
+        suggestions: goiY,
+        initial: _buocNoi?.picks ?? const [],
+        initialUnknown: _buocNoi?.unknown ?? false,
       ),
     );
   }
@@ -1587,53 +1402,9 @@ String addCustomerSuccessMessage({required bool hasPending, int linkProposals = 
   final base = hasPending
       ? 'Đã lưu điểm bán ngoại tuyến — lượt viếng thăm sẽ được ghi nhận khi đồng bộ.'
       : 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.';
-  return linkProposals > 0 ? '$base Đã gửi $linkProposals đề xuất nối khách ERP, chờ quản lý duyệt.' : base;
-}
-
-/// Khách ERP chọn ở các ô "khách hàng pháp nhân" (`ref_erp_partner`, vd "Thuộc nhà phân phối") của form điểm bán — mỗi
-/// khách một đề xuất nối, NV chọn vai C2 / Showroom (#23709; showroom thêm 27/10/2026). Trả `(mã ô, mã khách)` — mã ô
-/// cần để tra tên khách (`GET /dms/erp-partner-options?field=`). Nhận diện ô + đọc giá trị bằng ĐÚNG hàm form dùng
-/// ([DynamicFormField.fromJson], [ErpPartnerFieldWidget.codesFromValue]); bỏ giá trị ngoại lệ (`"_:…"`) và mã trùng.
-List<(String, String)> erpPartnerPicks(List<dynamic> schemaFields, Map<String, dynamic> formData) {
-  final out = <(String, String)>[];
-  for (final f in schemaFields.whereType<Map>()) {
-    final field = DynamicFormField.fromJson(Map<String, dynamic>.from(f));
-    if (field.type != DynamicFormFieldType.erpPartner) continue;
-    for (final code in ErpPartnerFieldWidget.codesFromValue(formData[field.code])) {
-      if (ErpPartnerOption.isExtraCode(code) || out.any((p) => p.$2 == code)) continue;
-      out.add((field.code, code));
-    }
-  }
-  return out;
-}
-
-/// Khoá bộ thông tin dùng để gợi ý khách ERP (tên, SĐT, MST, địa chỉ) — đổi khoá ⇒ phải hỏi lại "có phải khách ERP?".
-String erpSuggestKey(Map<String, dynamic> formData) => [
-      formData['name'],
-      formData['phone'],
-      formData['tax_code'] ?? formData['ma_so_thue'],
-      formData['address'],
-    ].map((v) => v?.toString().trim() ?? '').join('\u0001');
-
-/// Gửi đề xuất nối cho điểm bán vừa tạo — vai CHÍNH KHÁCH (nếu NV xác nhận) + vai NV chọn ([ErpLinkRole.c2] /
-/// [ErpLinkRole.showroom]) cho mỗi mã trong [vaiTro] (mã khách ⇒ vai). Gửi SONG SONG, mỗi lượt tối đa 8 giây; lượt lỗi (đã
-/// nối, trùng đề xuất, mạng) bỏ qua — điểm bán đã tạo xong.
-/// @return Số đề xuất gửi được.
-Future<int> guiDeXuatNoiErp(
-  ErpLinkRequestService svc,
-  int customerId,
-  ErpLinkSuggestion? chinhKhach,
-  Map<String, String> vaiTro,
-) async {
-  final deXuat = <(String, String, String?)>[
-    if (chinhKhach != null) (chinhKhach.code, ErpLinkRole.owner, chinhKhach.matchReason),
-    for (final e in vaiTro.entries)
-      if (e.key != chinhKhach?.code) (e.key, e.value, null),
-  ];
-  final ketQua = await Future.wait(deXuat.map((d) => svc
-      .propose(customerId: customerId, erpPartnerCode: d.$1, role: d.$2, matchReason: d.$3)
-      .timeout(const Duration(seconds: 8))
-      .then((_) => true)
-      .catchError((_) => false)));
-  return ketQua.where((ok) => ok).length;
+  if (linkProposals == 0) return base;
+  // Đề xuất đi KÈM lượt tạo (#24327) — ngoại tuyến thì chưa gửi gì.
+  return hasPending
+      ? '$base $linkProposals khách ERP sẽ được đề xuất nối khi đồng bộ.'
+      : '$base Đã chọn $linkProposals khách ERP để đề xuất nối, chờ quản lý duyệt.';
 }

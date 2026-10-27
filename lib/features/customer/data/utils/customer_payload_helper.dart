@@ -35,6 +35,9 @@ const Set<String> kAllowedCustomerRootKeys = {
   // Kênh + tuyến tự khai nhân viên chọn khi tạo (chốt 21/10/2026) — server kiểm trong cặp phòng người tạo.
   'own_channel_ids',
   'territory_code',
+  // Bước nối khách ERP (#24327) — server đọc, không phải ô động.
+  'erp_links',
+  'erp_link_unknown',
   'data',
 };
 
@@ -121,6 +124,9 @@ const Set<String> kCustomerFixedKeys = {
   'route_ids',
   'own_channel_ids',
   'territory_code',
+  // Bước nối khách ERP (#24327) — server đọc, không phải ô động.
+  'erp_links',
+  'erp_link_unknown',
 };
 
 class CustomerPayloadHelper {
@@ -251,6 +257,24 @@ class CustomerPayloadHelper {
     }
     final territory = sourceData['territory_code']?.toString().trim() ?? '';
     if (territory.isNotEmpty) payload['territory_code'] = territory;
+
+    // 7c. Bước nối khách ERP (#24327): `[{code, role, match_reason}]` + cờ "Chưa xác định NPP". Chỉ gửi khi màn tạo có chạy
+    // bước nối (khoá có mặt) — server chỉ bắt buộc khi thấy khoá `erp_links`.
+    if (sourceData.containsKey('erp_links')) {
+      final raw = sourceData['erp_links'];
+      payload['erp_links'] = raw is List
+          ? raw
+              .whereType<Map>()
+              .where((m) => (m['code']?.toString().trim() ?? '').isNotEmpty && m['role'] != null)
+              .map((m) => {
+                    'code': m['code'].toString().trim(),
+                    'role': m['role'].toString(),
+                    if (m['match_reason'] != null) 'match_reason': m['match_reason'].toString(),
+                  })
+              .toList()
+          : <Map<String, dynamic>>[];
+      payload['erp_link_unknown'] = sourceData['erp_link_unknown'] == true;
+    }
 
     // 8. Thông tin liên hệ & địa chỉ (fixed fields)
     void addStringIfNotEmpty(String key, dynamic value) {
