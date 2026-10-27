@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -162,6 +163,19 @@ class ErpCatalogService {
       // Mất mạng / server lỗi: dùng bản đã lưu.
     }
     return _memory;
+  }
+
+  /// Làm mới NGẦM (không chờ): nút "Đồng bộ" và lúc vào app ([minAge] = `null` ⇒ luôn tải lại); quay lại app từ nền chỉ tải
+  /// lại khi lần tải gần nhất đã cũ hơn [minAge] — tránh tải lại danh mục mỗi lần chuyển qua lại giữa các app.
+  void refreshInBackground({required bool online, Duration? minAge}) {
+    if (!online) return;
+    final cu = minAge == null || _checkedAt == null || DateTime.now().difference(_checkedAt!) > minAge;
+    if (!cu) return;
+    // Đang có lượt tải (vd khung chọn vừa mở) ⇒ `load()` sẽ trả lại CHÍNH lượt đó và bỏ `force` — chờ nó xong rồi tải lại.
+    final dangChay = _loading;
+    unawaited(dangChay == null
+        ? load(online: true, force: true)
+        : dangChay.whenComplete(() => load(online: true, force: true)));
   }
 
   Future<File> _file() async {

@@ -27,6 +27,7 @@ import 'edit_customer_screen.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../widgets/pending_sync_dismissible.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
+import '../../../../core/services/erp_catalog_service.dart';
 import '../widgets/customer_filter_drawer.dart';
 
 class CustomerScreen extends ConsumerStatefulWidget {
@@ -354,6 +355,8 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
 
   Future<void> _handleSync() async {
     if (_isSyncing) return;
+    // Danh mục khách ERP cho bước nối điểm bán (#24327) — "Đồng bộ" luôn tải lại ngầm.
+    ref.read(erpCatalogServiceProvider).refreshInBackground(online: ref.read(connectivityProvider).isOnline);
     setState(() {
       _isSyncing = true;
       _syncAnimationController.repeat();

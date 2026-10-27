@@ -27,6 +27,7 @@ import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/constants/search_target.dart';
+import '../../../../core/services/erp_catalog_service.dart';
 import '../../../../core/widgets/search_target_chips.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
@@ -146,6 +147,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     final vm = ref.read(routeViewModelProvider.notifier);
     final isOnline = ref.read(connectivityProvider).isOnline;
     final customerRepo = ref.read(customerRepositoryProvider);
+    // Danh mục khách ERP cho bước nối điểm bán (#24327) — "Đồng bộ" luôn tải lại ngầm.
+    ref.read(erpCatalogServiceProvider).refreshInBackground(online: isOnline);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

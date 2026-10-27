@@ -35,6 +35,7 @@ import '../widgets/home_quick_actions.dart';
 import '../../../daily_report/domain/entities/daily_activity_entity.dart';
 import '../../../daily_report/presentation/widgets/daily_activity_timeline_card.dart';
 import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
+import '../../../../core/services/erp_catalog_service.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -68,6 +69,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshAttendanceOnResume();
+      // Quay lại app: làm mới ngầm danh mục khách ERP nếu lần tải gần nhất đã quá 10 phút (#24327).
+      ref.read(erpCatalogServiceProvider).refreshInBackground(
+            online: ref.read(connectivityProvider).isOnline,
+            minAge: const Duration(minutes: 10),
+          );
     }
   }
 
@@ -210,6 +216,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // KHÔNG chờ: lần đầu là ~450 KB — chờ ở đây là chặn các bước đồng bộ sau trên mạng yếu. Không `force`: service tự hỏi
     // lại server theo nhịp 6 giờ (danh mục chỉ đổi khi có nghị quyết) — review 23/10.
     unawaited(ref.read(geoCatalogServiceProvider).load());
+    // 3b''. Danh mục khách ERP cho bước nối điểm bán (#24327) — "Đồng bộ" và lúc vào app luôn tải lại NGẦM (admin vừa đổi
+    // kênh theo vai thì NV thấy ngay), không chặn các bước sau.
+    ref.read(erpCatalogServiceProvider).refreshInBackground(online: ref.read(connectivityProvider).isOnline);
 
     // 3c. Cập nhật biểu mẫu thị trường (/dms/forms)
     try {
