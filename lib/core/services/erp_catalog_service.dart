@@ -158,6 +158,9 @@ class ErpCatalogService {
 
   static const _fileName = 'erp_catalog.json';
 
+  /// Bản đang nhớ trong tiến trình (không chờ mạng / tệp) — `null` khi chưa nạp lần nào.
+  static ErpCatalog? get memory => _memory;
+
   /// Thời hạn làm MỚI khi máy đã có bản lưu — bấm Lưu không treo theo mạng yếu; quá hạn thì dùng bản đã lưu.
   static const _refreshTimeout = Duration(seconds: 6);
 

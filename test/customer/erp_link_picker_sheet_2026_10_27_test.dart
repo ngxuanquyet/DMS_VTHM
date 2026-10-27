@@ -39,13 +39,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  FilledButton nutXacNhan(WidgetTester t) => t.widget<FilledButton>(find.byKey(const Key('erp-link-confirm')));
-
   testWidgets('tạo: gợi ý SĐT ⇒ chính khách; tìm thêm NPP ⇒ C2; chính khách khoá ở khách thứ hai; xác nhận trả đủ', (tester) async {
     ErpLinkPickResult? kq;
     await moKhung(tester, ErpLinkPickerSheet(catalog: catalog, suggestions: goiY), (v) => kq = v);
 
-    expect(nutXacNhan(tester).onPressed, isNull, reason: 'chưa chọn, chưa tick ⇒ chưa xác nhận được');
     expect(find.text('Trùng SĐT'), findsOneWidget);
     await tester.tap(find.byKey(const Key('erp-link-02700019')));
     await tester.pumpAndSettle();
@@ -66,34 +63,35 @@ void main() {
 
     await tester.tap(find.byKey(const Key('erp-link-confirm')));
     await tester.pumpAndSettle();
-    expect(kq?.unknown, isFalse);
     expect(kq?.picks.map((p) => p.toPayload()).toList(), [
       {'code': '02700019', 'role': 'owner', 'match_reason': 'phone'},
       {'code': '01380001', 'role': 'c2', 'match_reason': 'manual'},
     ]);
   });
 
-  testWidgets('tạo: tick "Chưa xác định NPP" mới xác nhận được khi chưa chọn; chọn khách thì ô tick khoá', (tester) async {
+  testWidgets('bỏ hết khách đã chọn vẫn xác nhận được (trả danh sách rỗng); không có ô tick trong khung', (tester) async {
     ErpLinkPickResult? kq;
-    await moKhung(tester, ErpLinkPickerSheet(catalog: catalog), (v) => kq = v);
-    expect(find.textContaining('Gõ tên hoặc mã'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('erp-link-unknown')));
+    await moKhung(
+      tester,
+      ErpLinkPickerSheet(catalog: catalog, initial: [
+        ErpLinkPick(code: '01380001', name: 'NPP Hoàng Long', role: ErpLinkRole.c2, matchReason: 'manual', channelId: 1),
+      ]),
+      (v) => kq = v,
+    );
+    expect(find.byKey(const Key('erp-link-unknown')), findsNothing);
+    await tester.tap(find.byKey(const Key('erp-link-remove-01380001')));
     await tester.pumpAndSettle();
-    expect(nutXacNhan(tester).onPressed, isNotNull);
     await tester.tap(find.byKey(const Key('erp-link-confirm')));
     await tester.pumpAndSettle();
-    expect(kq?.unknown, isTrue);
     expect(kq?.picks, isEmpty);
   });
 
-  testWidgets('sửa: không có ô tick, ẩn khách đã nối/đề xuất, chính khách khoá khi điểm bán đã có', (tester) async {
+  testWidgets('ẩn khách đã nối/đề xuất, chính khách khoá khi điểm bán đã có', (tester) async {
     await moKhung(
       tester,
-      ErpLinkPickerSheet(catalog: catalog, required: false, ownerTaken: true, excludeCodes: const {'01380001'}),
+      ErpLinkPickerSheet(catalog: catalog, ownerTaken: true, excludeCodes: const {'01380001'}),
       (_) {},
     );
-    expect(find.byKey(const Key('erp-link-unknown')), findsNothing);
     await tester.enterText(find.byKey(const Key('erp-link-search')), 'npp hoang');
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
@@ -106,9 +104,8 @@ void main() {
     expect(find.text('Kênh không được nối'), findsOneWidget, reason: 'khách bán lẻ chỉ làm chính khách mà điểm bán đã có ⇒ mờ');
   });
 
-  testWidgets('chưa có danh mục trên máy (mất mạng từ lần đầu): ô tìm khoá, vẫn tick được', (tester) async {
+  testWidgets('chưa có danh mục trên máy (mất mạng từ lần đầu): ô tìm khoá', (tester) async {
     await moKhung(tester, const ErpLinkPickerSheet(catalog: null), (_) {});
     expect(tester.widget<TextField>(find.byKey(const Key('erp-link-search'))).enabled, isFalse);
-    expect(find.byKey(const Key('erp-link-unknown')), findsOneWidget);
   });
 }

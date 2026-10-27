@@ -13,6 +13,9 @@ import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model
 import 'package:vthm_dms/features/visit/domain/entities/visit_history_entity.dart';
 import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
+import 'package:vthm_dms/core/services/erp_link_request_service.dart';
+
+import 'helpers/fake_erp_link_request_service.dart';
 
 class FakeRouteApiService extends Fake implements RouteApiService {
   @override
@@ -141,6 +144,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
           getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
             MockGetCustomerVisitHistoryUseCase(
@@ -223,6 +227,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
           getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
             MockGetCustomerVisitHistoryUseCase(
@@ -271,6 +276,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(
             FakeRouteApiService(),
           ),
@@ -333,6 +339,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(mockRepo),
+          erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
           getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
             MockGetCustomerVisitHistoryUseCase(

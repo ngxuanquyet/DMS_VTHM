@@ -43,27 +43,22 @@ class ErpLinkPick {
   Map<String, dynamic> toPayload() => {'code': code, 'role': role, 'match_reason': matchReason};
 }
 
-/// Kết quả bước nối: các khách đã chọn + cờ "Chưa xác định NPP".
+/// Kết quả khung chọn: các khách ERP đã chọn kèm vai (có thể rỗng — NV bỏ hết khách đã chọn).
 class ErpLinkPickResult {
   final List<ErpLinkPick> picks;
-  final bool unknown;
 
-  const ErpLinkPickResult({required this.picks, required this.unknown});
+  const ErpLinkPickResult({required this.picks});
 }
 
-/// Bước nối khách ERP (#24327, spec DIEM-BAN-KHACH-ERP §11): "Điểm bán liên quan khách ERP nào?" — chọn NHIỀU khách, mỗi khách
+/// Khung chọn khách ERP cho ô "Khách hàng ERP" (#24327, #24331, spec DIEM-BAN-KHACH-ERP §11–§12) — chọn NHIỀU khách, mỗi khách
 /// một vai Chính khách / Showroom / Đại lý C2 (chính khách tối đa một; vai chỉ hiện nếu kênh của khách được phép). Thẻ gợi ý
-/// (theo SĐT/MST/tên, khi có mạng) + ô tìm trên danh mục lưu máy (chạy cả khi mất mạng).
-///
-/// [required] (tạo mới): xác nhận được khi có ≥1 khách HOẶC tick "Chưa xác định NPP". Sửa điểm bán: chỉ thêm đề xuất, không có ô tick.
-/// Đóng khung ⇒ `pop(null)` (người gọi coi là huỷ).
+/// (theo SĐT/MST/tên, khi có mạng; dự phòng theo tên trên máy) + ô tìm trên danh mục lưu máy (chạy cả khi mất mạng).
+/// Ô tick "Chưa xác định NPP" nằm ở ô trong form, không ở đây. Đóng khung ⇒ `pop(null)` (giữ nguyên lựa chọn cũ).
 class ErpLinkPickerSheet extends StatefulWidget {
   /// Danh mục lưu máy; `null` = chưa từng tải (mất mạng từ lần đầu) ⇒ chỉ còn gợi ý (nếu có) và ô tick.
   final ErpCatalog? catalog;
   final List<ErpLinkSuggestion> suggestions;
   final List<ErpLinkPick> initial;
-  final bool initialUnknown;
-  final bool required;
 
   /// Điểm bán đã có chính khách (mối nối hoặc đề xuất chờ) ⇒ không chọn thêm vai chính khách.
   final bool ownerTaken;
@@ -76,8 +71,6 @@ class ErpLinkPickerSheet extends StatefulWidget {
     required this.catalog,
     this.suggestions = const [],
     this.initial = const [],
-    this.initialUnknown = false,
-    this.required = true,
     this.ownerTaken = false,
     this.excludeCodes = const {},
   });
@@ -92,7 +85,6 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
   final TextEditingController _o = TextEditingController();
   Timer? _hen;
   late final List<ErpLinkPick> _chon = widget.initial.map((p) => p.copy()).toList();
-  late bool _chuaRo = widget.initialUnknown;
 
   /// Từ khoá ĐÃ tìm (khớp với [_ketQua]) — không phải chữ đang gõ.
   String _daTim = '';
@@ -134,14 +126,10 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
     return duoc.first;
   }
 
-  void _them(ErpLinkPick p) => setState(() {
-        _chon.add(p);
-        _chuaRo = false;
-      });
+  void _them(ErpLinkPick p) => setState(() => _chon.add(p));
 
   void _bo(String code) => setState(() => _chon.removeWhere((p) => p.code == code));
 
-  bool get _xacNhanDuoc => _chon.isNotEmpty || (widget.required && _chuaRo);
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +155,7 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: Text(
-                  widget.required ? 'Điểm bán liên quan khách ERP nào?' : 'Đề xuất thêm khách ERP',
+                  'Điểm bán liên quan khách ERP nào?',
                   style: AppTypography.titleMedium(color: chuChinh),
                 ),
               ),
@@ -296,36 +284,13 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                   ],
                 ),
               ),
-              if (widget.required)
-                CheckboxListTile(
-                  key: const Key('erp-link-unknown'),
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _chuaRo && _chon.isEmpty,
-                  onChanged: _chon.isNotEmpty ? null : (v) => setState(() => _chuaRo = v ?? false),
-                  title: Text('Chưa xác định NPP', style: AppTypography.bodyMedium(color: chuChinh)),
-                  subtitle: Text(
-                    _chon.isNotEmpty ? 'Đã chọn khách ERP — không cần tick.' : 'Tick khi chưa biết điểm bán lấy hàng của ai.',
-                    style: AppTypography.bodySmall(color: chuPhu),
-                  ),
-                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 child: FilledButton.icon(
                   key: const Key('erp-link-confirm'),
-                  onPressed: _xacNhanDuoc
-                      ? () => Navigator.pop(
-                            context,
-                            ErpLinkPickResult(picks: _chon.map((p) => p.copy()).toList(), unknown: _chon.isEmpty && _chuaRo),
-                          )
-                      : null,
+                  onPressed: () => Navigator.pop(context, ErpLinkPickResult(picks: _chon.map((p) => p.copy()).toList())),
                   icon: const Icon(Icons.check_rounded),
-                  label: Text(
-                    _chon.isEmpty
-                        ? (widget.required ? 'Chọn khách hoặc tick "Chưa xác định NPP"' : 'Chọn ít nhất một khách')
-                        : 'Xác nhận ${_chon.length} khách ERP',
-                  ),
+                  label: Text(_chon.isEmpty ? 'Xong (chưa chọn khách nào)' : 'Xác nhận ${_chon.length} khách ERP'),
                 ),
               ),
             ],

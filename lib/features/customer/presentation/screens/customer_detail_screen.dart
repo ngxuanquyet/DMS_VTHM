@@ -21,6 +21,7 @@ import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
 import '../widgets/pending_sync_dismissible.dart';
 import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
+import '../widgets/erp_links_form_field.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
@@ -460,6 +461,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     // 5. Route & Management Card
                     _buildRouteAndManagementCard(isDark),
                     const SizedBox(height: 16),
+
+                    // 5b. Khách hàng ERP (#24331): mối nối + đề xuất, sửa = gửi đề xuất chờ duyệt — chỉ điểm bán đã có trên server.
+                    if (_customer.id > 0) ...[
+                      _buildSectionCard(
+                        title: 'Khách hàng ERP',
+                        icon: Icons.link_rounded,
+                        isDark: isDark,
+                        children: [ErpLinksDetailCard(customerId: _customer.id)],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
                     // 6. Dynamic Fields Card (if available)
                     if (_hasDynamicFields()) ...[

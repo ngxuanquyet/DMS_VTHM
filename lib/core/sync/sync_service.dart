@@ -558,6 +558,9 @@ class SyncService {
       payload['photo_tokens'] = resolved;
     }
 
+    // Lượt sửa từ HÀNG ĐỢI ngoại tuyến (#24331): server nới phép kiểm (bỏ mục `erp_link_changes` sai thay vì 4xx — 4xx làm hàng
+    // đợi bỏ hẳn lần sửa, mất cả các ô khác đã sửa). Cờ RIÊNG của request — `is_offline_sync` là CỘT của điểm bán, gửi là ghi đè.
+    payload['offline_queue'] = true;
     await _apiClient.patch('/crm/customers/$serverId', data: payload);
     await _db.markDone(entry.id, serverId: serverId);
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');

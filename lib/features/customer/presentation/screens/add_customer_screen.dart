@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
-import '../../../../core/services/erp_catalog_service.dart';
-import '../../../../core/services/erp_link_request_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -18,7 +16,7 @@ import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
-import '../widgets/erp_link_picker_sheet.dart';
+import '../widgets/erp_links_form_field.dart';
 import '../../../route/domain/entities/route_entity.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 
@@ -528,8 +526,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
-  /// Lựa chọn ở bước nối khách ERP (#24327) — giữ qua các lần bấm lưu lại (lưu lỗi 4xx thì mở lại khung với lựa chọn cũ).
-  ErpLinkPickResult? _buocNoi;
 
   bool _hasUserInput() {
     if (_formKey.currentState != null) {
@@ -719,20 +715,16 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       final repo = ref.read(customerRepositoryProvider);
       final isOnline = ref.read(connectivityProvider).isOnline;
 
-      // Bước nối khách ERP (#24327, BẮT BUỘC khi tạo): ≥1 khách ERP kèm vai, hoặc tick "Chưa xác định NPP". Có mạng thì kèm
-      // gợi ý theo SĐT/MST/tên; tìm trên danh mục lưu máy nên chạy cả khi mất mạng. Lựa chọn đi KÈM payload tạo điểm bán ⇒
-      // lượt ngoại tuyến cũng mang theo qua hàng đợi đồng bộ. Đóng khung (Back/vuốt) = HUỶ lưu, quay lại form.
-      final buocNoi = await _hoiBuocNoi(formData, isOnline);
-      if (!mounted) return;
-      if (buocNoi == null) {
-        setState(() => _isSubmitting = false);
-        return;
-      }
-      _buocNoi = buocNoi;
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
-      payload['erp_links'] = buocNoi.picks.map((p) => p.toPayload()).toList();
-      payload['erp_link_unknown'] = buocNoi.unknown;
+      // Ô "Khách hàng ERP" (#24331): lựa chọn đi KÈM payload tạo ⇒ lượt ngoại tuyến mang theo qua hàng đợi. Ô vắng (admin ẩn /
+      // schema cũ) ⇒ KHÔNG gửi khoá — server chỉ bắt buộc khi thấy `erp_links`.
+      final oErp = payload.containsKey('erp_links') ? ErpLinksValue.fromJson(payload['erp_links']) : null;
+      payload.remove('erp_links');
+      if (oErp != null) {
+        payload['erp_links'] = oErp.createLinks();
+        payload['erp_link_unknown'] = oErp.unknown;
+      }
       // Ô Kênh "chọn một" giữ giá trị ĐƠN — gom về danh sách: bản lưu máy (điểm bán chờ đồng bộ) chỉ đọc mảng.
       final kenhDon = payload['own_channel_ids'];
       if (kenhDon != null && kenhDon is! List) payload['own_channel_ids'] = [kenhDon];
@@ -937,7 +929,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(addCustomerSuccessMessage(hasPending: hasPending, linkProposals: buocNoi.picks.length)),
+                  child: Text(addCustomerSuccessMessage(hasPending: hasPending, linkProposals: oErp?.add.length ?? 0)),
                 ),
               ],
             ),
@@ -960,55 +952,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         setState(() => _isSubmitting = false);
       }
     }
-  }
-
-  /// Mở bước nối khách ERP: nạp danh mục lưu máy + gợi ý theo SĐT/MST/tên từ máy chủ — chạy SONG SONG (chờ danh mục rồi
-  /// mới hỏi gợi ý thì trên mạng yếu lời gợi ý quá hạn ⇒ danh sách trống). Máy chủ không gợi ý được (mất mạng, quá hạn, không
-  /// khớp) ⇒ gợi ý theo tên ngay trên danh mục lưu máy. `null` = NV đóng khung (huỷ lưu).
-  Future<ErpLinkPickResult?> _hoiBuocNoi(Map<String, dynamic> formData, bool isOnline) async {
-    final taiDanhMuc = ref.read(erpCatalogServiceProvider).load(online: isOnline);
-    final hoiGoiY = !isOnline
-        ? Future.value(const <ErpLinkSuggestion>[])
-        : ref
-            .read(erpLinkRequestServiceProvider)
-            .suggest(
-              name: formData['name']?.toString(),
-              phone: formData['phone']?.toString(),
-              taxCode: (formData['tax_code'] ?? formData['ma_so_thue'])?.toString(),
-              address: formData['address']?.toString(),
-            )
-            .timeout(const Duration(seconds: 10))
-            // Gợi ý chỉ là tiện ích — lỗi mạng thì rơi về gợi ý trên máy.
-            .catchError((_) => const <ErpLinkSuggestion>[]);
-    final catalog = await taiDanhMuc;
-    var goiY = await hoiGoiY;
-    if (goiY.isEmpty && catalog != null) {
-      goiY = catalog
-          .suggestByName(formData['name']?.toString())
-          .map((i) => ErpLinkSuggestion(
-                code: i.code,
-                name: i.name,
-                address: i.address,
-                channelId: i.channelId,
-                channelName: i.channelName,
-                matchReason: 'name_address',
-              ))
-          .toList();
-    }
-    if (!mounted) return null;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return showModalBottomSheet<ErpLinkPickResult>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => ErpLinkPickerSheet(
-        catalog: catalog,
-        suggestions: goiY,
-        initial: _buocNoi?.picks ?? const [],
-        initialUnknown: _buocNoi?.unknown ?? false,
-      ),
-    );
   }
 
   @override
@@ -1321,6 +1264,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                             _savedFormData.addAll(data);
                           },
                           onSubmit: _handleSubmit,
+                          customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
+                          customValidators: {'erp_links': erpLinksCreateValidator},
                         ),
                       ],
                     ),
@@ -1421,3 +1366,19 @@ String addCustomerSuccessMessage({required bool hasPending, int linkProposals = 
       ? '$base $linkProposals khách ERP sẽ được đề xuất nối khi đồng bộ.'
       : '$base Đã chọn $linkProposals khách ERP để đề xuất nối, chờ quản lý duyệt.';
 }
+
+/// Vẽ ô "Khách hàng ERP" (`erp_links`, #24331) trong form động — dùng chung form tạo / form sửa.
+Widget erpLinksFieldBuilder(DynamicFormField field, dynamic value, String? errorText, ValueChanged<dynamic> onChanged) =>
+    ErpLinksFormField(
+      label: field.label,
+      isRequired: field.isRequired,
+      value: ErpLinksValue.fromJson(value),
+      errorText: errorText,
+      onChanged: (v) => onChanged(v.toJson()),
+    );
+
+/// Kiểm ô "Khách hàng ERP" khi TẠO: bắt buộc (admin đặt) ⇒ ≥1 khách hoặc tick "Chưa xác định NPP".
+String? erpLinksCreateValidator(DynamicFormField field, dynamic value) =>
+    field.isRequired && !ErpLinksValue.fromJson(value).satisfiesRequired
+        ? 'Chọn ít nhất một khách ERP hoặc tick "Chưa xác định NPP".'
+        : null;

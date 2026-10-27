@@ -14,7 +14,7 @@ import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../screens/add_customer_screen.dart';
-import '../widgets/erp_links_section.dart';
+import '../widgets/erp_links_form_field.dart';
 import '../viewmodels/customer_view_model.dart';
 
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
@@ -172,6 +172,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       data['photo_file_id'] = photos;
       data['photo_tokens'] = photos;
       data['photos'] = photos;
+    }
+
+    // Ô "Khách hàng ERP" (#24331): mang id điểm bán để ô tự đọc mối nối hiện có từ server; thay đổi = đề xuất chờ duyệt.
+    if (c.id > 0) {
+      data['erp_links'] = ErpLinksValue(customerId: c.id).toJson();
     }
 
     return data;
@@ -498,7 +503,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         'route_ids', 'route_id', 'address', 'delivery_address', 'province_name', 'ward_name',
         'contact_name', 'contact_person', 'contact_title', 'phone', 'email', 'coords', 'lat', 'lng',
         'photo_file_id', 'photos', 'photo_tokens', 'code', 'id', 'status', 'is_active',
-        'province_id', 'ward_id', 'geo_source',
+        'province_id', 'ward_id', 'geo_source', 'erp_links',
       };
       final dynamicChanges = <String, dynamic>{};
       for (final entry in formData.entries) {
@@ -512,6 +517,12 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       }
       if (dynamicChanges.isNotEmpty) {
         changes['data'] = dynamicChanges;
+      }
+
+      // Ô "Khách hàng ERP" (#24331): mỗi thay đổi (thêm / đổi vai / gỡ) thành một đề xuất chờ duyệt — server ghi khi lưu.
+      final oErp = ErpLinksValue.fromJson(formData['erp_links']);
+      if (oErp.hasChanges) {
+        changes['erp_link_changes'] = oErp.editChanges();
       }
 
       if (changes.isEmpty) {
@@ -797,7 +808,13 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                 meta: meta,
                 routeOptions: dynamicRouteOptions,
                 editing: c,
-              );
+              )
+                  // Điểm bán TẠO ngoại tuyến chưa đồng bộ (id ≤ 0): khách ERP đã chọn lúc tạo đi kèm lượt tạo trong hàng đợi —
+                  // ẩn ô, sửa ở đây không có đường ghi (#24331).
+                  .where((f) => f.code != 'erp_links' || c.id > 0)
+                  // Ô "Khách hàng ERP" chỉ bắt buộc khi TẠO — điểm bán cũ sửa việc khác không bị ép nối (chốt 27/10/2026).
+                  .map((f) => f.code == 'erp_links' ? f.copyWith(isRequired: false) : f)
+                  .toList();
 
               if (fields.isEmpty) {
                 return const Center(
@@ -891,10 +908,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                                 _savedFormData.addAll(data);
                               },
                               onSubmit: _handleSubmit,
+                              customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                             ),
-
-                            // Khách hàng ERP (#24327): mối nối + đề xuất chờ + "Đề xuất thêm" — chỉ điểm bán đã có trên server.
-                            if (widget.customer.id > 0) ErpLinksSection(customerId: widget.customer.id),
                           ],
                         ),
                       ),

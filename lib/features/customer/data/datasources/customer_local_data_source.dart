@@ -874,6 +874,14 @@ class CustomerLocalDataSource {
         oldPayload = jsonDecode(entry.payload) as Map<String, dynamic>;
       } catch (_) {}
       final merged = {...oldPayload, ...changes};
+      // `erp_link_changes` (#24331) là DANH SÁCH đề xuất — gộp theo mã khách (lần sửa sau thắng), không để lần sau đè mất lần trước.
+      if (oldPayload['erp_link_changes'] is List && changes['erp_link_changes'] is List) {
+        final theoMa = <String, dynamic>{};
+        for (final e in [...oldPayload['erp_link_changes'] as List, ...changes['erp_link_changes'] as List]) {
+          if (e is Map && e['code'] != null) theoMa[e['code'].toString()] = e;
+        }
+        merged['erp_link_changes'] = theoMa.values.toList();
+      }
       await (_db.update(_db.syncQueueEntries)..where((tbl) => tbl.id.equals(entry.id))).write(
         SyncQueueEntriesCompanion(
           payload: Value(jsonEncode(merged)),

@@ -43,6 +43,14 @@ class DynamicFormBuilder extends StatefulWidget {
   /// (màn tạo điểm bán theo Cấu hình trường điểm bán — chủ hệ thống 21/10/2026). Mặc định gom như cũ.
   final bool keepFieldOrder;
 
+  /// Vẽ RIÊNG một số ô theo MÃ (vd `erp_links` — ô "Khách hàng ERP" của form điểm bán, #24331) — màn gọi cung cấp widget, form
+  /// động giữ giá trị và lỗi như ô thường. `onChanged` của builder = [updateFieldValue].
+  final Map<String, Widget Function(DynamicFormField field, dynamic value, String? errorText, ValueChanged<dynamic> onChanged)>?
+      customFieldBuilders;
+
+  /// Kiểm RIÊNG theo MÃ (chạy thay cho phép kiểm "bắt buộc" mặc định của ô đó): trả câu lỗi hoặc `null`.
+  final Map<String, String? Function(DynamicFormField field, dynamic value)>? customValidators;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -52,6 +60,8 @@ class DynamicFormBuilder extends StatefulWidget {
     this.submitButtonText,
     this.isSubmitting = false,
     this.keepFieldOrder = false,
+    this.customFieldBuilders,
+    this.customValidators,
   });
 
   @override
@@ -218,6 +228,18 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
     for (final field in widget.fields) {
       final value = _formData[field.code];
+
+      // 0. Ô có phép kiểm riêng (màn gọi cung cấp) — thay cho kiểm "bắt buộc" mặc định.
+      final kiemRieng = widget.customValidators?[field.code];
+      if (kiemRieng != null) {
+        final loi = kiemRieng(field, value);
+        if (loi != null) {
+          newErrors[field.code] = loi;
+          isValid = false;
+          firstInvalidCode ??= field.code;
+        }
+        continue;
+      }
 
       // 1. Kiểm tra bắt buộc nhập (Required check)
       if (field.isRequired) {
@@ -664,6 +686,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final value = _formData[field.code];
     final errorText = _errors[field.code];
     final focusNode = _getFocusNode(field.code);
+
+    final veRieng = widget.customFieldBuilders?[field.code];
+    if (veRieng != null) {
+      return veRieng(field, value, errorText, (v) => updateFieldValue(field.code, v));
+    }
 
     switch (field.type) {
       case DynamicFormFieldType.text:
