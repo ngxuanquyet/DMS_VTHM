@@ -139,7 +139,11 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     return punches;
   }
 
-  DayAttendanceStatus _getDayStatus(DateTime date, List<AttendancePunchEntity> dayPunches) {
+  DayAttendanceStatus _getDayStatus(
+    DateTime date,
+    List<AttendancePunchEntity> dayPunches,
+    List<AttendanceDayResultEntity>? dayResults,
+  ) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final cellDay = DateTime(date.year, date.month, date.day);
@@ -156,12 +160,22 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
       return DayAttendanceStatus.warning;
     }
 
-    // 3. Chưa đủ ca ra (nếu không phải hôm nay mà chỉ có 1 lượt chấm) -> Vàng
+    // 3. Server đã tính công ngày này ⇒ theo KẾT QUẢ server, không đếm lượt thô: hai lượt sát nhau bị gộp thành một
+    //    (`punch_merge_minutes`) nên vẫn là "thiếu giờ ra/vào" dù app thấy hai lượt (VTG902, 27/10/2026).
+    final results = dayResults ?? const <AttendanceDayResultEntity>[];
+    if (results.isNotEmpty) {
+      const incomplete = {'missing_in', 'missing_out', 'absent_unexcused'};
+      return results.any((r) => incomplete.contains(r.dayStatus))
+          ? DayAttendanceStatus.warning
+          : DayAttendanceStatus.valid;
+    }
+
+    // 4. Chưa đủ ca ra (nếu không phải hôm nay mà chỉ có 1 lượt chấm) -> Vàng
     if (!DateUtils.isSameDay(cellDay, today) && dayPunches.length < 2) {
       return DayAttendanceStatus.warning;
     }
 
-    // 4. Nếu là hôm nay và mới có 1 lượt chấm vào -> Vàng (đang trong ca)
+    // 5. Nếu là hôm nay và mới có 1 lượt chấm vào -> Vàng (đang trong ca)
     if (DateUtils.isSameDay(cellDay, today) && dayPunches.length == 1 && dayPunches.first.direction == 'in') {
       return DayAttendanceStatus.warning;
     }
@@ -528,6 +542,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     // weekday: 1 (Mon) -> 7 (Sun)
     final daysBefore = firstDayOfMonth.weekday - 1;
     final totalCells = daysBefore + daysInMonth;
+    final dayResults = ref.watch(attendanceViewModelProvider.select((s) => s.dayResults));
     final trailingDays = (7 - (totalCells % 7)) % 7;
     final totalCount = totalCells + trailingDays;
 
@@ -566,7 +581,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
         final isToday = DateUtils.isSameDay(cellDate, now);
 
         final dayPunches = _getPunchesForDate(cellDate);
-        final status = _getDayStatus(cellDate, dayPunches);
+        final status = _getDayStatus(cellDate, dayPunches, dayResults[DateFormat('yyyy-MM-dd').format(cellDate)]);
         final statusColor = _getStatusColor(status);
 
         return InkWell(
