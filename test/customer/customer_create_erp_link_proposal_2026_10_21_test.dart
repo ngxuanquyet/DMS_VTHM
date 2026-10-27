@@ -18,35 +18,41 @@ class _FakeLinkSvc implements ErpLinkRequestService {
 
 class ApiClientTestError implements Exception {}
 
-/// #23709: tạo điểm bán ⇒ đề xuất nối khách ERP (chính khách từ gợi ý, C2 từ ô khách hàng pháp nhân).
+/// #23709: tạo điểm bán ⇒ đề xuất nối khách ERP (chính khách từ gợi ý; C2 / Showroom NV chọn cho khách ở ô khách hàng pháp nhân).
 void main() {
-  test('mã C2 lấy từ mọi ô ref_erp_partner; bỏ giá trị ngoại lệ, mã rỗng, mã trùng', () {
+  test('khách lấy từ mọi ô ref_erp_partner kèm mã ô; bỏ giá trị ngoại lệ, mã rỗng, mã trùng', () {
     final schema = [
       {'code': 'name', 'input_type': 'text'},
       {'code': 'nha_phan_phoi', 'input_type': 'ref_erp_partner'},
       {'code': 'npp_phu', 'input_type': 'ref_erp_partner'},
     ];
-    final codes = erpPartnerCodesForC2(schema, {
+    final picks = erpPartnerPicks(schema, {
       'name': 'Cửa hàng A',
       'nha_phan_phoi': ['01200001', '_:Chưa xác định', '', '01200002'],
-      'npp_phu': '01200001',
+      'npp_phu': ['01200001', '01200003'],
     });
-    expect(codes, ['01200001', '01200002']);
-    expect(erpPartnerCodesForC2(schema, {'nha_phan_phoi': null}), isEmpty);
-    expect(erpPartnerCodesForC2(const [], {'nha_phan_phoi': ['01200001']}), isEmpty, reason: 'không có ô ⇒ không đề xuất');
+    expect(picks, [('nha_phan_phoi', '01200001'), ('nha_phan_phoi', '01200002'), ('npp_phu', '01200003')]);
+    expect(erpPartnerPicks(schema, {'nha_phan_phoi': null}), isEmpty);
+    expect(erpPartnerPicks(const [], {'nha_phan_phoi': ['01200001']}), isEmpty, reason: 'không có ô ⇒ không đề xuất');
   });
 
-  test('gửi đề xuất: chính khách + C2, bỏ trùng mã chính khách, lượt lỗi không làm hỏng lượt khác', () async {
+  test('gửi đề xuất: chính khách + vai NV chọn (C2 / Showroom), bỏ trùng mã chính khách, lượt lỗi không làm hỏng lượt khác', () async {
     final svc = _FakeLinkSvc();
     const chinh = ErpLinkSuggestion(code: '01200009', name: 'Cửa hàng A', matchReason: 'phone');
-    final n = await guiDeXuatNoiErp(svc, 77, chinh, ['01200001', '01200009', '_LOI']);
-    expect(n, 2);
+    final n = await guiDeXuatNoiErp(svc, 77, chinh, {
+      '01200001': ErpLinkRole.c2,
+      '01200002': ErpLinkRole.showroom,
+      '01200009': ErpLinkRole.c2,
+      '_LOI': ErpLinkRole.c2,
+    });
+    expect(n, 3);
     expect(svc.sent, containsAll([
       (77, '01200009', ErpLinkRole.owner, 'phone'),
       (77, '01200001', ErpLinkRole.c2, null),
+      (77, '01200002', ErpLinkRole.showroom, null),
     ]));
     expect(svc.sent.where((d) => d.$2 == '01200009').length, 1, reason: 'mã chính khách không gửi thêm vai C2');
-    expect(await guiDeXuatNoiErp(_FakeLinkSvc(), 77, null, const []), 0);
+    expect(await guiDeXuatNoiErp(_FakeLinkSvc(), 77, null, const {}), 0);
   });
 
   test('khoá gợi ý đổi khi sửa tên/SĐT/MST/địa chỉ, không đổi khi sửa ô khác', () {
@@ -74,5 +80,6 @@ void main() {
     expect(s.matchReasonLabel, 'Trùng SĐT');
     expect(ErpLinkRole.owner, 'owner');
     expect(ErpLinkRole.c2, 'c2');
+    expect(ErpLinkRole.showroom, 'showroom', reason: 'khớp ErpLinkRole::Showroom phía server');
   });
 }

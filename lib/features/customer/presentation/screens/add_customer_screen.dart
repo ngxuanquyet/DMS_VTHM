@@ -535,6 +535,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   /// Khách ERP NV xác nhận là chính điểm bán này (null = không phải / không có gợi ý).
   ErpLinkSuggestion? _chinhKhach;
 
+  /// Vai NV đã chọn cho từng khách ở ô "khách hàng pháp nhân" (mã ⇒ c2/showroom) — giữ qua các lần bấm lưu lại.
+  final Map<String, String> _vaiTroNoi = {};
+
   bool _hasUserInput() {
     if (_formKey.currentState != null) {
       final data = _formKey.currentState!.getFormData();
@@ -743,6 +746,23 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       final linkSvc = ref.read(erpLinkRequestServiceProvider);
       final schemaNow = ref.read(customerFormSchemaProvider).valueOrNull;
       final schemaFields = (schemaNow?['data'] is Map ? schemaNow!['data']['fields'] : null) as List? ?? const [];
+
+      // Khách chọn ở ô "khách hàng pháp nhân" ⇒ NV chọn vai C2 / Showroom cho từng khách. Chỉ hỏi khi có mạng (mất mạng
+      // không gửi đề xuất). Đóng khung (Back/vuốt) = HUỶ lưu, như khung hỏi chính khách.
+      final picks = isOnline
+          ? erpPartnerPicks(schemaFields, formData).where((p) => p.$2 != _chinhKhach?.code).toList()
+          : const <(String, String)>[];
+      var vaiTro = const <String, String>{};
+      if (picks.isNotEmpty) {
+        final chon = await _hoiVaiTro(picks);
+        if (!mounted) return;
+        if (chon == null) {
+          setState(() => _isSubmitting = false);
+          return;
+        }
+        _vaiTroNoi.addAll(chon);
+        vaiTro = chon;
+      }
       
       // Chuẩn bị payload dữ liệu submit
       final payload = Map<String, dynamic>.from(formData);
@@ -926,7 +946,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       final taoXong = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
       // Đề xuất nối chỉ gửi được khi điểm bán ĐÃ có id trên server (tạo online thành công).
       final soDeXuat = isOnline && taoXong.id > 0
-          ? await guiDeXuatNoiErp(linkSvc, taoXong.id, _chinhKhach, erpPartnerCodesForC2(schemaFields, formData))
+          ? await guiDeXuatNoiErp(linkSvc, taoXong.id, _chinhKhach, vaiTro)
           : 0;
 
       if (isOnline) {
@@ -1062,6 +1082,105 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     );
     if (chon == null) return (true, false, null);
     return (false, true, chon.code.isEmpty ? null : chon);
+  }
+
+  /// Hỏi vai của điểm bán với từng khách ERP chọn ở ô "khách hàng pháp nhân": đại lý C2 (mặc định) hay showroom.
+  /// [picks] = `(mã ô, mã khách)`. Tên khách tra theo từng ô; tra lỗi thì hiện nhãn dự phòng, không chặn lưu.
+  /// @return Mã khách ⇒ vai; `null` = NV đóng khung (huỷ lưu).
+  Future<Map<String, String>?> _hoiVaiTro(List<(String, String)> picks) async {
+    final optionsSvc = ref.read(erpPartnerOptionsServiceProvider);
+    final ten = <String, String>{};
+    final theoO = <String, List<String>>{};
+    for (final p in picks) {
+      theoO.putIfAbsent(p.$1, () => []).add(p.$2);
+    }
+    await Future.wait(theoO.entries.map((e) => optionsSvc
+        .lookup(field: e.key, codes: e.value)
+        .timeout(const Duration(seconds: 6))
+        .then((items) {
+      for (final it in items) {
+        if (it.name.isNotEmpty) ten[it.code] = it.name;
+      }
+    }).catchError((_) {})));
+    if (!mounted) return null;
+
+    final chon = {for (final p in picks) p.$2: _vaiTroNoi[p.$2] ?? ErpLinkRole.c2};
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return showModalBottomSheet<Map<String, String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Text(
+                    'Điểm bán là gì của khách ERP?',
+                    style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Chọn vai trò với từng khách — quản lý sẽ duyệt mối nối.',
+                    style: AppTypography.bodySmall(
+                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final p in picks)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                ten[p.$2] != null ? '${ten[p.$2]} (${p.$2})' : ErpPartnerOption.fallbackLabel(p.$2),
+                                style: AppTypography.bodyMedium(
+                                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                                ).copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 6),
+                              SegmentedButton<String>(
+                                key: Key('erp-link-role-${p.$2}'),
+                                segments: const [
+                                  ButtonSegment(value: ErpLinkRole.c2, label: Text('Đại lý C2')),
+                                  ButtonSegment(value: ErpLinkRole.showroom, label: Text('Showroom')),
+                                ],
+                                selected: {chon[p.$2]!},
+                                showSelectedIcon: false,
+                                onSelectionChanged: (v) => setSheet(() => chon[p.$2] = v.first),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx, Map<String, String>.from(chon)),
+                    child: const Text('Xác nhận và lưu'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1471,17 +1590,18 @@ String addCustomerSuccessMessage({required bool hasPending, int linkProposals = 
   return linkProposals > 0 ? '$base Đã gửi $linkProposals đề xuất nối khách ERP, chờ quản lý duyệt.' : base;
 }
 
-/// Mã khách ERP chọn ở các ô "khách hàng pháp nhân" (`ref_erp_partner`, vd "Thuộc nhà phân phối") của form điểm bán ⇒
-/// đề xuất nối vai C2 (#23709, chốt 21/10/2026). Nhận diện ô + đọc giá trị bằng ĐÚNG hàm form dùng
+/// Khách ERP chọn ở các ô "khách hàng pháp nhân" (`ref_erp_partner`, vd "Thuộc nhà phân phối") của form điểm bán — mỗi
+/// khách một đề xuất nối, NV chọn vai C2 / Showroom (#23709; showroom thêm 27/10/2026). Trả `(mã ô, mã khách)` — mã ô
+/// cần để tra tên khách (`GET /dms/erp-partner-options?field=`). Nhận diện ô + đọc giá trị bằng ĐÚNG hàm form dùng
 /// ([DynamicFormField.fromJson], [ErpPartnerFieldWidget.codesFromValue]); bỏ giá trị ngoại lệ (`"_:…"`) và mã trùng.
-List<String> erpPartnerCodesForC2(List<dynamic> schemaFields, Map<String, dynamic> formData) {
-  final out = <String>[];
+List<(String, String)> erpPartnerPicks(List<dynamic> schemaFields, Map<String, dynamic> formData) {
+  final out = <(String, String)>[];
   for (final f in schemaFields.whereType<Map>()) {
     final field = DynamicFormField.fromJson(Map<String, dynamic>.from(f));
     if (field.type != DynamicFormFieldType.erpPartner) continue;
     for (final code in ErpPartnerFieldWidget.codesFromValue(formData[field.code])) {
-      if (ErpPartnerOption.isExtraCode(code) || out.contains(code)) continue;
-      out.add(code);
+      if (ErpPartnerOption.isExtraCode(code) || out.any((p) => p.$2 == code)) continue;
+      out.add((field.code, code));
     }
   }
   return out;
@@ -1495,19 +1615,20 @@ String erpSuggestKey(Map<String, dynamic> formData) => [
       formData['address'],
     ].map((v) => v?.toString().trim() ?? '').join('\u0001');
 
-/// Gửi đề xuất nối cho điểm bán vừa tạo — vai CHÍNH KHÁCH (nếu NV xác nhận) + vai C2 cho mỗi mã trong [c2Codes]. Gửi
-/// SONG SONG, mỗi lượt tối đa 8 giây; lượt lỗi (đã nối, trùng đề xuất, mạng) bỏ qua — điểm bán đã tạo xong.
+/// Gửi đề xuất nối cho điểm bán vừa tạo — vai CHÍNH KHÁCH (nếu NV xác nhận) + vai NV chọn ([ErpLinkRole.c2] /
+/// [ErpLinkRole.showroom]) cho mỗi mã trong [vaiTro] (mã khách ⇒ vai). Gửi SONG SONG, mỗi lượt tối đa 8 giây; lượt lỗi (đã
+/// nối, trùng đề xuất, mạng) bỏ qua — điểm bán đã tạo xong.
 /// @return Số đề xuất gửi được.
 Future<int> guiDeXuatNoiErp(
   ErpLinkRequestService svc,
   int customerId,
   ErpLinkSuggestion? chinhKhach,
-  List<String> c2Codes,
+  Map<String, String> vaiTro,
 ) async {
   final deXuat = <(String, String, String?)>[
     if (chinhKhach != null) (chinhKhach.code, ErpLinkRole.owner, chinhKhach.matchReason),
-    for (final code in c2Codes)
-      if (code != chinhKhach?.code) (code, ErpLinkRole.c2, null),
+    for (final e in vaiTro.entries)
+      if (e.key != chinhKhach?.code) (e.key, e.value, null),
   ];
   final ketQua = await Future.wait(deXuat.map((d) => svc
       .propose(customerId: customerId, erpPartnerCode: d.$1, role: d.$2, matchReason: d.$3)

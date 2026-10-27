@@ -8,6 +8,9 @@ class ErpLinkRole {
 
   /// Điểm bán là đại lý cấp 2 lấy hàng của khách ERP (nhà phân phối).
   static const String c2 = 'c2';
+
+  /// Điểm bán là showroom của khách ERP.
+  static const String showroom = 'showroom';
 }
 
 /// Một khách ERP trùng/gần trùng với điểm bán đang tạo (`GET /crm/customer-erp-link-requests/suggest`).
