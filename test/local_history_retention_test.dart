@@ -123,19 +123,20 @@ void main() {
     ));
 
     final n = await LocalHistoryRetention.sweepPhotoFiles(db, now: now, roots: [root, sub]);
-    expect(n, 3);
+    // Kiểm TỪNG tệp trước (kèm lý do) — đỏ thì biết ngay tệp nào bị xoá/giữ nhầm; tổng số kiểm sau cùng.
+    expect(oldOrphan.existsSync(), isFalse, reason: 'ảnh cũ không ai trỏ tới');
+    expect(oldWm.existsSync(), isFalse, reason: 'bản wm_ cũ không ai trỏ tới');
     expect(oldPicked.existsSync(), isFalse, reason: 'ảnh chọn từ thư viện (cache/<uuid>/) cũng được dọn');
     expect(picked.existsSync(), isFalse, reason: 'thư mục <uuid> rỗng bị xoá');
-    expect(oldFileUri.existsSync(), isTrue, reason: 'tham chiếu dạng file://');
+    expect(oldReferenced.existsSync(), isTrue, reason: 'localPath của hàng đợi');
+    expect(oldRefOtherForm.existsSync(), isTrue, reason: 'payload hàng đợi trỏ bằng đường dẫn khác dạng (so tên tệp)');
+    expect(oldInHistory.existsSync(), isTrue, reason: 'lịch sử khai báo (JSON prefs) còn trỏ tới');
     expect(oldInList.existsSync(), isTrue, reason: 'tham chiếu trong StringList');
-    expect(oldInHistory.existsSync(), isTrue, reason: 'lịch sử khai báo còn trỏ tới');
+    expect(oldFileUri.existsSync(), isTrue, reason: 'tham chiếu dạng file://');
+    expect(fresh.existsSync(), isTrue, reason: 'ảnh mới (chưa quá hạn giữ)');
+    expect(oldNotImage.existsSync(), isTrue, reason: 'không phải ảnh');
     expect(oldNested.existsSync(), isTrue, reason: 'không quét sâu thư mục con (cache thư viện khác)');
-    expect(oldOrphan.existsSync(), isFalse);
-    expect(oldWm.existsSync(), isFalse);
-    expect(oldReferenced.existsSync(), isTrue);
-    expect(oldRefOtherForm.existsSync(), isTrue);
-    expect(fresh.existsSync(), isTrue);
-    expect(oldNotImage.existsSync(), isTrue);
+    expect(n, 3);
   });
 
   test('nhận dạng đường dẫn tệp: Android/iOS, file://, Windows (máy chạy test); bỏ URL và chuỗi thường', () {
