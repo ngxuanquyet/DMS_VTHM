@@ -632,11 +632,11 @@ LazyDatabase _openConnection() {
   });
 }
 
-/// Gom mọi chuỗi trông như đường dẫn tệp trên máy ('/...' hoặc 'file://...') trong một cây JSON đã giải mã — dùng chung
+/// Gom mọi chuỗi trông như đường dẫn tệp trên máy ([looksLikeFilePath]) trong một cây JSON đã giải mã — dùng chung
 /// cho dọn tệp của dòng hàng đợi và tìm tệp còn được tham chiếu (quét ảnh tạm).
 void collectFilePaths(Object? node, List<String> out) {
   if (node is String) {
-    if (node.startsWith('/') || node.startsWith('file://')) out.add(node);
+    if (looksLikeFilePath(node)) out.add(node);
   } else if (node is Map) {
     for (final v in node.values) {
       collectFilePaths(v, out);
@@ -647,3 +647,8 @@ void collectFilePaths(Object? node, List<String> out) {
     }
   }
 }
+
+final _windowsAbsolutePath = RegExp(r'^[A-Za-z]:[\\/]');
+
+/// Đường dẫn tuyệt đối trên máy: '/...' (Android/iOS), 'file://...', hoặc 'C:\...' (Windows — máy chạy test/desktop).
+bool looksLikeFilePath(String s) => s.startsWith('/') || s.startsWith('file://') || _windowsAbsolutePath.hasMatch(s);

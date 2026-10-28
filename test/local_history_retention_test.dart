@@ -137,4 +137,13 @@ void main() {
     expect(fresh.existsSync(), isTrue);
     expect(oldNotImage.existsSync(), isTrue);
   });
+
+  test('nhận dạng đường dẫn tệp: Android/iOS, file://, Windows (máy chạy test); bỏ URL và chuỗi thường', () {
+    expect(looksLikeFilePath('/data/user/0/app/cache/a.jpg'), isTrue);
+    expect(looksLikeFilePath('file:///var/mobile/tmp/a.jpg'), isTrue);
+    expect(looksLikeFilePath(r'C:\Users\dev\AppData\Local\Temp\a.jpg'), isTrue);
+    expect(looksLikeFilePath('D:/tmp/a.jpg'), isTrue);
+    expect(looksLikeFilePath('https://x.vn/a.jpg'), isFalse);
+    expect(looksLikeFilePath('Điểm bán: a.jpg'), isFalse);
+  });
 }

@@ -234,7 +234,7 @@ class LocalHistoryRetention {
   static List<String> _pathsInStrings(List<String> values) {
     final out = <String>[];
     for (final s in values) {
-      if (s.startsWith('/') || s.startsWith('file://')) {
+      if (looksLikeFilePath(s)) {
         out.add(s);
       } else if (s.startsWith('{') || s.startsWith('[')) {
         try {
