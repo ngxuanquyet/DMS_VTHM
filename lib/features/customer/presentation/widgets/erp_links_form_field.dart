@@ -352,7 +352,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               value: v.unknown,
               onChanged: (x) => _doi(v.copyWith(unknown: x ?? false)),
               title: Text('Chưa xác định NPP', style: AppTypography.bodyMedium(color: chuChinh)),
-              subtitle: Text('Tick khi chưa biết điểm bán lấy hàng của ai.', style: AppTypography.bodySmall(color: chuPhu)),
             ),
         ],
       );
