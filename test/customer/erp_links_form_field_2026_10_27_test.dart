@@ -71,6 +71,8 @@ void main() {
 
     expect(find.text('Đã duyệt'), findsOneWidget);
     expect(find.text('Chờ duyệt · đổi vai Đại lý C2 → Showroom'), findsOneWidget);
+    // Vai đọc theo chiều điểm bán → khách ERP (28/10/2026).
+    expect(find.text('K1 · Điểm bán là Đại lý C2'), findsOneWidget);
     expect(find.text('Đã từ chối · Thêm khách ERP — Sai NPP'), findsOneWidget);
     expect(find.byKey(const Key('erp-links-unknown')), findsNothing, reason: 'sửa: không có ô tick');
 

@@ -530,7 +530,8 @@ class _TheTrangThai extends StatelessWidget {
                 Text(ten, maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: AppTypography.bodyMedium(color: chuChinh).copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!, vai].join(' · '),
+                // Vai là của ĐIỂM BÁN với khách ERP, không phải của khách ERP ⇒ ghi rõ "Điểm bán là …" (chủ hệ thống chốt 28/10/2026).
+                Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!, 'Điểm bán là $vai'].join(' · '),
                     style: AppTypography.bodySmall(color: chuPhu)),
                 if (nhan != null) ...[
                   const SizedBox(height: 4),
