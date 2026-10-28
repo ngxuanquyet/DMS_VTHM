@@ -170,6 +170,17 @@ class $SyncQueueEntriesTable extends SyncQueueEntries
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _ownerUserIdMeta = const VerificationMeta(
+    'ownerUserId',
+  );
+  @override
+  late final GeneratedColumn<int> ownerUserId = GeneratedColumn<int>(
+    'owner_user_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -187,6 +198,7 @@ class $SyncQueueEntriesTable extends SyncQueueEntries
     createdElapsed,
     bootId,
     serverId,
+    ownerUserId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -304,6 +316,15 @@ class $SyncQueueEntriesTable extends SyncQueueEntries
         serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta),
       );
     }
+    if (data.containsKey('owner_user_id')) {
+      context.handle(
+        _ownerUserIdMeta,
+        ownerUserId.isAcceptableOrUnknown(
+          data['owner_user_id']!,
+          _ownerUserIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -373,6 +394,10 @@ class $SyncQueueEntriesTable extends SyncQueueEntries
         DriftSqlType.int,
         data['${effectivePrefix}server_id'],
       ),
+      ownerUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}owner_user_id'],
+      ),
     );
   }
 
@@ -398,6 +423,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
   final int createdElapsed;
   final String bootId;
   final int? serverId;
+  final int? ownerUserId;
   const SyncQueueEntry({
     required this.id,
     required this.entity,
@@ -414,6 +440,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
     required this.createdElapsed,
     required this.bootId,
     this.serverId,
+    this.ownerUserId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -442,6 +469,9 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
     map['boot_id'] = Variable<String>(bootId);
     if (!nullToAbsent || serverId != null) {
       map['server_id'] = Variable<int>(serverId);
+    }
+    if (!nullToAbsent || ownerUserId != null) {
+      map['owner_user_id'] = Variable<int>(ownerUserId);
     }
     return map;
   }
@@ -473,6 +503,9 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
       serverId: serverId == null && nullToAbsent
           ? const Value.absent()
           : Value(serverId),
+      ownerUserId: ownerUserId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerUserId),
     );
   }
 
@@ -497,6 +530,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
       createdElapsed: serializer.fromJson<int>(json['createdElapsed']),
       bootId: serializer.fromJson<String>(json['bootId']),
       serverId: serializer.fromJson<int?>(json['serverId']),
+      ownerUserId: serializer.fromJson<int?>(json['ownerUserId']),
     );
   }
   @override
@@ -518,6 +552,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
       'createdElapsed': serializer.toJson<int>(createdElapsed),
       'bootId': serializer.toJson<String>(bootId),
       'serverId': serializer.toJson<int?>(serverId),
+      'ownerUserId': serializer.toJson<int?>(ownerUserId),
     };
   }
 
@@ -537,6 +572,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
     int? createdElapsed,
     String? bootId,
     Value<int?> serverId = const Value.absent(),
+    Value<int?> ownerUserId = const Value.absent(),
   }) => SyncQueueEntry(
     id: id ?? this.id,
     entity: entity ?? this.entity,
@@ -555,6 +591,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
     createdElapsed: createdElapsed ?? this.createdElapsed,
     bootId: bootId ?? this.bootId,
     serverId: serverId.present ? serverId.value : this.serverId,
+    ownerUserId: ownerUserId.present ? ownerUserId.value : this.ownerUserId,
   );
   SyncQueueEntry copyWithCompanion(SyncQueueEntriesCompanion data) {
     return SyncQueueEntry(
@@ -581,6 +618,9 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
           : this.createdElapsed,
       bootId: data.bootId.present ? data.bootId.value : this.bootId,
       serverId: data.serverId.present ? data.serverId.value : this.serverId,
+      ownerUserId: data.ownerUserId.present
+          ? data.ownerUserId.value
+          : this.ownerUserId,
     );
   }
 
@@ -601,7 +641,8 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
           ..write('createdAt: $createdAt, ')
           ..write('createdElapsed: $createdElapsed, ')
           ..write('bootId: $bootId, ')
-          ..write('serverId: $serverId')
+          ..write('serverId: $serverId, ')
+          ..write('ownerUserId: $ownerUserId')
           ..write(')'))
         .toString();
   }
@@ -623,6 +664,7 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
     createdElapsed,
     bootId,
     serverId,
+    ownerUserId,
   );
   @override
   bool operator ==(Object other) =>
@@ -642,7 +684,8 @@ class SyncQueueEntry extends DataClass implements Insertable<SyncQueueEntry> {
           other.createdAt == this.createdAt &&
           other.createdElapsed == this.createdElapsed &&
           other.bootId == this.bootId &&
-          other.serverId == this.serverId);
+          other.serverId == this.serverId &&
+          other.ownerUserId == this.ownerUserId);
 }
 
 class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
@@ -661,6 +704,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
   final Value<int> createdElapsed;
   final Value<String> bootId;
   final Value<int?> serverId;
+  final Value<int?> ownerUserId;
   const SyncQueueEntriesCompanion({
     this.id = const Value.absent(),
     this.entity = const Value.absent(),
@@ -677,6 +721,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
     this.createdElapsed = const Value.absent(),
     this.bootId = const Value.absent(),
     this.serverId = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
   });
   SyncQueueEntriesCompanion.insert({
     this.id = const Value.absent(),
@@ -694,6 +739,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
     required int createdElapsed,
     required String bootId,
     this.serverId = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
   }) : entity = Value(entity),
        op = Value(op),
        clientUuid = Value(clientUuid),
@@ -717,6 +763,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
     Expression<int>? createdElapsed,
     Expression<String>? bootId,
     Expression<int>? serverId,
+    Expression<int>? ownerUserId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -734,6 +781,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
       if (createdElapsed != null) 'created_elapsed': createdElapsed,
       if (bootId != null) 'boot_id': bootId,
       if (serverId != null) 'server_id': serverId,
+      if (ownerUserId != null) 'owner_user_id': ownerUserId,
     });
   }
 
@@ -753,6 +801,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
     Value<int>? createdElapsed,
     Value<String>? bootId,
     Value<int?>? serverId,
+    Value<int?>? ownerUserId,
   }) {
     return SyncQueueEntriesCompanion(
       id: id ?? this.id,
@@ -770,6 +819,7 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
       createdElapsed: createdElapsed ?? this.createdElapsed,
       bootId: bootId ?? this.bootId,
       serverId: serverId ?? this.serverId,
+      ownerUserId: ownerUserId ?? this.ownerUserId,
     );
   }
 
@@ -821,6 +871,9 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
     if (serverId.present) {
       map['server_id'] = Variable<int>(serverId.value);
     }
+    if (ownerUserId.present) {
+      map['owner_user_id'] = Variable<int>(ownerUserId.value);
+    }
     return map;
   }
 
@@ -841,7 +894,8 @@ class SyncQueueEntriesCompanion extends UpdateCompanion<SyncQueueEntry> {
           ..write('createdAt: $createdAt, ')
           ..write('createdElapsed: $createdElapsed, ')
           ..write('bootId: $bootId, ')
-          ..write('serverId: $serverId')
+          ..write('serverId: $serverId, ')
+          ..write('ownerUserId: $ownerUserId')
           ..write(')'))
         .toString();
   }
@@ -922,7 +976,7 @@ class $LocalCustomersTable extends LocalCustomers
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
-    defaultValue: const Constant('Điểm bán lẻ'),
+    defaultValue: const Constant(''),
   );
   static const VerificationMeta _channelIdMeta = const VerificationMeta(
     'channelId',
@@ -2335,6 +2389,7 @@ typedef $$SyncQueueEntriesTableCreateCompanionBuilder =
       required int createdElapsed,
       required String bootId,
       Value<int?> serverId,
+      Value<int?> ownerUserId,
     });
 typedef $$SyncQueueEntriesTableUpdateCompanionBuilder =
     SyncQueueEntriesCompanion Function({
@@ -2353,6 +2408,7 @@ typedef $$SyncQueueEntriesTableUpdateCompanionBuilder =
       Value<int> createdElapsed,
       Value<String> bootId,
       Value<int?> serverId,
+      Value<int?> ownerUserId,
     });
 
 class $$SyncQueueEntriesTableFilterComposer
@@ -2436,6 +2492,11 @@ class $$SyncQueueEntriesTableFilterComposer
 
   ColumnFilters<int> get serverId => $composableBuilder(
     column: $table.serverId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2523,6 +2584,11 @@ class $$SyncQueueEntriesTableOrderingComposer
     column: $table.serverId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SyncQueueEntriesTableAnnotationComposer
@@ -2586,6 +2652,11 @@ class $$SyncQueueEntriesTableAnnotationComposer
 
   GeneratedColumn<int> get serverId =>
       $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => column,
+  );
 }
 
 class $$SyncQueueEntriesTableTableManager
@@ -2640,6 +2711,7 @@ class $$SyncQueueEntriesTableTableManager
                 Value<int> createdElapsed = const Value.absent(),
                 Value<String> bootId = const Value.absent(),
                 Value<int?> serverId = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
               }) => SyncQueueEntriesCompanion(
                 id: id,
                 entity: entity,
@@ -2656,6 +2728,7 @@ class $$SyncQueueEntriesTableTableManager
                 createdElapsed: createdElapsed,
                 bootId: bootId,
                 serverId: serverId,
+                ownerUserId: ownerUserId,
               ),
           createCompanionCallback:
               ({
@@ -2674,6 +2747,7 @@ class $$SyncQueueEntriesTableTableManager
                 required int createdElapsed,
                 required String bootId,
                 Value<int?> serverId = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
               }) => SyncQueueEntriesCompanion.insert(
                 id: id,
                 entity: entity,
@@ -2690,6 +2764,7 @@ class $$SyncQueueEntriesTableTableManager
                 createdElapsed: createdElapsed,
                 bootId: bootId,
                 serverId: serverId,
+                ownerUserId: ownerUserId,
               ),
           withReferenceMapper: (p0) => p0
               .map(

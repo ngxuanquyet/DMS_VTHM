@@ -7,7 +7,7 @@ import 'package:vthm_dms/core/database/app_database.dart';
 void main() {
   late AppDatabase db;
 
-  setUp(() => db = AppDatabase(NativeDatabase.memory()));
+  setUp(() => db = AppDatabase(NativeDatabase.memory(), 1));
   tearDown(() => db.close());
 
   Future<int> enqueue(String entity, String uuid, {String? parent, String op = 'create'}) =>

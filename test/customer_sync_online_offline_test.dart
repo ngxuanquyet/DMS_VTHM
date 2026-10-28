@@ -105,7 +105,7 @@ void main() {
   late SyncService syncService;
 
   setUp(() {
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase(NativeDatabase.memory(), 1);
     adapter = MockSyncDioAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = adapter;
     final apiClient = ApiClient(dio);

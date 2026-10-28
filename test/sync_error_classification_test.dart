@@ -65,7 +65,7 @@ void main() {
   late SyncService syncService;
 
   setUp(() {
-    database = AppDatabase(NativeDatabase.memory());
+    database = AppDatabase(NativeDatabase.memory(), 1);
     adapter = ConfigurableDioAdapter();
 
     final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = adapter;

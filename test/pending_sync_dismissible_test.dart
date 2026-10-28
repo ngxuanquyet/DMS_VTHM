@@ -90,7 +90,7 @@ void main() {
     late CustomerLocalDataSource localDataSource;
 
     setUp(() {
-      database = AppDatabase(NativeDatabase.memory());
+      database = AppDatabase(NativeDatabase.memory(), 1);
       localDataSource = CustomerLocalDataSource(database);
     });
 

@@ -570,7 +570,7 @@ class CustomerLocalDataSource {
 
     // 3. Cập nhật payload trong hàng đợi sync_queue và hồi phục trạng thái từ dead/error về pending
     final queueEntries = await (_db.select(_db.syncQueueEntries)
-          ..where((tbl) => tbl.clientUuid.equals(clientUuid) & tbl.entity.equals('customer')))
+          ..where((tbl) => _db.isMine(tbl) & tbl.clientUuid.equals(clientUuid) & tbl.entity.equals('customer')))
         .get();
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -858,9 +858,11 @@ class CustomerLocalDataSource {
     required Map<String, dynamic> changes,
     required int nowMs,
   }) async {
-    // Kiểm tra xem đã có mục update pending cho khách hàng này trong queue chưa
+    // Kiểm tra xem đã có mục update pending cho khách hàng này trong queue chưa — CỦA CHÍNH người đang đăng nhập (#24400):
+    // gộp vào dòng của người khác là gửi bản sửa của mình dưới tên họ.
     final existingEntries = await (_db.select(_db.syncQueueEntries)
           ..where((tbl) =>
+              _db.isMine(tbl) &
               tbl.entity.equals('customer') &
               tbl.op.equals('update') &
               (tbl.serverId.equals(serverId) | tbl.clientUuid.equals(clientUuid)) &

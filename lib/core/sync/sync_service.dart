@@ -211,6 +211,13 @@ class SyncService {
           break;
         }
 
+        // Lô nạp sẵn trong RAM: đã đổi người đăng nhập giữa chừng (đăng xuất → người khác vào) thì KHÔNG gửi tiếp mục
+        // của người trước bằng token người sau (#24400) — để nguyên, chờ đúng chủ.
+        if (entry.ownerUserId != _db.ownerUserId) {
+          debugPrint('[SyncService] Đã đổi người đăng nhập, dừng lô đồng bộ.');
+          break;
+        }
+
         final status = await _processEntry(entry, currentDeadErrors);
         if (status == _SyncItemStatus.success) {
           successCount++;

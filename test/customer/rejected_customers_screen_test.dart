@@ -311,7 +311,7 @@ void main() {
     });
 
     test('6. RouteViewModel excludes rejected customers from routeDetail and dealer counts', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWithValue(db),

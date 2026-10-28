@@ -77,7 +77,7 @@ void main() {
     });
 
     test('cacheRemoteCustomers updates existing offline record without creating a second row', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       // 1. Tạo 1 khách hàng offline (clientUuid là uuid v4)
@@ -127,7 +127,7 @@ void main() {
     });
 
     test('AppDatabase.cleanupDuplicateCustomers removes duplicate rows with same id', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
 
       // Chèn thủ công 2 bản ghi có cùng id 999 nhưng clientUuid khác nhau
       await db.into(db.localCustomers).insert(

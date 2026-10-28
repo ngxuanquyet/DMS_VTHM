@@ -285,7 +285,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     tempDir = await Directory.systemTemp.createTemp('master_offline_test_');
 
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase(NativeDatabase.memory(), 1);
     dioAdapter = MasterOfflineMockDioAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = dioAdapter;
     apiClient = ApiClient(dio);

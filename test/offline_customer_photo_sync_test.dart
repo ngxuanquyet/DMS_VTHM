@@ -93,7 +93,7 @@ void main() {
   late File tempPhotoFile;
 
   setUp(() {
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase(NativeDatabase.memory(), 1);
     adapter = MockPhotoSyncDioAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = adapter;
     final apiClient = ApiClient(dio);

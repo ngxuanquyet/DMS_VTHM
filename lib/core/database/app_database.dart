@@ -25,6 +25,10 @@ class SyncQueueEntries extends Table {
   IntColumn get createdElapsed => integer()(); // ĐỒNG HỒ ĐƠN ĐIỆU (monotonic) lúc nhập (§6.3)
   TextColumn get bootId => text()(); // định danh lần khởi động máy
   IntColumn get serverId => integer().nullable()(); // id server trả về khi thành công
+  // usr_user.id của người nhập mục (#24400) — chỉ người đó gửi/thấy/dọn mục này; máy dùng chung không gửi dữ liệu
+  // người trước dưới tên người sau. -1 = dòng của bản app cũ (đánh dấu lúc nâng cấp, người đăng nhập kế tiếp nhận
+  // về); NULL = nhập khi chưa ai đăng nhập trong lần chạy này (không ai gửi).
+  IntColumn get ownerUserId => integer().nullable()();
 }
 
 /// Bảng lưu trữ khách hàng ngoại tuyến trên SQLite (§7 SPEC-DONG-BO-OFFLINE-2026-09-15.md)
@@ -63,10 +67,55 @@ class LocalCustomers extends Table {
 
 @DriftDatabase(tables: [SyncQueueEntries, LocalCustomers])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase([QueryExecutor? e]) : super(e ?? _openConnection());
+  /// [ownerUserId]: người đang đăng nhập ban đầu (test dựng DB trong bộ nhớ); app đặt qua [setOwner].
+  AppDatabase([QueryExecutor? e, int? ownerUserId])
+      : _ownerUserId = ownerUserId,
+        super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(syncQueueEntries, syncQueueEntries.ownerUserId);
+            await customStatement('UPDATE sync_queue_entries SET owner_user_id = $_legacyOwner');
+          }
+        },
+      );
+
+  /// Người đang đăng nhập (usr_user.id) — AuthViewModel đặt lúc đăng nhập/khôi phục phiên, xoá lúc đăng xuất.
+  /// Hàng đợi chỉ gửi/đếm/liệt kê/dọn dòng của người này; chưa đăng nhập thì không thấy dòng nào.
+  int? _ownerUserId;
+
+  /// Người đăng nhập gần nhất trong lần chạy này — mục nhập MUỘN ngay sau đăng xuất (ảnh đang nén, lượt chấm đang lưu)
+  /// vẫn là của người vừa đăng xuất, không thành "vô chủ".
+  int? _lastOwnerUserId;
+
+  /// Dấu dòng của bản app cũ (trước khi có cột chủ) — đặt lúc nâng cấp schema 1 → 2.
+  static const _legacyOwner = -1;
+
+  int? get ownerUserId => _ownerUserId;
+
+  /// Đặt người đang đăng nhập; dòng của bản app cũ ([_legacyOwner]) giao cho người đăng nhập đầu tiên sau nâng cấp
+  /// (bản cũ vốn gửi chúng bằng token của bất kỳ ai — không tệ hơn).
+  Future<void> setOwner(int? userId) async {
+    _ownerUserId = userId;
+    if (userId != null) {
+      _lastOwnerUserId = userId;
+      await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
+          .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
+    }
+  }
+
+  /// Vế lọc "dòng của người đang đăng nhập" — MỌI truy vấn hàng đợi theo tập (gửi, đếm, liệt kê, dọn, gộp) phải đi qua
+  /// đây. Chưa đăng nhập ⇒ không dòng nào.
+  Expression<bool> isMine(SyncQueueEntries t) {
+    final owner = _ownerUserId;
+    return owner == null ? const Constant(false) : t.ownerUserId.equals(owner);
+  }
 
   // ===========================================================================
   // SYNC QUEUE OPERATIONS (§3 & §8 SPEC-DONG-BO-OFFLINE)
@@ -94,18 +143,22 @@ class AppDatabase extends _$AppDatabase {
   Future<List<SyncQueueEntry>> getPendingQueueEntries({int limit = 50, bool force = false}) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return (select(syncQueueEntries)
-          ..where((tbl) => force
-              ? (tbl.state.equals('pending') | tbl.state.equals('sending'))
-              : (tbl.state.equals('pending') &
-                  (tbl.nextAttemptAt.isNull() | tbl.nextAttemptAt.isSmallerOrEqualValue(nowMs))))
+          ..where((tbl) =>
+              isMine(tbl) &
+              (force
+                  ? (tbl.state.equals('pending') | tbl.state.equals('sending'))
+                  : (tbl.state.equals('pending') &
+                      (tbl.nextAttemptAt.isNull() | tbl.nextAttemptAt.isSmallerOrEqualValue(nowMs)))))
           ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)])
           ..limit(limit))
         .get();
   }
 
-  /// Thêm 1 mục vào hàng đợi đồng bộ (§3.1)
+  /// Thêm 1 mục vào hàng đợi đồng bộ (§3.1) — tự gắn người đang đăng nhập nếu nơi gọi không ghi.
   Future<int> enqueue(SyncQueueEntriesCompanion entry) {
-    return into(syncQueueEntries).insert(entry);
+    final owned =
+        entry.ownerUserId.present ? entry : entry.copyWith(ownerUserId: Value(_ownerUserId ?? _lastOwnerUserId));
+    return into(syncQueueEntries).insert(owned);
   }
 
   /// Đánh dấu mục đang gửi
@@ -156,8 +209,8 @@ class AppDatabase extends _$AppDatabase {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('pending') |
-          syncQueueEntries.state.equals('sending'));
+      ..where(isMine(syncQueueEntries) &
+          (syncQueueEntries.state.equals('pending') | syncQueueEntries.state.equals('sending')));
     final result = await query.map((row) => row.read(countExp)).getSingle();
     return result ?? 0;
   }
@@ -167,8 +220,8 @@ class AppDatabase extends _$AppDatabase {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('pending') |
-          syncQueueEntries.state.equals('sending'));
+      ..where(isMine(syncQueueEntries) &
+          (syncQueueEntries.state.equals('pending') | syncQueueEntries.state.equals('sending')));
     return query.map((row) => row.read(countExp) ?? 0).watchSingle();
   }
 
@@ -177,7 +230,7 @@ class AppDatabase extends _$AppDatabase {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('dead'));
+      ..where(isMine(syncQueueEntries) & syncQueueEntries.state.equals('dead'));
     final result = await query.map((row) => row.read(countExp)).getSingle();
     return result ?? 0;
   }
@@ -187,34 +240,36 @@ class AppDatabase extends _$AppDatabase {
     final countExp = syncQueueEntries.id.count();
     final query = selectOnly(syncQueueEntries)
       ..addColumns([countExp])
-      ..where(syncQueueEntries.state.equals('dead'));
+      ..where(isMine(syncQueueEntries) & syncQueueEntries.state.equals('dead'));
     return query.map((row) => row.read(countExp) ?? 0).watchSingle();
   }
 
   /// Lấy danh sách các mục lỗi hỏng vĩnh viễn (dead) để thông báo chi tiết cho người dùng
   Future<List<SyncQueueEntry>> getDeadQueueEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.state.equals('dead'))
+          ..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
         .get();
   }
 
-  /// Đăng xuất: xoá dữ liệu gắn với người vừa dùng máy — hàng đợi đồng bộ (bảng KHÔNG có cột tài khoản ⇒ để lại thì
-  /// người đăng nhập sau gửi lên dưới tên mình), điểm bán lưu trong máy, và ĐÚNG các tệp ảnh chúng trỏ tới (localPath
+  /// Đăng xuất: xoá dữ liệu gắn với người vừa dùng máy — dòng hàng đợi CỦA NGƯỜI NÀY (dòng người khác để lại, vd đăng
+  /// xuất cưỡng bức, giữ nguyên chờ đúng chủ đăng nhập lại — máy dùng chung hiếm, không xử lý thêm), điểm bán lưu
+  /// trong máy, và ĐÚNG các tệp ảnh chúng trỏ tới (localPath
   /// + đường dẫn trong payload của hàng đợi, ảnh `<clientUuid>_photo_*` của điểm bán) — không xoá cả thư mục: ảnh vừa chụp mà chưa kịp vào
   /// hàng đợi (lượt viếng thăm dở, lượt chấm đang lưu) nằm chung thư mục.
-  /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending thì KHÔNG xoá gì, trả false. Mục dead bị xoá — nơi gọi
-  /// phải cảnh báo người dùng trước.
+  /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending của người này thì KHÔNG xoá gì, trả false. Mục dead bị
+  /// xoá — nơi gọi phải cảnh báo người dùng trước. Chưa đăng nhập (không rõ chủ) thì không xoá gì.
   Future<bool> clearUserData() async {
     final rows = <SyncQueueEntry>[];
     final customerUuids = <String>[];
+    if (_ownerUserId == null) return false;
     final cleared = await transaction(() async {
       if (await countPendingSync() > 0) return false;
-      rows.addAll(await select(syncQueueEntries).get());
+      rows.addAll(await (select(syncQueueEntries)..where(isMine)).get());
       customerUuids.addAll(rows.where((r) => r.entity == 'customer').map((r) => r.clientUuid));
       final c = selectOnly(localCustomers)..addColumns([localCustomers.clientUuid]);
       customerUuids.addAll((await c.map((r) => r.read(localCustomers.clientUuid)).get()).whereType<String>());
-      await delete(syncQueueEntries).go();
+      await (delete(syncQueueEntries)..where(isMine)).go();
       await delete(localCustomers).go();
       return true;
     });
@@ -293,7 +348,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Xóa các mục dead đã được xử lý hoặc dọn dẹp
   Future<int> clearDeadEntries() {
-    return (delete(syncQueueEntries)..where((tbl) => tbl.state.equals('dead'))).go();
+    return (delete(syncQueueEntries)..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))).go();
   }
 
   /// Đánh dấu điểm bán bị lỗi đồng bộ vĩnh viễn (4xx)
@@ -309,7 +364,7 @@ class AppDatabase extends _$AppDatabase {
   /// Lấy danh sách các phiếu biểu mẫu đã nộp ngoại tuyến (SyncQueue form_submission)
   Future<List<SyncQueueEntry>> getFormSubmissionEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.entity.equals('form_submission'))
+          ..where((tbl) => isMine(tbl) & tbl.entity.equals('form_submission'))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
         .get();
   }
@@ -317,7 +372,7 @@ class AppDatabase extends _$AppDatabase {
   /// Stream theo dõi các phiếu biểu mẫu ngoại tuyến
   Stream<List<SyncQueueEntry>> watchFormSubmissionEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.entity.equals('form_submission'))
+          ..where((tbl) => isMine(tbl) & tbl.entity.equals('form_submission'))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
         .watch();
   }
@@ -325,7 +380,7 @@ class AppDatabase extends _$AppDatabase {
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
   Future<List<SyncQueueEntry>> getAllPendingQueueEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.state.equals('pending') | tbl.state.equals('sending'))
+          ..where((tbl) => isMine(tbl) & (tbl.state.equals('pending') | tbl.state.equals('sending')))
           ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
         .get();
   }
@@ -333,7 +388,7 @@ class AppDatabase extends _$AppDatabase {
   /// Stream theo dõi danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
   Stream<List<SyncQueueEntry>> watchAllPendingQueueEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.state.equals('pending') | tbl.state.equals('sending'))
+          ..where((tbl) => isMine(tbl) & (tbl.state.equals('pending') | tbl.state.equals('sending')))
           ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
         .watch();
   }
@@ -341,7 +396,7 @@ class AppDatabase extends _$AppDatabase {
   /// Stream theo dõi các mục hỏng vĩnh viễn (dead / 4xx)
   Stream<List<SyncQueueEntry>> watchDeadQueueEntries() {
     return (select(syncQueueEntries)
-          ..where((tbl) => tbl.state.equals('dead'))
+          ..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
         .watch();
   }
@@ -387,10 +442,7 @@ class AppDatabase extends _$AppDatabase {
     final q = '%$unaccentedQuery%';
     return (select(localCustomers)
           ..where((tbl) =>
-              tbl.nameUnaccent.like(q) |
-              tbl.code.like(q) |
-              tbl.phone.like(q) |
-              tbl.address.like(q))
+              tbl.nameUnaccent.like(q) | tbl.code.like(q) | tbl.phone.like(q) | tbl.address.like(q))
           ..orderBy([
             (tbl) => OrderingTerm(
                   expression: tbl.syncStatus.equals('synced'),
@@ -494,7 +546,7 @@ class AppDatabase extends _$AppDatabase {
   /// Tìm lượt chấm công đã đồng bộ gần nhất có serverId
   Future<SyncQueueEntry?> findLastSyncedPunchEntry() async {
     final entries = await (select(syncQueueEntries)
-          ..where((tbl) => tbl.entity.equals('attendance_punch') & tbl.serverId.isNotNull())
+          ..where((tbl) => isMine(tbl) & tbl.entity.equals('attendance_punch') & tbl.serverId.isNotNull())
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
           ..limit(1))
         .get();

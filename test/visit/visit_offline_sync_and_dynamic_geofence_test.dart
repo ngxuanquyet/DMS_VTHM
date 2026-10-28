@@ -299,7 +299,7 @@ void main() {
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
-      db = AppDatabase(NativeDatabase.memory());
+      db = AppDatabase(NativeDatabase.memory(), 1);
 
       // Create a VisitRepositoryImpl with failing network adapter to force offline behavior
       final failingDio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))
@@ -649,7 +649,7 @@ void main() {
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
-      db = AppDatabase(NativeDatabase.memory());
+      db = AppDatabase(NativeDatabase.memory(), 1);
       dioAdapter = FakeDioAdapter();
 
       final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = dioAdapter;

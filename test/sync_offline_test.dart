@@ -30,7 +30,7 @@ void main() {
 
     setUp(() {
       // In-memory database for testing
-      database = AppDatabase(NativeDatabase.memory());
+      database = AppDatabase(NativeDatabase.memory(), 1);
     });
 
     tearDown(() async {
@@ -173,7 +173,7 @@ void main() {
     late CustomerLocalDataSource localDataSource;
 
     setUp(() {
-      database = AppDatabase(NativeDatabase.memory());
+      database = AppDatabase(NativeDatabase.memory(), 1);
       localDataSource = CustomerLocalDataSource(database);
     });
 

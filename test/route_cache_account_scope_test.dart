@@ -33,7 +33,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase(NativeDatabase.memory(), 1);
     fakeApiClient = FakeApiClient();
   });
 

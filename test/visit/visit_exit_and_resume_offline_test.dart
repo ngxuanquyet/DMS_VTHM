@@ -175,7 +175,7 @@ void main() {
       appDocsDir: appDocsDir,
     );
 
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase(NativeDatabase.memory(), 1);
     fakeDioAdapter = FakeDioAdapter();
     fakeConnectivity = FakeConnectivityNotifier(true);
     dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))

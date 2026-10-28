@@ -97,7 +97,7 @@ void main() {
     });
 
     test('createCustomerOffline conforms strictly to spec: no code, no status, has route_ids [int], photo_token, and data map', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       final inputData = {
@@ -148,7 +148,7 @@ void main() {
     });
 
     test('createCustomerOffline handles route_id single int and wraps into route_ids list', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       final inputData = {
@@ -323,7 +323,7 @@ void main() {
     });
 
     test('cacheRemoteCustomers with reconcile: true automatically purges customers deleted on server', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       CustomerEntity makeCustomer(int id, String name, String route) {
@@ -435,7 +435,7 @@ void main() {
     });
 
     test('createCustomerOffline enqueues photo_tokens list and sets photo_token', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       final inputData = {
@@ -474,7 +474,7 @@ void main() {
     });
 
     test('cacheRemoteCustomers preserves photoUrl and photoUrls in SQLite', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       const customer = CustomerEntity(
@@ -535,7 +535,7 @@ void main() {
     });
 
     test('CustomerLocalDataSource caches and restores customer routes and routeIds', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final dataSource = CustomerLocalDataSource(db);
 
       const customer = CustomerEntity(

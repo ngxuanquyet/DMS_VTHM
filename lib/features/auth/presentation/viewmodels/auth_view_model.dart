@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
@@ -118,6 +119,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
           // Mất mạng / ngoại tuyến: Không đẩy ra ngoài, giữ phiên để app chạy offline
         }
 
+        await _setQueueOwner(user.id);
         state = state.copyWith(
           status: AuthStatus.authenticated,
           user: user,
@@ -170,6 +172,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
         rememberMe: state.rememberMe,
       );
 
+      await _setQueueOwner(user.id);
       state = state.copyWith(
         status: AuthStatus.authenticated,
         user: user,
@@ -219,7 +222,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
       final db = ref?.read(appDatabaseProvider);
       if (db == null) return false;
       if (await findOpenVisit(ref!.read) != null) return false;
-      if (!await db.clearUserData()) return false;
+      // Chưa có chủ hàng đợi (không đặt được lúc đăng nhập) ⇒ không có dòng nào "của mình" để dọn — đừng chặn đăng xuất.
+      if (db.ownerUserId != null && !await db.clearUserData()) return false;
     }
 
     // Nhả máy push (POST /notification/device-token/release) trước khi xóa access token (§3.2)
@@ -228,7 +232,16 @@ class AuthViewModel extends StateNotifier<AuthState> {
       await ref?.read(fcmPushServiceProvider).unregisterDeviceToken();
     } catch (_) {}
 
-    await logoutUseCase();
+    // Bỏ chủ hàng đợi TRƯỚC khi xoá token: lô đồng bộ đang chạy dừng ở mục KẾ TIẾP (SyncService so chủ từng mục) thay
+    // vì gửi tiếp không token (mục đang gửi dở thì không chặn được). Xoá token lỗi ⇒ vẫn đăng nhập ⇒ trả lại chủ.
+    final owner = ref?.read(appDatabaseProvider).ownerUserId;
+    await _setQueueOwner(null);
+    try {
+      await logoutUseCase();
+    } catch (_) {
+      await _setQueueOwner(owner?.toString());
+      rethrow;
+    }
 
     ref?.read(syncServiceProvider).clearRecentDeadErrors();
     AttendancePunchReminder.reset();
@@ -243,6 +256,24 @@ class AuthViewModel extends StateNotifier<AuthState> {
   /// ViewModel giữ state suốt vòng đời app mang dữ liệu của người đăng nhập trước — lời chào, chấm công, hồ sơ,
   /// công tác, báo cáo, check-in, khai báo vị trí, điểm bán + nhãn đã đọc điểm bán bị từ chối. Bỏ hết khi có người đăng nhập; gọi SAU khi state
   /// đã authenticated để bản dựng lại tải bằng token mới.
+  /// Chủ hàng đợi đồng bộ = người đang đăng nhập (#24400): mục người khác để lại không bị gửi dưới tên người này.
+  /// Đặt TRƯỚC khi state thành authenticated — lượt đồng bộ đầu tiên với token mới đã lọc đúng chủ.
+  Future<void> _setQueueOwner(String? userId) async {
+    final r = ref;
+    if (r == null) return;
+    try {
+      await r.read(appDatabaseProvider).setOwner(userId == null ? null : int.tryParse(userId));
+    } catch (e) {
+      debugPrint('[AuthViewModel] Không đặt được chủ hàng đợi: $e');
+    }
+    // Stream hàng đợi lọc theo chủ lúc đăng ký — dựng lại mỗi lần đổi chủ (đăng nhập, khôi phục phiên, đăng xuất).
+    r.invalidate(pendingSyncCountProvider);
+    r.invalidate(deadSyncCountProvider);
+    r.invalidate(formSubmissionEntriesProvider);
+    r.invalidate(allPendingQueueEntriesProvider);
+    r.invalidate(deadQueueEntriesProvider);
+  }
+
   void _resetPerUserState() {
     final r = ref;
     if (r == null) return;

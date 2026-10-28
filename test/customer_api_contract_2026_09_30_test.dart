@@ -189,7 +189,7 @@ void main() {
     });
 
     test('§7: Idempotency - server trả về 200 kèm created: false được coi là THÀNH CÔNG và xoá hàng đợi', () async {
-      final db = AppDatabase(NativeDatabase.memory());
+      final db = AppDatabase(NativeDatabase.memory(), 1);
       final adapter = MockContractDioAdapter();
       // Giả lập server trả về created: false do trùng client_uuid
       adapter.mockResponse = {

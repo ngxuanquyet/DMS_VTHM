@@ -345,6 +345,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           final pendingCancels =
               await (db.select(db.syncQueueEntries)..where(
                     (tbl) =>
+                        db.isMine(tbl) &
                         tbl.entity.equals('visit') &
                         tbl.op.equals('cancel') &
                         (tbl.state.equals('pending') |
