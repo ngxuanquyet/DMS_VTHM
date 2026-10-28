@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/router/app_router.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -27,8 +29,10 @@ import '../../../../core/localization/app_strings.dart';
 import '../../../../core/services/app_notification_service.dart';
 import '../../../../core/services/geo_catalog_service.dart';
 import '../../../../core/widgets/notification_permission_dialog.dart';
+import '../../../attendance/presentation/states/attendance_state.dart';
 import '../../../attendance/presentation/viewmodels/attendance_view_model.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
+import '../widgets/attendance_punch_reminder.dart';
 import '../widgets/attendance_summary_card.dart';
 import '../widgets/greeting_header.dart';
 import '../widgets/home_quick_actions.dart';
@@ -48,6 +52,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   bool _isSyncing = false;
   static DateTime? _lastAutoSyncTime;
+  final GlobalKey _attendanceActionKey = GlobalKey();
+  Timer? _punchReminderTimer;
 
   @override
   void initState() {
@@ -57,10 +63,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _checkAndAutoSync();
       ref.read(employeeTrackingProvider.notifier).startService();
     });
+    // Nhắc chấm công: dò mỗi giây tới khi đủ điều kiện hiện (dữ liệu chấm công + dashboard đã tải, Home đang ở trên
+    // cùng — không có hộp thoại/màn khác đè) hoặc hết lý do nhắc; dò thay vì nghe state vì hộp thoại khởi động
+    // (quyền thông báo, cảnh báo gian lận) đóng lúc nào không có sự kiện.
+    if (!AttendancePunchReminder.shownThisLaunch) {
+      _punchReminderTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tryShowPunchReminder());
+    }
   }
 
   @override
   void dispose() {
+    _punchReminderTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -75,6 +88,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             minAge: const Duration(minutes: 10),
           );
     }
+  }
+
+  void _tryShowPunchReminder() {
+    if (!mounted || AttendancePunchReminder.shownThisLaunch) {
+      _punchReminderTimer?.cancel();
+      return;
+    }
+    final att = ref.read(attendanceViewModelProvider);
+    final dashboard = ref.read(homeViewModelProvider).dashboard;
+    final today = att.config?.today;
+    if (att.status != AttendanceStatus.loaded || att.config == null || dashboard == null) return;
+
+    final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final punched = (today?.punchCount ?? 0) > 0 ||
+        att.history.any((p) => p.punchAt.startsWith(todayStr)) ||
+        dashboard.attendance.isCheckedIn;
+    if (punched || today?.shift?.status == 'day_off') {
+      _punchReminderTimer?.cancel();
+      return;
+    }
+
+    // Chỉ hiện khi trang chủ đang thật sự ở trước mặt người dùng.
+    if (rootNavigatorKey.currentState?.canPop() ?? true) return;
+    if (GoRouter.of(context).routerDelegate.currentConfiguration.uri.path != '/home') return;
+
+    final shown = AttendancePunchReminder.show(
+      context: context,
+      targetKey: _attendanceActionKey,
+      strings: ref.read(stringsProvider),
+      userName: dashboard.greeting.userName,
+      onPunchNow: () async {
+        await context.push('/attendance');
+        if (mounted) ref.read(homeViewModelProvider.notifier).loadDashboard(isRefresh: true);
+      },
+    );
+    if (shown) _punchReminderTimer?.cancel();
   }
 
   Future<void> _refreshAttendanceOnResume() async {
@@ -380,6 +429,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                           isSyncing: _isSyncing,
                           onSync: _handleSyncAll,
                           onAttendanceReturn: () => homeVM.loadDashboard(isRefresh: true),
+                          attendanceKey: _attendanceActionKey,
                         ),
                         const SizedBox(height: AppSpacing.stackLg),
 

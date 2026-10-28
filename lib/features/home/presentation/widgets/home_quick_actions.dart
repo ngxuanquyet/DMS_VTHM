@@ -15,11 +15,15 @@ class HomeQuickActions extends StatelessWidget {
   final VoidCallback? onSync;
   final VoidCallback? onAttendanceReturn;
 
+  /// Gắn vào ô "Chấm công" để lớp phủ nhắc chấm công khoét sáng đúng chỗ.
+  final GlobalKey? attendanceKey;
+
   const HomeQuickActions({
     super.key,
     this.isSyncing = false,
     this.onSync,
     this.onAttendanceReturn,
+    this.attendanceKey,
   });
 
   @override
@@ -33,6 +37,7 @@ class HomeQuickActions extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _QuickActionCard(
+                key: attendanceKey,
                 title: 'Chấm công',
                 icon: Icons.access_time_filled_rounded,
                 backgroundColor: const Color(0xFFFEF3C7),
@@ -102,6 +107,7 @@ class _QuickActionCard extends StatelessWidget {
   final bool isLoading;
 
   const _QuickActionCard({
+    super.key,
     required this.title,
     required this.icon,
     required this.backgroundColor,

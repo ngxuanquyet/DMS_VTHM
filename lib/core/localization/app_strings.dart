@@ -166,6 +166,15 @@ class AppStrings {
       isVietnamese ? 'Hoạt động gần đây' : 'Recent Activities';
   String get stopsUnit => isVietnamese ? 'điểm' : 'stops';
   String get checkInAction => isVietnamese ? 'Check-in' : 'Check-in';
+  String punchReminderTitle(String name) => isVietnamese
+      ? 'Chào $name, bạn chưa chấm công hôm nay!'
+      : 'Hi $name, you haven\'t checked in today!';
+  String get punchReminderBody => isVietnamese
+      ? 'Chấm công ngay để bắt đầu ngày làm việc nhé.'
+      : 'Check in now to start your working day.';
+  String get punchReminderLater => isVietnamese ? 'Để sau' : 'Later';
+  String get punchReminderPunchNow =>
+      isVietnamese ? 'Chấm công ngay' : 'Check in now';
 
   // Attendance Detail
   String get attendanceDetailTitle =>
