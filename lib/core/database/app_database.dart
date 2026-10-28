@@ -206,33 +206,33 @@ class AppDatabase extends _$AppDatabase {
   /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending thì KHÔNG xoá gì, trả false. Mục dead bị xoá — nơi gọi
   /// phải cảnh báo người dùng trước.
   Future<bool> clearUserData() async {
-    final queuePaths = <String>[];
-    final payloads = <String>[];
+    final rows = <SyncQueueEntry>[];
     final customerUuids = <String>[];
     final cleared = await transaction(() async {
       if (await countPendingSync() > 0) return false;
-      for (final row in await select(syncQueueEntries).get()) {
-        if (row.localPath != null) queuePaths.add(row.localPath!);
-        payloads.add(row.payload);
-        if (row.entity == 'customer') customerUuids.add(row.clientUuid);
-      }
+      rows.addAll(await select(syncQueueEntries).get());
+      customerUuids.addAll(rows.where((r) => r.entity == 'customer').map((r) => r.clientUuid));
       final c = selectOnly(localCustomers)..addColumns([localCustomers.clientUuid]);
       customerUuids.addAll((await c.map((r) => r.read(localCustomers.clientUuid)).get()).whereType<String>());
       await delete(syncQueueEntries).go();
       await delete(localCustomers).go();
       return true;
     });
-    if (cleared) {
-      // Ảnh chỉ ghi trong payload (biểu mẫu thị trường `_local_photo_paths`, ảnh điểm bán rơi về đường dẫn tạm) —
-      // giải mã SAU transaction, không giữ khoá DB.
-      for (final payload in payloads) {
-        try {
-          _collectPaths(jsonDecode(payload), queuePaths);
-        } catch (_) {}
-      }
-      await _deleteUserFiles(queuePaths, customerUuids);
-    }
+    if (cleared) await _deleteRowFiles(rows, customerUuids);
     return cleared;
+  }
+
+  /// Ảnh của các dòng hàng đợi đã xoá: localPath + đường dẫn chỉ ghi trong payload (biểu mẫu thị trường
+  /// `_local_photo_paths`, ảnh điểm bán rơi về đường dẫn tạm). Giải mã payload NGOÀI transaction — không giữ khoá DB.
+  static Future<void> _deleteRowFiles(List<SyncQueueEntry> rows, List<String> customerUuids) async {
+    final paths = <String>[];
+    for (final row in rows) {
+      if (row.localPath != null) paths.add(row.localPath!);
+      try {
+        _collectPaths(jsonDecode(row.payload), paths);
+      } catch (_) {}
+    }
+    await _deleteUserFiles(paths, customerUuids);
   }
 
   static void _collectPaths(Object? node, List<String> out) {
@@ -347,8 +347,14 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Tìm mục trong hàng đợi theo clientUuid (phục vụ liên kết cha-con: visit -> photos/checkout)
+  /// Dòng ĐẦU TIÊN (dòng tạo) mang [clientUuid] — dòng sửa điểm bán (`update`) dùng chung clientUuid với dòng tạo, nên
+  /// không dùng getSingleOrNull (ném StateError ⇒ mục con thử lại mãi).
   Future<SyncQueueEntry?> getEntryByClientUuid(String clientUuid) {
-    return (select(syncQueueEntries)..where((tbl) => tbl.clientUuid.equals(clientUuid))).getSingleOrNull();
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.clientUuid.equals(clientUuid))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)])
+          ..limit(1))
+        .getSingleOrNull();
   }
 
   // ===========================================================================

@@ -81,6 +81,21 @@ class SyncService {
   bool _isSyncing = false;
 
   bool get isSyncing => _isSyncing;
+
+  /// Mục con chưa lấy được serverId của mục cha. Mặc định là lỗi tạm (thử lại sau). Chỉ ném 4xx (đi đường dead chuẩn
+  /// — người dùng thấy ở "Lỗi đồng bộ", xoá được) khi KHÔNG BAO GIỜ có serverId nữa — kẻo thử lại mãi và chặn đăng
+  /// xuất vĩnh viễn (đăng xuất chờ hết mục chờ gửi):
+  /// - cha không còn trong máy (dọn mục lỗi / huỷ lượt — dòng done không bao giờ bị xoá);
+  /// - cha bị từ chối (dead) mà KHÔNG phải điểm bán — chỉ điểm bán được sửa rồi gửi lại (hồi dead → pending ở
+  ///   customer_local_data_source), nên con của điểm bán bị từ chối vẫn phải chờ.
+  /// Không ghi parentUuid (ảnh chấm công chờ "lượt chấm gần nhất", dòng cũ) hay cha done mà thiếu serverId (409) KHÔNG
+  /// tính là hết hy vọng — giữ như cũ (thử lại); 409 cần lấy lại id từ máy chủ (#24401).
+  Never _throwParentUnresolved(SyncQueueEntry entry, SyncQueueEntry? parent, String message) {
+    final hopeless = entry.parentUuid != null &&
+        (parent == null || (parent.state == 'dead' && parent.entity != 'customer'));
+    if (hopeless) throw AppException('$message — mục cha không còn hoặc không thể đồng bộ', 410);
+    throw AppException(message);
+  }
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _pollingTimer;
   final Random _random = Random();
@@ -584,7 +599,7 @@ class SyncService {
       if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
         payload['customer_id'] = parentCustomer.serverId;
       } else {
-        throw AppException('Chưa có serverId của khách hàng cha cho lượt viếng thăm');
+        _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của khách hàng cha cho lượt viếng thăm');
       }
     }
 
@@ -660,15 +675,16 @@ class SyncService {
     }
 
     // Nếu visitId là ID âm hoặc chưa có, tìm theo parentUuid
+    SyncQueueEntry? parent;
     if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
-      final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+      parent = await _db.getEntryByClientUuid(entry.parentUuid!);
       if (parent != null && parent.serverId != null && parent.serverId! > 0) {
         visitId = parent.serverId;
       }
     }
 
     if (visitId == null || visitId <= 0) {
-      throw AppException('Chưa có serverId của lượt viếng thăm cha');
+      _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha');
     }
 
     final localPath = entry.localPath;
@@ -720,15 +736,16 @@ class SyncService {
     }
 
     // Nếu visitId là ID âm hoặc chưa có, tìm theo parentUuid
+    SyncQueueEntry? parent;
     if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
-      final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+      parent = await _db.getEntryByClientUuid(entry.parentUuid!);
       if (parent != null && parent.serverId != null && parent.serverId! > 0) {
         visitId = parent.serverId;
       }
     }
 
     if (visitId == null || visitId <= 0) {
-      throw AppException('Chưa có serverId của lượt viếng thăm cha để check-out');
+      _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha để check-out');
     }
 
     payload['is_offline_sync'] = true;
@@ -880,7 +897,7 @@ class SyncService {
         if (parent != null && parent.serverId != null && parent.serverId! > 0) {
           payload['visit_id'] = parent.serverId;
         } else {
-          throw AppException('Chưa có serverId của lượt viếng thăm cha cho biểu mẫu');
+          _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha cho biểu mẫu');
         }
       }
     }
@@ -1144,13 +1161,12 @@ class SyncService {
     int? punchId = payload['punch_id'] as int?;
 
     // Nếu punchId âm (tạo offline), cố gắng tìm serverId của lượt chấm cha qua parentUuid
+    SyncQueueEntry? parent;
     if ((punchId == null || punchId <= 0)) {
       if (entry.parentUuid != null) {
-        final parentRows = await (_db.select(_db.syncQueueEntries)
-              ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!)))
-            .get();
-        if (parentRows.isNotEmpty && parentRows.first.serverId != null && parentRows.first.serverId! > 0) {
-          punchId = parentRows.first.serverId;
+        parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+        if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+          punchId = parent.serverId;
         }
       }
       // Dự phòng: Tìm lượt attendance_punch gần nhất đã sync thành công
@@ -1164,7 +1180,7 @@ class SyncService {
 
     if (punchId == null || punchId <= 0) {
       debugPrint('[SyncService] Chưa tìm thấy serverId của lượt chấm cho ảnh, giữ lại để retry sau');
-      throw AppException('Lượt chấm công chưa được đồng bộ lên máy chủ');
+      _throwParentUnresolved(entry, parent, 'Lượt chấm công chưa được đồng bộ lên máy chủ');
     }
 
     final localPath = entry.localPath ?? payload['local_path']?.toString();
