@@ -115,4 +115,34 @@ void main() {
     expect((await old.getPendingQueueEntries()).map((e) => e.clientUuid), ['old-row']);
     await old.close();
   });
+
+  test('purgeDoneEntries: dọn mục đã gửi; giữ cha còn mục con chưa xong; không đụng mục người khác', () async {
+    await db.setOwner(1);
+    await db.markDone(await enqueue('done-lone'));
+    await db.markDone(await enqueue('done-parent'));
+    await db.enqueue(SyncQueueEntriesCompanion.insert(
+      entity: 'visit_photo',
+      op: 'upload',
+      clientUuid: 'child',
+      parentUuid: const Value('done-parent'),
+      payload: '{}',
+      createdAt: 0,
+      createdElapsed: 0,
+      bootId: 'b',
+    ));
+    await db.markDone(await enqueue('done-theirs', owner: 2, setOwner: true));
+    await enqueue('pending-mine');
+
+    // Chưa quá hạn giữ ⇒ chưa dọn gì (việc làm muộn còn tra được serverId).
+    expect(await db.purgeDoneEntries(), 0);
+
+    final later = DateTime.now().add(AppDatabase.doneRetention + const Duration(minutes: 1));
+    expect(await db.purgeDoneEntries(now: later), 1);
+    final left = (await db.select(db.syncQueueEntries).get()).map((r) => r.clientUuid);
+    expect(left, unorderedEquals(['done-parent', 'child', 'done-theirs', 'pending-mine']));
+
+    // Con gửi xong (và quá hạn giữ) ⇒ dọn cả cha lẫn con.
+    await db.markDone((await db.getEntryByClientUuid('child'))!.id);
+    expect(await db.purgeDoneEntries(now: later.add(AppDatabase.doneRetention)), 2);
+  });
 }

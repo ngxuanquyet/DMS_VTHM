@@ -750,10 +750,12 @@ void main() {
       expect(pendingCount, 0);
 
       // Verify requests were made in order
-      expect(dioAdapter.recordedRequests.length, 3);
+      // Chỉ xét request GHI — GET làm mới (không await, sau khi gửi xong) có thể chen vào giữa.
+      final writes = dioAdapter.recordedRequests.where((r) => r['method'] != 'GET').toList();
+      expect(writes.length, 3);
 
       // 1st request: POST /dms/visits
-      final r1 = dioAdapter.recordedRequests[0];
+      final r1 = writes[0];
       expect(r1['path'], '/dms/visits');
       final r1Data = r1['data'] as Map<String, dynamic>;
       expect(r1Data['client_uuid'], visitClientUuid);
@@ -762,14 +764,14 @@ void main() {
       expect(r1Data['client_boot_id'], bootId);
 
       // 2nd request: POST /dms/visits/99901/photos (serverId 99901 resolved from parent!)
-      final r2 = dioAdapter.recordedRequests[1];
+      final r2 = writes[1];
       expect(r2['path'], '/dms/visits/99901/photos');
 
       // Ảnh cục bộ đã được xóa sau khi tải lên thành công (§9)
       expect(await offlinePhotoFile.exists(), isFalse);
 
       // 3rd request: POST /dms/visits/99901/checkout (serverId 99901 resolved from parent!)
-      final r3 = dioAdapter.recordedRequests[2];
+      final r3 = writes[2];
       expect(r3['path'], '/dms/visits/99901/checkout');
       final r3Data = r3['data'] as Map<String, dynamic>;
       expect(r3Data['is_offline_sync'], isTrue);

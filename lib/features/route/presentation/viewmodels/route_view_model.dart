@@ -2648,15 +2648,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (ref != null) {
         try {
           final db = ref!.read(appDatabaseProvider);
-          // Xoá các file ảnh chụp offline trên ổ đĩa
-          final photoPaths = await db.getPendingVisitPhotoPaths(clientUuid);
-          for (final path in photoPaths) {
-            try {
-              final f = File(path);
-              if (f.existsSync()) await f.delete();
-            } catch (_) {}
-          }
-          // Xoá toàn bộ tác vụ pending/sending của lượt này (create visit, upload ảnh, checkout)
+          // Xoá toàn bộ tác vụ pending/sending của lượt này (create visit, upload ảnh, checkout) — kèm tệp ảnh của chúng
           await db.deletePendingVisitQueue(clientUuid);
         } catch (err) {
           debugPrint('[CheckInViewModel] Lỗi xoá queue khi hủy lượt: $err');

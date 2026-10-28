@@ -22,7 +22,8 @@ class MockContractDioAdapter implements HttpClientAdapter {
   @override
   Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
     lastOptions = options;
-    lastData = options.data;
+    // Chỉ ghi body có dữ liệu — GET làm mới danh sách (không await) chạy sau không đè body POST cần kiểm.
+    if (options.data != null) lastData = options.data;
 
     if (options.path.contains('customers/mine')) {
       final res = {

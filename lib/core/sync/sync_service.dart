@@ -85,7 +85,8 @@ class SyncService {
   /// Mục con chưa lấy được serverId của mục cha. Mặc định là lỗi tạm (thử lại sau). Chỉ ném 4xx (đi đường dead chuẩn
   /// — người dùng thấy ở "Lỗi đồng bộ", xoá được) khi KHÔNG BAO GIỜ có serverId nữa — kẻo thử lại mãi và chặn đăng
   /// xuất vĩnh viễn (đăng xuất chờ hết mục chờ gửi):
-  /// - cha không còn trong máy (dọn mục lỗi / huỷ lượt — dòng done không bao giờ bị xoá);
+  /// - cha không còn trong máy (dọn mục lỗi / huỷ lượt; dòng done chỉ bị dọn sau AppDatabase.doneRetention và khi không
+  ///   còn mục con chưa xong);
   /// - cha bị từ chối (dead) mà KHÔNG phải điểm bán — chỉ điểm bán được sửa rồi gửi lại (hồi dead → pending ở
   ///   customer_local_data_source), nên con của điểm bán bị từ chối vẫn phải chờ.
   /// Không ghi parentUuid (ảnh chấm công chờ "lượt chấm gần nhất", dòng cũ) hay cha done mà thiếu serverId (409) KHÔNG
@@ -271,6 +272,11 @@ class SyncService {
       );
     } finally {
       _isSyncing = false;
+      // Gửi xong thì không giữ mãi trong máy: mọi lượt (kể cả hàng đợi rỗng) dọn mục done quá hạn giữ (+ tệp ảnh).
+      unawaited(_db.purgeDoneEntries().catchError((Object e) {
+        debugPrint('[SyncService] Lỗi dọn mục đã gửi: $e');
+        return 0;
+      }));
       if (_ref.read(connectivityProvider).isOnline) {
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);

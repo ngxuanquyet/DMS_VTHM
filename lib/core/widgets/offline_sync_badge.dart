@@ -653,9 +653,7 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
             if (entry.entity == 'customer') {
               await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(entry.clientUuid);
             }
-            await (ref.read(appDatabaseProvider).delete(ref.read(appDatabaseProvider).syncQueueEntries)
-                  ..where((tbl) => tbl.id.equals(entry.id)))
-                .go();
+            await ref.read(appDatabaseProvider).deleteEntry(entry.id);
           },
         ),
       ],

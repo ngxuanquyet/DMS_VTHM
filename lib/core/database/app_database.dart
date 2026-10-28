@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
@@ -19,7 +20,7 @@ class SyncQueueEntries extends Table {
   TextColumn get localPath => text().nullable()(); // chỉ với 'photo': đường dẫn tệp trên máy
   TextColumn get state => text().withDefault(const Constant('pending'))(); // 'pending' | 'sending' | 'done' | 'dead'
   IntColumn get attempts => integer().withDefault(const Constant(0))();
-  IntColumn get nextAttemptAt => integer().nullable()(); // epoch ms; bộ gửi bỏ qua mục chưa tới hạn
+  IntColumn get nextAttemptAt => integer().nullable()(); // epoch ms; bộ gửi bỏ qua mục chưa tới hạn — dòng done: lúc gửi xong
   TextColumn get lastError => text().nullable()();
   IntColumn get createdAt => integer()(); // epoch ms theo ĐỒNG HỒ MÁY lúc nhập
   IntColumn get createdElapsed => integer()(); // ĐỒNG HỒ ĐƠN ĐIỆU (monotonic) lúc nhập (§6.3)
@@ -107,6 +108,11 @@ class AppDatabase extends _$AppDatabase {
       _lastOwnerUserId = userId;
       await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
           .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
+      // Chạy nền: lần đầu sau nâng cấp có thể dọn hàng trăm tệp — đừng bắt đăng nhập chờ.
+      unawaited(purgeDoneEntries().catchError((Object e) {
+        debugPrint('[AppDatabase] Lỗi dọn mục đã gửi: $e');
+        return 0;
+      }));
     }
   }
 
@@ -174,6 +180,8 @@ class AppDatabase extends _$AppDatabase {
       SyncQueueEntriesCompanion(
         state: const Value('done'),
         serverId: Value(serverId),
+        // Dòng done không còn lịch thử lại ⇒ dùng cột này ghi LÚC GỬI XONG cho [purgeDoneEntries].
+        nextAttemptAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
     return updated > 0;
@@ -346,9 +354,50 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Xóa các mục dead đã được xử lý hoặc dọn dẹp
-  Future<int> clearDeadEntries() {
-    return (delete(syncQueueEntries)..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))).go();
+  /// Xóa các mục dead đã được xử lý hoặc dọn dẹp — kèm tệp ảnh của chúng.
+  Future<int> clearDeadEntries() async {
+    final rows = await (select(syncQueueEntries)..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))).get();
+    if (rows.isEmpty) return 0;
+    final n = await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
+    await _deleteRowFiles(rows, const []);
+    return n;
+  }
+
+  /// Xoá một mục hàng đợi (người dùng bấm xoá mục lỗi) — kèm tệp ảnh của nó.
+  Future<void> deleteEntry(int id) async {
+    final row = await (select(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
+    if (row == null) return;
+    await (delete(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).go();
+    await _deleteRowFiles([row], const []);
+  }
+
+  /// Giữ mục đã gửi bao lâu trước khi dọn: dòng done là nguồn tra clientUuid → serverId cho việc làm MUỘN sau khi gửi
+  /// (ảnh chấm công bổ sung, huỷ lượt đã đồng bộ, check-out ngay sau đồng bộ); ảnh vừa gửi còn được lịch sử offline
+  /// hiển thị tới khi tải lại từ máy chủ.
+  static const doneRetention = Duration(days: 2);
+
+  /// Dọn mục ĐÃ GỬI XONG (done) của người đang đăng nhập quá [doneRetention] — hàng đợi không phình mãi — kèm tệp ảnh
+  /// của chúng (ảnh chấm công offline trước đây không ai xoá). Giữ dòng cha còn mục con chưa xong (chờ/đang gửi/lỗi):
+  /// con tra serverId của cha qua dòng này. Dòng done của bản cũ (chưa ghi lúc gửi xong) tính theo lúc nhập.
+  /// Gọi cuối mỗi lượt đồng bộ và lúc đặt chủ (dọn dồn từ bản cũ).
+  Future<int> purgeDoneEntries({DateTime? now}) async {
+    final cutoff = (now ?? DateTime.now()).subtract(doneRetention).millisecondsSinceEpoch;
+    final rows = <SyncQueueEntry>[];
+    await transaction(() async {
+      final unfinishedParents = selectOnly(syncQueueEntries)
+        ..addColumns([syncQueueEntries.parentUuid])
+        ..where(syncQueueEntries.parentUuid.isNotNull() & syncQueueEntries.state.equals('done').not());
+      rows.addAll(await (select(syncQueueEntries)
+            ..where((t) =>
+                isMine(t) &
+                t.state.equals('done') &
+                coalesce([t.nextAttemptAt, t.createdAt]).isSmallerThanValue(cutoff) &
+                t.clientUuid.isNotInQuery(unfinishedParents)))
+          .get());
+      if (rows.isNotEmpty) await (delete(syncQueueEntries)..where((t) => t.id.isIn(rows.map((r) => r.id)))).go();
+    });
+    if (rows.isNotEmpty) await _deleteRowFiles(rows, const []);
+    return rows.length;
   }
 
   /// Đánh dấu điểm bán bị lỗi đồng bộ vĩnh viễn (4xx)
@@ -529,10 +578,14 @@ class AppDatabase extends _$AppDatabase {
 
   /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue
   Future<void> deletePendingCustomer(String clientUuid) async {
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+        .get();
     await (delete(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).go();
     await (delete(syncQueueEntries)
           ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
         .go();
+    await _deleteRowFiles(rows, [clientUuid]);
   }
 
   /// Tìm entry visit trong sync_queue theo clientUuid
@@ -553,24 +606,17 @@ class AppDatabase extends _$AppDatabase {
     return entries.isNotEmpty ? entries.first : null;
   }
 
-  /// Lấy danh sách đường dẫn ảnh cục bộ của lượt viếng thăm trước khi xoá queue
-  Future<List<String>> getPendingVisitPhotoPaths(String clientUuid) async {
-    final entries = await (select(syncQueueEntries)
-          ..where((tbl) =>
-              tbl.parentUuid.equals(clientUuid) &
-              tbl.entity.equals('visit_photo') &
-              tbl.localPath.isNotNull()))
-        .get();
-    return entries.map((e) => e.localPath!).toList();
-  }
-
   /// Xoá các mục pending/sending của lượt viếng thăm (create, upload ảnh, checkout)
   Future<int> deletePendingVisitQueue(String clientUuid) async {
-    return await (delete(syncQueueEntries)
+    final rows = await (select(syncQueueEntries)
           ..where((tbl) =>
               (tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)) &
               (tbl.state.equals('pending') | tbl.state.equals('sending'))))
-        .go();
+        .get();
+    if (rows.isEmpty) return 0;
+    final n = await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
+    await _deleteRowFiles(rows, const []);
+    return n;
   }
 }
 
