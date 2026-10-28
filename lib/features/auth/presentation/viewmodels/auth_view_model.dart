@@ -19,6 +19,7 @@ import '../../../daily_report/presentation/viewmodels/visit_report_view_model.da
 import '../../../position_declaration/presentation/viewmodels/position_declaration_view_model.dart';
 import '../../../home/presentation/widgets/attendance_punch_reminder.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../customer/presentation/viewmodels/rejected_read_status_notifier.dart';
@@ -265,6 +266,15 @@ class AuthViewModel extends StateNotifier<AuthState> {
       await r.read(appDatabaseProvider).setOwner(userId == null ? null : int.tryParse(userId));
     } catch (e) {
       debugPrint('[AuthViewModel] Không đặt được chủ hàng đợi: $e');
+    }
+    // Có người đăng nhập ⇒ dọn lịch sử lưu trong máy quá 60 ngày (một lần mỗi lần mở app). CHỜ xong — chạy trước khi
+    // state thành authenticated tức trước lần tải dữ liệu đầu, không bị repository ghi đè; chỉ là xử lý JSON, nhanh.
+    if (userId != null) {
+      try {
+        await LocalHistoryRetention.runOnce();
+      } catch (e) {
+        debugPrint('[AuthViewModel] Lỗi dọn lịch sử trong máy: $e');
+      }
     }
     // Stream hàng đợi lọc theo chủ lúc đăng ký — dựng lại mỗi lần đổi chủ (đăng nhập, khôi phục phiên, đăng xuất).
     r.invalidate(pendingSyncCountProvider);
