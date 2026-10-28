@@ -530,9 +530,28 @@ class _TheTrangThai extends StatelessWidget {
                 Text(ten, maxLines: 2, overflow: TextOverflow.ellipsis,
                     style: AppTypography.bodyMedium(color: chuChinh).copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                // Vai là của ĐIỂM BÁN với khách ERP, không phải của khách ERP ⇒ ghi rõ "Điểm bán là …" (chủ hệ thống chốt 28/10/2026).
-                Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!, 'Điểm bán là $vai'].join(' · '),
+                Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!].join(' · '),
                     style: AppTypography.bodySmall(color: chuPhu)),
+                // Vai là của ĐIỂM BÁN với khách ERP, không phải của khách ERP ⇒ dòng riêng "Quan hệ với NPP" (chủ hệ thống chốt
+                // 28/10/2026 — luôn ghi "NPP", kể cả khách kênh bán lẻ, cùng cách gọi với ô "Chưa xác định NPP").
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(Icons.link_rounded, size: 14, color: AppColors.primary),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: 'Quan hệ với NPP: ', style: AppTypography.bodySmall(color: chuPhu)),
+                          TextSpan(
+                            text: vai,
+                            style: AppTypography.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
                 if (nhan != null) ...[
                   const SizedBox(height: 4),
                   Container(

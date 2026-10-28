@@ -564,6 +564,11 @@ class _TheDaChon extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          // Cùng cách gọi với thẻ trên form: vai là quan hệ của điểm bán với khách ERP (28/10/2026).
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text('Quan hệ với NPP:', style: AppTypography.bodySmall(color: chuPhu)),
+          ),
           SizedBox(
             width: double.infinity,
             child: SegmentedButton<String>(

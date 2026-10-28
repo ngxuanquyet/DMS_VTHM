@@ -47,6 +47,7 @@ void main() {
     await tester.tap(find.byKey(const Key('erp-link-02700019')));
     await tester.pumpAndSettle();
     expect(find.text('Đã chọn (1)'), findsOneWidget);
+    expect(find.text('Quan hệ với NPP:'), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('erp-link-search')), 'hoang long');
     await tester.pump(const Duration(milliseconds: 300));
