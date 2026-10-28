@@ -285,6 +285,24 @@ class AppDatabase extends _$AppDatabase {
     return cleared;
   }
 
+  /// Mọi tệp mà SQLite còn trỏ tới — hàng đợi (mọi trạng thái, mọi chủ: localPath + payload) và điểm bán trong máy
+  /// (dynamicFieldsJson). Quét dọn ảnh tạm KHÔNG được xoá các tệp này.
+  Future<List<String>> referencedFilePaths() async {
+    final paths = <String>[];
+    for (final row in await select(syncQueueEntries).get()) {
+      if (row.localPath != null) paths.add(row.localPath!);
+      try {
+        collectFilePaths(jsonDecode(row.payload), paths);
+      } catch (_) {}
+    }
+    for (final c in await select(localCustomers).get()) {
+      try {
+        collectFilePaths(jsonDecode(c.dynamicFieldsJson), paths);
+      } catch (_) {}
+    }
+    return paths;
+  }
+
   /// Ảnh của các dòng hàng đợi đã xoá: localPath + đường dẫn chỉ ghi trong payload (biểu mẫu thị trường
   /// `_local_photo_paths`, ảnh điểm bán rơi về đường dẫn tạm). Giải mã payload NGOÀI transaction — không giữ khoá DB.
   static Future<void> _deleteRowFiles(List<SyncQueueEntry> rows, List<String> customerUuids) async {
@@ -292,24 +310,10 @@ class AppDatabase extends _$AppDatabase {
     for (final row in rows) {
       if (row.localPath != null) paths.add(row.localPath!);
       try {
-        _collectPaths(jsonDecode(row.payload), paths);
+        collectFilePaths(jsonDecode(row.payload), paths);
       } catch (_) {}
     }
     await _deleteUserFiles(paths, customerUuids);
-  }
-
-  static void _collectPaths(Object? node, List<String> out) {
-    if (node is String) {
-      if (node.startsWith('/') || node.startsWith('file://')) out.add(node);
-    } else if (node is Map) {
-      for (final v in node.values) {
-        _collectPaths(v, out);
-      }
-    } else if (node is List) {
-      for (final v in node) {
-        _collectPaths(v, out);
-      }
-    }
   }
 
   static Future<void> _deleteUserFiles(List<String> queuePaths, List<String> customerUuids) async {
@@ -376,8 +380,9 @@ class AppDatabase extends _$AppDatabase {
   /// hiển thị tới khi tải lại từ máy chủ.
   static const doneRetention = Duration(days: 2);
 
-  /// Dọn mục ĐÃ GỬI XONG (done) của người đang đăng nhập quá [doneRetention] — hàng đợi không phình mãi — kèm tệp ảnh
-  /// của chúng (ảnh chấm công offline trước đây không ai xoá). Giữ dòng cha còn mục con chưa xong (chờ/đang gửi/lỗi):
+  /// Dọn mục ĐÃ GỬI XONG (done) của người đang đăng nhập quá [doneRetention] — hàng đợi không phình mãi. CHỈ xoá dòng:
+  /// tệp ảnh của chúng có thể còn được lịch sử trong máy hiển thị (lịch sử chấm công trỏ url = đường dẫn máy) — để
+  /// LocalHistoryRetention.sweepPhotoFiles dọn khi không còn chỗ lưu nào trỏ tới. Giữ dòng cha còn mục con chưa xong (chờ/đang gửi/lỗi):
   /// con tra serverId của cha qua dòng này. Dòng done của bản cũ (chưa ghi lúc gửi xong) tính theo lúc nhập.
   /// Gọi cuối mỗi lượt đồng bộ và lúc đặt chủ (dọn dồn từ bản cũ).
   Future<int> purgeDoneEntries({DateTime? now}) async {
@@ -396,7 +401,6 @@ class AppDatabase extends _$AppDatabase {
           .get());
       if (rows.isNotEmpty) await (delete(syncQueueEntries)..where((t) => t.id.isIn(rows.map((r) => r.id)))).go();
     });
-    if (rows.isNotEmpty) await _deleteRowFiles(rows, const []);
     return rows.length;
   }
 
@@ -626,4 +630,20 @@ LazyDatabase _openConnection() {
     final file = File(p.join(dbFolder.path, 'dms_app.sqlite'));
     return NativeDatabase.createInBackground(file);
   });
+}
+
+/// Gom mọi chuỗi trông như đường dẫn tệp trên máy ('/...' hoặc 'file://...') trong một cây JSON đã giải mã — dùng chung
+/// cho dọn tệp của dòng hàng đợi và tìm tệp còn được tham chiếu (quét ảnh tạm).
+void collectFilePaths(Object? node, List<String> out) {
+  if (node is String) {
+    if (node.startsWith('/') || node.startsWith('file://')) out.add(node);
+  } else if (node is Map) {
+    for (final v in node.values) {
+      collectFilePaths(v, out);
+    }
+  } else if (node is List) {
+    for (final v in node) {
+      collectFilePaths(v, out);
+    }
+  }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/account_key.dart';
 import '../../../../core/utils/system_clock.dart';
@@ -48,7 +49,10 @@ class FormsRepositoryImpl implements FormsRepository {
       // Lưu cache cục bộ phục vụ chế độ offline
       try {
         final rawJson = jsonEncode(models.map((m) => m.toJson()).toList());
-        if (cacheKey != null) await prefsNow.setString(cacheKey, rawJson);
+        if (cacheKey != null) {
+          await prefsNow.setString(cacheKey, rawJson);
+          await LocalHistoryRetention.touchFormsCache(prefsNow, cacheKey);
+        }
       } catch (cacheErr) {
         debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
       }

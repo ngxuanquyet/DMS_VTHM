@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/errors/app_exceptions.dart';
@@ -275,6 +277,11 @@ class AuthViewModel extends StateNotifier<AuthState> {
       } catch (e) {
         debugPrint('[AuthViewModel] Lỗi dọn lịch sử trong máy: $e');
       }
+      // Ảnh tạm quá hạn (tệp trên đĩa, có thể nhiều) — chạy nền.
+      unawaited(LocalHistoryRetention.sweepPhotoFiles(r.read(appDatabaseProvider)).catchError((Object e) {
+        debugPrint('[AuthViewModel] Lỗi dọn ảnh tạm: $e');
+        return 0;
+      }));
     }
     // Stream hàng đợi lọc theo chủ lúc đăng ký — dựng lại mỗi lần đổi chủ (đăng nhập, khôi phục phiên, đăng xuất).
     r.invalidate(pendingSyncCountProvider);
