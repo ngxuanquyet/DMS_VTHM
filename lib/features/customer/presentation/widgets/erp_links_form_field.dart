@@ -323,7 +323,8 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               ma: p.code,
               kenh: p.channelName,
               vai: ErpLinkRole.label(p.role),
-              nhan: _id == null ? 'Sẽ đề xuất khi lưu' : 'Sẽ đề xuất thêm',
+              // Form TẠO: không gắn nhãn (chủ hệ thống bỏ chữ "Sẽ đề xuất khi lưu" 28/10/2026); form sửa vẫn báo sẽ đề xuất thêm.
+              nhan: _id == null ? null : 'Sẽ đề xuất thêm',
               // Thay đổi CHƯA gửi: màu phụ (xanh dương), tách khỏi "Đã duyệt" (xanh lá).
               mau: AppColors.secondary,
               onBo: () => _doi(v.copyWith(add: v.add.where((x) => x.code != p.code).toList())),
@@ -485,7 +486,9 @@ class _TheTrangThai extends StatelessWidget {
   final String ma;
   final String? kenh;
   final String vai;
-  final String nhan;
+
+  /// Nhãn trạng thái; `null` ⇒ không vẽ nhãn.
+  final String? nhan;
   final Color mau;
   final VoidCallback? onSua;
   final VoidCallback? onBo;
@@ -495,8 +498,8 @@ class _TheTrangThai extends StatelessWidget {
     required this.ten,
     required this.ma,
     required this.vai,
-    required this.nhan,
     required this.mau,
+    this.nhan,
     this.kenh,
     this.onSua,
     this.onBo,
@@ -529,15 +532,17 @@ class _TheTrangThai extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!, vai].join(' · '),
                     style: AppTypography.bodySmall(color: chuPhu)),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: mau.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(6),
+                if (nhan != null) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: mau.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(nhan!, style: AppTypography.labelSmall(color: mau).copyWith(fontWeight: FontWeight.w600)),
                   ),
-                  child: Text(nhan, style: AppTypography.labelSmall(color: mau).copyWith(fontWeight: FontWeight.w600)),
-                ),
+                ],
               ],
             ),
           ),

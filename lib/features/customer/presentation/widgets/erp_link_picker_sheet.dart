@@ -199,8 +199,19 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                   children: [
-                    // Đang tìm ⇒ kết quả lên ĐẦU (gõ xong thấy ngay, không phải cuộn qua các thẻ đã chọn); không tìm ⇒ đã chọn
-                    // trước rồi tới gợi ý.
+                    // Đã chọn luôn ở ĐẦU — NV thấy ngay mình đã chọn những ai và chỉnh vai, không phải cuộn qua danh sách lọc dài
+                    // (chủ hệ thống yêu cầu 28/10/2026). Sau đó: kết quả tìm khi đang tìm, gợi ý khi không tìm.
+                    if (_chon.isNotEmpty) ...[
+                      _TieuDeNhom(icon: Icons.check_circle_rounded, text: 'Đã chọn (${_chon.length})', color: AppColors.success),
+                      for (final p in _chon)
+                        _TheDaChon(
+                          pick: p,
+                          vaiDuoc: _vaiDuoc(p.channelId),
+                          chinhKhachKhoa: _coChinhKhach && p.role != ErpLinkRole.owner,
+                          onVai: (r) => setState(() => p.role = r),
+                          onBo: () => _bo(p.code),
+                        ),
+                    ],
                     if (dangTim) ...[
                       _TieuDeNhom(icon: Icons.manage_search_rounded, text: 'Kết quả tìm (${ketQua.length})', color: chuPhu),
                       if (ketQua.isEmpty)
@@ -231,17 +242,6 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                               matchReason: 'manual',
                             )),
                           ),
-                    ],
-                    if (_chon.isNotEmpty) ...[
-                      _TieuDeNhom(icon: Icons.check_circle_rounded, text: 'Đã chọn (${_chon.length})', color: AppColors.success),
-                      for (final p in _chon)
-                        _TheDaChon(
-                          pick: p,
-                          vaiDuoc: _vaiDuoc(p.channelId),
-                          chinhKhachKhoa: _coChinhKhach && p.role != ErpLinkRole.owner,
-                          onVai: (r) => setState(() => p.role = r),
-                          onBo: () => _bo(p.code),
-                        ),
                     ],
                     if (!dangTim) ...[
                       _TieuDeNhom(

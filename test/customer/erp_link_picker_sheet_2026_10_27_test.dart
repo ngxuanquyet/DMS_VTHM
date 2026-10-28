@@ -52,6 +52,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(find.text('Kết quả tìm (1)'), findsOneWidget);
+    // Đã chọn luôn ở ĐẦU, kể cả khi đang tìm (28/10/2026) — không phải cuộn qua danh sách lọc mới thấy.
+    expect(
+      tester.getTopLeft(find.text('Đã chọn (1)')).dy,
+      lessThan(tester.getTopLeft(find.text('Kết quả tìm (1)')).dy),
+    );
     await tester.tap(find.byKey(const Key('erp-link-01380001')));
     await tester.pumpAndSettle();
 
