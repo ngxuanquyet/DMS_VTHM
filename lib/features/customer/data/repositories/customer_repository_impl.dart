@@ -96,18 +96,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     // 3. Tải từ API server khi forceRefresh = true hoặc khi SQLite chưa có dữ liệu
     try {
-      final response = await _apiService.getMineCustomers(
-        page: page,
-        perPage: perPage,
-        q: query,
-        context: 'mobile',
-      );
-
-      _cachedColumns = response.dynamicColumns;
+      final remoteList = await _fetchAllPages(page, perPage, query);
 
       // Lưu cache vào SQLite cục bộ (tự động ghi đè và dọn dẹp các khách hàng đã bị xóa trên server)
       await _localDataSource.cacheRemoteCustomers(
-        response.data,
+        remoteList,
         reconcile: query == null || query.isEmpty,
       );
 
@@ -129,17 +122,35 @@ class CustomerRepositoryImpl implements CustomerRepository {
     }
   }
 
-  Future<void> _fetchRemoteAndCache(int page, int perPage, String? query) async {
-    try {
+  /// Trần số trang tải một lượt — chỉ để chặn vòng lặp vô hạn nếu máy chủ trả `pageCount` sai.
+  static const int _maxPages = 100;
+
+  /// Tải ĐỦ mọi trang từ [startPage] tới `pageCount` máy chủ báo. Máy chủ chặn `per-page` tối đa 200, nên chỉ
+  /// lấy trang 1 thì người phụ trách hơn 200 điểm bán bị cụt danh sách — và `reconcile` còn XOÁ khỏi SQLite
+  /// những điểm bán nằm ở các trang sau. Lỗi ở bất kỳ trang nào thì ném ra cả lượt (không cache nửa vời).
+  Future<List<CustomerEntity>> _fetchAllPages(int startPage, int perPage, String? query) async {
+    final all = <CustomerEntity>[];
+    var page = startPage;
+    while (true) {
       final response = await _apiService.getMineCustomers(
         page: page,
         perPage: perPage,
         q: query,
         context: 'mobile',
       );
-      _cachedColumns = response.dynamicColumns;
+      if (page == startPage) _cachedColumns = response.dynamicColumns;
+      all.addAll(response.data);
+      if (response.data.isEmpty || page >= response.pageCount || page - startPage + 1 >= _maxPages) break;
+      page++;
+    }
+    return all;
+  }
+
+  Future<void> _fetchRemoteAndCache(int page, int perPage, String? query) async {
+    try {
+      final remoteList = await _fetchAllPages(page, perPage, query);
       await _localDataSource.cacheRemoteCustomers(
-        response.data,
+        remoteList,
         reconcile: query == null || query.isEmpty,
       );
       final mergedList = await _localDataSource.getLocalCustomers(query: query);
