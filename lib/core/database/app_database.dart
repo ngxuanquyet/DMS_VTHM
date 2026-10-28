@@ -203,14 +203,14 @@ class AppDatabase extends _$AppDatabase {
   /// người đăng nhập sau gửi lên dưới tên mình), điểm bán lưu trong máy, và ĐÚNG các tệp ảnh chúng trỏ tới (localPath
   /// + đường dẫn trong payload của hàng đợi, ảnh `<clientUuid>_photo_*` của điểm bán) — không xoá cả thư mục: ảnh vừa chụp mà chưa kịp vào
   /// hàng đợi (lượt viếng thăm dở, lượt chấm đang lưu) nằm chung thư mục.
-  /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending thì KHÔNG xoá gì, trả false — trừ khi
-  /// [discardPending] (người dùng đã xác nhận bỏ dữ liệu chưa gửi). Mục dead luôn bị xoá — nơi gọi phải cảnh báo trước.
-  Future<bool> clearUserData({bool discardPending = false}) async {
+  /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending thì KHÔNG xoá gì, trả false. Mục dead bị xoá — nơi gọi
+  /// phải cảnh báo người dùng trước.
+  Future<bool> clearUserData() async {
     final queuePaths = <String>[];
     final payloads = <String>[];
     final customerUuids = <String>[];
     final cleared = await transaction(() async {
-      if (!discardPending && await countPendingSync() > 0) return false;
+      if (await countPendingSync() > 0) return false;
       for (final row in await select(syncQueueEntries).get()) {
         if (row.localPath != null) queuePaths.add(row.localPath!);
         payloads.add(row.payload);

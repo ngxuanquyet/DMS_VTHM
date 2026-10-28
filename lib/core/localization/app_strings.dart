@@ -119,12 +119,15 @@ class AppStrings {
   String get logoutBlockedTitle =>
       isVietnamese ? 'Chưa thể đăng xuất' : 'Cannot log out yet';
   String logoutBlockedMessage(int count) => isVietnamese
-      ? 'Còn $count mục chưa đồng bộ lên hệ thống. Vui lòng đồng bộ trước khi đăng xuất. Nếu đồng bộ mãi không được, có thể "Vẫn đăng xuất" — dữ liệu này sẽ MẤT.'
-      : '$count item(s) have not been synced yet. Please sync before logging out. If syncing keeps failing you can "Log out anyway" — this data will be LOST.';
-  String get logoutAnyway => isVietnamese ? 'Vẫn đăng xuất' : 'Log out anyway';
-  String logoutDiscardWarning(int count) => isVietnamese
-      ? '\n\nCẢNH BÁO: $count mục chưa đồng bộ sẽ bị XOÁ VĨNH VIỄN khỏi máy.'
-      : '\n\nWARNING: $count unsynced item(s) will be PERMANENTLY DELETED from this device.';
+      ? 'Còn $count mục chưa đồng bộ lên hệ thống. Vui lòng đồng bộ xong rồi mới đăng xuất.'
+      : '$count item(s) have not been synced yet. Please finish syncing before logging out.';
+  String get dealerFallbackName => isVietnamese ? 'Điểm bán' : 'Outlet';
+  String get logoutActiveVisitReason => isVietnamese
+      ? 'Bạn không thể đăng xuất khi đang có lượt viếng thăm chưa kết thúc.'
+      : 'You cannot log out while a visit is still open.';
+  String get logoutActiveVisitInstruction => isVietnamese
+      ? 'Vui lòng vào lượt đang mở để check-out hoặc hủy lượt, rồi đăng xuất lại.'
+      : 'Please open the visit to check out or cancel it, then log out again.';
   String get syncNow => isVietnamese ? 'Đồng bộ ngay' : 'Sync now';
   String logoutDeadWarning(int count) => isVietnamese
       ? '\n\nLưu ý: còn $count mục bị hệ thống từ chối (lỗi đồng bộ). Đăng xuất sẽ XOÁ các mục này khỏi máy.'

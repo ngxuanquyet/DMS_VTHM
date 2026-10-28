@@ -15,7 +15,11 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/screens/error_log_screen.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/offline_sync_badge.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
+import '../../../route/presentation/viewmodels/route_view_model.dart';
+import '../../../route/presentation/widgets/active_visit_blocking_dialog.dart';
+import '../../../route/presentation/viewmodels/open_visit.dart';
 import '../viewmodels/profile_view_model.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -28,9 +32,9 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _loggingOut = false;
 
-  /// Đăng xuất xoá hàng đợi đồng bộ trong máy ⇒ còn mục chưa gửi thì chặn: cho đồng bộ ngay, hoặc "Vẫn đăng xuất"
-  /// (bỏ dữ liệu chưa gửi — lối ra khi mục lỗi mãi không gửi được). Mục bị server từ chối (dead) thì cảnh báo sẽ mất
-  /// trong hộp xác nhận.
+  /// Đăng xuất xoá hàng đợi đồng bộ trong máy ⇒ CHẶN khi còn lượt viếng thăm chưa đóng (phải check-out hoặc huỷ
+  /// lượt) hoặc còn mục chưa đồng bộ (phải đồng bộ xong). Mục bị server từ chối (dead) thì cảnh báo sẽ mất trong hộp
+  /// xác nhận.
   Future<void> _handleLogout() async {
     if (_loggingOut) return;
     _loggingOut = true;
@@ -44,7 +48,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _logoutFlow() async {
     final strings = ref.read(stringsProvider);
     final db = ref.read(appDatabaseProvider);
-    var discardPending = false;
+
+    if (await _blockedByActiveVisit()) return;
+
     var pending = await db.countPendingSync();
     while (pending > 0) {
       if (!mounted) return;
@@ -55,18 +61,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           content: Text(strings.logoutBlockedMessage(pending)),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: Text(strings.close)),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, _PendingChoice.discard),
-              child: Text(strings.logoutAnyway, style: const TextStyle(color: AppColors.error)),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx, _PendingChoice.details), child: Text(strings.viewDetails)),
             TextButton(onPressed: () => Navigator.pop(ctx, _PendingChoice.sync), child: Text(strings.syncNow)),
           ],
         ),
       );
       if (choice == null || !mounted) return;
-      if (choice == _PendingChoice.discard) {
-        discardPending = true;
-        break;
+      if (choice == _PendingChoice.details) {
+        // Màn chi tiết hàng đợi dùng chung (badge đồng bộ): xem mục nào đang kẹt, xoá mục lỗi.
+        showOfflineSyncModal(context);
+        return;
       }
       if (!await _syncAll(db)) return;
       pending = await db.countPendingSync();
@@ -76,13 +80,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final dead = await db.countDeadSync();
     if (!mounted) return;
-    final warning = (discardPending ? strings.logoutDiscardWarning(pending) : '') +
-        (dead > 0 ? strings.logoutDeadWarning(dead) : '');
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(strings.logoutConfirmTitle),
-        content: Text(strings.logoutConfirmMessage + warning),
+        content: Text(strings.logoutConfirmMessage + (dead > 0 ? strings.logoutDeadWarning(dead) : '')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(strings.cancel)),
           TextButton(
@@ -95,22 +97,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (confirm != true || !mounted) return;
     var loggedOut = false;
     try {
-      loggedOut = await ref
-          .read(authViewModelProvider.notifier)
-          .logout(requireCleared: true, discardPending: discardPending);
+      loggedOut = await ref.read(authViewModelProvider.notifier).logout(requireCleared: true);
     } catch (e) {
       if (mounted) AppSnackBar.showError(context, e);
       return;
     }
     if (!mounted) return;
     if (!loggedOut) {
-      // Có mục mới vào hàng đợi trong lúc hộp xác nhận đang mở ⇒ chưa đăng xuất, cho người dùng xử lý lại.
+      // Có lượt viếng thăm/mục mới phát sinh trong lúc hộp xác nhận đang mở ⇒ chưa đăng xuất, cho người dùng xử lý lại.
+      if (await _blockedByActiveVisit() || !mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(strings.logoutBlockedTitle), backgroundColor: AppColors.error),
       );
       return;
     }
     context.go('/login');
+  }
+
+  /// Còn lượt viếng thăm chưa đóng ⇒ hiện hộp chặn dùng chung với check-in (nút "Vào lượt đang mở" dẫn tới màn
+  /// check-in — nơi check-out hoặc huỷ lượt). Trả true nếu bị chặn.
+  Future<bool> _blockedByActiveVisit() async {
+    final active = await findOpenVisit(ref.read);
+    if (active == null) return false;
+    if (!mounted) return true;
+    final strings = ref.read(stringsProvider);
+    final chosenDealer = await showActiveVisitBlockingDialog(
+      context: context,
+      ref: ref,
+      activeVisit: active,
+      activeDealerName: active.customerName.isNotEmpty ? active.customerName : strings.dealerFallbackName,
+      blockedReason: strings.logoutActiveVisitReason,
+      blockedInstruction: strings.logoutActiveVisitInstruction,
+    );
+    if (chosenDealer != null && mounted) {
+      ref.read(checkInViewModelProvider.notifier).initCheckinWithDealer(chosenDealer);
+      // Không await: _handleLogout giữ cờ chống bấm đúp suốt lúc chờ — ở màn check-in lâu là nút Đăng xuất "chết".
+      context.push('/check-in', extra: chosenDealer).then((_) {
+        if (mounted) ref.read(routeViewModelProvider.notifier).loadRouteDetail();
+      });
+    }
+    return true;
   }
 
   /// Đồng bộ cưỡng bức tới khi hết hàng đợi hoặc một lượt không gửi thêm được mục nào. Trả false nếu lỗi (đã báo).
@@ -121,14 +147,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
     final sync = ref.read(syncServiceProvider);
     try {
-      // Lượt đồng bộ nền đang chạy thì syncQueue trả về ngay ⇒ chờ nó xong (tối đa 2 phút) rồi mới gửi cưỡng bức.
-      for (var i = 0; i < 240 && sync.isSyncing; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-      }
-      // Mỗi lượt syncQueue chỉ gửi một lô 50 mục ⇒ lặp tới khi hết hoặc lượt không gửi thêm được mục nào.
-      for (var round = 0; round < 20; round++) {
-        final r = await sync.syncQueue(force: true);
-        if (r.successCount == 0 || await db.countPendingSync() == 0) break;
+      // Mỗi lượt syncQueue chỉ gửi một lô 50 mục ⇒ lặp tới khi hết hoặc một lượt không làm số mục chờ giảm (gửi được
+      // hoặc chuyển dead đều làm giảm).
+      var before = await db.countPendingSync();
+      for (var round = 0; round < 20 && before > 0; round++) {
+        // Lượt đồng bộ nền đang chạy thì syncQueue trả về ngay (không làm gì) ⇒ chờ nó xong (tối đa 2 phút) mỗi vòng.
+        for (var i = 0; i < 240 && sync.isSyncing; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+        await sync.syncQueue(force: true);
+        final after = await db.countPendingSync();
+        if (after >= before) break;
+        before = after;
       }
       messenger.clearSnackBars();
       return true;
@@ -723,4 +753,4 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 }
 
-enum _PendingChoice { sync, discard }
+enum _PendingChoice { sync, details }

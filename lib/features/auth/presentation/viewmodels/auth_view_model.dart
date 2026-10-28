@@ -10,6 +10,7 @@ import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../../home/presentation/viewmodels/home_view_model.dart';
+import '../../../route/presentation/viewmodels/open_visit.dart';
 import '../../../profile/presentation/viewmodels/profile_view_model.dart';
 import '../../../profile/presentation/viewmodels/personal_info_view_model.dart';
 import '../../../travel/presentation/viewmodels/travel_view_model.dart';
@@ -173,7 +174,6 @@ class AuthViewModel extends StateNotifier<AuthState> {
         status: AuthStatus.authenticated,
         user: user,
       );
-      ref?.read(syncServiceProvider).resume();
       _resetPerUserState();
       // Gọi GET /dms/mobile-rules lúc đăng nhập, lưu bản sao trong máy (§1.3)
       ref?.read(mobileRulesProvider.notifier).fetchRules();
@@ -209,31 +209,17 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
   }
 
-  /// [requireCleared] (đăng xuất chủ động từ màn Hồ sơ, người dùng đã được cảnh báo mục lỗi sẽ mất): xoá hàng đợi +
-  /// điểm bán + ảnh offline TRƯỚC; còn mục chờ gửi (vừa phát sinh sau lúc màn hình kiểm) thì KHÔNG đăng xuất, trả false
-  /// — trừ khi [discardPending] (người dùng đã xác nhận bỏ dữ liệu chưa gửi).
+  /// [requireCleared] (đăng xuất chủ động từ màn Hồ sơ, người dùng đã được cảnh báo mục lỗi sẽ mất): còn lượt viếng
+  /// thăm chưa đóng hoặc mục chờ gửi (vừa phát sinh sau lúc màn hình kiểm) thì KHÔNG đăng xuất, trả false; không thì
+  /// xoá hàng đợi + điểm bán + ảnh offline TRƯỚC rồi mới đăng xuất.
   /// Đăng xuất cưỡng bức (bị thu quyền app) KHÔNG đụng hàng đợi — không ai được hỏi, không xoá mất dữ liệu.
-  Future<bool> logout({bool requireCleared = false, bool discardPending = false}) async {
+  Future<bool> logout({bool requireCleared = false}) async {
     // Lỗi DB thì ném lên cho màn hình báo — đừng nuốt thành "còn mục chờ gửi" (người dùng đồng bộ lại mãi vô ích).
     if (requireCleared) {
       final db = ref?.read(appDatabaseProvider);
       if (db == null) return false;
-      final sync = ref!.read(syncServiceProvider);
-      // Bỏ dữ liệu chưa gửi: dừng bộ đồng bộ và chờ lô đang gửi xong TRƯỚC khi xoá — kẻo lô đã nạp vào RAM gửi tiếp
-      // bằng token người sau. Dừng tới lần đăng nhập kế ([login] gọi resume).
-      try {
-        if (discardPending && !await sync.pauseAndDrain()) {
-          sync.resume();
-          return false;
-        }
-        if (!await db.clearUserData(discardPending: discardPending)) {
-          sync.resume();
-          return false;
-        }
-      } catch (_) {
-        sync.resume();
-        rethrow;
-      }
+      if (await findOpenVisit(ref!.read) != null) return false;
+      if (!await db.clearUserData()) return false;
     }
 
     // Nhả máy push (POST /notification/device-token/release) trước khi xóa access token (§3.2)
@@ -242,13 +228,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
       await ref?.read(fcmPushServiceProvider).unregisterDeviceToken();
     } catch (_) {}
 
-    try {
-      await logoutUseCase();
-    } catch (_) {
-      // Vẫn còn đăng nhập ⇒ đừng để bộ đồng bộ dừng mãi (đã pause ở nhánh bỏ dữ liệu chưa gửi).
-      ref?.read(syncServiceProvider).resume();
-      rethrow;
-    }
+    await logoutUseCase();
 
     ref?.read(syncServiceProvider).clearRecentDeadErrors();
     AttendancePunchReminder.reset();

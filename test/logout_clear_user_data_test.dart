@@ -51,13 +51,4 @@ void main() {
       expect(await db.getAllLocalCustomers(), hasLength(1));
     });
   }
-
-  test('discardPending: người dùng xác nhận bỏ dữ liệu chưa gửi ⇒ xoá cả mục pending', () async {
-    await enqueue('u-pending');
-    await addCustomer();
-
-    expect(await db.clearUserData(discardPending: true), isTrue);
-    expect(await db.select(db.syncQueueEntries).get(), isEmpty);
-    expect(await db.getAllLocalCustomers(), isEmpty);
-  });
 }

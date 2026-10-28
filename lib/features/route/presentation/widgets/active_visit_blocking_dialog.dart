@@ -8,13 +8,16 @@ import '../../domain/entities/route_entity.dart';
 import '../viewmodels/route_view_model.dart';
 
 /// Hộp thoại chặn check-in điểm bán mới khi đang có lượt viếng thăm chưa đóng (§3 Luật 3)
-/// Áp dụng cho cả môi trường Online và Offline
+/// Áp dụng cho cả môi trường Online và Offline. Chặn việc KHÁC (vd đăng xuất) thì truyền [blockedReason] +
+/// [blockedInstruction] thay cho câu "không thể check-in điểm bán …".
 Future<DealerEntity?> showActiveVisitBlockingDialog({
   required BuildContext context,
   required WidgetRef ref,
   required VisitEntity activeVisit,
   required String activeDealerName,
-  required String targetDealerName,
+  String targetDealerName = '',
+  String? blockedReason,
+  String? blockedInstruction,
   VoidCallback? onClose,
 }) {
   return showDialog<DealerEntity>(
@@ -24,6 +27,8 @@ Future<DealerEntity?> showActiveVisitBlockingDialog({
       activeVisit: activeVisit,
       activeDealerName: activeDealerName,
       targetDealerName: targetDealerName,
+      blockedReason: blockedReason,
+      blockedInstruction: blockedInstruction,
       onClose: onClose,
     ),
   );
@@ -33,13 +38,17 @@ class ActiveVisitBlockingDialog extends ConsumerWidget {
   final VisitEntity activeVisit;
   final String activeDealerName;
   final String targetDealerName;
+  final String? blockedReason;
+  final String? blockedInstruction;
   final VoidCallback? onClose;
 
   const ActiveVisitBlockingDialog({
     super.key,
     required this.activeVisit,
     required this.activeDealerName,
-    required this.targetDealerName,
+    this.targetDealerName = '',
+    this.blockedReason,
+    this.blockedInstruction,
     this.onClose,
   });
 
@@ -150,14 +159,15 @@ class ActiveVisitBlockingDialog extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'Theo quy định hệ thống (áp dụng cả Online và Offline), bạn không thể check-in điểm bán "$targetDealerName" khi đang có lượt viếng thăm khác chưa kết thúc.',
+            blockedReason ??
+                'Theo quy định hệ thống (áp dụng cả Online và Offline), bạn không thể check-in điểm bán "$targetDealerName" khi đang có lượt viếng thăm khác chưa kết thúc.',
             style: AppTypography.bodySmall(
               color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Vui lòng quay lại hoàn thành check-out hoặc hủy lượt đang mở trước khi mở lượt mới.',
+            blockedInstruction ?? 'Vui lòng quay lại hoàn thành check-out hoặc hủy lượt đang mở trước khi mở lượt mới.',
             style: AppTypography.bodySmall(
               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
             ).copyWith(fontStyle: FontStyle.italic),

@@ -81,22 +81,6 @@ class SyncService {
   bool _isSyncing = false;
 
   bool get isSyncing => _isSyncing;
-
-  bool _paused = false;
-
-  /// Đăng xuất "bỏ dữ liệu chưa gửi": chặn lượt gửi mới rồi chờ lượt đang chạy xong (tối đa [timeout]) — lô đã nạp
-  /// vào RAM không bị gửi tiếp bằng token của người đăng nhập sau. Trả false nếu lượt đang chạy chưa xong (vẫn dừng;
-  /// nơi gọi tự [resume]). Đăng nhập lại thì [resume].
-  Future<bool> pauseAndDrain({Duration timeout = const Duration(minutes: 2)}) async {
-    _paused = true;
-    final deadline = DateTime.now().add(timeout);
-    while (_isSyncing && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-    return !_isSyncing;
-  }
-
-  void resume() => _paused = false;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _pollingTimer;
   final Random _random = Random();
@@ -162,10 +146,6 @@ class SyncService {
   /// Tuân thủ Bất biến §3.3 Luật 4: Duy nhất MỘT tiến trình gửi chạy tại một thời điểm.
   /// Nếu [force] = true: cưỡng chế reset trạng thái stuck, bỏ qua kiểm tra nextAttemptAt (người dùng bấm đồng bộ).
   Future<SyncResult> syncQueue({bool force = false}) async {
-    if (_paused) {
-      debugPrint('[SyncService] Đang tạm dừng (đăng xuất bỏ dữ liệu chưa gửi), bỏ qua.');
-      return const SyncResult();
-    }
     if (_isSyncing) {
       debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();
