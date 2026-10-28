@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -195,6 +197,98 @@ class AppDatabase extends _$AppDatabase {
           ..where((tbl) => tbl.state.equals('dead'))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
         .get();
+  }
+
+  /// Đăng xuất: xoá dữ liệu gắn với người vừa dùng máy — hàng đợi đồng bộ (bảng KHÔNG có cột tài khoản ⇒ để lại thì
+  /// người đăng nhập sau gửi lên dưới tên mình), điểm bán lưu trong máy, và ĐÚNG các tệp ảnh chúng trỏ tới (localPath
+  /// + đường dẫn trong payload của hàng đợi, ảnh `<clientUuid>_photo_*` của điểm bán) — không xoá cả thư mục: ảnh vừa chụp mà chưa kịp vào
+  /// hàng đợi (lượt viếng thăm dở, lượt chấm đang lưu) nằm chung thư mục.
+  /// Đếm + xoá trong CÙNG transaction: còn mục pending/sending thì KHÔNG xoá gì, trả false — trừ khi
+  /// [discardPending] (người dùng đã xác nhận bỏ dữ liệu chưa gửi). Mục dead luôn bị xoá — nơi gọi phải cảnh báo trước.
+  Future<bool> clearUserData({bool discardPending = false}) async {
+    final queuePaths = <String>[];
+    final payloads = <String>[];
+    final customerUuids = <String>[];
+    final cleared = await transaction(() async {
+      if (!discardPending && await countPendingSync() > 0) return false;
+      for (final row in await select(syncQueueEntries).get()) {
+        if (row.localPath != null) queuePaths.add(row.localPath!);
+        payloads.add(row.payload);
+        if (row.entity == 'customer') customerUuids.add(row.clientUuid);
+      }
+      final c = selectOnly(localCustomers)..addColumns([localCustomers.clientUuid]);
+      customerUuids.addAll((await c.map((r) => r.read(localCustomers.clientUuid)).get()).whereType<String>());
+      await delete(syncQueueEntries).go();
+      await delete(localCustomers).go();
+      return true;
+    });
+    if (cleared) {
+      // Ảnh chỉ ghi trong payload (biểu mẫu thị trường `_local_photo_paths`, ảnh điểm bán rơi về đường dẫn tạm) —
+      // giải mã SAU transaction, không giữ khoá DB.
+      for (final payload in payloads) {
+        try {
+          _collectPaths(jsonDecode(payload), queuePaths);
+        } catch (_) {}
+      }
+      await _deleteUserFiles(queuePaths, customerUuids);
+    }
+    return cleared;
+  }
+
+  static void _collectPaths(Object? node, List<String> out) {
+    if (node is String) {
+      if (node.startsWith('/') || node.startsWith('file://')) out.add(node);
+    } else if (node is Map) {
+      for (final v in node.values) {
+        _collectPaths(v, out);
+      }
+    } else if (node is List) {
+      for (final v in node) {
+        _collectPaths(v, out);
+      }
+    }
+  }
+
+  static Future<void> _deleteUserFiles(List<String> queuePaths, List<String> customerUuids) async {
+    final roots = <String>[];
+    String? docs;
+    for (final dir in [getApplicationDocumentsDirectory, getApplicationSupportDirectory, getTemporaryDirectory]) {
+      try {
+        final path = (await dir()).path;
+        roots.add(path);
+        if (dir == getApplicationDocumentsDirectory) docs = path;
+      } catch (e) {
+        debugPrint('[AppDatabase] Không lấy được thư mục app khi dọn ảnh: $e');
+      }
+    }
+    final files = <String>{};
+    // localPath của hàng đợi — chỉ nhận tệp trong vùng riêng của app.
+    for (final raw in queuePaths) {
+      try {
+        final path = raw.startsWith('file://') ? Uri.parse(raw).toFilePath() : raw;
+        if (roots.any((r) => p.isWithin(r, path))) files.add(path);
+      } catch (_) {}
+    }
+    // Ảnh điểm bán do customer_local_data_source chép vào offline_customer_photos/<clientUuid>_photo_<i>.<ext>.
+    if (docs != null && customerUuids.isNotEmpty) {
+      try {
+        final dir = Directory(p.join(docs, 'offline_customer_photos'));
+        if (await dir.exists()) {
+          await for (final f in dir.list()) {
+            final name = p.basename(f.path);
+            if (customerUuids.any((u) => name.startsWith('${u}_photo_'))) files.add(f.path);
+          }
+        }
+      } catch (e) {
+        debugPrint('[AppDatabase] Không duyệt được offline_customer_photos: $e');
+      }
+    }
+    for (final path in files) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
   }
 
   /// Xóa các mục dead đã được xử lý hoặc dọn dẹp

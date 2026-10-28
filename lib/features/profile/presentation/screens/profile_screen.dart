@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/database/app_database.dart';
+import '../../../../core/database/database_provider.dart';
 import '../../../../core/localization/app_language.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -11,6 +13,8 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/screens/error_log_screen.dart';
+import '../../../../core/sync/sync_service.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../viewmodels/profile_view_model.dart';
 
@@ -22,6 +26,119 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  bool _loggingOut = false;
+
+  /// Đăng xuất xoá hàng đợi đồng bộ trong máy ⇒ còn mục chưa gửi thì chặn: cho đồng bộ ngay, hoặc "Vẫn đăng xuất"
+  /// (bỏ dữ liệu chưa gửi — lối ra khi mục lỗi mãi không gửi được). Mục bị server từ chối (dead) thì cảnh báo sẽ mất
+  /// trong hộp xác nhận.
+  Future<void> _handleLogout() async {
+    if (_loggingOut) return;
+    _loggingOut = true;
+    try {
+      await _logoutFlow();
+    } finally {
+      _loggingOut = false;
+    }
+  }
+
+  Future<void> _logoutFlow() async {
+    final strings = ref.read(stringsProvider);
+    final db = ref.read(appDatabaseProvider);
+    var discardPending = false;
+    var pending = await db.countPendingSync();
+    while (pending > 0) {
+      if (!mounted) return;
+      final choice = await showDialog<_PendingChoice>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(strings.logoutBlockedTitle),
+          content: Text(strings.logoutBlockedMessage(pending)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(strings.close)),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _PendingChoice.discard),
+              child: Text(strings.logoutAnyway, style: const TextStyle(color: AppColors.error)),
+            ),
+            TextButton(onPressed: () => Navigator.pop(ctx, _PendingChoice.sync), child: Text(strings.syncNow)),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      if (choice == _PendingChoice.discard) {
+        discardPending = true;
+        break;
+      }
+      if (!await _syncAll(db)) return;
+      pending = await db.countPendingSync();
+      if (!mounted) return;
+      if (pending == 0) AppSnackBar.showSuccess(context, strings.logoutSyncDone);
+    }
+
+    final dead = await db.countDeadSync();
+    if (!mounted) return;
+    final warning = (discardPending ? strings.logoutDiscardWarning(pending) : '') +
+        (dead > 0 ? strings.logoutDeadWarning(dead) : '');
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(strings.logoutConfirmTitle),
+        content: Text(strings.logoutConfirmMessage + warning),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(strings.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(strings.logout, style: const TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    var loggedOut = false;
+    try {
+      loggedOut = await ref
+          .read(authViewModelProvider.notifier)
+          .logout(requireCleared: true, discardPending: discardPending);
+    } catch (e) {
+      if (mounted) AppSnackBar.showError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    if (!loggedOut) {
+      // Có mục mới vào hàng đợi trong lúc hộp xác nhận đang mở ⇒ chưa đăng xuất, cho người dùng xử lý lại.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.logoutBlockedTitle), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+    context.go('/login');
+  }
+
+  /// Đồng bộ cưỡng bức tới khi hết hàng đợi hoặc một lượt không gửi thêm được mục nào. Trả false nếu lỗi (đã báo).
+  Future<bool> _syncAll(AppDatabase db) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(content: Text(ref.read(stringsProvider).syncingInProgress), duration: const Duration(minutes: 5)),
+    );
+    final sync = ref.read(syncServiceProvider);
+    try {
+      // Lượt đồng bộ nền đang chạy thì syncQueue trả về ngay ⇒ chờ nó xong (tối đa 2 phút) rồi mới gửi cưỡng bức.
+      for (var i = 0; i < 240 && sync.isSyncing; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      // Mỗi lượt syncQueue chỉ gửi một lô 50 mục ⇒ lặp tới khi hết hoặc lượt không gửi thêm được mục nào.
+      for (var round = 0; round < 20; round++) {
+        final r = await sync.syncQueue(force: true);
+        if (r.successCount == 0 || await db.countPendingSync() == 0) break;
+      }
+      messenger.clearSnackBars();
+      return true;
+    } catch (e) {
+      messenger.clearSnackBars();
+      if (mounted) AppSnackBar.showError(context, e);
+      return false;
+    }
+  }
+
   int _versionTapCount = 0;
 
 
@@ -511,35 +628,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 icon: Icons.logout_rounded,
                 width: double.infinity,
                 height: 48,
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(strings.logoutConfirmTitle),
-                      content: Text(strings.logoutConfirmMessage),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: Text(strings.cancel),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: Text(
-                            strings.logout,
-                            style: const TextStyle(color: AppColors.error),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm == true && context.mounted) {
-                    await ref.read(authViewModelProvider.notifier).logout();
-                    if (context.mounted) {
-                      context.go('/login');
-                    }
-                  }
-                },
+                onPressed: _handleLogout,
               ),
               const SizedBox(height: 14),
               Padding(
@@ -633,3 +722,5 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 }
+
+enum _PendingChoice { sync, discard }

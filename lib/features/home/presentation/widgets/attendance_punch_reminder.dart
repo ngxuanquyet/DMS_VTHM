@@ -16,6 +16,9 @@ class AttendancePunchReminder {
 
   static bool get shownThisLaunch => _shownThisLaunch;
 
+  /// Đăng xuất = người dùng mới ⇒ được nhắc lại trong cùng vòng đời app.
+  static void reset() => _shownThisLaunch = false;
+
   /// Hiện lớp phủ bám theo ô có [targetKey]. Trả về false nếu ô chưa được vẽ/đang khuất (chưa hiện gì).
   static bool show({
     required BuildContext context,

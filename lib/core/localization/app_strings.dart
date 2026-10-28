@@ -116,6 +116,24 @@ class AppStrings {
   String get logoutConfirmMessage => isVietnamese
       ? 'Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?'
       : 'Are you sure you want to log out of the application?';
+  String get logoutBlockedTitle =>
+      isVietnamese ? 'Chưa thể đăng xuất' : 'Cannot log out yet';
+  String logoutBlockedMessage(int count) => isVietnamese
+      ? 'Còn $count mục chưa đồng bộ lên hệ thống. Vui lòng đồng bộ trước khi đăng xuất. Nếu đồng bộ mãi không được, có thể "Vẫn đăng xuất" — dữ liệu này sẽ MẤT.'
+      : '$count item(s) have not been synced yet. Please sync before logging out. If syncing keeps failing you can "Log out anyway" — this data will be LOST.';
+  String get logoutAnyway => isVietnamese ? 'Vẫn đăng xuất' : 'Log out anyway';
+  String logoutDiscardWarning(int count) => isVietnamese
+      ? '\n\nCẢNH BÁO: $count mục chưa đồng bộ sẽ bị XOÁ VĨNH VIỄN khỏi máy.'
+      : '\n\nWARNING: $count unsynced item(s) will be PERMANENTLY DELETED from this device.';
+  String get syncNow => isVietnamese ? 'Đồng bộ ngay' : 'Sync now';
+  String logoutDeadWarning(int count) => isVietnamese
+      ? '\n\nLưu ý: còn $count mục bị hệ thống từ chối (lỗi đồng bộ). Đăng xuất sẽ XOÁ các mục này khỏi máy.'
+      : '\n\nNote: $count item(s) were rejected by the server (sync errors). Logging out will DELETE them from this device.';
+  String get syncingInProgress =>
+      isVietnamese ? 'Đang đồng bộ...' : 'Syncing...';
+  String get logoutSyncDone => isVietnamese
+      ? 'Đã đồng bộ xong — bạn có thể đăng xuất.'
+      : 'Sync complete — you can log out now.';
   String get roleLabel => isVietnamese ? 'CHỨC VỤ' : 'POSITION';
   String get departmentLabel => isVietnamese ? 'PHÒNG BAN' : 'DEPARTMENT';
   String get companyLabel => isVietnamese ? 'CÔNG TY' : 'COMPANY';
