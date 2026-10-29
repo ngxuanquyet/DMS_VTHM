@@ -211,6 +211,7 @@ class PersonalInfoScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              cacheWidth: 720,
             ),
           ),
         ),

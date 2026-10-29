@@ -907,6 +907,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
                               Image.file(
                                 File(photo.url),
                                 fit: BoxFit.cover,
+                                cacheWidth: 300,
                               )
                             else
                               Image.network(
@@ -919,6 +920,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
                                     color: Colors.grey,
                                   ),
                                 ),
+                                cacheWidth: 300,
                               ),
                             if (photo.id < 0)
                               Positioned(

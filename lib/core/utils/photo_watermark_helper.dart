@@ -6,10 +6,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image/image.dart' as img;
 import '../constants/app_assets.dart';
 import '../constants/app_constants.dart';
 import '../services/location_service.dart';
+import 'jpeg_isolate.dart';
 
 /// Tiện ích đóng dấu toạ độ GPS, thời gian và thông tin điểm bán lên ảnh chụp thực địa
 /// Đảm bảo tính minh bạch, chuyên nghiệp và chống gian lận ảnh cho đội ngũ thị trường
@@ -266,15 +266,15 @@ class PhotoWatermarkHelper {
       try {
         final rawRgbaData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.rawRgba);
         if (rawRgbaData != null) {
-          final dartImage = img.Image.fromBytes(
-            width: width.toInt(),
-            height: height.toInt(),
-            bytes: rawRgbaData.buffer,
-            order: img.ChannelOrder.rgba,
-          );
           final fileName = 'wm_$nowMs.jpg';
           final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
-          final compressedBytes = img.encodeJpg(dartImage, quality: 78);
+          // Mã hoá trong isolate riêng — không đứng hình luồng giao diện.
+          final compressedBytes = await JpegIsolate.fromRgba(
+            rawRgbaData.buffer.asUint8List(),
+            width: width.toInt(),
+            height: height.toInt(),
+            quality: 78,
+          );
           await outputFile.writeAsBytes(compressedBytes);
           return outputFile;
         }
@@ -287,11 +287,10 @@ class PhotoWatermarkHelper {
         final pngData = await watermarkedImage.toByteData(format: ui.ImageByteFormat.png);
         if (pngData != null) {
           final rawPngBytes = pngData.buffer.asUint8List();
-          final decoded = img.decodeImage(rawPngBytes);
-          if (decoded != null) {
+          final compressedBytes = await JpegIsolate.fromEncoded(rawPngBytes, quality: 78);
+          if (compressedBytes != null) {
             final fileName = 'wm_$nowMs.jpg';
             final outputFile = File('${parentDir.path}${Platform.pathSeparator}$fileName');
-            final compressedBytes = img.encodeJpg(decoded, quality: 78);
             await outputFile.writeAsBytes(compressedBytes);
             return outputFile;
           }

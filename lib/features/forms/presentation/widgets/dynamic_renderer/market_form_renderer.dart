@@ -1303,6 +1303,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                       File(entry.localPath),
                       key: ValueKey(entry.localPath),
                       fit: BoxFit.cover,
+                      cacheWidth: 720,
                     )
                   else if (hasRemote)
                     Image.network(
@@ -1311,6 +1312,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                       errorBuilder: (_, __, ___) => const Center(
                         child: Icon(Icons.broken_image_rounded, color: AppColors.error),
                       ),
+                      cacheWidth: 720,
                     )
                   else
                     const Center(child: Icon(Icons.photo_rounded, size: 28, color: Colors.grey)),

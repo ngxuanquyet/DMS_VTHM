@@ -14,8 +14,10 @@ class AttendanceState {
   final bool isUploadingPhoto;
   final String? errorMessage;
   final String? successMessage;
-  final String liveCurrentTime;
+  /// Số giây đã làm việc tính tới [workDurationAsOf] (lúc tải dữ liệu); đồng hồ trên màn tự cộng thêm thời gian trôi qua
+  /// ([workDurationAt]) — KHÔNG cập nhật state mỗi giây (trước đây làm Home + mọi màn theo dõi state dựng lại mỗi giây).
   final int liveWorkDurationSeconds;
+  final DateTime? workDurationAsOf;
   final AttendanceDetailEntity? detail;
   final Position? currentPosition;
   final List<AttendanceShiftScheduleEntity> shifts;
@@ -36,8 +38,8 @@ class AttendanceState {
     this.isUploadingPhoto = false,
     this.errorMessage,
     this.successMessage,
-    this.liveCurrentTime = '--:--:--',
     this.liveWorkDurationSeconds = 0,
+    this.workDurationAsOf,
     this.detail,
     this.currentPosition,
     this.shifts = const [],
@@ -88,11 +90,17 @@ class AttendanceState {
   bool get needsPhotos =>
       latestPunch != null && !latestPunch!.requirements.satisfied;
 
-  /// Định dạng chuỗi thời gian làm việc: HH:mm:ss
-  String get formattedWorkDuration {
-    final hours = (liveWorkDurationSeconds ~/ 3600).toString().padLeft(2, '0');
-    final minutes = ((liveWorkDurationSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final seconds = (liveWorkDurationSeconds % 60).toString().padLeft(2, '0');
+  /// Chuỗi thời gian làm việc HH:mm:ss tại [now] từ [baseSeconds] tính tới [asOf]: chưa vào ca (0 giây) thì đứng ở 00:00:00, cộng
+  /// thêm thời gian từ lúc tải dữ liệu — như đồng hồ cũ tăng 1 giây mỗi giây.
+  static String workDurationAt(int baseSeconds, DateTime? asOf, DateTime now) {
+    var total = baseSeconds;
+    if (total > 0 && asOf != null) {
+      final elapsed = now.difference(asOf).inSeconds;
+      if (elapsed > 0) total += elapsed;
+    }
+    final hours = (total ~/ 3600).toString().padLeft(2, '0');
+    final minutes = ((total % 3600) ~/ 60).toString().padLeft(2, '0');
+    final seconds = (total % 60).toString().padLeft(2, '0');
     return '$hours:$minutes:$seconds';
   }
 
@@ -107,8 +115,8 @@ class AttendanceState {
     bool? isUploadingPhoto,
     String? errorMessage,
     String? successMessage,
-    String? liveCurrentTime,
     int? liveWorkDurationSeconds,
+    DateTime? workDurationAsOf,
     AttendanceDetailEntity? detail,
     Position? currentPosition,
     List<AttendanceShiftScheduleEntity>? shifts,
@@ -126,8 +134,8 @@ class AttendanceState {
       isUploadingPhoto: isUploadingPhoto ?? this.isUploadingPhoto,
       errorMessage: errorMessage,
       successMessage: successMessage,
-      liveCurrentTime: liveCurrentTime ?? this.liveCurrentTime,
       liveWorkDurationSeconds: liveWorkDurationSeconds ?? this.liveWorkDurationSeconds,
+      workDurationAsOf: workDurationAsOf ?? this.workDurationAsOf,
       detail: detail ?? this.detail,
       currentPosition: currentPosition ?? this.currentPosition,
       shifts: shifts ?? this.shifts,

@@ -188,17 +188,12 @@ class HomeRepositoryImpl implements HomeRepository {
     // Tính tổng số điểm bán thực tế từ SQLite
     if (_database != null) {
       try {
-        final localCustomers = await _database.getAllLocalCustomers();
-        totalCount = localCustomers.length;
-        if (localCustomers.isNotEmpty) {
+        // Đếm + lấy điểm kế tiếp bằng SQL — không nạp cả bảng 1.000+ điểm bán (đủ cột) chỉ để lấy `length` và một tên.
+        totalCount = await _database.countLocalCustomers();
+        if (totalCount > 0) {
           // Tìm điểm tiếp theo chưa ghé
           final visitedCustomerIds = todayVisits.map((v) => v.customerId).toSet();
-          for (final c in localCustomers) {
-            if (!visitedCustomerIds.contains(c.id)) {
-              nextStop = c.name;
-              break;
-            }
-          }
+          nextStop = await _database.firstLocalCustomerNameNotIn(visitedCustomerIds) ?? nextStop;
           if (nextStop == '--' && completedCount >= totalCount) {
             nextStop = 'Hoàn thành tất cả';
           }

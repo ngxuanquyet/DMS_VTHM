@@ -904,6 +904,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         path,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+        cacheWidth: 300,
       );
     }
     if (path.startsWith('/')) {
@@ -911,6 +912,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         '${AppConstants.baseUrl}$path',
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+        cacheWidth: 300,
       );
     }
     final file = File(path);
@@ -919,6 +921,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
         file,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+        cacheWidth: 300,
       );
     }
     return const Icon(Icons.image_outlined, size: 24);

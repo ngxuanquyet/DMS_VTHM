@@ -1424,6 +1424,8 @@ class CustomerCard extends StatelessWidget {
     BoxFit fit = BoxFit.cover,
     Widget Function(BuildContext, Object, StackTrace?)? errorBuilder,
   }) {
+    // Ảnh thu nhỏ (cover, ô 44dp trong danh sách 1.000+ điểm) giải mã ở 300px; ảnh xem to (contain) giữ nguyên.
+    final cacheWidth = fit == BoxFit.cover ? 300 : null;
     String cleanPath = path.trim();
     if (cleanPath.startsWith('file://')) {
       try {
@@ -1437,12 +1439,14 @@ class CustomerCard extends StatelessWidget {
         File(cleanPath),
         fit: fit,
         errorBuilder: errorBuilder,
+        cacheWidth: cacheWidth,
       );
     }
     return Image.network(
       path,
       fit: fit,
       errorBuilder: errorBuilder,
+      cacheWidth: cacheWidth,
     );
   }
 }

@@ -992,7 +992,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     required this.cancelVisitUseCase,
     required this.visitRepository,
     this.ref,
-  }) : super(const CheckInState(liveVisitDuration: '00:00:00')) {
+  }) : super(const CheckInState()) {
     _startTimer();
   }
 
@@ -1096,7 +1096,6 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         checkinTime: state.visitId > 0 && state.checkinTime != '--:--:--'
             ? state.checkinTime
             : localTime,
-        liveVisitDuration: state.liveVisitDuration,
       );
 
       final customerId =
@@ -1118,7 +1117,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     _elapsedSeconds = 0;
     _targetDoneTime = null;
     _sessionClientUuid = const Uuid().v4();
-    state = const CheckInState(liveVisitDuration: '00:00:00');
+    _setLiveDuration('00:00:00');
+    state = const CheckInState();
   }
 
   /// Khởi động giám sát khoảng cách đến điểm bán (Cảnh báo Geofence Exit)
@@ -1341,7 +1341,6 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         checkinTime: existingVisit.checkinAt != null
             ? _formatTimeHHmmss(existingVisit.checkinAt)
             : localTime,
-        liveVisitDuration: state.liveVisitDuration,
         visitId: existingVisit.id,
         visitEntity: existingVisit,
         requirements: existingVisit.requirements ?? state.requirements,
@@ -1369,12 +1368,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // Trường hợp mới bắt đầu check-in
     _sessionClientUuid = const Uuid().v4();
     _elapsedSeconds = 0;
+    _setLiveDuration('00:00:00');
     _startTimer();
     state = CheckInState(
       status: CheckInStatus.loaded,
       checkinData: initialCheckinData,
       checkinTime: localTime,
-      liveVisitDuration: '00:00:00',
       customer: dealer.customer,
     );
 
@@ -1888,6 +1887,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     _startTimer();
   }
 
+  /// Đồng hồ thời gian thăm — màn check-in hiện bằng `ValueListenableBuilder`, KHÔNG nằm trong state: đưa vào state là
+  /// mỗi giây dựng lại cả màn check-in (~1.200 dòng, cả danh sách ảnh).
+  final ValueNotifier<String> liveDuration = ValueNotifier('00:00:00');
+
+  void _setLiveDuration(String value) {
+    if (mounted) liveDuration.value = value;
+  }
+
   void _startTimer() {
     _visitTimer?.cancel();
     _visitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1895,10 +1902,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final h = (_elapsedSeconds ~/ 3600).toString().padLeft(2, '0');
       final m = ((_elapsedSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
       final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+      _setLiveDuration('$h:$m:$s');
 
-      var updatedReq = state.requirements;
-      if (updatedReq != null) {
-        int newSec = updatedReq.secondsRemaining;
+      // Đếm ngược thời gian tối thiểu — state luôn mang số giây THẬT (logic như trước), nhưng chỉ ghi khi có gì đổi:
+      // hết thời gian tối thiểu thì không còn ghi mỗi giây (đồng hồ thăm đã ra [liveDuration], không qua state).
+      final req = state.requirements;
+      if (req != null) {
+        int newSec = req.secondsRemaining;
         if (_targetDoneTime != null) {
           final diff = _targetDoneTime!.difference(DateTime.now()).inSeconds;
           newSec = diff > 0 ? diff : 0;
@@ -1907,38 +1917,39 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
 
         final isTimeOk = newSec <= 0 || state.visitResult == 'closed';
-        final isFormsOk =
-            updatedReq.missingForms.isEmpty || state.visitResult == 'closed';
-        final isPhotosOk = updatedReq.photosMissing <= 0;
+        final isFormsOk = req.missingForms.isEmpty || state.visitResult == 'closed';
+        final isPhotosOk = req.photosMissing <= 0;
         final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
 
-        List<String> newBlockers = List<String>.from(updatedReq.blockers);
+        List<String> newBlockers = req.blockers;
         if (newSec <= 0) {
-          newBlockers.removeWhere(
-            (b) =>
-                b.toLowerCase().contains('thời gian') ||
-                b.toLowerCase().contains('giây') ||
-                b.toLowerCase().contains('phút') ||
-                b.toLowerCase().contains('ở lại thêm'),
-          );
+          newBlockers = req.blockers
+              .where(
+                (b) => !(b.toLowerCase().contains('thời gian') ||
+                    b.toLowerCase().contains('giây') ||
+                    b.toLowerCase().contains('phút') ||
+                    b.toLowerCase().contains('ở lại thêm')),
+              )
+              .toList();
         }
 
-        final hadSecondsLeft = updatedReq.secondsRemaining > 0;
-        updatedReq = updatedReq.copyWith(
-          secondsRemaining: newSec,
-          satisfied: newSatisfied,
-          blockers: newBlockers,
-        );
+        final hadSecondsLeft = req.secondsRemaining > 0;
+        if (newSec != req.secondsRemaining ||
+            newSatisfied != req.satisfied ||
+            newBlockers.length != req.blockers.length) {
+          state = state.copyWith(
+            requirements: req.copyWith(
+              secondsRemaining: newSec,
+              satisfied: newSatisfied,
+              blockers: newBlockers,
+            ),
+          );
+        }
 
         if (hadSecondsLeft && newSec == 0 && state.visitId > 0) {
           refreshRequirements();
         }
       }
-
-      state = state.copyWith(
-        liveVisitDuration: '$h:$m:$s',
-        requirements: updatedReq,
-      );
 
       // Cảnh báo quên Check-out nếu phiên ghé thăm kéo dài hơn 30, 45 hoặc 60 phút
       if ((_elapsedSeconds == 1800 ||
@@ -2925,6 +2936,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   @override
   void dispose() {
     _visitTimer?.cancel();
+    liveDuration.dispose();
     super.dispose();
   }
 }

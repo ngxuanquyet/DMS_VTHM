@@ -198,6 +198,7 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                                 Icons.broken_image_rounded,
                                 color: Colors.grey,
                               ),
+                              cacheWidth: 300,
                             ),
                           ),
                         ),

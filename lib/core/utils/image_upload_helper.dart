@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'photo_watermark_helper.dart';
+import 'jpeg_isolate.dart';
 
 /// Helper chuẩn hoá và kiểm soát ảnh trước khi tải lên máy chủ
 /// Tuân thủ quy chuẩn §1.1 & §3 API-THAY-DOI-CHO-MOBILE-2026-10-01.md:
@@ -110,21 +110,14 @@ class ImageUploadHelper {
         pic.dispose();
 
         if (rawRgba != null) {
-          final dartImg = img.Image.fromBytes(
+          // Mã hoá (kể cả các lượt giảm chất lượng khi vượt maxBytes) trong isolate riêng — không đứng hình giao diện.
+          final jpgBytes = await JpegIsolate.fromRgba(
+            rawRgba.buffer.asUint8List(),
             width: targetW.toInt(),
             height: targetH.toInt(),
-            bytes: rawRgba.buffer,
-            order: img.ChannelOrder.rgba,
+            quality: quality,
+            maxBytes: maxBytes,
           );
-
-          int currentQuality = quality;
-          List<int> jpgBytes = img.encodeJpg(dartImg, quality: currentQuality);
-
-          // Nếu ảnh có nhiều chi tiết phức tạp vẫn vượt ngưỡng maxBytes, giảm dần chất lượng
-          while (jpgBytes.length > maxBytes && currentQuality > 40) {
-            currentQuality -= 15;
-            jpgBytes = img.encodeJpg(dartImg, quality: currentQuality);
-          }
 
           final isWm = PhotoWatermarkHelper.isWatermarked(file);
           final prefix = isWm ? 'wm_compressed_' : 'compressed_';
@@ -141,17 +134,8 @@ class ImageUploadHelper {
 
       // 2. Fallback thuần bằng package:image nếu native codec gặp lỗi (ví dụ trong môi trường test)
       try {
-        final decoded = img.decodeImage(bytes);
-        if (decoded != null) {
-          img.Image resized = decoded;
-          if (decoded.width > maxDimension || decoded.height > maxDimension) {
-            if (decoded.width >= decoded.height) {
-              resized = img.copyResize(decoded, width: maxDimension);
-            } else {
-              resized = img.copyResize(decoded, height: maxDimension);
-            }
-          }
-          final jpgBytes = img.encodeJpg(resized, quality: quality);
+        final jpgBytes = await JpegIsolate.fromEncoded(bytes, quality: quality, maxDimension: maxDimension);
+        if (jpgBytes != null) {
           final isWm = PhotoWatermarkHelper.isWatermarked(file);
           final prefix = isWm ? 'wm_compressed_' : 'compressed_';
           final dir = file.parent;

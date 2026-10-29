@@ -500,6 +500,30 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// Số điểm bán trong máy — đếm bằng SQL, không nạp cả bảng (1.000+ dòng đủ cột) chỉ để lấy `length`.
+  Future<int> countLocalCustomers() async {
+    final count = localCustomers.clientUuid.count();
+    final row = await (selectOnly(localCustomers)..addColumns([count])).getSingle();
+    return row.read(count) ?? 0;
+  }
+
+  /// Tên điểm bán ĐẦU TIÊN (cùng thứ tự với [getAllLocalCustomers]) chưa có trong [visitedIds] — điểm chưa có id máy
+  /// chủ (tạo offline) tính là chưa ghé, như vòng lặp cũ.
+  Future<String?> firstLocalCustomerNameNotIn(Set<int> visitedIds) async {
+    final query = selectOnly(localCustomers)
+      ..addColumns([localCustomers.name])
+      ..orderBy([
+        OrderingTerm(expression: localCustomers.syncStatus.equals('synced'), mode: OrderingMode.asc),
+        OrderingTerm.desc(localCustomers.createdAt),
+      ])
+      ..limit(1);
+    if (visitedIds.isNotEmpty) {
+      query.where(localCustomers.id.isNull() | localCustomers.id.isNotIn(visitedIds));
+    }
+    final row = await query.getSingleOrNull();
+    return row?.read(localCustomers.name);
+  }
+
   /// Tìm kiếm điểm bán offline không dấu (§7.4)
   Future<List<LocalCustomer>> searchLocalCustomers(String unaccentedQuery) {
     if (unaccentedQuery.trim().isEmpty) {

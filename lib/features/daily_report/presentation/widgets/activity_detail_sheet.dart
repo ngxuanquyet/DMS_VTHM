@@ -347,6 +347,7 @@ class ActivityDetailSheet extends StatelessWidget {
                       errorBuilder: (_, __, ___) => const Center(
                         child: Icon(Icons.image_outlined, color: Colors.grey),
                       ),
+                      cacheWidth: 300,
                     )
                   : Image.network(
                       fullUrl,
@@ -354,6 +355,7 @@ class ActivityDetailSheet extends StatelessWidget {
                       errorBuilder: (_, __, ___) => const Center(
                         child: Icon(Icons.image_outlined, color: Colors.grey),
                       ),
+                      cacheWidth: 300,
                     ),
               Positioned(
                 bottom: 4,

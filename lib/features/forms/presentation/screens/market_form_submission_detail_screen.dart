@@ -463,6 +463,7 @@ class _MarketFormSubmissionDetailScreenState
                     style: TextStyle(fontSize: 10, color: AppColors.error),
                   ),
                 ),
+                cacheWidth: 720,
               ),
             ),
           ),

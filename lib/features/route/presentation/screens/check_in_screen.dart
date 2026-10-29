@@ -2005,13 +2005,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                                     ),
                                                   ),
                                                   const SizedBox(height: 2),
-                                                  Text(
-                                                    state.liveVisitDuration,
+                                                  // Đồng hồ chạy từng giây — chỉ dựng lại dòng này, không cả màn.
+                                                  ValueListenableBuilder<String>(
+                                                    valueListenable: vm.liveDuration,
+                                                    builder: (context, duration, _) => Text(
+                                                    duration,
                                                     style: const TextStyle(
                                                       fontSize: 13,
                                                       fontWeight: FontWeight.w600,
                                                       fontFamily: 'monospace',
                                                       color: AppColors.secondary,
+                                                    ),
                                                     ),
                                                   ),
                                                 ],
@@ -2353,13 +2357,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                               ),
                                               clipBehavior: Clip.antiAlias,
                                               child: photo.localPath != null && File(photo.localPath!).existsSync()
-                                                  ? Image.file(File(photo.localPath!), fit: BoxFit.cover)
+                                                  ? Image.file(File(photo.localPath!), fit: BoxFit.cover, cacheWidth: 300)
                                                   : Image.network(
                                                       photo.fullPublicUrl,
                                                       fit: BoxFit.cover,
                                                       errorBuilder: (_, __, ___) => const Center(
                                                         child: Icon(Icons.broken_image, size: 24, color: Colors.grey),
                                                       ),
+                                                      cacheWidth: 300,
                                                     ),
                                             ),
                                           ),
@@ -2615,7 +2620,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                     final isConfirmed = await CheckoutConfirmationDialog.show(
                                       context: context,
                                       dealerName: dealerName,
-                                      durationText: state.liveVisitDuration,
+                                      durationText: vm.liveDuration.value,
                                       photoCount: state.photos.length,
                                       surveyCompletedCount: completedSurveys,
                                       surveyTotalCount: surveyCount,

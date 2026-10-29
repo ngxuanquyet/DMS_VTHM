@@ -708,7 +708,7 @@ class _PositionDeclarationHistoryScreenState
         ),
         clipBehavior: Clip.antiAlias,
         child: exists
-            ? Image.file(file, fit: BoxFit.cover)
+            ? Image.file(file, fit: BoxFit.cover, cacheWidth: 300)
             : const Center(
                 child: Icon(Icons.image_not_supported_rounded,
                     size: 20, color: Colors.grey),

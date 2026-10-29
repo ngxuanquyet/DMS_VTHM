@@ -325,6 +325,7 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
         errorBuilder: (_, __, ___) => const Center(
           child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
         ),
+        cacheWidth: 300,
       );
     }
     if (path.startsWith('/crm/customer-photos/public/')) {
@@ -335,6 +336,7 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
         errorBuilder: (_, __, ___) => const Center(
           child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
         ),
+        cacheWidth: 300,
       );
     }
     if (path.length == 32 && !path.contains('/') && !path.contains(r'\')) {
@@ -345,6 +347,7 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
         errorBuilder: (_, __, ___) => const Center(
           child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
         ),
+        cacheWidth: 300,
       );
     }
     final file = File(path);
@@ -355,6 +358,7 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
         errorBuilder: (_, __, ___) => const Center(
           child: Icon(Icons.broken_image_rounded, size: 28, color: AppColors.outline),
         ),
+        cacheWidth: 300,
       );
     }
     return const Center(

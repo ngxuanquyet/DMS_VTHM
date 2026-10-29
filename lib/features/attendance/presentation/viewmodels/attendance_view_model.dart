@@ -73,8 +73,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final AttendanceRepository? attendanceRepository;
   final SyncService? syncService;
 
-  Timer? _clockTimer;
-
   AttendanceViewModel({
     required this.getConfigUseCase,
     required this.punchUseCase,
@@ -87,25 +85,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     this.attendanceRepository,
     this.syncService,
   }) : super(const AttendanceState()) {
-    _startClockTimer();
     loadInitialData();
-  }
-
-  void _startClockTimer() {
-    _clockTimer?.cancel();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final now = DateTime.now();
-      final timeStr = DateFormat('HH:mm:ss').format(now);
-
-      final nextDuration = state.liveWorkDurationSeconds > 0
-          ? state.liveWorkDurationSeconds + 1
-          : 0;
-
-      state = state.copyWith(
-        liveCurrentTime: timeStr,
-        liveWorkDurationSeconds: nextDuration,
-      );
-    });
   }
 
   /// Tải dữ liệu ban đầu khi mở màn hình (§2 & §5)
@@ -179,6 +159,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         history: history,
         latestPunch: latest,
         liveWorkDurationSeconds: workDuration,
+        workDurationAsOf: DateTime.now(),
         detail: legacyDetail,
         shifts: shiftsList,
         errorMessage: null,
@@ -566,9 +547,4 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     state = state.copyWith(errorMessage: null, successMessage: null);
   }
 
-  @override
-  void dispose() {
-    _clockTimer?.cancel();
-    super.dispose();
-  }
 }

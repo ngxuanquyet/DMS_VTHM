@@ -655,6 +655,7 @@ class _VisitHistoryDetailSheetState
                         Icons.broken_image_outlined,
                         color: Colors.grey,
                       ),
+                      cacheWidth: 300,
                     ),
                   ),
                 ),
@@ -862,6 +863,7 @@ class _VisitHistoryDetailSheetState
                         height: 60,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24),
+                        cacheWidth: 300,
                       ),
                     ),
                   );

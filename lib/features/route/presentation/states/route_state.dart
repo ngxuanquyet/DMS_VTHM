@@ -157,7 +157,6 @@ class CheckInState {
   final List<MarketFormConfigEntity> surveyForms;
   final Set<int> submittedSurveyConfigIds;
   final String? errorMessage;
-  final String liveVisitDuration;
   final String checkinTime;
   final int visitId;
   final dynamic customer;
@@ -180,7 +179,6 @@ class CheckInState {
     this.surveyForms = const [],
     this.submittedSurveyConfigIds = const {},
     this.errorMessage,
-    this.liveVisitDuration = '00:00:00',
     this.checkinTime = '--:--:--',
     this.visitId = 0,
     this.customer,
@@ -222,7 +220,6 @@ class CheckInState {
     List<MarketFormConfigEntity>? surveyForms,
     Set<int>? submittedSurveyConfigIds,
     String? errorMessage,
-    String? liveVisitDuration,
     String? checkinTime,
     int? visitId,
     dynamic customer,
@@ -246,7 +243,6 @@ class CheckInState {
       submittedSurveyConfigIds:
           submittedSurveyConfigIds ?? this.submittedSurveyConfigIds,
       errorMessage: errorMessage,
-      liveVisitDuration: liveVisitDuration ?? this.liveVisitDuration,
       checkinTime: checkinTime ?? this.checkinTime,
       visitId: visitId ?? this.visitId,
       customer: customer ?? this.customer,

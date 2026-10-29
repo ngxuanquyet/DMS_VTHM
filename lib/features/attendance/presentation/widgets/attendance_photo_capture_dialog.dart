@@ -678,6 +678,7 @@ class _AttendancePhotoCaptureDialogState
                         fit: BoxFit.cover,
                         width: double.infinity,
                         height: double.infinity,
+                        cacheWidth: 720,
                       )
                     else if (serverPhoto != null && serverPhoto.url.isNotEmpty)
                       Image.network(
@@ -686,6 +687,7 @@ class _AttendancePhotoCaptureDialogState
                         width: double.infinity,
                         height: double.infinity,
                         errorBuilder: (_, __, ___) => _placeholderIcon(isFront),
+                        cacheWidth: 720,
                       )
                     else
                       _placeholderIcon(isFront),

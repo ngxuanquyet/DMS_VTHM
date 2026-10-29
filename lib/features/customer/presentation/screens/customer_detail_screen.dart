@@ -701,6 +701,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           if (progress == null) return child;
           return const Center(child: AppLoading(size: 32));
         },
+        cacheWidth: 720,
       );
     }
     // Ưu tiên kiểm tra file cục bộ trước khi coi là đường dẫn tương đối server
@@ -713,6 +714,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           fit: BoxFit.cover,
           width: double.infinity,
           errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+          cacheWidth: 720,
         );
       }
     } catch (_) {}
@@ -726,6 +728,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           if (progress == null) return child;
           return const Center(child: AppLoading(size: 32));
         },
+        cacheWidth: 720,
       );
     }
     return _buildImagePlaceholder();

@@ -189,15 +189,10 @@ class SyncService {
       // Không bao giờ lấy các mục 'dead' (lỗi 4xx vĩnh viễn không retry)
       final entries = await _db.getPendingQueueEntries(limit: 50, force: force);
       if (entries.isEmpty) {
+        // Hàng đợi rỗng ⇒ KHÔNG tải lại gì: lượt định kỳ 60s / đổi mạng / màn gọi đồng bộ mà ép tải lại toàn bộ điểm
+        // bán (1.000+ điểm ≈ 11 lượt API + ghi SQLite + các màn nạp lại) mỗi phút là nguồn giật + tốn dữ liệu. Danh sách
+        // vẫn được làm mới: tải ngầm khi mở/chuyển màn (sau 5 phút), kéo làm mới, và sau khi đẩy được mục (dưới).
         debugPrint('[SyncService] Không có mục nào cần gửi trong hàng đợi.');
-        if (_ref.read(connectivityProvider).isOnline) {
-          try {
-            _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
-          } catch (_) {}
-          try {
-            _ref.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
-          } catch (_) {}
-        }
         return const SyncResult();
       }
 
@@ -277,7 +272,9 @@ class SyncService {
         debugPrint('[SyncService] Lỗi dọn mục đã gửi: $e');
         return 0;
       }));
-      if (_ref.read(connectivityProvider).isOnline) {
+      // Chỉ làm mới khi CÓ mục vừa đẩy lên thành công (dữ liệu server vừa đổi: điểm bán mới có id, lượt viếng thăm…).
+      // Các lượt tải đủ danh sách chạy cùng lúc đi chung một lượt (CustomerRepositoryImpl._sharedFullFetch).
+      if (successCount > 0 && _ref.read(connectivityProvider).isOnline) {
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         } catch (_) {}

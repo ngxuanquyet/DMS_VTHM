@@ -461,6 +461,7 @@ class VisitReportCard extends StatelessWidget {
                                 size: 16,
                                 color: Colors.grey,
                               ),
+                              cacheWidth: 300,
                             ),
                           ),
                         );

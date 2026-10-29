@@ -363,6 +363,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             size: 48,
                             color: AppColors.primary,
                           ),
+                          cacheWidth: 300,
                         ),
                       ),
                     ),

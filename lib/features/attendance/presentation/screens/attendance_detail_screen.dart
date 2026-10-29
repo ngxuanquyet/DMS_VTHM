@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -231,22 +233,12 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
                                       : AppColors.onSurfaceVariant,
                                 ),
                               ),
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final durationStr = ref.watch(
-                                    attendanceViewModelProvider.select(
-                                      (s) => s.formattedWorkDuration,
-                                    ),
-                                  );
-                                  return Text(
-                                    durationStr,
-                                    style: AppTypography.titleMedium(
-                                      color: isDark
-                                          ? AppColors.primaryFixedDim
-                                          : AppColors.primary,
-                                    ).copyWith(fontWeight: FontWeight.w600),
-                                  );
-                                },
+                              _LiveWorkDuration(
+                                style: AppTypography.titleMedium(
+                                  color: isDark
+                                      ? AppColors.primaryFixedDim
+                                      : AppColors.primary,
+                                ).copyWith(fontWeight: FontWeight.w600),
                               ),
                             ],
                           ),
@@ -376,5 +368,43 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               }
             },
     );
+  }
+}
+
+/// Thời gian làm việc chạy từng giây — timer RIÊNG của dòng chữ này, chỉ dựng lại chính nó. Trước đây đồng hồ nằm trong
+/// state chung (cập nhật mỗi giây) nên Home, thẻ chấm công và cả màn này dựng lại toàn bộ mỗi giây.
+class _LiveWorkDuration extends ConsumerStatefulWidget {
+  final TextStyle style;
+
+  const _LiveWorkDuration({required this.style});
+
+  @override
+  ConsumerState<_LiveWorkDuration> createState() => _LiveWorkDurationState();
+}
+
+class _LiveWorkDurationState extends ConsumerState<_LiveWorkDuration> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = ref.watch(
+      attendanceViewModelProvider.select((s) => (s.liveWorkDurationSeconds, s.workDurationAsOf)),
+    );
+    final text = AttendanceState.workDurationAt(base.$1, base.$2, DateTime.now());
+    return Text(text, style: widget.style);
   }
 }
