@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
+import 'package:vthm_dms/core/map/goong_models.dart';
 import 'package:vthm_dms/core/map/goong_providers.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/rules/mobile_rules_model.dart';
@@ -141,6 +142,50 @@ void main() {
     expect((await CustomerLocalDataSource(db).getLocalCustomers()).length, 1);
   });
 
+  testWidgets('khoảng cách tính từ điểm gốc lấy MỘT lần — GPS đổi sau đó không làm khoảng cách đổi', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final apiClient = ApiClient(Dio());
+    final c = _customer(0); // 21.0, 105.8
+    final dealer = DealerEntity(
+      id: '1',
+      order: '1',
+      name: c.name,
+      address: c.address,
+      status: DealerVisitStatus.pending,
+      statusLabel: 'Chưa ghé',
+      isVip: false,
+      lat: c.lat,
+      lng: c.lng,
+      customer: c,
+    );
+    var gps = const GoongLatLng(21.01, 105.8); // ~1,1 km
+    final container = ProviderContainer(overrides: [
+      apiClientProvider.overrideWithValue(apiClient),
+      mobileRulesProvider.overrideWith((ref) => _FakeRulesNotifier(apiClient)),
+      currentPointProvider.overrideWith((ref) => Future.value(gps)),
+    ]);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(body: RouteDealerTimeline(dealers: [dealer], originLat: 21.01, originLng: 105.8)),
+        ),
+      ),
+    );
+    await tester.pump();
+    final before = tester.widget<CustomerCard>(find.byType(CustomerCard)).distance;
+
+    gps = const GoongLatLng(21.5, 106.5); // đi xa ~90 km
+    container.invalidate(currentPointProvider);
+    await tester.pump();
+    await tester.pump();
+
+    expect(before, isNotNull);
+    expect(tester.widget<CustomerCard>(find.byType(CustomerCard)).distance, before);
+  });
+
   testWidgets('danh sách tuyến 2.000 điểm bán chỉ dựng thẻ trong khung nhìn (cuộn lười)', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final apiClient = ApiClient(Dio());
@@ -178,11 +223,13 @@ void main() {
     expect(built, greaterThan(0));
     expect(built, lessThan(50));
 
-    // Cuộn tới cuối vẫn tới được điểm bán cuối cùng.
+    // Hiện dần từng 12 ([IncrementalListView]): cuộn tới cuối những điểm đầu thì có thẻ điểm 13+.
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pump();
     controller.jumpTo(controller.position.maxScrollExtent);
     await tester.pump();
     final names = tester.widgetList<CustomerCard>(find.byType(CustomerCard, skipOffstage: false)).map((c) => c.name);
-    expect(names, contains('Cửa hàng Tạp hoá Nguyễn Văn 2000'));
+    expect(names.map((n) => int.parse(n.split(' ').last)).any((i) => i > 12), isTrue);
     expect(find.byType(CustomerCard, skipOffstage: false).evaluate().length, lessThan(50));
   });
 }

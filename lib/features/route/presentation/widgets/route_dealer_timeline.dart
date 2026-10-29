@@ -4,10 +4,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/location/location_provider.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
-import '../../../../core/map/goong_providers.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/incremental_list_view.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../customer/presentation/widgets/customer_card.dart';
 import '../../../customer/presentation/widgets/pending_sync_dismissible.dart';
@@ -26,12 +26,28 @@ class RouteDealerTimeline extends ConsumerWidget {
   final ScrollController? controller;
   final EdgeInsetsGeometry? padding;
 
-  const RouteDealerTimeline({super.key, required this.dealers, this.controller, this.padding});
+  /// Đổi khi bộ lọc/từ khoá/kiểu sắp đổi ⇒ danh sách quay về những điểm đầu ([IncrementalListView]).
+  final Object? resetKey;
+
+  /// Điểm gốc tính khoảng cách — vị trí lấy MỘT lần khi mở màn (và khi người dùng bấm làm mới GPS / sắp theo khoảng
+  /// cách), KHÔNG theo GPS liên tục: tuyến 1.000+ điểm mà mỗi lần vị trí đổi lại tính + dựng lại cả danh sách là giật.
+  /// `null` (chưa có vị trí) ⇒ không hiện khoảng cách.
+  final double? originLat;
+  final double? originLng;
+
+  const RouteDealerTimeline({
+    super.key,
+    required this.dealers,
+    this.controller,
+    this.padding,
+    this.resetKey,
+    this.originLat,
+    this.originLng,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final livePoint = ref.watch(currentPointProvider).value;
     final defaultRadius = ref.watch(mobileRulesProvider).visit.defaultRadiusM;
 
     if (dealers.isEmpty) {
@@ -59,10 +75,10 @@ class RouteDealerTimeline extends ConsumerWidget {
       );
     }
 
-    return ListView.separated(
+    return IncrementalListView(
       controller: controller,
-      physics: const AlwaysScrollableScrollPhysics(),
       padding: padding,
+      resetKey: resetKey,
       itemCount: dealers.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -74,23 +90,8 @@ class RouteDealerTimeline extends ConsumerWidget {
             defaultRadius;
 
         double? distance;
-        if (livePoint != null && dealer.lat != null && dealer.lng != null) {
-          distance = Geolocator.distanceBetween(
-            livePoint.lat,
-            livePoint.lng,
-            dealer.lat!,
-            dealer.lng!,
-          );
-        } else if (dealer.lat != null && dealer.lng != null) {
-          final cachedPos = LocationService.currentCachedPosition;
-          if (cachedPos != null) {
-            distance = Geolocator.distanceBetween(
-              cachedPos.latitude,
-              cachedPos.longitude,
-              dealer.lat!,
-              dealer.lng!,
-            );
-          }
+        if (originLat != null && originLng != null && dealer.lat != null && dealer.lng != null) {
+          distance = Geolocator.distanceBetween(originLat!, originLng!, dealer.lat!, dealer.lng!);
         }
 
         final isPending = dealer.customer is CustomerEntity &&
@@ -121,7 +122,6 @@ class RouteDealerTimeline extends ConsumerWidget {
               context,
               ref,
               dealer,
-              distance,
               allowedRadius: allowedRadius,
             ),
             onTap: dealer.customer is CustomerEntity
@@ -136,8 +136,7 @@ class RouteDealerTimeline extends ConsumerWidget {
   Future<void> _handleCheckin(
     BuildContext context,
     WidgetRef ref,
-    DealerEntity dealer,
-    double? distance, {
+    DealerEntity dealer, {
     int? allowedRadius,
   }) async {
     // 0.1. Kiểm tra phiên viếng thăm đang mở (§3 Luật 3)
@@ -223,35 +222,19 @@ class RouteDealerTimeline extends ConsumerWidget {
       return;
     }
 
-    // 2. Tính khoảng cách (nếu điểm bán có toạ độ GPS)
+    // 2. Cảnh báo sớm khi đang ở xa (nếu điểm bán có toạ độ GPS) — màn check-in và server vẫn tự kiểm bán kính bằng
+    // vị trí lúc check-in, đây chỉ là báo trước. Dùng vị trí gần nhất mà app đã lấy được (`LocationService` chỉ đổi
+    // khi có màn/dịch vụ lấy vị trí — cùng nguồn `currentPointProvider` trả về, như bản trước): đọc tức thì, không chờ
+    // GPS (không treo nút, không làm mới provider ⇒ không dựng lại các danh sách đang nghe nó). Chưa có ⇒ bỏ qua báo trước.
     // Theo đặc tả §3: Điểm bán không có toạ độ trong hồ sơ -> Luật 4 luôn cho qua
-    if (dealer.lat != null && dealer.lng != null) {
-      double actualDistance;
-      if (distance != null) {
-        actualDistance = distance;
-      } else {
-        final livePoint = ref.read(currentPointProvider).value;
-        if (livePoint != null) {
-          actualDistance = Geolocator.distanceBetween(
-            livePoint.lat,
-            livePoint.lng,
-            dealer.lat!,
-            dealer.lng!,
-          );
-        } else {
-          final cachedPos = LocationService.currentCachedPosition;
-          if (cachedPos != null) {
-            actualDistance = Geolocator.distanceBetween(
-              cachedPos.latitude,
-              cachedPos.longitude,
-              dealer.lat!,
-              dealer.lng!,
-            );
-          } else {
-            actualDistance = 0;
-          }
-        }
-      }
+    final cachedPos = LocationService.currentCachedPosition;
+    if (dealer.lat != null && dealer.lng != null && cachedPos != null) {
+      final actualDistance = Geolocator.distanceBetween(
+        cachedPos.latitude,
+        cachedPos.longitude,
+        dealer.lat!,
+        dealer.lng!,
+      );
 
       final mobileRules = ref.read(mobileRulesProvider);
       final effectiveRadius = allowedRadius ??

@@ -5,7 +5,7 @@ import '../../domain/entities/customer_meta_entity.dart';
 abstract class CustomerRepository {
   Future<List<CustomerEntity>> getCustomers({
     int page = 1,
-    int perPage = 200,
+    int perPage = 100,
     String? query,
     bool forceRefresh = false,
   });

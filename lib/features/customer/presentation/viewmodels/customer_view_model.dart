@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/search_target.dart';
@@ -164,12 +166,27 @@ final customerViewModelProvider =
     StateNotifierProvider.autoDispose<CustomerViewModel, CustomerState>((ref) {
   final repository = ref.read(customerRepositoryProvider);
   final routeApiService = ref.read(routeApiServiceProvider);
-  return CustomerViewModel(repository, routeApiService: routeApiService);
+  final vm = CustomerViewModel(repository, routeApiService: routeApiService);
+  // Tải ngầm ghi xong bản mới vào máy ⇒ nạp lại từ máy, không hiện vòng tải.
+  ref.listen(customerCacheVersionProvider, (_, __) => vm.loadCustomers(silent: true));
+  return vm;
 });
 
 class CustomerViewModel extends StateNotifier<CustomerState> {
   final CustomerRepository _repository;
   final RouteApiService? routeApiService;
+
+  /// Số thứ tự lượt nạp THƯỜNG — lượt thường bắt đầu sau cùng thắng. Lượt nạp NGẦM không tăng số này nên không bao
+  /// giờ thay được lượt thường (lượt thường có thể mang lượt viếng thăm vừa check-in, và tự đọc bản mới trong máy).
+  int _loadSeq = 0;
+  int _normalLoadsInFlight = 0;
+
+  /// Lượt ngầm cũng loại nhau: chỉ lượt ngầm bắt đầu sau cùng được áp.
+  int _silentSeq = 0;
+
+  /// Có báo "tải ngầm xong" tới lúc lượt thường đang chạy — lượt thường có thể đã đọc bản CŨ trong máy trước khi tải
+  /// ngầm ghi xong (đúng lỗi tuyến 1.090 điểm hiện 199), nên chạy lại lượt ngầm ngay khi lượt thường xong.
+  bool _silentPending = false;
 
   CustomerViewModel(
     this._repository, {
@@ -178,12 +195,25 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
     loadCustomers();
   }
 
-  Future<void> loadCustomers({bool isRefresh = false}) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+  /// [silent]: nạp lại ngầm (sau lượt tải ngầm) — không bật vòng tải, danh sách đang xem giữ nguyên tới khi có bản mới.
+  Future<void> loadCustomers({bool isRefresh = false, bool silent = false}) async {
+    // Đang có lượt thường chạy ⇒ bỏ lượt ngầm (lượt thường tự đọc bản mới trong máy).
+    if (silent && _normalLoadsInFlight > 0) {
+      _silentPending = true;
+      return;
+    }
+    final seq = silent ? _loadSeq : ++_loadSeq;
+    final silentSeq = silent ? ++_silentSeq : _silentSeq;
+    if (!silent) {
+      _normalLoadsInFlight++;
+      state = state.copyWith(isLoading: true, errorMessage: null);
+    }
     try {
+      // Nạp ngầm luôn lấy ĐỦ: từ khoá chỉ lọc phía máy ([filteredCustomersProvider]); lấy tập con theo từ khoá thì xoá ô
+      // tìm kiếm xong danh sách vẫn cụt (setSearchQuery không nạp lại).
       final customers = await _repository.getCustomers(
         forceRefresh: isRefresh,
-        query: state.searchQuery.isNotEmpty ? state.searchQuery : null,
+        query: !silent && state.searchQuery.isNotEmpty ? state.searchQuery : null,
       );
       final meta = await _repository.getCustomerMeta(forceRefresh: isRefresh);
 
@@ -230,7 +260,8 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
         );
       }).toList();
 
-      if (!mounted) return;
+      // Lượt thường mới hơn (hoặc lượt ngầm mới hơn) đã bắt đầu ⇒ bỏ kết quả lượt này.
+      if (!mounted || seq != _loadSeq || (silent && silentSeq != _silentSeq)) return;
       state = state.copyWith(
         allCustomers: CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers),
         assignedRoutes: assignedRouteNames,
@@ -239,11 +270,17 @@ class CustomerViewModel extends StateNotifier<CustomerState> {
         isLoading: false,
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || silent || seq != _loadSeq) return;
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Không thể tải danh sách điểm bán: ${e.toString()}',
       );
+    } finally {
+      if (!silent) _normalLoadsInFlight--;
+      if (_silentPending && _normalLoadsInFlight == 0 && mounted) {
+        _silentPending = false;
+        unawaited(loadCustomers(silent: true));
+      }
     }
   }
 

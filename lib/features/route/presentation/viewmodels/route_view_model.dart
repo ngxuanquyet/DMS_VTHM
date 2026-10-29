@@ -84,7 +84,7 @@ final routeViewModelProvider =
       final getTodayVisitsUseCase = ref.read(getTodayVisitsUseCaseProvider);
       final visitRepository = ref.read(visitRepositoryProvider);
       final routeApiService = ref.read(routeApiServiceProvider);
-      return RouteViewModel(
+      final vm = RouteViewModel(
         customerRepository: customerRepository,
         getRouteDetailUseCase: getRouteDetailUseCase,
         getTodayVisitsUseCase: getTodayVisitsUseCase,
@@ -92,6 +92,9 @@ final routeViewModelProvider =
         routeApiService: routeApiService,
         ref: ref,
       );
+      // Tải ngầm ghi xong bản mới vào máy ⇒ nạp lại từ máy, không hiện vòng tải (không thì màn giữ bản cũ, vd 199 điểm).
+      ref.listen(customerCacheVersionProvider, (_, __) => vm.loadRouteDetail(silent: true));
+      return vm;
     });
 
 String _formatTimeHHmmss(DateTime? dt) {
@@ -115,6 +118,18 @@ class RouteViewModel extends StateNotifier<RouteState> {
   final Ref? ref;
   List<CustomerEntity> _rawCustomers = [];
   Timer? _searchDebounce;
+
+  /// Số thứ tự lượt nạp THƯỜNG — lượt thường bắt đầu sau cùng thắng. Lượt nạp NGẦM không tăng số này nên không bao
+  /// giờ thay được lượt thường (lượt thường có thể mang lượt viếng thăm vừa check-in, và tự đọc bản mới trong máy).
+  int _loadSeq = 0;
+  int _normalLoadsInFlight = 0;
+
+  /// Lượt ngầm cũng loại nhau: chỉ lượt ngầm bắt đầu sau cùng được áp.
+  int _silentSeq = 0;
+
+  /// Có báo "tải ngầm xong" tới lúc lượt thường đang chạy — lượt thường có thể đã đọc bản CŨ trong máy trước khi tải
+  /// ngầm ghi xong (đúng lỗi tuyến 1.090 điểm hiện 199), nên chạy lại lượt ngầm ngay khi lượt thường xong.
+  bool _silentPending = false;
 
   RouteViewModel({
     required this.customerRepository,
@@ -338,109 +353,134 @@ class RouteViewModel extends StateNotifier<RouteState> {
     }
   }
 
-  Future<void> loadRouteDetail({bool isRefresh = false}) async {
-    state = state.copyWith(status: RouteStatus.loading);
+  /// Lượt viếng thăm hôm nay + lượt đang mở — có đối chiếu với lượt lưu trong máy (có thể xoá/huỷ lượt lỗi thời).
+  /// CHỈ chạy ở lượt nạp thường; lượt nạp ngầm sau tải điểm bán KHÔNG gọi — chụp todayVisits cũ mà đối chiếu đúng lúc
+  /// người dùng vừa check-in là huỷ nhầm lượt mới.
+  Future<(List<VisitEntity>, VisitEntity?)> _loadTodayVisits() async {
+    // 2. Fetch today's visits to detect visited/in-progress dealers (§2.3)
+    List<VisitEntity> todayVisits = [];
+    try {
+      todayVisits = await getTodayVisitsUseCase();
+    } catch (e) {
+      debugPrint('[RouteViewModel] Lỗi khi tải lượt viếng thăm hôm nay: $e');
+    }
+
+    // Kiểm tra các lượt đang nằm trong hàng đợi huỷ ngoại tuyến (sync_queue)
+    if (ref != null) {
+      try {
+        final db = ref!.read(appDatabaseProvider);
+        final pendingCancels =
+            await (db.select(db.syncQueueEntries)..where(
+                  (tbl) =>
+                      db.isMine(tbl) &
+                      tbl.entity.equals('visit') &
+                      tbl.op.equals('cancel') &
+                      (tbl.state.equals('pending') |
+                          tbl.state.equals('sending')),
+                ))
+                .get();
+        final pendingCancelVisitIds = <int>{};
+        final pendingCancelUuids = <String>{};
+        for (final entry in pendingCancels) {
+          if (entry.parentUuid != null) {
+            pendingCancelUuids.add(entry.parentUuid!);
+          }
+          try {
+            final payload = jsonDecode(entry.payload);
+            if (payload is Map && payload['visit_id'] != null) {
+              final vId = int.tryParse(payload['visit_id'].toString());
+              if (vId != null && vId > 0) pendingCancelVisitIds.add(vId);
+            }
+          } catch (_) {}
+        }
+        if (pendingCancelVisitIds.isNotEmpty ||
+            pendingCancelUuids.isNotEmpty) {
+          todayVisits = todayVisits.map((v) {
+            if (pendingCancelVisitIds.contains(v.id) ||
+                (v.clientUuid != null &&
+                    pendingCancelUuids.contains(v.clientUuid))) {
+              return v.copyWith(
+                cancelledAt: DateTime.now(),
+                cancelledAtRaw: DateTime.now().toIso8601String(),
+              );
+            }
+            return v;
+          }).toList();
+        }
+      } catch (_) {}
+    }
+
+    VisitEntity? activeVisit;
+    for (final v in todayVisits) {
+      if (v.isOpen && !v.isCancelled) {
+        activeVisit = v;
+        break;
+      }
+    }
+
+    // Nếu không có lượt mở từ API (ví dụ đang offline hoặc lỗi mạng),
+    // kiểm tra bản ghi active visit lưu trữ cục bộ trong SharedPreferences
+    if (activeVisit == null && visitRepository != null) {
+      try {
+        final saved = await visitRepository!.getActiveVisit();
+        if (saved != null && saved.isOpen && !saved.isCancelled) {
+          // Kiểm tra xem lượt này trên server (todayVisits) đã có bản ghi và đã đóng/huỷ chưa
+          final matchingServerVisit = todayVisits
+              .where(
+                (v) =>
+                    (v.id == saved.id && v.id > 0) ||
+                    v.customerId == saved.customerId,
+              )
+              .firstOrNull;
+          if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
+            // Server đã đóng/check-out hoặc huỷ lượt này rồi -> Xoá active visit cục bộ bị lỗi thời!
+            debugPrint(
+              '[RouteViewModel] Lượt viếng thăm id=${saved.id} đã hoàn tất trên server, xoá active visit stale.',
+            );
+            await visitRepository!.clearActiveVisit();
+          } else if (todayVisits.isNotEmpty && saved.id > 0 && matchingServerVisit == null) {
+            // ⚠️ LƯỢT ĐÃ BỊ HUỶ TRÊN SERVER (§4.1 HUY-LUOT-VIENG-THAM-2026-09-30):
+            // Khi server trả về todayVisits thành công nhưng lượt server (saved.id > 0) biến mất hoàn toàn
+            // khỏi todayVisits, điều đó có nghĩa là lượt này đã bị huỷ trên server!
+            debugPrint(
+              '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn trong todayVisits của server (đã bị huỷ), dọn dẹp active visit.',
+            );
+            await visitRepository!.clearActiveVisit();
+            await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
+          } else {
+            activeVisit = saved;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return (todayVisits, activeVisit);
+  }
+
+  /// [silent]: nạp lại ngầm (sau lượt tải ngầm) — không chuyển sang trạng thái tải, danh sách đang xem giữ nguyên.
+  Future<void> loadRouteDetail({bool isRefresh = false, bool silent = false}) async {
+    // Đang có lượt thường chạy ⇒ bỏ lượt ngầm: lượt thường đọc bản mới trong máy và áp cả lượt viếng thăm mới.
+    if (silent && _normalLoadsInFlight > 0) {
+      _silentPending = true;
+      return;
+    }
+    final seq = silent ? _loadSeq : ++_loadSeq;
+    final silentSeq = silent ? ++_silentSeq : _silentSeq;
+    if (!silent) {
+      _normalLoadsInFlight++;
+      state = state.copyWith(status: RouteStatus.loading);
+    }
     try {
       // 1. Fetch user's customers from customer repository
       final customers = await customerRepository.getCustomers(
         forceRefresh: isRefresh,
       );
 
-      // 2. Fetch today's visits to detect visited/in-progress dealers (§2.3)
-      List<VisitEntity> todayVisits = [];
-      try {
-        todayVisits = await getTodayVisitsUseCase();
-      } catch (e) {
-        debugPrint('[RouteViewModel] Lỗi khi tải lượt viếng thăm hôm nay: $e');
-      }
-
-      // Kiểm tra các lượt đang nằm trong hàng đợi huỷ ngoại tuyến (sync_queue)
-      if (ref != null) {
-        try {
-          final db = ref!.read(appDatabaseProvider);
-          final pendingCancels =
-              await (db.select(db.syncQueueEntries)..where(
-                    (tbl) =>
-                        db.isMine(tbl) &
-                        tbl.entity.equals('visit') &
-                        tbl.op.equals('cancel') &
-                        (tbl.state.equals('pending') |
-                            tbl.state.equals('sending')),
-                  ))
-                  .get();
-          final pendingCancelVisitIds = <int>{};
-          final pendingCancelUuids = <String>{};
-          for (final entry in pendingCancels) {
-            if (entry.parentUuid != null) {
-              pendingCancelUuids.add(entry.parentUuid!);
-            }
-            try {
-              final payload = jsonDecode(entry.payload);
-              if (payload is Map && payload['visit_id'] != null) {
-                final vId = int.tryParse(payload['visit_id'].toString());
-                if (vId != null && vId > 0) pendingCancelVisitIds.add(vId);
-              }
-            } catch (_) {}
-          }
-          if (pendingCancelVisitIds.isNotEmpty ||
-              pendingCancelUuids.isNotEmpty) {
-            todayVisits = todayVisits.map((v) {
-              if (pendingCancelVisitIds.contains(v.id) ||
-                  (v.clientUuid != null &&
-                      pendingCancelUuids.contains(v.clientUuid))) {
-                return v.copyWith(
-                  cancelledAt: DateTime.now(),
-                  cancelledAtRaw: DateTime.now().toIso8601String(),
-                );
-              }
-              return v;
-            }).toList();
-          }
-        } catch (_) {}
-      }
-
-      VisitEntity? activeVisit;
-      for (final v in todayVisits) {
-        if (v.isOpen && !v.isCancelled) {
-          activeVisit = v;
-          break;
-        }
-      }
-
-      // Nếu không có lượt mở từ API (ví dụ đang offline hoặc lỗi mạng),
-      // kiểm tra bản ghi active visit lưu trữ cục bộ trong SharedPreferences
-      if (activeVisit == null && visitRepository != null) {
-        try {
-          final saved = await visitRepository!.getActiveVisit();
-          if (saved != null && saved.isOpen && !saved.isCancelled) {
-            // Kiểm tra xem lượt này trên server (todayVisits) đã có bản ghi và đã đóng/huỷ chưa
-            final matchingServerVisit = todayVisits
-                .where(
-                  (v) =>
-                      (v.id == saved.id && v.id > 0) ||
-                      v.customerId == saved.customerId,
-                )
-                .firstOrNull;
-            if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
-              // Server đã đóng/check-out hoặc huỷ lượt này rồi -> Xoá active visit cục bộ bị lỗi thời!
-              debugPrint(
-                '[RouteViewModel] Lượt viếng thăm id=${saved.id} đã hoàn tất trên server, xoá active visit stale.',
-              );
-              await visitRepository!.clearActiveVisit();
-            } else if (todayVisits.isNotEmpty && saved.id > 0 && matchingServerVisit == null) {
-              // ⚠️ LƯỢT ĐÃ BỊ HUỶ TRÊN SERVER (§4.1 HUY-LUOT-VIENG-THAM-2026-09-30):
-              // Khi server trả về todayVisits thành công nhưng lượt server (saved.id > 0) biến mất hoàn toàn
-              // khỏi todayVisits, điều đó có nghĩa là lượt này đã bị huỷ trên server!
-              debugPrint(
-                '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn trong todayVisits của server (đã bị huỷ), dọn dẹp active visit.',
-              );
-              await visitRepository!.clearActiveVisit();
-              await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
-            } else {
-              activeVisit = saved;
-            }
-          }
-        } catch (_) {}
+      // 2. Lượt viếng thăm hôm nay (§2.3) — nạp ngầm giữ nguyên lượt đang có, xem [_loadTodayVisits].
+      var todayVisits = state.todayVisits;
+      VisitEntity? activeVisit = state.activeVisit;
+      if (!silent) {
+        (todayVisits, activeVisit) = await _loadTodayVisits();
       }
 
       // 3. Trích xuất danh sách tuyến từ API tuyến của tài khoản (getMyRoutes) và khách hàng
@@ -525,7 +565,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
       }).toList();
 
       // Loại trừ các điểm bán bị từ chối duyệt (hiển thị riêng ở màn hình từ chối)
-      _rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers)
+      final rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers)
           .where((c) => !c.isRejectedApproval)
           .toList();
       final availableRoutes = routeSet.toList();
@@ -545,7 +585,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           }
         }
       }
-      for (final c in _rawCustomers) {
+      for (final c in rawCustomers) {
         final t = c.type.trim();
         if (t.isNotEmpty && t != 'Tất cả' && t != 'Tất cả loại') {
           typeSet.add(t);
@@ -553,7 +593,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
       }
       final customerTypes = typeSet.toList()..sort();
 
-      final customerStatuses = _rawCustomers
+      final customerStatuses = rawCustomers
           .map((c) => c.status.trim())
           .where((s) => s.isNotEmpty && s != 'Tất cả')
           .toSet()
@@ -568,25 +608,34 @@ class RouteViewModel extends StateNotifier<RouteState> {
             : 'Tất cả tuyến';
       }
 
-      if (!mounted) return;
+      // Lượt thường mới hơn đã bắt đầu ⇒ bỏ kết quả lượt này (kể cả `_rawCustomers` — gán sau chốt này).
+      if (!mounted || seq != _loadSeq || (silent && silentSeq != _silentSeq)) return;
+      _rawCustomers = rawCustomers;
       state = state.copyWith(
         availableRoutes: availableRoutes,
         availableCustomerTypes: customerTypes,
         availableCustomerStatuses: customerStatuses,
         userRoutes: loadedUserRoutes,
         selectedRoute: selectedRoute,
-        todayVisits: todayVisits,
-        activeVisit: activeVisit,
-        clearActiveVisit: activeVisit == null,
+        // Nạp ngầm: lượt viếng thăm lấy theo state LÚC ÁP (có thể vừa check-in trong lúc nạp), không theo lúc bắt đầu.
+        todayVisits: silent ? state.todayVisits : todayVisits,
+        activeVisit: silent ? state.activeVisit : activeVisit,
+        clearActiveVisit: !silent && activeVisit == null,
       );
 
       _recomputeRouteDetail();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || silent || seq != _loadSeq) return;
       state = state.copyWith(
         status: RouteStatus.error,
         errorMessage: e.toString().replaceAll('AppException: ', ''),
       );
+    } finally {
+      if (!silent) _normalLoadsInFlight--;
+      if (_silentPending && _normalLoadsInFlight == 0 && mounted) {
+        _silentPending = false;
+        unawaited(loadRouteDetail(silent: true));
+      }
     }
   }
 

@@ -10,10 +10,10 @@ class CustomerApiService {
   CustomerApiService(this._apiClient);
 
   /// Lấy danh sách điểm bán do người dùng phụ trách hoặc tự tạo
-  /// GET /crm/customers/mine?context=mobile&per-page=200
+  /// GET /crm/customers/mine?context=mobile&per-page=100
   Future<CustomerApiResponse> getMineCustomers({
     int page = 1,
-    int perPage = 200,
+    int perPage = 100,
     String? q,
     String context = 'mobile',
     String? status,

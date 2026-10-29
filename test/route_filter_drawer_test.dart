@@ -158,5 +158,39 @@ void main() {
       // Verify drawer closed
       expect(find.text('Bộ lọc lộ trình'), findsNothing);
     });
+
+    testWidgets('Đặt lại gọi onReset của màn chứa (để màn xoá cả chữ trong ô tìm kiếm)', (tester) async {
+      final container = ProviderContainer();
+      final sub = container.listen(routeViewModelProvider, (_, __) {});
+      addTearDown(sub.close);
+      addTearDown(container.dispose);
+      final vm = container.read(routeViewModelProvider.notifier);
+      var resets = 0;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              endDrawer: RouteFilterDrawer(state: const RouteState(), vm: vm, onReset: () => resets++),
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  child: const Text('Open Drawer'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Drawer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Đặt lại'));
+      await tester.pumpAndSettle();
+
+      expect(resets, 1);
+      expect(find.text('Bộ lọc lộ trình'), findsNothing);
+    });
   });
 }

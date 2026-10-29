@@ -330,24 +330,42 @@ class CustomerLocalDataSource {
 
   /// Cập nhật cache từ server về SQLite khi có mạng (không ghi đè các bản ghi đang pending và ngăn ngừa duplicate)
   /// [reconcile]: Nếu true, tự động xóa các khách hàng đã đồng bộ trên SQLite nhưng không còn tồn tại trên server
+  /// [syncedIdsBeforeFetch]: ảnh chụp [syncedServerIds] lấy TRƯỚC khi gọi API — có thì reconcile CHỈ xoá điểm bán nằm
+  /// trong ảnh chụp mà server không trả về. Điểm bán vừa thành "đã đồng bộ" trong lúc đang tải (hàng đợi đẩy lên,
+  /// tạo khi có mạng) không có trong danh sách server vừa tải nhưng không được xoá; lần tải sau server đã trả về nó.
   ///
   /// Ghi theo LÔ [_cacheChunk] dòng, mỗi lô một giao dịch: mỗi điểm bán là 4–5 câu lệnh, để từng câu tự commit thì
   /// 2.000 điểm bán là hàng nghìn lần ghi đĩa; gộp cả 2.000 vào một giao dịch lại giữ kết nối DB duy nhất quá lâu
   /// (check-in, hàng đợi đồng bộ phải chờ). Lô chen được việc khác vào giữa.
-  Future<void> cacheRemoteCustomers(List<CustomerEntity> remoteList, {bool reconcile = false}) async {
+  Future<void> cacheRemoteCustomers(
+    List<CustomerEntity> remoteList, {
+    bool reconcile = false,
+    Set<int>? syncedIdsBeforeFetch,
+    Future<bool> Function()? isStale,
+  }) async {
     for (var i = 0; i < remoteList.length; i += _cacheChunk) {
+      // [isStale]: kiểm lại TRƯỚC MỖI LÔ (vd đã đổi tài khoản giữa chừng) — ghi nhiều lô nên kiểm một lần đầu là không đủ.
+      if (isStale != null && await isStale()) return;
       final chunk = remoteList.sublist(i, math.min(i + _cacheChunk, remoteList.length));
       await _db.transaction(() => _cacheRemoteChunk(chunk));
     }
 
     if (reconcile) {
+      if (isStale != null && await isStale()) return;
       final activeIds = remoteList.map((e) => e.id).where((id) => id > 0).toList();
-      await _db.deleteSyncedCustomersNotIn(activeIds);
+      if (syncedIdsBeforeFetch != null) {
+        await _db.deleteSyncedCustomersIn(syncedIdsBeforeFetch.difference(activeIds.toSet()));
+      } else {
+        await _db.deleteSyncedCustomersNotIn(activeIds);
+      }
       await _db.cleanupDuplicateCustomers();
     }
   }
 
   static const _cacheChunk = 200;
+
+  /// Ảnh chụp ID điểm bán đã đồng bộ — lấy TRƯỚC khi tải danh sách, truyền vào [cacheRemoteCustomers].
+  Future<Set<int>> syncedServerIds() => _db.syncedCustomerIds();
 
   Future<void> _cacheRemoteChunk(List<CustomerEntity> remoteList) async {
     for (final remote in remoteList) {

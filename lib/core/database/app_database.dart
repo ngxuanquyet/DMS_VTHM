@@ -588,6 +588,23 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
+  /// Tập ID máy chủ của các điểm bán đang ở trạng thái đã đồng bộ — chụp TRƯỚC khi tải danh sách để reconcile.
+  Future<Set<int>> syncedCustomerIds() async {
+    final rows = await (selectOnly(localCustomers)
+          ..addColumns([localCustomers.id])
+          ..where(localCustomers.syncStatus.equals('synced') & localCustomers.id.isNotNull()))
+        .get();
+    return {for (final r in rows) r.read(localCustomers.id)!};
+  }
+
+  /// Xóa các điểm bán đã đồng bộ có ID trong [serverIds] (reconcile theo ảnh chụp — xem [syncedCustomerIds]).
+  Future<int> deleteSyncedCustomersIn(Iterable<int> serverIds) {
+    if (serverIds.isEmpty) return Future.value(0);
+    return (delete(localCustomers)
+          ..where((tbl) => tbl.syncStatus.equals('synced') & tbl.id.isIn(serverIds)))
+        .go();
+  }
+
   /// Xóa 1 điểm bán theo ID khỏi SQLite
   Future<int> deleteCustomerById(int id) {
     return (delete(localCustomers)..where((tbl) => tbl.id.equals(id))).go();

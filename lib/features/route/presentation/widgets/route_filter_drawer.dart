@@ -8,10 +8,14 @@ class RouteFilterDrawer extends StatefulWidget {
   final RouteState state;
   final RouteViewModel vm;
 
+  /// Màn chứa ngăn đặt lại — gồm cả xoá chữ trong ô tìm kiếm (từ khoá trong state bị `resetFilters` xoá theo).
+  final VoidCallback? onReset;
+
   const RouteFilterDrawer({
     super.key,
     required this.state,
     required this.vm,
+    this.onReset,
   });
 
   @override
@@ -64,7 +68,11 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
       _selectedCustomerStatus = null;
       _selectedCustomerType = null;
     });
-    widget.vm.resetFilters();
+    if (widget.onReset != null) {
+      widget.onReset!();
+    } else {
+      widget.vm.resetFilters();
+    }
     Navigator.of(context).pop();
   }
 

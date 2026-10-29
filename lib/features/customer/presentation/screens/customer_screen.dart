@@ -18,6 +18,7 @@ import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/search_target_chips.dart';
+import '../../../../core/widgets/incremental_list_view.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
@@ -965,9 +966,17 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                     ),
                                   ],
                                 )
-                              : ListView.separated(
+                              : IncrementalListView(
                                   controller: _scrollController,
-                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  resetKey: Object.hash(
+                                    state.searchQuery,
+                                    state.searchTarget,
+                                    state.selectedTab,
+                                    state.selectedRoute,
+                                    state.selectedCustomerType,
+                                    state.selectedChannel,
+                                    state.isSortedByDistance,
+                                  ),
                                   padding: const EdgeInsets.fromLTRB(
                                     AppSpacing.marginMobile,
                                     AppSpacing.stackMd,

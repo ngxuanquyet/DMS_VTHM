@@ -59,20 +59,36 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     if (mounted) setState(() {});
   }
 
+  /// `resetFilters` xoá cả từ khoá trong state ⇒ xoá luôn chữ trong ô, không thì ô còn chữ cũ mà danh sách đã đủ.
+  void _resetFilters() {
+    _searchController.clear();
+    ref.read(routeViewModelProvider.notifier).resetFilters();
+  }
+
   void _clearSearch() {
     _searchController.clear();
     ref.read(routeViewModelProvider.notifier).setSearchQuery('');
   }
 
+  /// Lấy vị trí MỘT lần khi mở màn — làm gốc tính khoảng cách cho cả tuyến ([RouteDealerTimeline.originLat]).
   Future<void> _requestLocationPermission() async {
     final position = await ref
         .read(locationServiceProvider)
         .checkAndGetLocation(context);
-    if (position != null && mounted) {
+    if (!mounted) return;
+    if (position != null) {
       ref.invalidate(currentPointProvider);
       ref
           .read(routeViewModelProvider.notifier)
           .updateUserLocation(lat: position.latitude, lng: position.longitude);
+      return;
+    }
+    // Không lấy được vị trí mới (từ chối quyền, tắt GPS, quá giờ) ⇒ dùng vị trí đã biết gần nhất, nếu có.
+    final cached = LocationService.currentCachedPosition;
+    if (cached != null && ref.read(routeViewModelProvider).userLat == null) {
+      ref
+          .read(routeViewModelProvider.notifier)
+          .updateUserLocation(lat: cached.latitude, lng: cached.longitude);
     }
   }
 
@@ -405,7 +421,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      endDrawer: RouteFilterDrawer(state: state, vm: vm),
+      endDrawer: RouteFilterDrawer(state: state, vm: vm, onReset: _resetFilters),
       body: Stack(
         children: [
           SafeArea(
@@ -860,8 +876,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                                   description:
                                                       'Không tìm thấy điểm bán nào thỏa mãn các tiêu chí lọc đã chọn.',
                                                   actionText: 'Đặt lại bộ lọc',
-                                                  onAction: () =>
-                                                      vm.resetFilters(),
+                                                  onAction: _resetFilters,
                                                 )
                                               : AppEmptyState(
                                                   icon: Icons.alt_route_rounded,
@@ -884,6 +899,19 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                               : RouteDealerTimeline(
                                   dealers: state.routeDetail!.dealers,
                                   controller: _scrollController,
+                                  // Vị trí lấy một lần khi mở màn / bấm làm mới GPS ([RouteViewModel.updateUserLocation]).
+                                  originLat: state.userLat,
+                                  originLng: state.userLng,
+                                  resetKey: Object.hash(
+                                    state.selectedRoute,
+                                    state.searchQuery,
+                                    state.searchTarget,
+                                    state.selectedVisitStatus,
+                                    state.selectedCustomerStatus,
+                                    state.selectedCustomerType,
+                                    state.selectedDayOfWeek,
+                                    state.isSortedByDistance,
+                                  ),
                                   padding: const EdgeInsets.fromLTRB(
                                     AppSpacing.marginMobile,
                                     AppSpacing.stackMd,

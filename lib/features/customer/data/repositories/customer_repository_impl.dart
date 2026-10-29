@@ -23,6 +23,10 @@ final customerApiServiceProvider = Provider<CustomerApiService>((ref) {
   return CustomerApiService(ref.read(apiClientProvider));
 });
 
+/// Tăng mỗi khi lượt tải NGẦM danh sách điểm bán đầy đủ ghi xong vào SQLite — màn Tuyến / Danh sách điểm bán nghe để
+/// nạp lại từ máy. Không có nó, màn hiện bản cũ trong máy (vd 199 điểm) tới khi người dùng kéo làm mới.
+final customerCacheVersionProvider = StateProvider<int>((ref) => 0);
+
 final customerLocalDataSourceProvider = Provider<CustomerLocalDataSource>((ref) {
   final db = ref.read(appDatabaseProvider);
   return CustomerLocalDataSource(db);
@@ -63,7 +67,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
   @override
   Future<List<CustomerEntity>> getCustomers({
     int page = 1,
-    int perPage = 200,
+    int perPage = 100,
     String? query,
     bool forceRefresh = false,
   }) async {
@@ -85,32 +89,39 @@ class CustomerRepositoryImpl implements CustomerRepository {
     if (!forceRefresh) {
       try {
         final localList = await _localDataSource.getLocalCustomers(query: query);
+        final account = await _account();
         if (localList.isNotEmpty) {
           _cachedCustomers = localList;
           // Kích hoạt làm mới và ghi đè cache ngầm từ máy chủ
-          unawaited(_fetchRemoteAndCache(page, perPage, query));
+          _refreshInBackground(page, perPage, query, account);
           return localList;
         }
+        // Máy trống mà lượt tải đủ VỪA xong của chính tài khoản này ra 0 điểm ⇒ server thật sự không có điểm bán nào;
+        // trả rỗng, không tải lại — không thì "tải xong → báo màn → màn nạp lại → máy trống → tải" lặp vô tận.
+        // (Ra >0 điểm mà máy trống = bảng đã bị xoá sau đó, vd đăng xuất rồi vào lại ⇒ phải tải.)
+        if ((query == null || query.isEmpty) && _recentlySynced(account) && _lastFullSyncCount == 0) return localList;
       } catch (_) {}
     }
 
     // 3. Tải từ API server khi forceRefresh = true hoặc khi SQLite chưa có dữ liệu
     try {
-      final remoteList = await _fetchAllPages(page, perPage, query);
-
       // Lưu cache vào SQLite cục bộ (tự động ghi đè và dọn dẹp các khách hàng đã bị xóa trên server)
-      await _localDataSource.cacheRemoteCustomers(
-        remoteList,
-        reconcile: query == null || query.isEmpty,
-      );
+      if (query == null || query.isEmpty) {
+        await _sharedFullFetch(page, perPage, await _account());
+      } else {
+        await _fetchAndCache(page, perPage, query, await _account());
+      }
 
       // Đọc lại từ SQLite để gộp cả các khách hàng offline vừa tạo đang chờ đồng bộ
       final mergedList = await _localDataSource.getLocalCustomers(query: query);
       _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(mergedList);
       return _cachedCustomers;
-    } catch (_) {
+    } catch (e) {
       // Khi API lỗi hoặc rớt mạng giữa chừng -> Sử dụng SQLite cục bộ đã lưu trước đó
       final localList = await _localDataSource.getLocalCustomers(query: query);
+      // Kết quả là của tài khoản cũ ⇒ chỉ trả bản trong máy của tài khoản hiện tại; danh sách trong bộ nhớ có thể còn
+      // là của người cũ, không trả.
+      if (e is _AccountChangedException) return localList;
       if (localList.isNotEmpty) {
         _cachedCustomers = localList;
         return localList;
@@ -128,9 +139,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
   /// Tải ĐỦ mọi trang từ [startPage] tới `pageCount` máy chủ báo. Máy chủ chặn `per-page` tối đa 200, nên chỉ
   /// lấy trang 1 thì người phụ trách hơn 200 điểm bán bị cụt danh sách — và `reconcile` còn XOÁ khỏi SQLite
   /// những điểm bán nằm ở các trang sau. Lỗi ở bất kỳ trang nào thì ném ra cả lượt (không cache nửa vời).
-  Future<List<CustomerEntity>> _fetchAllPages(int startPage, int perPage, String? query) async {
+  ///
+  /// `complete` = chắc chắn nhận TRỌN danh sách: phân trang theo vị trí, server thêm/xoá điểm bán giữa hai trang thì
+  /// các dòng sau xô lên và một dòng bị sót — `total` đổi giữa chừng hay số dòng nhận khác `total` ⇒ không trọn, và
+  /// khi đó KHÔNG được reconcile (sẽ xoá nhầm dòng bị sót).
+  Future<({List<CustomerEntity> list, bool complete})> _fetchAllPages(int startPage, int perPage, String? query) async {
     final all = <CustomerEntity>[];
     var page = startPage;
+    int? firstTotal;
+    var complete = true;
     while (true) {
       final response = await _apiService.getMineCustomers(
         page: page,
@@ -139,20 +156,108 @@ class CustomerRepositoryImpl implements CustomerRepository {
         context: 'mobile',
       );
       if (page == startPage) _cachedColumns = response.dynamicColumns;
+      firstTotal ??= response.total;
       all.addAll(response.data);
-      if (response.data.isEmpty || page >= response.pageCount || page - startPage + 1 >= _maxPages) break;
+      if (response.total != firstTotal) complete = false;
+      if (response.data.isEmpty || page >= response.pageCount) break;
+      if (page - startPage + 1 >= _maxPages) {
+        complete = false;
+        break;
+      }
       page++;
     }
-    return all;
+    if (startPage != 1 || all.map((c) => c.id).toSet().length != firstTotal) complete = false;
+    return (list: all, complete: complete);
   }
 
-  Future<void> _fetchRemoteAndCache(int page, int perPage, String? query) async {
+  /// Tải đủ mọi trang rồi ghi vào SQLite; danh sách đầy đủ (không từ khoá) thì reconcile theo ảnh chụp chụp TRƯỚC khi
+  /// tải — điểm bán thành "đã đồng bộ" giữa chừng không bị xoá nhầm ([CustomerLocalDataSource.cacheRemoteCustomers]).
+  /// [account]: tài khoản của lượt tải — do người gọi đọc MỘT lần và dùng cho cả nhãn lượt chung ([_sharedFullFetch]).
+  Future<void> _fetchAndCache(int page, int perPage, String? query, String? account) async {
+    final fullList = query == null || query.isEmpty;
+    final syncedBefore = fullList ? await _localDataSource.syncedServerIds() : null;
+    final fetched = await _fetchAllPages(page, perPage, query);
+    // Đổi tài khoản trong lúc tải (đăng xuất → người khác đăng nhập) ⇒ kết quả là của người cũ, KHÔNG ghi vào máy —
+    // kiểm cả trước mỗi lô ghi ([CustomerLocalDataSource.cacheRemoteCustomers] `isStale`).
+    Future<bool> accountChanged() async => await _account() != account;
+    if (await accountChanged()) _throwAccountChanged();
+    await _localDataSource.cacheRemoteCustomers(
+      fetched.list,
+      reconcile: fullList && fetched.complete,
+      syncedIdsBeforeFetch: syncedBefore,
+      isStale: accountChanged,
+    );
+    if (await accountChanged()) _throwAccountChanged();
+    if (fullList) {
+      _lastFullSyncAt = DateTime.now();
+      _lastFullSyncAccount = account;
+      _lastFullSyncCount = fetched.list.length;
+      // Báo MỌI màn đang mở nạp lại từ máy (kéo làm mới ở màn Tuyến thì màn Danh sách cũng có bản mới).
+      _ref?.read(customerCacheVersionProvider.notifier).state++;
+    }
+  }
+
+  /// Kết quả là của tài khoản cũ — KHÔNG đụng [_cachedCustomers] (có thể đã là của tài khoản mới); nhánh lỗi của
+  /// [getCustomers] nhận ra ngoại lệ này và chỉ trả bản trong máy.
+  Never _throwAccountChanged() => throw _AccountChangedException();
+
+  /// Tài khoản đang đăng nhập — đọc hỏng thì coi như chưa rõ (null), không làm hỏng lượt tải danh sách.
+  Future<String?> _account() async {
     try {
-      final remoteList = await _fetchAllPages(page, perPage, query);
-      await _localDataSource.cacheRemoteCustomers(
-        remoteList,
-        reconcile: query == null || query.isEmpty,
-      );
+      return cacheAccountKey(await SharedPreferences.getInstance());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Lượt tải đủ danh sách gần nhất thành công (và của TÀI KHOẢN nào) — tải ngầm khi mở màn chỉ chạy nếu đã quá
+  /// [_backgroundRefreshEvery] hoặc đã đổi tài khoản (repository dùng chung, không bị huỷ khi đăng xuất).
+  DateTime? _lastFullSyncAt;
+  String? _lastFullSyncAccount;
+  int? _lastFullSyncCount;
+
+  /// Lượt tải ĐỦ danh sách đang chạy (ngầm hay thường) và của tài khoản nào — mọi lượt tải đủ cùng tài khoản đi chung
+  /// một lượt này: màn Tuyến + Danh sách cùng mở, hay kéo làm mới lúc đang tải ngầm, không thành nhiều lượt song song.
+  Future<void>? _fullFetch;
+  String? _fullFetchAccount;
+
+  /// Khoảng tối thiểu giữa hai lượt tải ngầm khi chỉ mở/chuyển màn (kéo làm mới thì luôn tải). Mỗi lượt là ~11 lần gọi
+  /// API cho 1.000+ điểm bán; provider màn hình autoDispose nên mỗi lần chuyển tab lại gọi `getCustomers`. Đây cũng là
+  /// thứ chặn vòng lặp: tải ngầm xong → báo màn → màn nạp lại từ máy → không tải ngầm lần nữa.
+  static const _backgroundRefreshEvery = Duration(minutes: 5);
+
+  bool _recentlySynced(String? account) {
+    final last = _lastFullSyncAt;
+    return last != null && _lastFullSyncAccount == account && DateTime.now().difference(last) < _backgroundRefreshEvery;
+  }
+
+  /// Lượt tải đủ chung theo tài khoản (xem [_fullFetch]). Lỗi KHÔNG nuốt ở đây: người chờ (kéo làm mới) nhận đúng lỗi.
+  Future<void> _sharedFullFetch(int page, int perPage, String? account) {
+    final running = _fullFetch;
+    if (running != null && _fullFetchAccount == account) return running;
+    late final Future<void> run;
+    run = _fetchAndCache(page, perPage, null, account).whenComplete(() {
+      if (identical(_fullFetch, run)) _fullFetch = null;
+    });
+    _fullFetch = run;
+    _fullFetchAccount = account;
+    return run;
+  }
+
+  void _refreshInBackground(int page, int perPage, String? query, String? account) {
+    final fullList = query == null || query.isEmpty;
+    if (fullList && _recentlySynced(account)) return;
+    unawaited(_fetchRemoteAndCache(page, perPage, query, account));
+  }
+
+  /// Lượt tải ngầm — lỗi thì nuốt (màn đang hiện bản trong máy).
+  Future<void> _fetchRemoteAndCache(int page, int perPage, String? query, String? account) async {
+    try {
+      if (query == null || query.isEmpty) {
+        await _sharedFullFetch(page, perPage, account);
+      } else {
+        await _fetchAndCache(page, perPage, query, account);
+      }
       final mergedList = await _localDataSource.getLocalCustomers(query: query);
       _cachedCustomers = mergedList;
     } catch (_) {}
@@ -948,3 +1053,8 @@ const Map<String, dynamic> kDefaultCustomerFormSchema = {
     ],
   },
 };
+
+/// Lượt tải đã đổi tài khoản giữa chừng (đăng xuất → người khác đăng nhập) — kết quả của người cũ, không ghi.
+class _AccountChangedException extends AppException {
+  _AccountChangedException() : super('Tài khoản đã đổi trong lúc tải danh sách điểm bán');
+}
