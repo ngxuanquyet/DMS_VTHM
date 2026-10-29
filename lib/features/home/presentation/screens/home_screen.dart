@@ -175,7 +175,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
       await notifService.checkDailyReminders(
             totalDealers: routeState.routeDetail?.totalDealers,
-            completedDealers: routeState.routeDetail?.completedDealers,
             routeName: routeState.selectedRoute,
             pendingSyncCount: pendingCount,
           );

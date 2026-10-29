@@ -193,7 +193,7 @@ class AppNotificationService {
       }
       final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
       final model = NotificationDataModel.fromJson(decoded);
-      final rawEntity = model.toEntity();
+      final rawEntity = _withoutRetiredTypes(model.toEntity());
 
       // Đồng bộ trạng thái đã đọc từ readIds
       final todayWithRead = rawEntity.today.map((e) => e.copyWith(
@@ -209,6 +209,15 @@ class AppNotificationService {
       return const NotificationDataEntity(today: [], earlier: []);
     }
   }
+
+  /// Loại thông báo đã gỡ (29/10/2026: "Cảnh báo tiến độ tuyến" — chủ hệ thống bỏ) mà bản cũ còn lưu trong máy: ẩn
+  /// khỏi hộp thông báo và số chưa đọc.
+  static const _retiredTypes = {'route_progress'};
+
+  NotificationDataEntity _withoutRetiredTypes(NotificationDataEntity data) => NotificationDataEntity(
+        today: data.today.where((e) => !_retiredTypes.contains(e.type)).toList(),
+        earlier: data.earlier.where((e) => !_retiredTypes.contains(e.type)).toList(),
+      );
 
   /// Lấy danh sách ID các thông báo đã đọc
   Future<Set<String>> getReadNotificationIds() async {
@@ -570,7 +579,7 @@ class AppNotificationService {
   }
 
   // ===========================================================================
-  // 4. CÁC NGHIỆP VỤ THÔNG BÁO CỤ THỂ (8 LOẠI YÊU CẦU)
+  // 4. CÁC NGHIỆP VỤ THÔNG BÁO CỤ THỂ (5 LOẠI CỤC BỘ — chấm công chỉ còn push server, tiến độ tuyến đã gỡ)
   // ===========================================================================
 
   /// 2. Nhắc lộ trình đầu ngày
@@ -587,29 +596,6 @@ class AppNotificationService {
       title: 'Lộ trình hôm nay',
       message: 'Hôm nay bạn có $totalDealers điểm bán cần viếng thăm trên tuyến "$routeName". Chúc bạn một ngày làm việc hiệu quả!',
       type: 'route_briefing',
-      category: 'work',
-      routePath: '/routes',
-    );
-  }
-
-  /// 3. Cảnh báo tiến độ tuyến trong ngày
-  Future<void> notifyRouteProgress({
-    required int completed,
-    required int total,
-    required String period, // 'Trưa' hoặc 'Chiều'
-  }) async {
-    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-    final throttled = await _shouldThrottle('progress_${period}_$todayStr', const Duration(hours: 3));
-    if (throttled) return;
-
-    final percent = total > 0 ? (completed / total * 100).toInt() : 0;
-    final remaining = total - completed;
-
-    await sendNotification(
-      id: period == 'Trưa' ? 103 : 104,
-      title: 'Cảnh báo tiến độ tuyến ($period)',
-      message: 'Bạn đã hoàn thành $completed/$total điểm bán ($percent%). Còn $remaining điểm chưa ghé, hãy tăng tốc để kịp tiến độ!',
-      type: 'route_progress',
       category: 'work',
       routePath: '/routes',
     );
@@ -754,7 +740,6 @@ class AppNotificationService {
   /// nhắc trùng với push.
   Future<void> checkDailyReminders({
     int? totalDealers,
-    int? completedDealers,
     String? routeName,
     int? pendingSyncCount,
   }) async {
@@ -767,32 +752,6 @@ class AppNotificationService {
         totalDealers: totalDealers!,
         routeName: routeName ?? 'Tuyến hôm nay',
       );
-    }
-
-    // 2. Cảnh báo tiến độ tuyến trong ngày:
-    // - Khung trưa: 11:15 - 12:30
-    if (hour >= 11 && hour < 13 && (totalDealers ?? 0) > 0) {
-      final total = totalDealers!;
-      final completed = completedDealers ?? 0;
-      if (completed < total) {
-        await notifyRouteProgress(
-          completed: completed,
-          total: total,
-          period: 'Trưa',
-        );
-      }
-    }
-    // - Khung chiều: 15:00 - 16:30
-    if (hour >= 15 && hour < 17 && (totalDealers ?? 0) > 0) {
-      final total = totalDealers!;
-      final completed = completedDealers ?? 0;
-      if (completed < total) {
-        await notifyRouteProgress(
-          completed: completed,
-          total: total,
-          period: 'Chiều',
-        );
-      }
     }
 
     // 3. Cảnh báo tồn đọng hàng đợi offline:
@@ -818,6 +777,16 @@ class AppNotificationService {
       }
     } catch (_) {}
     return AndroidScheduleMode.inexactAllowWhileIdle;
+  }
+
+  /// Gỡ "Cảnh báo tiến độ tuyến" (29/10/2026): thông báo id 103/104 bản cũ bắn ra còn nằm trên khay hệ thống thì gỡ —
+  /// rẻ, gọi mỗi lần khởi động (hai id này không còn ai dùng). Khoá chống lặp `progress_*` tự hết hạn ở hạn lưu cục bộ.
+  Future<void> cancelRetiredRouteProgressAlerts() async {
+    for (final id in const [103, 104]) {
+      try {
+        await _localNotifications?.cancel(id: id);
+      } catch (_) {}
+    }
   }
 
   /// Huỷ mọi lịch nhắc CHẤM CÔNG cục bộ mà bản app cũ đã đặt với hệ điều hành — một lần cho mỗi máy.

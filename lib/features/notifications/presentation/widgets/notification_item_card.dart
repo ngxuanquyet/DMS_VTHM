@@ -76,7 +76,6 @@ class NotificationItemCard extends ConsumerWidget {
     if (type.contains('route') ||
         combined.contains('tuyến') ||
         combined.contains('lộ trình') ||
-        combined.contains('tiến độ tuyến') ||
         combined.contains('lân cận') ||
         type == 'nearby_suggestion') {
       return '/routes';
@@ -536,11 +535,6 @@ class NotificationItemCard extends ConsumerWidget {
         icon = Icons.alt_route_rounded;
         iconColor = isDark ? AppColors.tertiaryFixedDim : AppColors.tertiary;
         iconBg = AppColors.tertiaryContainer.withValues(alpha: 0.25);
-        break;
-      case 'route_progress':
-        icon = Icons.speed_rounded;
-        iconColor = const Color(0xFFD97706);
-        iconBg = const Color(0xFFFEF3C7);
         break;
       case 'forgot_checkout':
         icon = Icons.timer_outlined;

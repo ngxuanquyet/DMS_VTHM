@@ -34,6 +34,7 @@ void main() async {
     final notifService = AppNotificationService();
     await notifService.init();
     await notifService.cancelLegacyAttendanceReminders();
+    await notifService.cancelRetiredRouteProgressAlerts();
   } catch (e) {
     debugPrint('[Main] Khởi tạo AppNotificationService lỗi: $e');
   }

@@ -873,7 +873,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
     state = state.copyWith(status: RouteStatus.loaded, routeDetail: detail);
 
-    // Tự động kích hoạt nhắc nhở lộ trình đầu ngày và cảnh báo tiến độ tuyến
+    // Tự động kích hoạt nhắc nhở lộ trình đầu ngày (cảnh báo tiến độ tuyến đã gỡ 29/10/2026)
     if (ref != null && total > 0) {
       () async {
         try {
@@ -894,24 +894,6 @@ class RouteViewModel extends StateNotifier<RouteState> {
             ref!.invalidate(unreadNotificationCountProvider);
           }
 
-          // Cảnh báo tiến độ tuyến (Khung trưa 11:15 - 13:00 và Chiều 15:00 - 17:00)
-          if (completed < total) {
-            if (hour >= 11 && hour < 13) {
-              await notifService.notifyRouteProgress(
-                completed: completed,
-                total: total,
-                period: 'Trưa',
-              );
-              ref!.invalidate(unreadNotificationCountProvider);
-            } else if (hour >= 15 && hour < 17) {
-              await notifService.notifyRouteProgress(
-                completed: completed,
-                total: total,
-                period: 'Chiều',
-              );
-              ref!.invalidate(unreadNotificationCountProvider);
-            }
-          }
         } catch (_) {}
       }();
     }

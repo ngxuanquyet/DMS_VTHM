@@ -55,9 +55,9 @@ void main() {
 
       const notif2 = NotificationEntity(
         id: '2',
-        type: 'route_progress',
-        title: 'Cảnh báo tiến độ tuyến (Trưa)',
-        message: 'Bạn đã hoàn thành 4/8 điểm bán.',
+        type: 'route_briefing',
+        title: 'Lộ trình hôm nay',
+        message: 'Hôm nay bạn có 8 điểm bán cần viếng thăm.',
         timeAgo: '1 giờ trước',
         isRead: false,
         category: 'work',

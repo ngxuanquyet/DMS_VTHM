@@ -267,7 +267,7 @@ class NotificationPermissionDialog extends StatelessWidget {
                     context,
                     icon: Icons.alt_route_rounded,
                     color: AppColors.tertiary,
-                    text: 'Cảnh báo tiến độ lộ trình & gợi ý điểm bán',
+                    text: 'Nhắc lộ trình đầu ngày & gợi ý điểm bán lân cận',
                   ),
                   const SizedBox(height: 8),
                   _buildBenefitRow(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/services/app_notification_service.dart';
@@ -11,21 +12,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('AppNotificationService 8 Notification Types Tests', () {
-    test('Can trigger and store all 6 local notification types (attendance reminders are server push only)', () async {
+  group('AppNotificationService local notification types tests', () {
+    test('Can trigger and store all 5 local notification types (attendance reminders are server push only)', () async {
       final service = AppNotificationService();
 
       // 2. Nhắc lộ trình đầu ngày
       await service.notifyRouteBriefing(
         totalDealers: 12,
         routeName: 'Tuyến Hà Nội 1',
-      );
-
-      // 3. Cảnh báo tiến độ tuyến trong ngày
-      await service.notifyRouteProgress(
-        completed: 4,
-        total: 12,
-        period: 'Trưa',
       );
 
       // 4. Cảnh báo quên Check-out
@@ -48,12 +42,12 @@ void main() {
       await service.notifyOfflineQueuePending(pendingCount: 3);
 
       final data = await service.getSavedNotifications();
-      // Nhắc chấm công không còn nhắc cục bộ (chỉ push server, 21/10/2026) ⇒ 6 loại.
-      expect(data.today.length, 6);
+      // Nhắc chấm công chỉ còn push server (21/10/2026), cảnh báo tiến độ tuyến đã gỡ (29/10/2026) ⇒ 5 loại.
+      expect(data.today.length, 5);
 
       final types = data.today.map((e) => e.type).toSet();
       expect(types, contains('route_briefing'));
-      expect(types, contains('route_progress'));
+      expect(types, isNot(contains('route_progress')));
       expect(types, contains('forgot_checkout'));
       expect(types, contains('nearby_suggestion'));
       expect(types, contains('sync_success'));
@@ -61,7 +55,7 @@ void main() {
 
       // Check unread count
       final unreadCount = await service.getUnreadCount();
-      expect(unreadCount, 6);
+      expect(unreadCount, 5);
 
       // Check mark all as read
       await service.markAllAsRead();
@@ -70,6 +64,27 @@ void main() {
 
       final updatedUnreadCount = await service.getUnreadCount();
       expect(updatedUnreadCount, 0);
+    });
+
+    test('Thông báo "Cảnh báo tiến độ tuyến" bản cũ còn lưu trong máy bị ẩn và không tính chưa đọc', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = AppNotificationService();
+      await service.notifyRouteBriefing(totalDealers: 3, routeName: 'Tuyến A');
+      final prefs = await SharedPreferences.getInstance();
+      final key = prefs.getKeys().firstWhere((k) => prefs.get(k) is String && (prefs.getString(k) ?? '').contains('route_briefing'));
+      // Chèn tay một thông báo route_progress như bản app cũ đã lưu.
+      final stored = jsonDecode(prefs.getString(key)!) as Map<String, dynamic>;
+      final today = List<dynamic>.from(stored['today'] as List);
+      final legacy = Map<String, dynamic>.from(today.first as Map)
+        ..['id'] = 'legacy_progress'
+        ..['type'] = 'route_progress'
+        ..['title'] = 'Cảnh báo tiến độ tuyến (Trưa)';
+      stored['today'] = [legacy, ...today];
+      await prefs.setString(key, jsonEncode(stored));
+
+      final data = await service.getSavedNotifications();
+      expect(data.today.map((e) => e.type), isNot(contains('route_progress')));
+      expect(await service.getUnreadCount(), 1);
     });
 
     test('NotificationsState category and unread filters work accurately', () async {
@@ -87,9 +102,9 @@ void main() {
         ),
         NotificationEntity(
           id: '2',
-          type: 'route_progress',
-          title: 'Cảnh báo tiến độ',
-          message: 'Đã hoàn thành 3/10',
+          type: 'route_briefing',
+          title: 'Lộ trình hôm nay',
+          message: 'Hôm nay bạn có 10 điểm bán',
           timeAgo: '5 phút trước',
           isRead: true,
           category: 'work',
