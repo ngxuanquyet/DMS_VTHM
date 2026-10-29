@@ -14,6 +14,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/constants/search_target.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/scroll_to_top_button.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
@@ -982,7 +983,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                                     AppSpacing.marginMobile,
                                     AppSpacing.stackMd,
                                     AppSpacing.marginMobile,
-                                    160, // Khoảng trống tránh bị che bởi floating button và nav bar
+                                    212, // Khoảng trống tránh bị che bởi floating button, nút lên đầu và nav bar
                                   ),
                                   itemCount: customerList.length,
                                   separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -1017,6 +1018,13 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
             ),
           ],
         ),
+      ),
+
+      // Nút cuộn lên đầu danh sách — ngay trên nút menu tròn (56px, cách đáy 88); đặt TRƯỚC menu để menu mở ra phủ lên.
+      Positioned(
+        right: 22,
+        bottom: 88 + 56 + 12,
+        child: ScrollToTopButton(controller: _scrollController, label: strings.scrollToTop),
       ),
 
       // Circular Radial Menu overlay

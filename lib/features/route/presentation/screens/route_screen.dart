@@ -33,6 +33,7 @@ import '../../../../core/constants/search_target.dart';
 import '../../../../core/services/erp_catalog_service.dart';
 import '../../../../core/widgets/search_target_chips.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
+import '../../../../core/widgets/scroll_to_top_button.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
@@ -993,7 +994,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                     AppSpacing.marginMobile,
                                     AppSpacing.stackMd,
                                     AppSpacing.marginMobile,
-                                    160, // Khoảng trống tránh bị che bởi menu tròn và nav bar
+                                    212, // Khoảng trống tránh bị che bởi menu tròn, nút lên đầu và nav bar
                                   ),
                                 ),
                         ),
@@ -1016,6 +1017,14 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
               ],
             ),
           ),
+
+          // Nút cuộn lên đầu danh sách — ngay trên nút menu tròn (56px); đặt TRƯỚC menu để menu mở ra phủ lên.
+          if (!_isMapView)
+            Positioned(
+              right: 22,
+              bottom: _menuBottomOffset() + 56 + 12,
+              child: ScrollToTopButton(controller: _scrollController, label: strings.scrollToTop),
+            ),
 
           // Circular Radial Menu overlay
           Positioned.fill(

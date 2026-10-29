@@ -16,6 +16,7 @@ class AppStrings {
   String get confirm => isVietnamese ? 'Xác nhận' : 'Confirm';
   String get close => isVietnamese ? 'Đóng' : 'Close';
   String get retry => isVietnamese ? 'Thử lại' : 'Retry';
+  String get scrollToTop => isVietnamese ? 'Lên đầu danh sách' : 'Back to top';
   String get success => isVietnamese ? 'Thành công' : 'Success';
   String get error => isVietnamese ? 'Lỗi' : 'Error';
   String get unknown => isVietnamese ? 'Không xác định' : 'Unknown';
