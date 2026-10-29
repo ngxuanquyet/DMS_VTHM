@@ -82,12 +82,19 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
         onRefresh: () async {
           await reportVm.loadVisits(forceRefresh: true);
         },
-        child: SingleChildScrollView(
+        // Danh sách lượt thăm dựng LƯỜI (SliverList) giữa phần đầu và phần sau — ListView shrinkWrap lồng trong
+        // SingleChildScrollView dựng hết mọi thẻ (kèm ảnh) cùng lúc khi mở màn.
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              sliver: SliverMainAxisGroup(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
               // 1. Thanh chọn ngày nhanh
               _buildDateBar(
                 context: context,
@@ -229,25 +236,29 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
               ),
               const SizedBox(height: 10),
 
-              if (reportState.isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ],
+                    ),
                   ),
-                )
-              else if (reportState.filteredVisits.isEmpty)
-                _buildEmptyVisitsState(context, isDark, dateStr)
-              else
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: reportState.filteredVisits.length,
-                  itemBuilder: (context, idx) {
-                    final visit = reportState.filteredVisits[idx];
-                    return VisitReportCard(visit: visit);
-                  },
-                ),
+                  if (reportState.isLoading)
+                    const SliverToBoxAdapter(
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        ),
+                      ),
+                    )
+                  else if (reportState.filteredVisits.isEmpty)
+                    SliverToBoxAdapter(child: _buildEmptyVisitsState(context, isDark, dateStr))
+                  else
+                    SliverList.builder(
+                      itemCount: reportState.filteredVisits.length,
+                      itemBuilder: (context, idx) => VisitReportCard(visit: reportState.filteredVisits[idx]),
+                    ),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
 
               const SizedBox(height: 20),
 
@@ -291,9 +302,14 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
                   showHeader: false,
                 ),
 
-              const SizedBox(height: 40),
-            ],
-          ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

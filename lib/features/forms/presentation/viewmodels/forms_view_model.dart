@@ -7,6 +7,7 @@ import '../../domain/repositories/forms_repository.dart';
 import '../../domain/usecases/get_available_forms_usecase.dart';
 import '../../domain/usecases/submit_market_form_usecase.dart';
 import '../states/forms_state.dart';
+import '../../../../core/rules/mobile_rules_service.dart';
 
 final formsApiServiceProvider = Provider<FormsApiService>((ref) {
   return FormsApiService(ref.read(apiClientProvider));
@@ -16,6 +17,7 @@ final formsRepositoryProvider = Provider<FormsRepository>((ref) {
   return FormsRepositoryImpl(
     ref.read(formsApiServiceProvider),
     ref.read(appDatabaseProvider),
+    fetchTimeout: () => Duration(seconds: ref.read(mobileRulesProvider).forms.fetchTimeoutSeconds),
   );
 });
 

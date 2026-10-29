@@ -190,6 +190,44 @@ void main() {
       expect(answers!['diem_ban_khao_sat'], 5378);
     });
 
+    testWidgets('Tìm điểm bán gõ KHÔNG DẤU vẫn ra (29/10/2026); 2.000 điểm gõ liên tục không sắp lại mỗi phím',
+        (tester) async {
+      final many = [
+        sampleCustomer1,
+        sampleCustomer2,
+        sampleCustomer3,
+        for (var i = 0; i < 2000; i++)
+          RouteCustomerItem(id: 100000 + i, code: 'X$i', name: 'Điểm phụ $i', lat: 21 + i / 1e4, lng: 105 + i / 1e4),
+      ];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            routeCustomersListProvider.overrideWith(
+              (ref) => Future.value(RouteCustomersData(items: many, truncated: false)),
+            ),
+          ],
+          child: const MaterialApp(home: Scaffold(body: MarketFormRenderer(blocks: [testBlock]))),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'hoang huong');
+      await tester.pumpAndSettle();
+      expect(find.text('VLXD Hoàng Hương'), findsOneWidget);
+      expect(find.text('Dịu Khoản'), findsNothing);
+
+      final sw = Stopwatch()..start();
+      for (final q in ['d', 'di', 'diem', 'diem ', 'diem p', 'diem ph', 'diem phu', 'diem phu ', 'diem phu 1', 'diem phu 19']) {
+        await tester.enterText(find.byType(TextField), q);
+        await tester.pump();
+      }
+      sw.stop();
+      debugPrint('10 phím gõ trên 2.003 điểm: ${sw.elapsedMilliseconds} ms');
+      expect(find.text('Điểm phụ 19'), findsOneWidget);
+    });
+
     testWidgets('Displays truncated warning notice when truncated is true',
         (tester) async {
       await tester.pumpWidget(

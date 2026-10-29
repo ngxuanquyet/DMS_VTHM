@@ -99,17 +99,21 @@ class NotificationsScreen extends ConsumerWidget {
               : AppRefreshIndicator(
               color: AppColors.primaryContainer,
               onRefresh: () => vm.loadNotifications(),
-              child: SingleChildScrollView(
+              // Danh sách dựng LƯỜI (SliverList) — thông báo có thể hàng trăm; ListView shrinkWrap lồng trong
+              // SingleChildScrollView dựng hết mọi thẻ cùng lúc.
+              child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.marginMobile,
-                  vertical: AppSpacing.stackMd,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Filter Chips Row
-                    SingleChildScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.marginMobile,
+                      vertical: AppSpacing.stackMd,
+                    ),
+                    sliver: SliverMainAxisGroup(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          // Filter Chips Row
+                          child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
                       child: Row(
@@ -158,66 +162,66 @@ class NotificationsScreen extends ConsumerWidget {
                         }),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.stackLg),
+                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.stackLg)),
 
-                    // Section: Hôm nay
-                    if (state.filteredToday.isNotEmpty) ...[
-                      Text(
-                        strings.todaySection,
-                        style: AppTypography.titleMedium(
-                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 10),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: state.filteredToday.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          return NotificationItemCard(
-                            notification: state.filteredToday[index],
-                          );
-                        },
-                      ),
-                      const SizedBox(height: AppSpacing.stackLg),
-                    ],
+                        // Section: Hôm nay
+                        if (state.filteredToday.isNotEmpty) ...[
+                          SliverToBoxAdapter(
+                            child: Text(
+                              strings.todaySection,
+                              style: AppTypography.titleMedium(
+                                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                          SliverList.separated(
+                            itemCount: state.filteredToday.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, index) => NotificationItemCard(
+                              notification: state.filteredToday[index],
+                            ),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.stackLg)),
+                        ],
 
-                    // Section: Trước đó
-                    if (state.filteredEarlier.isNotEmpty) ...[
-                      Text(
-                        strings.earlierSection,
-                        style: AppTypography.titleMedium(
-                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 10),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: state.filteredEarlier.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          return NotificationItemCard(
-                            notification: state.filteredEarlier[index],
-                          );
-                        },
-                      ),
-                    ],
+                        // Section: Trước đó
+                        if (state.filteredEarlier.isNotEmpty) ...[
+                          SliverToBoxAdapter(
+                            child: Text(
+                              strings.earlierSection,
+                              style: AppTypography.titleMedium(
+                                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                          SliverList.separated(
+                            itemCount: state.filteredEarlier.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, index) => NotificationItemCard(
+                              notification: state.filteredEarlier[index],
+                            ),
+                          ),
+                        ],
 
-                    if (state.filteredToday.isEmpty && state.filteredEarlier.isEmpty)
-                      AppEmptyState(
-                        icon: Icons.notifications_off_outlined,
-                        title: strings.noNotifications,
-                        description:
-                            'Hiện tại bạn không có thông báo nào trong mục này.',
-                        actionText: 'Làm mới',
-                        onAction: () => vm.loadNotifications(),
-                      ),
+                        if (state.filteredToday.isEmpty && state.filteredEarlier.isEmpty)
+                          SliverToBoxAdapter(
+                            child: AppEmptyState(
+                              icon: Icons.notifications_off_outlined,
+                              title: strings.noNotifications,
+                              description: 'Hiện tại bạn không có thông báo nào trong mục này.',
+                              actionText: 'Làm mới',
+                              onAction: () => vm.loadNotifications(),
+                            ),
+                          ),
 
-                    const SizedBox(height: 40),
-                  ],
-                ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
     );

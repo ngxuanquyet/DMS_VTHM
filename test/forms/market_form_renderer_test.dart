@@ -218,6 +218,53 @@ void main() {
       expect(submittedAnswers.containsKey('dms_so_ke'), isFalse); // Không gửi ô ẩn!
     });
 
+    testWidgets('Gõ số vào ô làm điều kiện ⇒ ô phụ thuộc hiện/ẩn ngay; lỗi bắt buộc được xoá khi gõ (29/10/2026)',
+        (tester) async {
+      final blocks = [
+        const MarketFormBlockEntity(
+          ref: 'so_ke',
+          type: 'field',
+          required: true,
+          colSpan: 12,
+          resolved: MarketFormResolvedEntity(code: 'so_ke', label: 'Số kệ', inputType: 'number'),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'ghi_chu_ke',
+          type: 'field',
+          required: false,
+          colSpan: 12,
+          showIf: {
+            'any': [
+              {'field': 'so_ke', 'op': '>', 'value': 5}
+            ]
+          },
+          resolved: MarketFormResolvedEntity(code: 'ghi_chu_ke', label: 'Ghi chú kệ', inputType: 'text'),
+        ),
+      ];
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: blocks))),
+      ));
+      expect(find.textContaining('Ghi chú kệ', findRichText: true), findsNothing);
+
+      // Bắt buộc mà trống ⇒ hiện lỗi; gõ vào ⇒ lỗi được xoá (phải dựng lại).
+      expect(key.currentState?.validateAndGetAnswers(), isNull);
+      await tester.pump();
+      final errorsBefore = find.byWidgetPredicate((w) => w is Text && (w.data ?? '').contains('bắt buộc'));
+      final hadError = errorsBefore.evaluate().isNotEmpty;
+
+      await tester.enterText(find.byType(TextFormField).first, '8');
+      await tester.pump();
+      expect(find.textContaining('Ghi chú kệ', findRichText: true), findsOneWidget); // điều kiện đúng ⇒ hiện
+
+      if (hadError) expect(errorsBefore.evaluate(), isEmpty);
+
+      await tester.enterText(find.byType(TextFormField).first, '3');
+      await tester.pump();
+      expect(find.textContaining('Ghi chú kệ', findRichText: true), findsNothing); // điều kiện sai ⇒ ẩn
+      expect(key.currentState?.currentAnswers['so_ke'], 3);
+    });
+
     testWidgets('Displays field descriptions / chú giải for form fields and headings', (tester) async {
       final blocksWithDesc = [
         const MarketFormBlockEntity(

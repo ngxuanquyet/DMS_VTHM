@@ -717,10 +717,10 @@ class SyncService {
 
     final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
     final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
-    final bytes = await preparedFile.readAsBytes();
 
     final formMap = <String, dynamic>{
-      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      // fromFile: đọc theo luồng khi gửi, không giữ cả tệp ảnh trong RAM (như các chỗ gửi ảnh khác).
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
       'photo_type': payload['photo_type'] ?? 'other',
     };
     if (payload['lat'] != null) formMap['lat'] = payload['lat'];

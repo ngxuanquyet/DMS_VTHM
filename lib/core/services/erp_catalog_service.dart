@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -219,8 +220,12 @@ class ErpCatalogService {
     try {
       final f = await _file();
       if (!await f.exists()) return null;
-      final raw = jsonDecode(await f.readAsString());
-      return raw is Map ? ErpCatalog.fromJson(Map<String, dynamic>.from(raw)) : null;
+      final text = await f.readAsString();
+      // Giải mã + dựng danh mục trong isolate riêng — không khựng luồng giao diện khi mở biểu mẫu.
+      return await Isolate.run(() {
+        final raw = jsonDecode(text);
+        return raw is Map ? ErpCatalog.fromJson(Map<String, dynamic>.from(raw)) : null;
+      });
     } catch (_) {
       return null; // tệp hỏng ⇒ coi như chưa có
     }
@@ -230,10 +235,11 @@ class ErpCatalogService {
     try {
       final f = await _file();
       final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode({
+      final payload = {
         'roles': catalog.roles,
         'items': catalog.items.map((i) => i.toJson()).toList(),
-      }));
+      };
+      await tmp.writeAsString(await Isolate.run(() => jsonEncode(payload)));
       await tmp.rename(f.path);
     } catch (_) {
       // Không ghi được — lần sau tải lại.

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -169,17 +170,12 @@ class HomeRepositoryImpl implements HomeRepository {
     final todayVisits = <VisitEntity>[];
     if (visitsJson != null && visitsJson.isNotEmpty) {
       try {
-        final list = jsonDecode(visitsJson) as List<dynamic>;
-        for (final item in list) {
-          if (item is Map) {
-            final v = VisitEntity.fromJson(Map<String, dynamic>.from(item));
-            final vDate = v.visitDate ?? (v.checkinAt != null ? DateFormat('yyyy-MM-dd').format(v.checkinAt!.toLocal()) : '');
-            if (vDate == todayStr && !v.isCancelled) {
-              todayVisits.add(v);
-              if (v.checkoutAt != null || v.visitResult != null) {
-                completedCount++;
-              }
-            }
+        // Lịch sử 60 ngày (2–4 MB JSON): giải mã + lọc lượt HÔM NAY trong isolate riêng, chỉ mang về vài chục lượt —
+        // giải mã cả khối trên luồng giao diện là khựng mỗi lần mở / làm mới Trang chủ.
+        for (final v in await compute(_todayVisitsFrom, (visitsJson, todayStr))) {
+          todayVisits.add(v);
+          if (v.checkoutAt != null || v.visitResult != null) {
+            completedCount++;
           }
         }
       } catch (_) {}
@@ -411,4 +407,18 @@ class HomeRepositoryImpl implements HomeRepository {
     final year = dt.year.toString();
     return '$weekdayName, ngày $day/$month/$year';
   }
+}
+
+/// Lượt thăm của ngày `todayStr` (không tính lượt đã huỷ) trong JSON lịch sử — chạy trong `compute`.
+List<VisitEntity> _todayVisitsFrom((String, String) args) {
+  final (visitsJson, todayStr) = args;
+  final out = <VisitEntity>[];
+  for (final item in jsonDecode(visitsJson) as List<dynamic>) {
+    if (item is Map) {
+      final v = VisitEntity.fromJson(Map<String, dynamic>.from(item));
+      final vDate = v.visitDate ?? (v.checkinAt != null ? DateFormat('yyyy-MM-dd').format(v.checkinAt!.toLocal()) : '');
+      if (vDate == todayStr && !v.isCancelled) out.add(v);
+    }
+  }
+  return out;
 }

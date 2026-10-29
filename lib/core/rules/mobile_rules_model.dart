@@ -71,6 +71,22 @@ class PositionRules {
       };
 }
 
+/// Luật biểu mẫu thị trường trên app (mobile-rules `forms`).
+class FormsRules {
+  /// Chờ server tối đa chừng này giây khi tải biểu mẫu; quá thì dùng bản đã lưu trong máy + làm mới ngầm.
+  final int fetchTimeoutSeconds;
+
+  const FormsRules({this.fetchTimeoutSeconds = 5});
+
+  factory FormsRules.fromJson(Map<String, dynamic> json) {
+    return FormsRules(
+      fetchTimeoutSeconds: ((json['fetch_timeout_seconds'] as num?)?.toInt() ?? 5).clamp(1, 15),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'fetch_timeout_seconds': fetchTimeoutSeconds};
+}
+
 class ClockRules {
   final int skewToleranceMinutes;
   final int offlineMaxQueueHours;
@@ -98,11 +114,13 @@ class ClockRules {
 class MobileRules {
   final VisitRules visit;
   final PositionRules position;
+  final FormsRules forms;
   final ClockRules clock;
 
   const MobileRules({
     this.visit = const VisitRules(),
     this.position = const PositionRules(),
+    this.forms = const FormsRules(),
     this.clock = const ClockRules(),
   });
 
@@ -114,6 +132,9 @@ class MobileRules {
       position: json['position'] is Map<String, dynamic>
           ? PositionRules.fromJson(json['position'] as Map<String, dynamic>)
           : const PositionRules(),
+      forms: json['forms'] is Map<String, dynamic>
+          ? FormsRules.fromJson(json['forms'] as Map<String, dynamic>)
+          : const FormsRules(),
       clock: json['clock'] is Map<String, dynamic>
           ? ClockRules.fromJson(json['clock'] as Map<String, dynamic>)
           : const ClockRules(),
@@ -123,6 +144,7 @@ class MobileRules {
   Map<String, dynamic> toJson() => {
         'visit': visit.toJson(),
         'position': position.toJson(),
+        'forms': forms.toJson(),
         'clock': clock.toJson(),
       };
 }

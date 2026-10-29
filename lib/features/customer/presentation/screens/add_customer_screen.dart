@@ -1157,7 +1157,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         data: (schemaData) {
           // 🔴 Lấy danh sách tuyến thực tế của user (GET /dms/routes/mine)
           final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
-          final currentRouteState = ref.watch(routeViewModelProvider);
+          // Chỉ lấy 2 trường cần — theo dõi trọn state Tuyến (2.000 điểm bán, đổi theo GPS/lọc/tải ngầm) làm cả form
+          // (DynamicFormBuilder) dựng lại liên tục khi đang nhập.
+          final currentRouteState = ref.watch(
+            routeViewModelProvider.select((s) => (availableRoutes: s.availableRoutes, selectedRoute: s.selectedRoute)),
+          );
 
           // Tạo options cho tuyến bán hàng từ tuyến thực tế của nhân viên (GET /dms/routes/mine hoặc SQLite)
           final List<DynamicFormOption> dynamicRouteOptions;

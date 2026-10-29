@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
@@ -18,7 +19,15 @@ class FormsRepositoryImpl implements FormsRepository {
   final FormsApiService _apiService;
   final AppDatabase _db;
 
-  FormsRepositoryImpl(this._apiService, this._db);
+  /// Lượt tải biểu mẫu đang chạy theo khoá bản lưu — xem [getAvailableForms].
+  final Map<String, Future<List<MarketFormConfigModel>>> _inflight = {};
+  final Set<String> _backgroundSaves = {};
+
+  /// Trần chờ server khi tải biểu mẫu (mobile-rules `forms.fetch_timeout_seconds`); không truyền ⇒ 5 giây.
+  final Duration Function() _fetchTimeout;
+
+  FormsRepositoryImpl(this._apiService, this._db, {Duration Function()? fetchTimeout})
+      : _fetchTimeout = fetchTimeout ?? (() => const Duration(seconds: 5));
 
   @override
   Future<List<MarketFormConfigEntity>> getAvailableForms({
@@ -32,30 +41,51 @@ class FormsRepositoryImpl implements FormsRepository {
     final cacheKey = account == null ? null : 'dms_market_forms_${account}_${kind}_${customerId ?? 0}';
 
     try {
-      final models = await _apiService.getAvailableForms(
-        kind: kind,
-        customerId: customerId,
-      );
+      // Mở đi mở lại khi mạng chậm ⇒ dùng chung lượt tải đang chạy của cùng bản lưu (không chồng nhiều lượt, bản cũ về
+      // sau ghi đè bản mới).
+      final inflightKey = cacheKey ?? '$kind/${customerId ?? 0}';
+      final fetch = _inflight[inflightKey] ??= _apiService
+          .getAvailableForms(kind: kind, customerId: customerId)
+          // Khối lệnh, KHÔNG `=> _inflight.remove(...)`: remove trả lại chính Future này, whenComplete sẽ chờ nó ⇒ tự chờ
+          // chính mình, treo vĩnh viễn.
+          .whenComplete(() {
+            _inflight.remove(inflightKey);
+          });
+      // Chờ server có TRẦN (tham số `forms.fetch_timeout_seconds`, mobile-rules): mạng yếu thì trước đây đứng chờ tới
+      // hết quá giờ 15s mới được dùng bản trong máy. Quá trần mà CÓ bản lưu ⇒ mở bản lưu ngay, lượt tải chạy tiếp
+      // ngầm rồi ghi đè bản lưu; chưa có bản lưu thì chờ tiếp như cũ.
+      List<MarketFormConfigModel> models;
+      try {
+        models = await fetch.timeout(_fetchTimeout());
+      } on TimeoutException {
+        final cached = await _readCached(cacheKey, account);
+        if (cached == null) {
+          models = await fetch;
+        } else {
+          // Nhiều lượt cùng chờ một lượt tải ⇒ chỉ MỘT lần ghi bản lưu ngầm.
+          if (_backgroundSaves.add(inflightKey)) {
+            unawaited(fetch
+                .then((fresh) => _saveCacheIfSameAccount(fresh, cacheKey, account))
+                .catchError((Object e) {
+              debugPrint('[FormsRepository] Làm mới biểu mẫu ngầm lỗi: $e');
+            }).whenComplete(() {
+              _backgroundSaves.remove(inflightKey);
+            }));
+          }
+          return cached;
+        }
+      }
 
       // 🔴 Đổi tài khoản trong lúc chờ mạng ⇒ đây là biểu mẫu (tự điền, kênh thu hẹp) của người CŨ: không ghi lại bản lưu
       // mà logout() vừa xoá, và tải lại cho người đang đăng nhập. Phiên vừa hết (null) thì trả luôn, đừng gọi lại không token.
-      final prefsNow = await SharedPreferences.getInstance();
-      final accountNow = cacheAccountKey(prefsNow);
+      final accountNow = cacheAccountKey(await SharedPreferences.getInstance());
       if (accountNow != account) {
         if (accountNow == null) return <MarketFormConfigEntity>[];
         return await getAvailableForms(kind: kind, customerId: customerId);
       }
 
       // Lưu cache cục bộ phục vụ chế độ offline
-      try {
-        final rawJson = jsonEncode(models.map((m) => m.toJson()).toList());
-        if (cacheKey != null) {
-          await prefsNow.setString(cacheKey, rawJson);
-          await LocalHistoryRetention.touchFormsCache(prefsNow, cacheKey);
-        }
-      } catch (cacheErr) {
-        debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
-      }
+      await _saveCacheIfSameAccount(models, cacheKey, account);
 
       return models.map((m) => m.toEntity()).toList();
     } catch (e) {
@@ -65,22 +95,41 @@ class FormsRepositoryImpl implements FormsRepository {
       if (nowAccount != account && nowAccount != null) {
         return await getAvailableForms(kind: kind, customerId: customerId);
       }
-      // Đọc từ cache — CHỈ của tài khoản đang đăng nhập (đổi tài khoản giữa chừng thì khoá lúc đầu là của người cũ).
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final cached = cacheKey == null || cacheAccountKey(prefs) != account ? null : prefs.getString(cacheKey);
-        if (cached != null && cached.isNotEmpty) {
-          final list = jsonDecode(cached) as List<dynamic>;
-          return list
-              .whereType<Map<String, dynamic>>()
-              .map((item) => MarketFormConfigModel.fromJson(item).toEntity())
-              .toList();
-        }
-      } catch (readErr) {
-        debugPrint('[FormsRepository] Lỗi đọc cache: $readErr');
-      }
-
+      final cached = await _readCached(cacheKey, account);
+      if (cached != null) return cached;
       rethrow;
+    }
+  }
+
+  /// Bản biểu mẫu đã lưu — CHỈ của tài khoản đang đăng nhập (đổi tài khoản giữa chừng thì khoá lúc đầu là của người cũ).
+  /// `null` khi chưa có / đọc hỏng.
+  Future<List<MarketFormConfigEntity>?> _readCached(String? cacheKey, String? account) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = cacheKey == null || cacheAccountKey(prefs) != account ? null : prefs.getString(cacheKey);
+      if (cached != null && cached.isNotEmpty) {
+        final list = jsonDecode(cached) as List<dynamic>;
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map((item) => MarketFormConfigModel.fromJson(item).toEntity())
+            .toList();
+      }
+    } catch (readErr) {
+      debugPrint('[FormsRepository] Lỗi đọc cache: $readErr');
+    }
+    return null;
+  }
+
+  /// Ghi bản lưu — bỏ qua nếu đã đổi tài khoản (bản này của người cũ; logout() vừa xoá bản lưu).
+  Future<void> _saveCacheIfSameAccount(List<MarketFormConfigModel> models, String? cacheKey, String? account) async {
+    if (cacheKey == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (cacheAccountKey(prefs) != account) return;
+      await prefs.setString(cacheKey, jsonEncode(models.map((m) => m.toJson()).toList()));
+      await LocalHistoryRetention.touchFormsCache(prefs, cacheKey);
+    } catch (cacheErr) {
+      debugPrint('[FormsRepository] Lỗi lưu cache biểu mẫu: $cacheErr');
     }
   }
 

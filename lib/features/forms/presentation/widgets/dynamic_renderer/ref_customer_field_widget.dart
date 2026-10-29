@@ -9,6 +9,7 @@ import '../../../../../core/widgets/app_loading.dart';
 import '../../../data/models/route_customer_model.dart';
 import '../../../data/services/route_customers_service.dart';
 import '../../../domain/entities/market_form_entity.dart';
+import '../../../../../core/utils/string_utils.dart';
 
 class RefCustomerFieldWidget extends ConsumerStatefulWidget {
   final MarketFormBlockEntity block;
@@ -605,6 +606,39 @@ class _RouteCustomerPickerSheetState
     super.dispose();
   }
 
+  /// Danh sách đã sắp theo khoảng cách — NHỚ lại, chỉ sắp lại khi danh sách đổi hoặc vị trí lệch > [_resortDistanceM]:
+  /// tính khoảng cách + sắp 1.000–2.000 điểm bán ở MỖI phím gõ / mỗi lần GPS cập nhật là giật khi gõ tìm.
+  List<_CustomerItemWithDistance>? _sorted;
+  List<RouteCustomerItem>? _sortedItemsRef;
+  GoongLatLng? _sortedPoint;
+  static const _resortDistanceM = 20.0;
+
+  /// Khoá tìm kiếm (tên + mã + địa chỉ, bỏ dấu, chữ thường) dựng MỘT lần cho mỗi điểm bán.
+  final Map<RouteCustomerItem, String> _searchKeys = Map.identity();
+
+  List<_CustomerItemWithDistance> _sortedItemsFor(GoongLatLng? point) {
+    final items = widget.data.items;
+    final cached = _sorted;
+    if (cached != null && identical(items, _sortedItemsRef) && !_movedFar(_sortedPoint, point)) {
+      return cached;
+    }
+    if (!identical(items, _sortedItemsRef)) _searchKeys.clear(); // danh sách mới ⇒ bỏ khoá tìm của bản cũ
+    _sortedItemsRef = items;
+    _sortedPoint = point;
+    return _sorted = _computeSortedItems(point);
+  }
+
+  bool _movedFar(GoongLatLng? a, GoongLatLng? b) {
+    if (a == null || b == null) return (a == null) != (b == null);
+    return Geolocator.distanceBetween(a.lat, a.lng, b.lat, b.lng) > _resortDistanceM;
+  }
+
+  String _searchKeyOf(RouteCustomerItem item) => _searchKeys.putIfAbsent(
+        item,
+        // Ngăn các trường bằng xuống dòng (không gõ được vào ô tìm) ⇒ từ khoá không khớp vắt qua hai trường.
+        () => StringUtils.toUnaccentedLower('${item.name}\n${item.code}\n${item.address ?? ''}'),
+      );
+
   List<_CustomerItemWithDistance> _computeSortedItems(GoongLatLng? point) {
     final list = widget.data.items.map((item) {
       double? dist;
@@ -639,20 +673,14 @@ class _RouteCustomerPickerSheetState
   List<_CustomerItemWithDistance> get _filteredItems {
     final currentPoint =
         widget.livePoint ?? ref.watch(currentPointProvider).value;
-    final allSorted = _computeSortedItems(currentPoint);
+    final allSorted = _sortedItemsFor(currentPoint);
 
-    final query = _searchQuery.trim().toLowerCase();
+    // Bỏ dấu cả từ khoá lẫn khoá tìm: gõ "nguyen" ra "Nguyễn" (trước chỉ so chữ thường có dấu).
+    final query = StringUtils.toUnaccentedLower(_searchQuery);
     if (query.isEmpty) {
       return allSorted;
     }
-    return allSorted.where((entry) {
-      final item = entry.item;
-      final nameMatches = item.name.toLowerCase().contains(query);
-      final codeMatches = item.code.toLowerCase().contains(query);
-      final addressMatches =
-          item.address != null && item.address!.toLowerCase().contains(query);
-      return nameMatches || codeMatches || addressMatches;
-    }).toList();
+    return allSorted.where((entry) => _searchKeyOf(entry.item).contains(query)).toList();
   }
 
   @override

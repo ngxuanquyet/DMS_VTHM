@@ -11,6 +11,8 @@ class AppConstants {
   static const String baseUrl = 'https://api-app.vthmgroup.vn';
   static const int connectTimeout = 15000;
   static const int receiveTimeout = 15000;
+  /// Chờ phản hồi khi GỬI ẢNH (multipart): server còn xử lý ảnh sau khi nhận đủ — 15s là quá giờ oan, app gửi lại cả ảnh.
+  static const int uploadReceiveTimeout = 60000;
   static const String headerClientKey = 'X-Client';
   static const String headerClientValue = 'dms-app';
 

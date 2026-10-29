@@ -760,7 +760,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
             data: (schemaData) {
               // Tuyến bán hàng từ GET /dms/routes/mine hoặc danh sách tuyến
               final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
-              final currentRouteState = ref.watch(routeViewModelProvider);
+              // Chỉ lấy 2 trường cần — theo dõi trọn state Tuyến (2.000 điểm bán, đổi theo GPS/lọc/tải ngầm) làm cả form
+              // (DynamicFormBuilder) dựng lại liên tục khi đang nhập.
+              final currentRouteState = ref.watch(
+                routeViewModelProvider.select((s) => (availableRoutes: s.availableRoutes, selectedRoute: s.selectedRoute)),
+              );
 
               final List<DynamicFormOption> dynamicRouteOptions;
               if (userRoutes.isNotEmpty) {

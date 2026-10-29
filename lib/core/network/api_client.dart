@@ -254,6 +254,8 @@ class ApiClient {
     try {
       final uploadOptions = (options ?? Options()).copyWith(
         contentType: 'multipart/form-data',
+        receiveTimeout:
+            options?.receiveTimeout ?? const Duration(milliseconds: AppConstants.uploadReceiveTimeout),
       );
       final response = await _dio.post(
         path,

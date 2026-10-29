@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../../core/constants/app_constants.dart';
@@ -454,6 +455,23 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
+  /// Ô gõ chữ / số: nội dung do chính ô giữ (controller theo mã ô / initialValue) ⇒ KHÔNG dựng lại cả biểu mẫu ở mỗi
+  /// phím (biểu mẫu là một Column dựng hết mọi ô); chỉ dựng lại khi ẩn/hiện các ô khác thay đổi hoặc cần xoá lỗi đang hiện.
+  void _updateTypedValue(String code, dynamic value) {
+    if (value == null || (value is String && value.isEmpty)) {
+      _answers.remove(code);
+    } else {
+      _answers[code] = value;
+    }
+    final hadError = _errors.remove(code) != null;
+    final visibilityBefore = _visibilityMap;
+    _recomputeVisibility();
+    if (hadError || !mapEquals(visibilityBefore, _visibilityMap)) {
+      setState(() {});
+    }
+    widget.onChanged?.call(_answers);
+  }
+
   void _updateValue(String code, dynamic value) {
     setState(() {
       if (value == null || (value is String && value.isEmpty)) {
@@ -816,8 +834,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 ? null
                 : VoiceInputMicButton(
                     fieldName: block.resolved.label.isNotEmpty ? block.resolved.label : code,
-                    currentText: controller.text,
-                    onTextRecognized: (text) {
+                    // Tự ghép với chữ ĐANG có trong ô: ô chữ không còn dựng lại mỗi phím (_updateTypedValue) nên
+                    // `currentText` truyền lúc dựng có thể đã cũ — ghép theo nó là mất phần vừa gõ.
+                    appendText: false,
+                    onTextRecognized: (recognized) {
+                      final typed = controller.text.trim();
+                      final text = typed.isEmpty ? recognized : '$typed $recognized';
                       controller.text = text;
                       controller.selection = TextSelection.fromPosition(
                         TextPosition(offset: text.length),
@@ -826,7 +848,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                     },
                   ),
           ),
-          onChanged: isLocked ? null : (val) => _updateValue(code, val),
+          onChanged: isLocked ? null : (val) => _updateTypedValue(code, val),
         ),
       ],
     );
@@ -862,7 +884,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               ? null
               : (val) {
                   final parsed = num.tryParse(val);
-                  _updateValue(code, parsed);
+                  _updateTypedValue(code, parsed);
                 },
         ),
       ],

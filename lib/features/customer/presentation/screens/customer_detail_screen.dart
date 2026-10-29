@@ -39,6 +39,8 @@ class CustomerDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
+  static final _routeNumberPattern = RegExp(r'^Tuyến\s*#?(\d+)$', caseSensitive: false);
+
   late CustomerEntity _customer;
   late PageController _pageController;
   int _currentPhotoIndex = 0;
@@ -1434,7 +1436,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     if (_customer.route.trim().isNotEmpty &&
         _customer.route.trim() != 'Chưa phân tuyến' &&
         _customer.route.trim() != 'Tất cả tuyến') {
-      final numMatch = RegExp(r'^Tuyến\s*#?(\d+)$', caseSensitive: false).firstMatch(_customer.route.trim());
+      final numMatch = _routeNumberPattern.firstMatch(_customer.route.trim());
       if (numMatch != null) {
         final id = int.tryParse(numMatch.group(1)!);
         if (id != null && routeMap.containsKey(id)) {
@@ -1449,7 +1451,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       if (r.trim().isNotEmpty &&
           r.trim() != 'Chưa phân tuyến' &&
           r.trim() != 'Tất cả tuyến') {
-        final numMatch = RegExp(r'^Tuyến\s*#?(\d+)$', caseSensitive: false).firstMatch(r.trim());
+        final numMatch = _routeNumberPattern.firstMatch(r.trim());
         if (numMatch != null) {
           final id = int.tryParse(numMatch.group(1)!);
           if (id != null && routeMap.containsKey(id)) {
@@ -1461,13 +1463,20 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     }
 
     // 5. Tra cứu từ danh sách khách hàng đã load trong CustomerViewModel
-    final allCustomers = ref.watch(customerViewModelProvider).allCustomers;
-    final matchInList = allCustomers.where((c) => c.id == _customer.id).firstOrNull;
-    if (matchInList != null &&
-        matchInList.route.trim().isNotEmpty &&
-        matchInList.route.trim() != 'Chưa phân tuyến' &&
-        matchInList.route.trim() != 'Tất cả tuyến') {
-      return matchInList.route.trim();
+    // `.select` chỉ lấy tuyến của ĐÚNG điểm bán này — theo dõi trọn danh sách (1.000+ điểm) làm màn chi tiết dựng lại mỗi
+    // khi danh sách tải/đồng bộ.
+    final id = _customer.id;
+    final listRoute = ref.watch(customerViewModelProvider.select((s) {
+      for (final c in s.allCustomers) {
+        if (c.id == id) return c.route.trim();
+      }
+      return null;
+    }));
+    if (listRoute != null &&
+        listRoute.isNotEmpty &&
+        listRoute != 'Chưa phân tuyến' &&
+        listRoute != 'Tất cả tuyến') {
+      return listRoute;
     }
 
     // 6. Tra cứu từ dynamicFields (route, route_name, tuyen, tuyen_ban_hang, mw_tuyen)
@@ -1513,7 +1522,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     // 3. Tra cứu theo regionId trong CustomerMetaData (Riverpod Provider)
     final rId = _customer.regionId;
     if (rId != null) {
-      final meta = ref.watch(customerViewModelProvider).meta;
+      final meta = ref.watch(customerViewModelProvider.select((s) => s.meta));
       final match = meta.regions.where((r) => r.id == rId).firstOrNull;
       if (match != null) {
         return match.name.isNotEmpty ? match.name : match.code;
@@ -1600,7 +1609,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Widget _buildDynamicFieldsCard(bool isDark) {
-    final columns = ref.watch(customerViewModelProvider).dynamicColumns;
+    final columns = ref.watch(customerViewModelProvider.select((s) => s.dynamicColumns));
     final entries = _customer.dynamicFields.entries
         .where((e) => !_detailIgnoredDynamicKeys.contains(e.key) && e.value != null && e.value.toString().isNotEmpty)
         .toList();

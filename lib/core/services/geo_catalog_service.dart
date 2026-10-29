@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:convert';
 import 'dart:io';
 
@@ -149,8 +150,12 @@ class GeoCatalogService {
     try {
       final f = await _file();
       if (!await f.exists()) return null;
-      final raw = jsonDecode(await f.readAsString());
-      return raw is Map ? GeoCatalog.fromJson(Map<String, dynamic>.from(raw)) : null;
+      final text = await f.readAsString();
+      // ~450 KB JSON: giải mã + dựng danh mục trong isolate riêng — trên luồng giao diện là khựng khi mở biểu mẫu.
+      return await Isolate.run(() {
+        final raw = jsonDecode(text);
+        return raw is Map ? GeoCatalog.fromJson(Map<String, dynamic>.from(raw)) : null;
+      });
     } catch (_) {
       return null; // tệp hỏng ⇒ coi như chưa có, lần có mạng tải lại
     }
@@ -161,11 +166,12 @@ class GeoCatalogService {
       final f = await _file();
       // Ghi tệp tạm rồi đổi tên: tắt app giữa chừng không để lại tệp dở dang.
       final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode({
+      final payload = {
         'version': data['version'],
         'provinces': data['provinces'],
         'wards': data['wards'],
-      }));
+      };
+      await tmp.writeAsString(await Isolate.run(() => jsonEncode(payload)));
       await tmp.rename(f.path);
     } catch (_) {
       // Không ghi được (hết bộ nhớ) — lần sau tải lại, không chặn người dùng.
