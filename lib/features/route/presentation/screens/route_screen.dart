@@ -51,6 +51,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
   RouteReturnWatcher? _returnWatcher;
   bool _refreshingOrigin = false;
 
+  /// Đang làm mới do kéo xuống — hiện thanh chạy ở đầu danh sách.
+  bool _pullRefreshing = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -830,7 +833,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
 
                 // Main Content List
                 Expanded(
-                  child:
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child:
                       state.status == RouteStatus.loading &&
                           state.routeDetail == null
                       ? const Center(child: AppLoading(size: 220))
@@ -885,18 +891,26 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                               },
                             )
                           : RefreshIndicator(
-                          color: AppColors.primaryContainer,
+                          // Giữ thao tác kéo, ẩn vòng xoay — tiến trình hiện bằng thanh chạy ở đầu danh sách.
+                          color: Colors.transparent,
+                          backgroundColor: Colors.transparent,
+                          elevation: 0,
                           onRefresh: () async {
+                            setState(() => _pullRefreshing = true);
                             try {
-                              await ref.read(syncServiceProvider).syncQueue();
-                            } catch (_) {}
-                            await Future.wait([
-                              vm.loadRouteDetail(isRefresh: true),
-                              ref
-                                  .read(mobileRulesProvider.notifier)
-                                  .fetchRules(forceRefresh: true),
-                              _requestLocationPermission(),
-                            ]);
+                              try {
+                                await ref.read(syncServiceProvider).syncQueue();
+                              } catch (_) {}
+                              await Future.wait([
+                                vm.loadRouteDetail(isRefresh: true),
+                                ref
+                                    .read(mobileRulesProvider.notifier)
+                                    .fetchRules(forceRefresh: true),
+                                _requestLocationPermission(),
+                              ]);
+                            } finally {
+                              if (mounted) setState(() => _pullRefreshing = false);
+                            }
                           },
                           child:
                               state.routeDetail == null ||
@@ -976,6 +990,21 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                   ),
                                 ),
                         ),
+                      ),
+                      // Kéo xuống làm mới: thanh chạy mảnh đè lên đầu danh sách thay cho vòng xoay (vòng xoay để trong suốt).
+                      if (_pullRefreshing)
+                        const Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: LinearProgressIndicator(
+                            minHeight: 3,
+                            color: AppColors.primaryContainer,
+                            backgroundColor: Colors.transparent,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
