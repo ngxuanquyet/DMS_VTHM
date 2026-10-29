@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../../auth/data/models/user_model.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../domain/entities/dashboard_entity.dart';
@@ -16,9 +17,7 @@ class HomeRepositoryImpl implements HomeRepository {
   final HomeApiService? _apiService;
   final AppDatabase? _database;
 
-  static const String _activeVisitKey = 'dms_active_visit_session_v1';
   static const String _visitsListKey = 'dms_visits_local_cache_v2';
-  static const String _attendanceStorageKey = 'dms_local_attendance_session_v1';
   static const String _declarationsListKey = 'pos_declarations_local_list';
 
   HomeRepositoryImpl([this._apiService, this._database]);
@@ -64,14 +63,11 @@ class HomeRepositoryImpl implements HomeRepository {
     String workDuration = '00:00';
     String statusLabel = 'Chưa vào ca';
 
-    // 2a. Ưu tiên đọc từ cache lịch sử chấm công thật của mobile (dms_attendance_history_cache_v2)
-    final userId = prefs.getString('auth_user_id') ?? prefs.getString('user_id');
-    final attHistoryKey = (userId != null && userId.isNotEmpty)
-        ? 'dms_attendance_history_cache_v2_$userId'
-        : 'dms_attendance_history_cache_v2';
-    final attHistoryJson = prefs.getString(attHistoryKey) ??
-        prefs.getString('dms_attendance_history_cache_v2') ??
-        prefs.getString('att_mobile_history_cache');
+    // CHỈ lượt chấm công thật của CHÍNH tài khoản này (bộ đệm lịch sử theo tài khoản). KHÔNG lấy giờ check-in viếng thăm
+    // hay phiên "đang làm việc" của bản cũ làm giờ vào: hai nguồn đó làm thẻ hiện "đã chấm" khi người dùng chưa chấm
+    // (và tắt luôn lời nhắc chấm công).
+    final attHistoryKey = attendanceHistoryCacheKey(prefs);
+    final attHistoryJson = attHistoryKey == null ? null : prefs.getString(attHistoryKey);
     final todayAttendancePunches = <Map<String, dynamic>>[];
     if (attHistoryJson != null && attHistoryJson.isNotEmpty) {
       try {
@@ -113,51 +109,6 @@ class HomeRepositoryImpl implements HomeRepository {
           statusLabel = todayAttendancePunches.length > 1 ? 'Đã chấm (${todayAttendancePunches.length} lượt)' : 'Đang làm việc';
         }
       } catch (_) {}
-    }
-
-    // 2b. Kiểm tra nếu có lượt viếng thăm mở
-    if (!isCheckedIn) {
-      final activeVisitJson = prefs.getString(_activeVisitKey);
-      if (activeVisitJson != null && activeVisitJson.isNotEmpty) {
-        try {
-          final vMap = jsonDecode(activeVisitJson) as Map<String, dynamic>;
-          final activeVisit = VisitEntity.fromJson(vMap);
-          if (activeVisit.isOpen) {
-            isCheckedIn = true;
-            if (activeVisit.checkinAt != null) {
-              checkInTime = DateFormat('HH:mm').format(activeVisit.checkinAt!.toLocal());
-              final diff = now.difference(activeVisit.checkinAt!.toLocal());
-              final hours = diff.inHours.toString().padLeft(2, '0');
-              final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
-              workDuration = '$hours:$mins';
-            }
-            statusLabel = 'Đang viếng thăm';
-          }
-        } catch (_) {}
-      }
-    }
-
-    // 2c. Kiểm tra nếu có phiên chấm công ca làm việc độc lập cũ
-    if (!isCheckedIn) {
-      final attSessionJson = prefs.getString(_attendanceStorageKey);
-      if (attSessionJson != null && attSessionJson.isNotEmpty) {
-        try {
-          final attMap = jsonDecode(attSessionJson) as Map<String, dynamic>;
-          if (attMap['is_working'] == true) {
-            isCheckedIn = true;
-            checkInTime = attMap['check_in_time']?.toString() ?? '--:--';
-            final checkInIso = attMap['check_in_iso']?.toString();
-            if (checkInIso != null) {
-              final checkInDt = DateTime.parse(checkInIso);
-              final diff = now.difference(checkInDt);
-              final hours = diff.inHours.toString().padLeft(2, '0');
-              final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
-              workDuration = '$hours:$mins';
-            }
-            statusLabel = 'Đang làm việc';
-          }
-        } catch (_) {}
-      }
     }
 
     // 3. Tuyến bán hàng và lượt viếng thăm thực tế trong ngày
@@ -271,29 +222,6 @@ class HomeRepositoryImpl implements HomeRepository {
           lng: lng,
         ),
       );
-    }
-
-    if (todayAttendancePunches.isEmpty) {
-      final sessionJson = prefs.getString('dms_local_attendance_session_v1');
-      if (sessionJson != null && sessionJson.isNotEmpty) {
-        try {
-          final s = jsonDecode(sessionJson) as Map<String, dynamic>;
-          final checkInIso = s['check_in_iso']?.toString();
-          if (checkInIso != null && checkInIso.startsWith(todayStr)) {
-            final t = s['check_in_time']?.toString() ?? '--:--';
-            activities.add(
-              ActivityTimelineEntity(
-                id: 'att_session_in',
-                time: t,
-                title: 'Chấm công Vào',
-                highlight: 'Đang làm việc',
-                suffix: '(Trong ca)',
-                isPrimary: true,
-              ),
-            );
-          }
-        } catch (_) {}
-      }
     }
 
     // Hoạt động viếng thăm

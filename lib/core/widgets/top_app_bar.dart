@@ -6,11 +6,11 @@ import '../../../features/auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../features/profile/presentation/viewmodels/profile_view_model.dart';
 import '../constants/app_assets.dart';
-import '../constants/app_constants.dart';
 import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 import 'offline_sync_badge.dart';
+import 'user_avatar.dart';
 
 class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -46,17 +46,10 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
     final avatarUrl = (authUser != null && authUser.avatarUrl.isNotEmpty)
         ? authUser.avatarUrl
-        : (profileUser != null && profileUser.avatarUrl.isNotEmpty)
-            ? profileUser.avatarUrl
-            : AppConstants.userAvatarUrl;
-
-    final userInitial = (authUser != null && authUser.initial.isNotEmpty)
-        ? authUser.initial
-        : (authUser != null && authUser.displayName.isNotEmpty)
-            ? authUser.displayName.trim().split(' ').last.substring(0, 1)
-            : (profileUser != null && profileUser.name.isNotEmpty)
-                ? profileUser.name.trim().split(' ').last.substring(0, 1)
-                : 'V';
+        : profileUser?.avatarUrl;
+    final avatarName = (authUser != null && authUser.displayName.isNotEmpty)
+        ? authUser.displayName
+        : (profileUser?.name ?? '');
 
     return AppBar(
       backgroundColor: isDark ? AppColors.darkSurface : AppColors.surface,
@@ -102,22 +95,9 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   ),
                 ),
                 child: ClipOval(
-                  child: Image.network(
-                    avatarUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: AppColors.primaryContainer.withValues(alpha: 0.3),
-                      child: Center(
-                        child: Text(
-                          userInitial,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                    ),
+                  child: UserAvatar(
+                    url: avatarUrl,
+                    name: avatarName,
                   ),
                 ),
               ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/app_exceptions.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../models/user_model.dart';
@@ -119,13 +120,14 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyRefreshToken);
     await prefs.remove(AppConstants.keyUserData);
 
-    // Xoá cache cấu hình chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
+    // Xoá cache cấu hình + lịch sử chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
     // Cùng lý do: biểu mẫu điểm bán / thị trường mang giá trị "tự điền theo phòng ban" tính riêng cho người này
     // (cả khoá cũ dùng chung lẫn khoá theo tài khoản).
     final keys = prefs
         .getKeys()
         .where((k) =>
             k.startsWith('dms_attendance_config_cache') ||
+            k.startsWith(attendanceHistoryCachePrefix) ||
             k.startsWith('cached_customer_form_schema') ||
             k.startsWith('cached_customer_meta') ||
             k.startsWith('dms_route_customers_cache') ||

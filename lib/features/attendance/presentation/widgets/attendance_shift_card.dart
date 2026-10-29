@@ -24,7 +24,7 @@ class _AttendanceShiftCardState extends ConsumerState<AttendanceShiftCard> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = ref.watch(attendanceViewModelProvider);
-    final today = state.config?.today;
+    final today = state.config?.currentToday;
     final shiftSchedule = today?.shift;
     final multiShifts = state.shifts;
 

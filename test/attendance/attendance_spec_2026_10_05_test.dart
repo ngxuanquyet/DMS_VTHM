@@ -157,7 +157,7 @@ void main() {
     late AttendanceRepositoryImpl repository;
 
     setUp(() {
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'vthm_user_data': '{"id":7}'});
       mockClient = MockAttendanceApiClient();
       apiService = AttendanceApiService(mockClient);
       repository = AttendanceRepositoryImpl(apiService);
@@ -338,7 +338,6 @@ void main() {
         uploadPhotoUseCase: UploadPunchPhotoUseCase(repository),
         getHistoryUseCase: GetAttendanceHistoryUseCase(repository),
         getAttendanceDetailUseCase: GetAttendanceDetailUseCase(repository),
-        toggleAttendanceUseCase: ToggleAttendanceUseCase(repository),
       );
 
       // Ban đầu chưa có lượt nào trong lịch sử

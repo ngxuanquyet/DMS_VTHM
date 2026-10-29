@@ -102,7 +102,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     });
 
     // Tính toán ca làm việc hôm nay: ưu tiên config.today (§2 SPEC-2026-10-06), fallback sang history
-    final today = state.config?.today;
+    final today = state.config?.currentToday;
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
     final todayPunches = state.history.where((p) => p.punchAt.startsWith(todayStr)).toList();
@@ -293,15 +293,15 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     }
 
     // Nhãn nút lấy từ today.next_action_label ("Vào" hoặc "Ra" §2 SPEC-2026-10-06)
-    final punchActionLabel = state.config?.today?.nextActionLabel;
+    final punchActionLabel = state.config?.currentToday?.nextActionLabel;
     final punchText = _locating
         ? 'Đang lấy vị trí...'
         : isPunching
             ? 'Đang gửi lượt chấm...'
             : (punchActionLabel != null ? 'Chấm $punchActionLabel' : 'Chấm công');
-    final punchIcon = state.config?.today?.nextAction == 'out'
+    final punchIcon = state.config?.currentToday?.nextAction == 'out'
         ? Icons.logout_rounded
-        : (state.config?.today?.nextAction == 'in' ? Icons.login_rounded : Icons.fingerprint_rounded);
+        : (state.config?.currentToday?.nextAction == 'in' ? Icons.login_rounded : Icons.fingerprint_rounded);
 
     return AppButton(
       text: punchText,

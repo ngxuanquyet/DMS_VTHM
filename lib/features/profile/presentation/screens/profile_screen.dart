@@ -22,6 +22,7 @@ import '../../../route/presentation/widgets/active_visit_blocking_dialog.dart';
 import '../../../route/presentation/viewmodels/open_visit.dart';
 import '../viewmodels/profile_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
+import '../../../../core/widgets/user_avatar.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -355,15 +356,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         boxShadow: AppShadows.level2,
                       ),
                       child: ClipOval(
-                        child: Image.network(
-                          profileState.profile?.avatarUrl ??
-                              AppConstants.userAvatarUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.person,
-                            size: 48,
-                            color: AppColors.primary,
-                          ),
+                        child: UserAvatar(
+                          url: profileState.profile?.avatarUrl,
+                          name: profileState.profile?.name ?? '',
+                          fontSize: 36,
                           cacheWidth: 300,
                         ),
                       ),

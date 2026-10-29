@@ -47,5 +47,4 @@ abstract class AttendanceRepository {
 
   /// Hỗ trợ tương thích ngược
   Future<AttendanceDetailEntity> getAttendanceDetail();
-  Future<AttendanceDetailEntity> toggleAttendanceCheck();
 }

@@ -149,7 +149,7 @@ void main() {
     late AttendanceRepositoryImpl repository;
 
     setUp(() {
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'vthm_user_data': '{"id":7}'});
       mockClient = MockAttendanceApiClient20261006();
       apiService = AttendanceApiService(mockClient);
       repository = AttendanceRepositoryImpl(apiService);

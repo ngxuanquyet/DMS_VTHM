@@ -30,6 +30,4 @@ class AppConstants {
   // Remote placeholder assets matching design_reference
   static const String logoUrl =
       'https://lh3.googleusercontent.com/aida-public/AB6AXuBQiCm7T-W41x8U7Ttw9UasGxeoMCgqLCv6T8470k3COTf_bYUJQS4-E3yCigHLcjScpdNvMxkP-HtnrURBe4ZH-cjMswFzsb1JXPhXMZjt1pjOG9SmG_0c33NIxuurELfCI0RupzIR9wrra1SKSwxdpmQMLqVcosRKxBg1W_bCvkIp2E37BjmrInRLYTFdAHgy1Ldt7nZz-qIsNLE6qlEjIXh1PHTHrm38xeGHqjKdXvYkbaLsXCjvuMsHhcWEBR2gzQ4';
-  static const String userAvatarUrl =
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCrBzPvd-uLd3UPU7rt-8SsuTNgR6oFdKenP9ScNUa05heHQvw4rgjyyAxBzi-WPtezQigtJju-LMCU60dfdKXYyAHeoPk4zQuey_F_JS10oN1z9f-p4gXoY8odvKdB15_eqNWuybMX-o5x0Vo0RfeWGjwMlkHxVG2imvTio2i7YvxDQu2bAVh19gAPpK1T0ReM4hzHlfDYJ8sz_SWnzRVFhUqrTMHoPGQNLciQMs6ZzuDfbDlbk5KgNQ';
 }

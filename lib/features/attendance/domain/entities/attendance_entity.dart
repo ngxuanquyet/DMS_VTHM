@@ -111,6 +111,9 @@ class AttendanceConfigEntity {
   final AttendanceGroupEntity group;
   final AttendancePhotoConfigEntity photo;
   final List<AttendanceLocationItemEntity> locations;
+
+  /// Khối `today` NGUYÊN VĂN server trả — có thể là của ngày khác (cấu hình đọc từ bộ nhớ đệm khi mất mạng, hoặc app mở
+  /// qua 00:00). Màn hình đọc [currentToday], KHÔNG đọc thẳng trường này.
   final AttendanceTodayEntity? today;
 
   const AttendanceConfigEntity({
@@ -121,6 +124,15 @@ class AttendanceConfigEntity {
     required this.locations,
     this.today,
   });
+
+  /// Trạng thái chấm công hôm nay — `null` khi khối `today` thuộc ngày khác (`work_date` ≠ hôm nay), để giờ vào / số lượt
+  /// của hôm trước không hiện thành của hôm nay. "Hôm nay" theo giờ MÁY như mọi chỗ khác trong app (lịch sử, lịch ca) —
+  /// hai định nghĩa "hôm nay" khác nhau trên cùng màn là lệch nhau quanh nửa đêm.
+  AttendanceTodayEntity? get currentToday {
+    final t = today;
+    if (t == null || t.workDate != DateFormat('yyyy-MM-dd').format(DateTime.now())) return null;
+    return t;
+  }
 
   /// Kiểm tra xem hiện tại người dùng có nằm trong bất kỳ geofence nào không
   /// Quy tắc 06/10/2026: Nếu có bất kỳ địa điểm kind == 'everywhere' thì luôn hợp lệ

@@ -21,7 +21,7 @@ void main() {
 
   group('Kiểm tra Lưu Chấm Công vào Hoạt Động Trong Ngày (Trang Chủ)', () {
     test('1. HomeRepositoryImpl lấy các lượt chấm công hôm nay vào recentActivities', () async {
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'vthm_user_data': '{"id":7}'});
       final prefs = await SharedPreferences.getInstance();
 
       final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -56,7 +56,7 @@ void main() {
         },
       ];
 
-      await prefs.setString('dms_attendance_history_cache_v2', jsonEncode(samplePunches));
+      await prefs.setString('dms_attendance_history_cache_v2_7', jsonEncode(samplePunches));
 
       final homeRepo = HomeRepositoryImpl(_FakeHomeApiService());
       final dashboard = await homeRepo.getDashboardData();
@@ -139,7 +139,7 @@ void main() {
     });
 
     test('3. Hiển thị đúng lượt Chấm công Vào và Ra trên dòng thời gian', () async {
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'vthm_user_data': '{"id":7}'});
       final prefs = await SharedPreferences.getInstance();
 
       final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -162,7 +162,7 @@ void main() {
         },
       ];
 
-      await prefs.setString('dms_attendance_history_cache_v2', jsonEncode(samplePunches));
+      await prefs.setString('dms_attendance_history_cache_v2_7', jsonEncode(samplePunches));
 
       final homeRepo = HomeRepositoryImpl(_FakeHomeApiService());
       final dashboard = await homeRepo.getDashboardData();

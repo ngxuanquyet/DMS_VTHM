@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:vthm_dms/core/constants/app_constants.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:vthm_dms/core/widgets/app_loading.dart';
 import 'package:vthm_dms/core/widgets/bottom_nav_bar.dart';
@@ -70,7 +69,7 @@ void main() {
       employeeCode: 'VTG926',
       displayName: 'Nguyễn Xuân Quyết',
       jobTitle: 'Nhân viên Quản lý Hệ thống thông tin (MIS)',
-      avatarUrl: AppConstants.userAvatarUrl,
+      avatarUrl: '',
       email: 'quyetnx@vthmgroup.vn',
     );
 

@@ -15,6 +15,7 @@ import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/services/anti_fraud_service.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../../domain/repositories/attendance_repository.dart';
@@ -39,9 +40,6 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   final Ref? ref;
 
   static const String _configCacheKey = 'dms_attendance_config_cache_v2';
-  static const String _historyCacheKey = 'dms_attendance_history_cache_v2';
-  static const String _sessionKey = 'dms_local_attendance_session_v1';
-  static const String _legacyHistoryKey = 'dms_local_attendance_history_v1';
 
   AttendanceDetailEntity? _cachedEntity;
 
@@ -130,6 +128,8 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   }) async {
     // 🔴 QUY TẮC §3: client_uuid SINH LÚC NGƯỜI DÙNG BẤM, KHÔNG PHẢI LÚC GỬI
     final finalUuid = clientUuid ?? const Uuid().v4();
+    // Khoá bộ đệm của người BẤM — lấy trước `await` mạng: đổi tài khoản giữa chừng thì lượt này không rơi vào bộ đệm người mới.
+    final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
     final now = DateTime.now();
     final clientTimeIso = now.toIso8601String();
 
@@ -156,7 +156,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         final punchEntity = punchModel.toEntity();
 
         // Cập nhật lượt chấm vào đầu danh sách lịch sử cục bộ
-        await _savePunchToLocalHistory(punchEntity);
+        await _savePunchToLocalHistory(historyKey, punchEntity);
         return punchEntity;
       } on ServerException catch (serverErr) {
         // 🔴 QUY TẮC §3.1: Nếu server trả về 422 (ngoài vùng, chưa khai địa điểm, chưa có mã nhân viên)
@@ -167,6 +167,12 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         // Lỗi mạng hoặc server sập 5xx -> Đưa vào hàng đợi ngoại tuyến
         debugPrint('[AttendanceRepo] Lỗi mạng khi chấm công -> Đưa vào hàng đợi ngoại tuyến: $e');
       }
+    }
+
+    // Hàng đợi gắn người ĐANG đăng nhập — tài khoản đổi trong lúc chờ mạng thì lượt của người bấm không được gửi dưới tên
+    // người mới.
+    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+      throw const AppException('Tài khoản đăng nhập đã thay đổi trong lúc chấm công. Vui lòng chấm công lại.');
     }
 
     // 🔴 Xử lý ngoại tuyến: Lưu vào bảng SyncQueueEntries (§3.2 & §8)
@@ -186,32 +192,16 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     }
 
     // Tạo bản ghi lạc quan (optimistic) hiển thị trên app
-    final optimisticPunch = AttendancePunchEntity(
-      id: -nowMs, // id tạm thời âm cho bản ghi offline
-      punchAt: DateFormat('yyyy-MM-dd HH:mm:ss').format(now),
+    final optimisticPunch = _optimisticPunch(
       clientUuid: finalUuid,
+      at: now,
       lat: lat,
       lng: lng,
       accuracyM: accuracyM,
-      geofenceId: null,
-      geofenceName: 'Lưu ngoại tuyến (chờ gửi)',
-      isOutsideGeofence: false,
       isMockLocation: isMockLocation ?? false,
-      isTimeTampered: AntiFraudService.getEstimatedClockSkewMinutes().abs() > 15,
-      duplicate: false,
-      photos: const [],
-      requirements: const AttendanceRequirementsEntity(
-        photoCount: 0,
-        minPhotos: 2,
-        maxPhotos: 10,
-        needFront: true,
-        needBack: true,
-        requireBoth: true,
-        satisfied: false,
-      ),
     );
 
-    await _savePunchToLocalHistory(optimisticPunch);
+    await _savePunchToLocalHistory(historyKey, optimisticPunch);
     return optimisticPunch;
   }
 
@@ -230,6 +220,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     String? parentUuid,
   }) async {
     final now = takenAt ?? DateTime.now();
+    final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
 
     if (_isOnline && punchId > 0) {
       try {
@@ -244,7 +235,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         final photoEntity = photoModel.toEntity();
 
         // Cập nhật ảnh vào lượt chấm trong lịch sử cục bộ
-        await _attachPhotoToLocalPunch(punchId, photoEntity);
+        await _attachPhotoToLocalPunch(historyKey, punchId, photoEntity);
         return photoEntity;
       } on ServerException catch (serverErr) {
         // Lỗi 4xx (ảnh quá trần, định dạng sai, không tìm thấy lượt): ném lỗi
@@ -253,6 +244,11 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi mạng khi tải ảnh -> Đưa vào hàng đợi ngoại tuyến: $e');
       }
+    }
+
+    // Như punch(): tài khoản đổi trong lúc chờ mạng thì không gửi ảnh của người cũ dưới tên người mới.
+    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+      throw const AppException('Tài khoản đăng nhập đã thay đổi trong lúc gửi ảnh. Vui lòng chấm công lại.');
     }
 
     // 🔴 Ngoại tuyến: Đưa vào hàng đợi SyncQueueEntries riêng biệt (§4.1 & §8)
@@ -297,7 +293,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       duplicate: false,
     );
 
-    await _attachPhotoToLocalPunch(punchId, tempPhoto);
+    await _attachPhotoToLocalPunch(historyKey, punchId, tempPhoto);
     return tempPhoto;
   }
 
@@ -312,6 +308,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     String? parentUuid,
   }) async {
     final now = takenAt ?? DateTime.now();
+    final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
     final photoUuid = const Uuid().v4();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
@@ -329,6 +326,17 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       localSavedPath = persistentFile.path;
     } catch (e) {
       debugPrint('[AttendanceRepo] Không thể copy ảnh vào thư mục riêng: $e');
+    }
+
+    // Chép ảnh là I/O bất đồng bộ — tài khoản đổi trong lúc đó thì không gửi ảnh của người cũ dưới tên người mới.
+    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+      // Bản chép là ảnh chân dung người cũ, không có dòng hàng đợi nào trỏ tới ⇒ không ai dọn — xoá ngay.
+      if (localSavedPath != file.path) {
+        try {
+          await File(localSavedPath).delete();
+        } catch (_) {}
+      }
+      throw const AppException('Tài khoản đăng nhập đã thay đổi trong lúc lưu ảnh. Vui lòng chấm công lại.');
     }
 
     final payloadMap = {
@@ -369,7 +377,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       duplicate: false,
     );
 
-    await _attachPhotoToLocalPunch(punchId, tempPhoto);
+    await _attachPhotoToLocalPunch(historyKey, punchId, tempPhoto);
     return tempPhoto;
   }
 
@@ -380,33 +388,175 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   @override
   Future<List<AttendancePunchEntity>> getHistory({int days = 7}) async {
     final prefs = await SharedPreferences.getInstance();
+    // `null` (chưa rõ tài khoản) ⇒ vẫn lấy từ server + ghép hàng đợi (hàng đợi tự lọc theo chủ), chỉ bỏ đọc/ghi bộ đệm.
+    final historyKey = attendanceHistoryCacheKey(prefs);
 
+    // Mọi `await` làm TRƯỚC (server, hàng đợi); phần đọc bộ đệm → ghép → ghi bên dưới chạy liền một mạch, không `await` nào
+    // xen giữa ⇒ không đè mất lượt/ảnh mà chỗ khác vừa lưu vào bộ đệm trong lúc chờ.
+    // Hàng đợi đọc CẢ TRƯỚC lẫn SAU lần gọi server rồi gộp: lượt được gửi xong trong lúc gọi server chỉ còn ở bản đọc trước
+    // (server đã có ⇒ trùng uuid, bỏ); lượt vừa vào hàng đợi trong lúc đó chỉ có ở bản đọc sau. Thiếu một trong hai thì lượt
+    // đó lọt cả hai nguồn và bị xoá khỏi bộ đệm ⇒ báo "chưa chấm".
+    final queuedBefore = await _queuedAttendancePunches();
+    List<Map<String, dynamic>>? serverRaw;
     if (_isOnline) {
       try {
         final models = await _apiService.getHistory(days: days);
-        final entities = models.map((m) => m.toEntity()).toList();
-
-        // Lưu cache lịch sử
-        final rawList = models.map((m) => m.toJson()).toList();
-        await prefs.setString(_historyCacheKey, jsonEncode(rawList));
-        return entities;
+        serverRaw = models.map((m) => m.toJson()).toList();
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi lấy lịch sử từ server: $e');
       }
     }
-
-    // Đọc cache ngoại tuyến
-    final cachedJson = prefs.getString(_historyCacheKey);
-    if (cachedJson != null && cachedJson.isNotEmpty) {
+    final queuedAfter = await _queuedAttendancePunches();
+    final queuedUuids = queuedAfter.map((e) => e.clientUuid).toSet();
+    final queued = [...queuedAfter, ...queuedBefore.where((e) => !queuedUuids.contains(e.clientUuid))];
+    var queuedPhotos = const <SyncQueueEntry>[];
+    if (queued.isNotEmpty && database != null) {
       try {
-        final list = jsonDecode(cachedJson) as List<dynamic>;
-        return list
-            .map((item) => AttendancePunchModel.fromJson(item as Map<String, dynamic>).toEntity())
-            .toList();
+        queuedPhotos = await database!.getQueuedAttendancePhotos();
       } catch (_) {}
     }
 
-    return const [];
+    // Tài khoản đổi trong lúc chờ ⇒ server, bộ đệm, hàng đợi lẫn lộn người cũ/mới: không trả, không ghi gì.
+    if (attendanceHistoryCacheKey(prefs) != historyKey) return const [];
+
+    final cachedRaw = _readHistoryCache(prefs, historyKey);
+    final base = serverRaw ?? cachedRaw;
+    final extra = _queuedPunchesMissingFrom(queued, queuedPhotos, base, cachedRaw);
+    final raw = [...extra, ...base];
+    if (historyKey != null && (serverRaw != null || extra.isNotEmpty)) {
+      // setString cập nhật bản trong bộ nhớ NGAY (đồng bộ) rồi mới ghi đĩa ⇒ không có khe cho chỗ khác chen vào.
+      await prefs.setString(historyKey, jsonEncode(raw));
+    }
+
+    final entities = <AttendancePunchEntity>[];
+    for (final item in raw) {
+      try {
+        entities.add(AttendancePunchModel.fromJson(item).toEntity());
+      } catch (_) {}
+    }
+    return entities;
+  }
+
+  Future<List<SyncQueueEntry>> _queuedAttendancePunches() async {
+    if (database == null) return const [];
+    try {
+      return await database!.getQueuedAttendancePunches();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  List<Map<String, dynamic>> _readHistoryCache(SharedPreferences prefs, String? historyKey) {
+    final cachedJson = historyKey == null ? null : prefs.getString(historyKey);
+    if (cachedJson == null || cachedJson.isEmpty) return const [];
+    try {
+      return (jsonDecode(cachedJson) as List<dynamic>).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Các lượt chấm CÒN CHỜ GỬI trong hàng đợi ([queued], của người đang đăng nhập, mới → cũ) mà [base] chưa có.
+  ///
+  /// Lịch sử server chưa có lượt bấm lúc mất mạng, còn bộ đệm có thể đã mất nó (lịch sử server ghi đè, đăng xuất xoá, nâng
+  /// cấp dọn khoá cũ). Thiếu lượt này thì màn hình báo "Chưa chấm công", hiện nhắc, người dùng bấm lần nữa ⇒ trùng lượt.
+  /// Bản trong bộ đệm (còn ảnh đã gắn) được giữ; không có thì dựng lại từ payload hàng đợi kèm ảnh còn chờ gửi.
+  List<Map<String, dynamic>> _queuedPunchesMissingFrom(
+    List<SyncQueueEntry> queued,
+    List<SyncQueueEntry> queuedPhotos,
+    List<Map<String, dynamic>> base,
+    List<Map<String, dynamic>> cachedRaw,
+  ) {
+    final known = base.map((p) => p['client_uuid']?.toString() ?? '').where((u) => u.isNotEmpty).toSet();
+    final extra = <Map<String, dynamic>>[];
+    for (final e in queued) {
+      if (known.contains(e.clientUuid)) continue;
+      final cached = cachedRaw.where((p) => p['client_uuid'] == e.clientUuid).firstOrNull;
+      if (cached != null) {
+        extra.add(cached);
+        continue;
+      }
+      try {
+        final payload = jsonDecode(e.payload) as Map<String, dynamic>;
+        final punch = _optimisticPunch(
+          clientUuid: e.clientUuid,
+          at: DateTime.tryParse(payload['client_time']?.toString() ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(e.createdAt),
+          lat: (payload['lat'] as num).toDouble(),
+          lng: (payload['lng'] as num).toDouble(),
+          accuracyM: (payload['accuracy_m'] as num?)?.toDouble(),
+          isMockLocation: payload['is_mock_location']?.toString() == '1',
+        );
+        final map = _punchToMap(punch);
+        final photos = <Map<String, dynamic>>[];
+        for (final ph in queuedPhotos.where((p) => p.parentUuid == e.clientUuid)) {
+          // Ảnh hỏng chỉ bỏ ảnh đó — không được kéo mất cả lượt chấm (mất lượt ⇒ báo "chưa chấm" ⇒ chấm trùng).
+          try {
+            photos.add(_queuedPhotoToMap(ph));
+          } catch (_) {}
+        }
+        if (photos.isNotEmpty) {
+          map['photos'] = photos;
+          map['requirements'] = _photoRequirements(photos);
+        }
+        extra.add(map);
+      } catch (err) {
+        debugPrint('[AttendanceRepo] Không dựng lại được lượt chấm chờ gửi ${e.clientUuid}: $err');
+      }
+    }
+    return extra;
+  }
+
+  Map<String, dynamic> _queuedPhotoToMap(SyncQueueEntry e) {
+    final payload = jsonDecode(e.payload) as Map<String, dynamic>;
+    final type = payload['photo_type']?.toString() ?? '';
+    return {
+      'id': -e.createdAt,
+      'file_id': null,
+      'token': null,
+      'url': e.localPath ?? payload['local_path'],
+      'photo_type': type,
+      'photo_type_label': type == 'front' ? 'Ảnh chân dung' : 'Ảnh khung cảnh',
+      'photo_type_color': 'primary',
+      'taken_at': payload['taken_at'],
+      'sort_order': 0,
+      'duplicate': false,
+    };
+  }
+
+  /// Lượt chấm hiển thị tạm cho lượt bấm lúc mất mạng (chưa có id server ⇒ id âm).
+  AttendancePunchEntity _optimisticPunch({
+    required String clientUuid,
+    required DateTime at,
+    required double lat,
+    required double lng,
+    double? accuracyM,
+    bool isMockLocation = false,
+  }) {
+    return AttendancePunchEntity(
+      id: -at.millisecondsSinceEpoch,
+      punchAt: DateFormat('yyyy-MM-dd HH:mm:ss').format(at),
+      clientUuid: clientUuid,
+      lat: lat,
+      lng: lng,
+      accuracyM: accuracyM,
+      geofenceId: null,
+      geofenceName: 'Lưu ngoại tuyến (chờ gửi)',
+      isOutsideGeofence: false,
+      isMockLocation: isMockLocation,
+      isTimeTampered: AntiFraudService.getEstimatedClockSkewMinutes().abs() > 15,
+      duplicate: false,
+      photos: const [],
+      requirements: const AttendanceRequirementsEntity(
+        photoCount: 0,
+        minPhotos: 2,
+        maxPhotos: 10,
+        needFront: true,
+        needBack: true,
+        requireBoth: true,
+        satisfied: false,
+      ),
+    );
   }
 
   @override
@@ -455,9 +605,11 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   // HÀM TIỆN ÍCH QUẢN LÝ LỊCH SỬ CỤC BỘ
   // ===========================================================================
 
-  Future<void> _savePunchToLocalHistory(AttendancePunchEntity punch) async {
+  Future<void> _savePunchToLocalHistory(String? historyKey, AttendancePunchEntity punch) async {
     final prefs = await SharedPreferences.getInstance();
-    final cachedJson = prefs.getString(_historyCacheKey);
+    // Ghi SAU `await` mạng: tài khoản đã đổi / đã đăng xuất ⇒ bỏ, không dựng lại bộ đệm của người cũ.
+    if (historyKey == null || attendanceHistoryCacheKey(prefs) != historyKey) return;
+    final cachedJson = prefs.getString(historyKey);
     List<Map<String, dynamic>> rawList = [];
 
     if (cachedJson != null && cachedJson.isNotEmpty) {
@@ -469,9 +621,11 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
 
     // Loại bỏ lượt có cùng clientUuid nếu đã có
     rawList.removeWhere((item) => item['client_uuid'] == punch.clientUuid);
+    rawList.insert(0, _punchToMap(punch));
+    await prefs.setString(historyKey, jsonEncode(rawList));
+  }
 
-    // Chuyển entity sang map để lưu
-    final punchMap = {
+  Map<String, dynamic> _punchToMap(AttendancePunchEntity punch) => {
       'id': punch.id,
       'punch_at': punch.punchAt,
       'client_uuid': punch.clientUuid,
@@ -509,13 +663,25 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       },
     };
 
-    rawList.insert(0, punchMap);
-    await prefs.setString(_historyCacheKey, jsonEncode(rawList));
+  /// Điều kiện ảnh của một lượt chấm tạm (chưa có số server) — đủ khi có cả ảnh chân dung lẫn khung cảnh.
+  Map<String, dynamic> _photoRequirements(List<Map<String, dynamic>> photos) {
+    final hasFront = photos.any((p) => p['photo_type'] == 'front');
+    final hasBack = photos.any((p) => p['photo_type'] == 'back');
+    return {
+      'photo_count': photos.length,
+      'min_photos': 2,
+      'max_photos': 10,
+      'need_front': !hasFront,
+      'need_back': !hasBack,
+      'require_both': true,
+      'satisfied': hasFront && hasBack,
+    };
   }
 
-  Future<void> _attachPhotoToLocalPunch(int punchId, AttendancePunchPhotoEntity photo) async {
+  Future<void> _attachPhotoToLocalPunch(String? historyKey, int punchId, AttendancePunchPhotoEntity photo) async {
     final prefs = await SharedPreferences.getInstance();
-    final cachedJson = prefs.getString(_historyCacheKey);
+    if (historyKey == null || attendanceHistoryCacheKey(prefs) != historyKey) return;
+    final cachedJson = prefs.getString(historyKey);
     if (cachedJson == null || cachedJson.isEmpty) return;
 
     try {
@@ -539,21 +705,11 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           });
           item['photos'] = photos;
 
-          final hasFront = photos.any((p) => p['photo_type'] == 'front');
-          final hasBack = photos.any((p) => p['photo_type'] == 'back');
-          item['requirements'] = {
-            'photo_count': photos.length,
-            'min_photos': 2,
-            'max_photos': 10,
-            'need_front': !hasFront,
-            'need_back': !hasBack,
-            'require_both': true,
-            'satisfied': hasFront && hasBack,
-          };
+          item['requirements'] = _photoRequirements(photos);
           break;
         }
       }
-      await prefs.setString(_historyCacheKey, jsonEncode(list));
+      await prefs.setString(historyKey, jsonEncode(list));
     } catch (_) {}
   }
 
@@ -568,75 +724,18 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   }
 
   Future<AttendanceDetailEntity> _loadRealLocalAttendance() async {
-    final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
     final timeStr = DateFormat('HH:mm:ss').format(now);
     final dateStr = _formatVietnameseDate(now);
     final currentMonthLabel = 'Tháng ${now.month.toString().padLeft(2, '0')}/${now.year}';
 
-    bool isWorking = false;
-    String checkInTime = '--:--';
-    int workDurationSeconds = 0;
-
-    // Đọc phiên chấm công ca làm việc
-    final sessionJson = prefs.getString(_sessionKey);
-    if (sessionJson != null && sessionJson.isNotEmpty) {
-      try {
-        final sessionMap = jsonDecode(sessionJson) as Map<String, dynamic>;
-        isWorking = sessionMap['is_working'] == true;
-        checkInTime = sessionMap['check_in_time']?.toString() ?? '--:--';
-        final checkInIso = sessionMap['check_in_iso']?.toString();
-        if (checkInIso != null && isWorking) {
-          final checkInDt = DateTime.parse(checkInIso);
-          workDurationSeconds = now.difference(checkInDt).inSeconds;
-          if (workDurationSeconds < 0) workDurationSeconds = 0;
-        }
-      } catch (_) {}
-    }
-
-    // Đọc lịch sử chấm công thực tế
-    final history = <AttendanceHistoryItemEntity>[];
-    final historyJson = prefs.getString(_legacyHistoryKey);
-    if (historyJson != null && historyJson.isNotEmpty) {
-      try {
-        final list = jsonDecode(historyJson) as List<dynamic>;
-        for (final item in list) {
-          if (item is Map) {
-            history.add(
-              AttendanceHistoryItemEntity(
-                id: item['id']?.toString() ?? const Uuid().v4(),
-                date: item['date']?.toString() ?? '',
-                timeRange: item['time_range']?.toString() ?? '',
-                status: item['status']?.toString() ?? 'Đúng giờ',
-                isLate: item['is_late'] == true,
-              ),
-            );
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Tính toán thống kê tháng từ lịch sử thực tế
-    int workingDays = 0;
-    int lateDays = 0;
-    final currentMonthPrefix = '${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final distinctDays = <String>{};
-    for (final h in history) {
-      if (h.date.contains(currentMonthPrefix) || h.date.contains('${now.month}/')) {
-        distinctDays.add(h.date);
-        if (h.isLate) {
-          lateDays++;
-        }
-      }
-    }
-    workingDays = distinctDays.length;
-
+    // Phiên "đang làm việc" + lịch sử kiểu cũ (bật/tắt ca trong máy) đã gỡ: giờ vào chỉ từ lượt chấm thật của server.
     _cachedEntity = AttendanceDetailEntity(
-      isWorking: isWorking,
+      isWorking: false,
       currentTime: timeStr,
       currentDateFormatted: dateStr,
-      checkInTime: checkInTime,
-      workDurationSeconds: workDurationSeconds,
+      checkInTime: '--:--',
+      workDurationSeconds: 0,
       location: const AttendanceLocationEntity(
         address: 'Vị trí hiện tại',
         gpsAccuracy: 'Độ chính xác cao',
@@ -645,69 +744,10 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       ),
       monthlyStats: MonthlyAttendanceStatsEntity(
         monthLabel: currentMonthLabel,
-        workingDays: workingDays,
-        lateDays: lateDays,
+        workingDays: 0,
+        lateDays: 0,
       ),
-      history: history,
-    );
-
-    return _cachedEntity!;
-  }
-
-  @override
-  Future<AttendanceDetailEntity> toggleAttendanceCheck() async {
-    final prefs = await SharedPreferences.getInstance();
-    final now = DateTime.now();
-    final timeFormatted = DateFormat('HH:mm').format(now);
-    final dateFormatted = DateFormat('dd/MM/yyyy').format(now);
-
-    final current = _cachedEntity ?? await getAttendanceDetail();
-    final newIsWorking = !current.isWorking;
-
-    final history = List<AttendanceHistoryItemEntity>.from(current.history);
-
-    if (newIsWorking) {
-      final sessionData = {
-        'is_working': true,
-        'check_in_time': timeFormatted,
-        'check_in_iso': now.toIso8601String(),
-      };
-      await prefs.setString(_sessionKey, jsonEncode(sessionData));
-    } else {
-      final start = current.checkInTime != '--:--' ? current.checkInTime : timeFormatted;
-      final newHistoryItem = AttendanceHistoryItemEntity(
-        id: const Uuid().v4(),
-        date: dateFormatted,
-        timeRange: '$start - $timeFormatted',
-        status: 'Đúng giờ',
-        isLate: false,
-      );
-      history.insert(0, newHistoryItem);
-
-      final historyRaw = history.map((e) => {
-        'id': e.id,
-        'date': e.date,
-        'time_range': e.timeRange,
-        'status': e.status,
-        'is_late': e.isLate,
-      }).toList();
-      await prefs.setString(_legacyHistoryKey, jsonEncode(historyRaw));
-      await prefs.remove(_sessionKey);
-    }
-
-    _cachedEntity = AttendanceDetailEntity(
-      isWorking: newIsWorking,
-      currentTime: DateFormat('HH:mm:ss').format(now),
-      currentDateFormatted: _formatVietnameseDate(now),
-      checkInTime: newIsWorking ? timeFormatted : '--:--',
-      workDurationSeconds: newIsWorking ? 0 : current.workDurationSeconds,
-      location: current.location,
-      monthlyStats: MonthlyAttendanceStatsEntity(
-        monthLabel: current.monthlyStats.monthLabel,
-        workingDays: newIsWorking ? current.monthlyStats.workingDays : current.monthlyStats.workingDays + 1,
-        lateDays: current.monthlyStats.lateDays,
-      ),
-      history: history,
+      history: const [],
     );
 
     return _cachedEntity!;

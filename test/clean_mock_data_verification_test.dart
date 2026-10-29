@@ -80,17 +80,6 @@ void main() {
       expect(initial.monthlyStats.lateDays, 0);
       expect(initial.history, isEmpty);
 
-      // Người dùng bấm VÀO CA
-      final clockedIn = await repo.toggleAttendanceCheck();
-      expect(clockedIn.isWorking, isTrue);
-      expect(clockedIn.checkInTime, isNot('--:--'));
-
-      // Người dùng bấm HẾT CA
-      final clockedOut = await repo.toggleAttendanceCheck();
-      expect(clockedOut.isWorking, isFalse);
-      expect(clockedOut.checkInTime, '--:--');
-      expect(clockedOut.history.length, 1);
-      expect(clockedOut.monthlyStats.workingDays, 1);
     });
 
     test('5. NotificationsRepositoryImpl xử lý an toàn khi không có mock backend', () async {

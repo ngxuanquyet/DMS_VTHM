@@ -98,14 +98,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
     final att = ref.read(attendanceViewModelProvider);
     final dashboard = ref.read(homeViewModelProvider).dashboard;
-    final today = att.config?.today;
+    final today = att.config?.currentToday;
     if (att.status != AttendanceStatus.loaded || att.config == null || dashboard == null) return;
 
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final punched = (today?.punchCount ?? 0) > 0 ||
         att.history.any((p) => p.punchAt.startsWith(todayStr)) ||
         dashboard.attendance.isCheckedIn;
-    if (punched || today?.shift?.status == 'day_off') {
+    // Ngày nghỉ: khối today (nếu đúng hôm nay) hoặc lịch ca tuần — bộ đệm cấu hình cũ không còn mang ca hôm nay.
+    final dayOff = today?.shift?.status == 'day_off' ||
+        att.shifts.any((s) => s.workDate == todayStr && s.status == 'day_off');
+    if (punched || dayOff) {
       _punchReminderTimer?.cancel();
       return;
     }

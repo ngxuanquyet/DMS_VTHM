@@ -40,9 +40,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
         employeeId: employeeId,
         role: role,
         department: department,
-        avatarUrl: detail.avatarUrl.trim().isNotEmpty
-            ? detail.avatarUrl
-            : AppConstants.userAvatarUrl,
+        avatarUrl: detail.avatarUrl.trim(),
         email: detail.email,
         phone: detail.phone,
         isDarkMode: isDarkSaved,
@@ -72,9 +70,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
           employeeId: employeeId,
           role: role,
           department: 'Không xác định',
-          avatarUrl: userModel.avatarUrl.trim().isNotEmpty
-              ? userModel.avatarUrl
-              : AppConstants.userAvatarUrl,
+          avatarUrl: userModel.avatarUrl.trim(),
           email: userModel.email,
           phone: '',
           isDarkMode: isDarkSaved,
@@ -90,7 +86,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
       employeeId: 'Không xác định',
       role: 'Không xác định',
       department: 'Không xác định',
-      avatarUrl: AppConstants.userAvatarUrl,
+      avatarUrl: '',
       email: '',
       phone: '',
       isDarkMode: isDarkSaved,

@@ -33,9 +33,6 @@ final getAttendanceDetailUseCaseProvider = Provider<GetAttendanceDetailUseCase>(
   return GetAttendanceDetailUseCase(ref.read(attendanceRepositoryProvider));
 });
 
-final toggleAttendanceUseCaseProvider = Provider<ToggleAttendanceUseCase>((ref) {
-  return ToggleAttendanceUseCase(ref.read(attendanceRepositoryProvider));
-});
 
 final getMobileShiftsUseCaseProvider = Provider<GetMobileShiftsUseCase>((ref) {
   return GetMobileShiftsUseCase(ref.read(attendanceRepositoryProvider));
@@ -53,7 +50,6 @@ final attendanceViewModelProvider =
     uploadPhotoUseCase: ref.read(uploadPunchPhotoUseCaseProvider),
     getHistoryUseCase: ref.read(getAttendanceHistoryUseCaseProvider),
     getAttendanceDetailUseCase: ref.read(getAttendanceDetailUseCaseProvider),
-    toggleAttendanceUseCase: ref.read(toggleAttendanceUseCaseProvider),
     getMobileShiftsUseCase: ref.read(getMobileShiftsUseCaseProvider),
     getMobileDaysUseCase: ref.read(getMobileDaysUseCaseProvider),
     attendanceRepository: ref.read(attendanceRepositoryProvider),
@@ -67,7 +63,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final UploadPunchPhotoUseCase uploadPhotoUseCase;
   final GetAttendanceHistoryUseCase getHistoryUseCase;
   final GetAttendanceDetailUseCase getAttendanceDetailUseCase;
-  final ToggleAttendanceUseCase toggleAttendanceUseCase;
   final GetMobileShiftsUseCase? getMobileShiftsUseCase;
   final GetMobileDaysUseCase? getMobileDaysUseCase;
   final AttendanceRepository? attendanceRepository;
@@ -79,7 +74,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     required this.uploadPhotoUseCase,
     required this.getHistoryUseCase,
     required this.getAttendanceDetailUseCase,
-    required this.toggleAttendanceUseCase,
     this.getMobileShiftsUseCase,
     this.getMobileDaysUseCase,
     this.attendanceRepository,
@@ -105,8 +99,9 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       // 3. Tính toán thời gian làm việc hôm nay (ưu tiên today.first_in_at từ server §2)
       final now = DateTime.now();
       int workDuration = 0;
-      if (config.today?.firstInAt != null) {
-        final dt = DateTime.tryParse(config.today!.firstInAt!.replaceAll(' ', 'T'));
+      final firstInAt = config.currentToday?.firstInAt;
+      if (firstInAt != null) {
+        final dt = DateTime.tryParse(firstInAt.replaceAll(' ', 'T'));
         if (dt != null) {
           workDuration = now.difference(dt).inSeconds;
           if (workDuration < 0) workDuration = 0;
@@ -535,12 +530,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   /// Tương thích ngược
   Future<void> loadAttendance() async {
     await loadInitialData();
-  }
-
-  Future<void> toggleAttendance() async {
-    if (state.currentPosition != null) {
-      await punch(position: state.currentPosition!);
-    }
   }
 
   void clearMessages() {

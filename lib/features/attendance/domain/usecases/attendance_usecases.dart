@@ -80,16 +80,6 @@ class GetAttendanceDetailUseCase {
   }
 }
 
-class ToggleAttendanceUseCase {
-  final AttendanceRepository _repository;
-
-  ToggleAttendanceUseCase(this._repository);
-
-  Future<AttendanceDetailEntity> call() {
-    return _repository.toggleAttendanceCheck();
-  }
-}
-
 class GetMobileShiftsUseCase {
   final AttendanceRepository _repository;
 

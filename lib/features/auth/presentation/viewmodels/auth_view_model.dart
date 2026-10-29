@@ -20,6 +20,7 @@ import '../../../travel/presentation/viewmodels/travel_view_model.dart';
 import '../../../daily_report/presentation/viewmodels/visit_report_view_model.dart';
 import '../../../position_declaration/presentation/viewmodels/position_declaration_view_model.dart';
 import '../../../home/presentation/widgets/attendance_punch_reminder.dart';
+import '../../../attendance/presentation/viewmodels/attendance_view_model.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/sync/sync_service.dart';
@@ -301,6 +302,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
     r.invalidate(visitReportViewModelProvider);
     r.invalidate(checkInViewModelProvider);
     r.invalidate(positionDeclarationViewModelProvider);
+    // Lịch sử / giờ vào hôm nay của người đăng nhập trước.
+    r.invalidate(attendanceViewModelProvider);
     // autoDispose nhưng bị unreadRejectedCountProvider (không autoDispose) giữ sống mãi.
     r.invalidate(customerViewModelProvider);
     r.invalidate(rejectedReadStatusProvider);

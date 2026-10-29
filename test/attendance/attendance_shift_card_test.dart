@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/features/attendance/domain/entities/attendance_entity.dart';
 import 'package:vthm_dms/features/attendance/presentation/states/attendance_state.dart';
@@ -9,6 +10,8 @@ import 'package:vthm_dms/features/attendance/presentation/widgets/attendance_shi
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Thẻ chỉ đọc khối `today` của ĐÚNG hôm nay (`currentToday`) — ngày cố định bị coi là bộ đệm cũ.
+  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -25,7 +28,7 @@ void main() {
       );
 
       final schedule = AttendanceShiftScheduleEntity(
-        workDate: '2026-10-19',
+        workDate: today,
         status: 'shift',
         source: 'override',
         shift: shift,
@@ -37,7 +40,7 @@ void main() {
         photo: const AttendancePhotoConfigEntity(),
         locations: const [],
         today: AttendanceTodayEntity(
-          workDate: '2026-10-19',
+          workDate: today,
           punchCount: 0,
           shift: schedule,
         ),
@@ -76,7 +79,7 @@ void main() {
 
     testWidgets('Renders day off status properly', (tester) async {
       final schedule = AttendanceShiftScheduleEntity(
-        workDate: '2026-10-18',
+        workDate: today,
         status: 'day_off',
       );
 
@@ -86,7 +89,7 @@ void main() {
         photo: const AttendancePhotoConfigEntity(),
         locations: const [],
         today: AttendanceTodayEntity(
-          workDate: '2026-10-18',
+          workDate: today,
           punchCount: 0,
           shift: schedule,
         ),

@@ -669,6 +669,27 @@ class AppDatabase extends _$AppDatabase {
     return entries.isNotEmpty ? entries.first : null;
   }
 
+  /// Lượt chấm công của người đang đăng nhập còn CHỜ GỬI (pending/sending), mới → cũ — để màn hình vẫn coi là đã chấm.
+  Future<List<SyncQueueEntry>> getQueuedAttendancePunches() {
+    return (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('attendance_punch') &
+              (tbl.state.equals('pending') | tbl.state.equals('sending')))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)]))
+        .get();
+  }
+
+  /// Ảnh chấm công của người đang đăng nhập còn chờ gửi (`parentUuid` = lượt chấm cha).
+  Future<List<SyncQueueEntry>> getQueuedAttendancePhotos() {
+    return (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('attendance_photo') &
+              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+        .get();
+  }
+
   /// Tìm lượt chấm công đã đồng bộ gần nhất có serverId
   Future<SyncQueueEntry?> findLastSyncedPunchEntry() async {
     final entries = await (select(syncQueueEntries)

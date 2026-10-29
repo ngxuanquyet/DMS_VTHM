@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/app_strings.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -16,6 +15,7 @@ import '../../domain/entities/user_relation_entity.dart';
 import '../states/personal_info_state.dart';
 import '../viewmodels/personal_info_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
+import '../../../../core/widgets/user_avatar.dart';
 
 class PersonalInfoScreen extends ConsumerWidget {
   const PersonalInfoScreen({super.key});
@@ -192,26 +192,10 @@ class PersonalInfoScreen extends ConsumerWidget {
             ],
           ),
           child: ClipOval(
-            child: Image.network(
-              profile.avatarUrl.isNotEmpty
-                  ? profile.avatarUrl
-                  : AppConstants.userAvatarUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: AppColors.primaryContainer.withValues(alpha: 0.3),
-                child: Center(
-                  child: Text(
-                    profile.fullName.isNotEmpty
-                        ? profile.fullName.trim().split(' ').last.substring(0, 1)
-                        : 'V',
-                    style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ),
+            child: UserAvatar(
+              url: profile.avatarUrl,
+              name: profile.fullName,
+              fontSize: 36,
               cacheWidth: 720,
             ),
           ),
