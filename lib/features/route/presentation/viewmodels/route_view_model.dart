@@ -249,12 +249,30 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
-  /// Đếm số điểm bán theo từng thứ trong tuần (loại trừ điểm bán bị từ chối)
+  /// Đếm số điểm bán theo từng thứ trong tuần (loại trừ điểm bán bị từ chối).
+  ///
+  /// Hàng chip ngày gọi hàm này mỗi lần dựng — tính MỘT lần cho 8 chip rồi nhớ, chỉ tính lại khi danh sách điểm bán
+  /// hoặc tuyến của tài khoản đổi. Đếm thẳng mỗi lần là 7 × 1.000+ điểm bán × dò tên tuyến theo ngày ⇒ giật.
   int getDealerCountForDay(int? day) {
-    if (day == null) return _rawCustomers.where((c) => !c.isRejectedApproval).length;
-    return _rawCustomers
-        .where((c) => !c.isRejectedApproval && _matchesCustomerDayOfWeek(c, day))
-        .length;
+    if (!identical(_dayCountsCustomers, _rawCustomers) || !identical(_dayCountsRoutes, state.userRoutes)) {
+      _dayCounts = null;
+    }
+    final counts = _dayCounts ??= _countByDay();
+    return counts[day == 0 ? 7 : day] ?? 0; // 0 = Chủ nhật (DB/API), như isSameDayOfWeek
+  }
+
+  Map<int?, int>? _dayCounts;
+  List<CustomerEntity>? _dayCountsCustomers;
+  List<UserRouteEntity>? _dayCountsRoutes;
+
+  Map<int?, int> _countByDay() {
+    _dayCountsCustomers = _rawCustomers;
+    _dayCountsRoutes = state.userRoutes;
+    final visible = _rawCustomers.where((c) => !c.isRejectedApproval).toList();
+    return {
+      null: visible.length,
+      for (var d = 1; d <= 7; d++) d: visible.where((c) => _matchesCustomerDayOfWeek(c, d)).length,
+    };
   }
 
   void applyFilters({
@@ -906,6 +924,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
       );
       if (success) {
         _rawCustomers.removeWhere((c) => c.clientUuid == clientUuid);
+        _dayCounts = null; // sửa tại chỗ — cùng đối tượng danh sách nên phải tự bỏ số đếm đã nhớ
         _recomputeRouteDetail();
       }
       return success;

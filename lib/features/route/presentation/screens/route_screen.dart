@@ -429,15 +429,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
             child: Column(
               children: [
                 // Top Header & Search Bar Section (Collapsible title on scroll)
-                AnimatedBuilder(
-                  animation: _scrollController,
-                  builder: (context, _) {
-                    final offset = _scrollController.hasClients
-                        ? _scrollController.offset
-                        : 0.0;
-                    final progress = (offset / 60.0).clamp(0.0, 1.0);
-
-                    return Container(
+                Container(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                       decoration: BoxDecoration(
                         color: isDark
@@ -463,13 +455,12 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Collapsible Title Area
-                          ClipRect(
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              heightFactor: 1.0 - progress,
-                              child: Opacity(
-                                opacity: (1.0 - progress).clamp(0.0, 1.0),
-                                child: Column(
+                          // Chỉ phần tiêu đề thu gọn dựng lại theo từng khung hình cuộn; tiêu đề dựng sẵn một lần (`child`).
+                          // Ô tìm kiếm + chip ngày (đếm điểm bán theo ngày trên cả tuyến) nằm NGOÀI — để trong builder này là
+                          // mỗi khung hình lướt lại đếm 7 ngày × 1.000+ điểm bán ⇒ giật.
+                          AnimatedBuilder(
+                            animation: _scrollController,
+                            child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     // Title Header with Subtitle on Left & Filter Button on Right
@@ -598,8 +589,22 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                     const SizedBox(height: 12),
                                   ],
                                 ),
-                              ),
-                            ),
+                            builder: (context, title) {
+                              final offset = _scrollController.hasClients
+                                  ? _scrollController.offset
+                                  : 0.0;
+                              final progress = (offset / 60.0).clamp(0.0, 1.0);
+                              return ClipRect(
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  heightFactor: 1.0 - progress,
+                                  child: Opacity(
+                                    opacity: (1.0 - progress).clamp(0.0, 1.0),
+                                    child: title,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
 
                           // Search Text Field (Fixed / Pinned)
@@ -759,8 +764,6 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                           _buildDayFilterRow(context, state, vm, isDark),
                         ],
                       ),
-                    );
-                  },
                 ),
 
                 // Active Hanging Visit Banner (§3 Luật 3)

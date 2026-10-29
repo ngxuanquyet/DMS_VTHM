@@ -391,6 +391,8 @@ class CustomerEntity {
     );
   }
 
+  static final _reAreaCodePrefix = RegExp(r'^\d{2,4}\s*-\s*');
+
   /// Kiểm tra xem một chuỗi có phải là tên tỉnh/thành, khu vực hành chính, hoặc mock data cũ (thay vì tuyến bán hàng thực tế)
   static bool isInvalidOrProvinceRoute(String? routeName, {String? provinceName}) {
     if (routeName == null) return true;
@@ -410,7 +412,7 @@ class CustomerEntity {
         lower.startsWith('tp. ') ||
         lower.startsWith('tp ') ||
         lower.startsWith('t. ') ||
-        RegExp(r'^\d{2,4}\s*-\s*').hasMatch(lower)) {
+        _reAreaCodePrefix.hasMatch(lower)) {
       return true;
     }
 
@@ -466,6 +468,15 @@ class CustomerEntity {
     return false;
   }
 
+  // Dựng MỘT lần — hàm dưới chạy cho từng điểm bán × từng tuyến mỗi lần lọc/đếm theo ngày (1.000+ điểm bán).
+  static final _reCn = RegExp(r'\bcn\b');
+  static final _reT2 = RegExp(r'\bt\s*2\b');
+  static final _reT3 = RegExp(r'\bt\s*3\b');
+  static final _reT4 = RegExp(r'\bt\s*4\b');
+  static final _reT5 = RegExp(r'\bt\s*5\b');
+  static final _reT6 = RegExp(r'\bt\s*6\b');
+  static final _reT7 = RegExp(r'\bt\s*7\b');
+
   /// Trích xuất thứ trong tuần từ tên tuyến (1: Thứ 2 ... 6: Thứ 7, 7: Chủ nhật)
   static int? extractDayOfWeekFromName(String? text) {
     if (text == null || text.trim().isEmpty) return null;
@@ -478,49 +489,49 @@ class CustomerEntity {
 
     if (normalized.contains('chủ nhật') ||
         normalized.contains('chu nhat') ||
-        RegExp(r'\bcn\b').hasMatch(normalized)) {
+        _reCn.hasMatch(normalized)) {
       return 7;
     }
     if (normalized.contains('thứ 2') ||
         normalized.contains('thu 2') ||
         normalized.contains('thứ hai') ||
         normalized.contains('thu hai') ||
-        RegExp(r'\bt\s*2\b').hasMatch(normalized)) {
+        _reT2.hasMatch(normalized)) {
       return 1;
     }
     if (normalized.contains('thứ 3') ||
         normalized.contains('thu 3') ||
         normalized.contains('thứ ba') ||
         normalized.contains('thu ba') ||
-        RegExp(r'\bt\s*3\b').hasMatch(normalized)) {
+        _reT3.hasMatch(normalized)) {
       return 2;
     }
     if (normalized.contains('thứ 4') ||
         normalized.contains('thu 4') ||
         normalized.contains('thứ tư') ||
         normalized.contains('thu tu') ||
-        RegExp(r'\bt\s*4\b').hasMatch(normalized)) {
+        _reT4.hasMatch(normalized)) {
       return 3;
     }
     if (normalized.contains('thứ 5') ||
         normalized.contains('thu 5') ||
         normalized.contains('thứ năm') ||
         normalized.contains('thu nam') ||
-        RegExp(r'\bt\s*5\b').hasMatch(normalized)) {
+        _reT5.hasMatch(normalized)) {
       return 4;
     }
     if (normalized.contains('thứ 6') ||
         normalized.contains('thu 6') ||
         normalized.contains('thứ sáu') ||
         normalized.contains('thu sau') ||
-        RegExp(r'\bt\s*6\b').hasMatch(normalized)) {
+        _reT6.hasMatch(normalized)) {
       return 5;
     }
     if (normalized.contains('thứ 7') ||
         normalized.contains('thu 7') ||
         normalized.contains('thứ bảy') ||
         normalized.contains('thu bay') ||
-        RegExp(r'\bt\s*7\b').hasMatch(normalized)) {
+        _reT7.hasMatch(normalized)) {
       return 6;
     }
     return null;
