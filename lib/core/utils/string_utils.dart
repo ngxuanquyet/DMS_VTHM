@@ -24,18 +24,30 @@ class StringUtils {
   static String toUnaccentedLower(String? input) {
     if (input == null || input.trim().isEmpty) return '';
 
-    String result = input;
-    _vietnameseDiacriticsMap.forEach((replacement, chars) {
-      for (int i = 0; i < chars.length; i++) {
-        result = result.replaceAll(chars[i], replacement);
+    // MỘT lượt quét: mỗi ký tự có dấu → chữ gốc, dấu thanh tổ hợp Unicode NFD (combining diacritics) → bỏ.
+    // Hàm chạy cho từng điểm bán × từng trường mỗi lần lọc (tới 2.000 điểm bán) — bản cũ ~134 lượt replaceAll/chuỗi.
+    final out = StringBuffer();
+    for (final rune in input.runes) {
+      if (_combiningMarks.contains(rune)) continue;
+      final plain = _unaccentMap[rune];
+      if (plain != null) {
+        out.write(plain);
+      } else {
+        out.writeCharCode(rune);
       }
-    });
-
-    // Bổ sung loại bỏ các dấu thanh tổ hợp Unicode NFD (combining diacritics)
-    result = result.replaceAll(RegExp(r'[\u0300\u0301\u0303\u0309\u0323\u02C6\u0306\u031B]'), '');
-
-    return result.toLowerCase().trim();
+    }
+    return out.toString().toLowerCase().trim();
   }
+
+  /// Dấu tổ hợp NFD (huyền, sắc, ngã, hỏi, nặng, mũ U+0302, trăng, móc) + U+02C6 (dấu mũ đứng riêng) — chuỗi dán
+  /// từ iOS/macOS hay ở dạng NFD; bản cũ thiếu U+0302 nên "Nguyễn" dạng NFD không ra khi gõ "nguyen".
+  static const _combiningMarks = {0x0300, 0x0301, 0x0302, 0x0303, 0x0309, 0x0323, 0x02C6, 0x0306, 0x031B};
+
+  /// Bảng tra ký tự có dấu → chữ gốc, dựng một lần từ [_vietnameseDiacriticsMap].
+  static final Map<int, String> _unaccentMap = {
+    for (final e in _vietnameseDiacriticsMap.entries)
+      for (final rune in e.value.runes) rune: e.key,
+  };
 
   /// Kiểm tra chuỗi [text] có chứa chuỗi tìm kiếm [query] sau khi loại bỏ dấu tiếng Việt
   static bool matchesSearch(String? text, String? query) {

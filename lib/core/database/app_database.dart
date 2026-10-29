@@ -74,18 +74,31 @@ class AppDatabase extends _$AppDatabase {
         super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) => m.createAll(),
+        onCreate: (m) async {
+          await m.createAll();
+          await _createCustomerIndexes();
+        },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.addColumn(syncQueueEntries, syncQueueEntries.ownerUserId);
             await customStatement('UPDATE sync_queue_entries SET owner_user_id = $_legacyOwner');
           }
+          if (from < 3) {
+            await _createCustomerIndexes();
+          }
         },
       );
+
+  /// Index tra điểm bán theo id máy chủ / mã khi ghi cache — khoá chính chỉ là `client_uuid`, thiếu hai index này
+  /// thì mỗi dòng trong lượt đồng bộ quét cả bảng (2.000 điểm bán ⇒ hàng triệu lượt so).
+  Future<void> _createCustomerIndexes() async {
+    await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_id ON local_customers (id)');
+    await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_code ON local_customers (code)');
+  }
 
   /// Người đang đăng nhập (usr_user.id) — AuthViewModel đặt lúc đăng nhập/khôi phục phiên, xoá lúc đăng xuất.
   /// Hàng đợi chỉ gửi/đếm/liệt kê/dọn dòng của người này; chưa đăng nhập thì không thấy dòng nào.

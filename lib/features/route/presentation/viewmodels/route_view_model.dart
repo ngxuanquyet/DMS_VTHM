@@ -114,6 +114,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
   final RouteApiService? routeApiService;
   final Ref? ref;
   List<CustomerEntity> _rawCustomers = [];
+  Timer? _searchDebounce;
 
   RouteViewModel({
     required this.customerRepository,
@@ -166,8 +167,22 @@ class RouteViewModel extends StateNotifier<RouteState> {
   }
 
   void setSearchQuery(String query) {
+    _searchDebounce?.cancel();
     state = state.copyWith(searchQuery: query);
     _recomputeRouteDetail();
+  }
+
+  /// Ô tìm kiếm gọi khi gõ: lọc lại cả tuyến (tới 2.000 điểm bán) sau khi NGỪNG gõ 250ms. Hẹn giờ nằm ở đây để
+  /// [setSearchQuery]/[resetFilters] (kể cả từ ngăn bộ lọc) huỷ được — không thì từ khoá cũ bị áp lại sau khi đặt lại.
+  void setSearchQueryDebounced(String query) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () => setSearchQuery(query));
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
   void setSearchTarget(SearchTarget target) {
@@ -253,6 +268,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
   }
 
   void resetFilters() {
+    _searchDebounce?.cancel();
     state = state.copyWith(
       selectedRoute: 'Tất cả tuyến',
       clearVisitStatus: true,
@@ -631,25 +647,20 @@ class RouteViewModel extends StateNotifier<RouteState> {
     if (state.isSortedByDistance &&
         state.userLat != null &&
         state.userLng != null) {
-      filtered = List.from(filtered);
-      filtered.sort((a, b) {
-        if (!a.hasCoordinates && !b.hasCoordinates) return 0;
-        if (!a.hasCoordinates) return 1;
-        if (!b.hasCoordinates) return -1;
-        final distA = Geolocator.distanceBetween(
-          state.userLat!,
-          state.userLng!,
-          a.lat!,
-          a.lng!,
-        );
-        final distB = Geolocator.distanceBetween(
-          state.userLat!,
-          state.userLng!,
-          b.lat!,
-          b.lng!,
-        );
+      // Tính khoảng cách MỘT lần mỗi điểm rồi mới sắp — tính trong hàm so sánh là ~n·log n lượt (2.000 điểm ≈ 44.000).
+      final withDist = [
+        for (final c in filtered)
+          (c, c.hasCoordinates ? Geolocator.distanceBetween(state.userLat!, state.userLng!, c.lat!, c.lng!) : null),
+      ];
+      withDist.sort((a, b) {
+        final distA = a.$2;
+        final distB = b.$2;
+        if (distA == null && distB == null) return 0;
+        if (distA == null) return 1;
+        if (distB == null) return -1;
         return distA.compareTo(distB);
       });
+      filtered = [for (final e in withDist) e.$1];
     }
 
     // Map today's visits by customer_id (§2.3)

@@ -252,12 +252,25 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     } catch (_) {}
   }
 
+  int _drawGen = 0;
+
   Future<void> _drawOverlays() async {
     final controller = _controller;
     if (controller == null) return;
 
+    // Lượt vẽ chồng nhau (GPS đổi + chạm chọn cùng lúc): chỉ lượt MỚI NHẤT được thêm chấm, không thì hai bộ chấm đè nhau.
+    final gen = ++_drawGen;
     try {
       await controller.clearCircles();
+
+      // Gom MỌI chấm rồi thêm MỘT lượt: mỗi `addCircle` gửi lại cả GeoJSON của mọi chấm đã có xuống native,
+      // tuyến 2.000 điểm bán × 2 chấm gọi lần lượt là ~4.000 lượt với khối dữ liệu lớn dần — bản đồ đứng hình.
+      final options = <CircleOptions>[];
+      final data = <Map<String, dynamic>>[];
+      void add(CircleOptions o, [Map<String, dynamic> d = const {}]) {
+        options.add(o);
+        data.add(d);
+      }
 
       // 1. Chấm phát sóng vị trí nhân viên (Broadcasting Beacon)
       final livePoint = ref.read(currentPointProvider).value;
@@ -265,7 +278,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         final empLatLng = LatLng(livePoint.lat, livePoint.lng);
 
         // Vòng sóng radar mở rộng ngoài cùng
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: empLatLng,
             circleRadius: 26,
@@ -278,7 +291,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         );
 
         // Vòng sóng giữa
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: empLatLng,
             circleRadius: 15,
@@ -291,7 +304,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         );
 
         // Chấm beacon chính
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: empLatLng,
             circleRadius: 8.5,
@@ -303,7 +316,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         );
 
         // Điểm sáng trắng trung tâm
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: empLatLng,
             circleRadius: 3.5,
@@ -334,7 +347,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
 
         // Vòng highlight nếu đang chọn
         if (isSelected) {
-          await controller.addCircle(
+          add(
             CircleOptions(
               geometry: dealerLatLng,
               circleRadius: 17,
@@ -349,7 +362,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         }
 
         // Ghim điểm bán
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: dealerLatLng,
             circleRadius: isSelected ? 11 : 9,
@@ -363,7 +376,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         );
 
         // Tâm ghim
-        await controller.addCircle(
+        add(
           CircleOptions(
             geometry: dealerLatLng,
             circleRadius: isSelected ? 4.5 : 3.5,
@@ -373,6 +386,8 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           circleData,
         );
       }
+      if (gen != _drawGen) return;
+      await controller.addCircles(options, data);
     } catch (_) {}
   }
 

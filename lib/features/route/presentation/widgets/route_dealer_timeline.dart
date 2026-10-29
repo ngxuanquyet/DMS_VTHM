@@ -21,12 +21,18 @@ import 'checkin_distance_warning_dialog.dart';
 class RouteDealerTimeline extends ConsumerWidget {
   final List<DealerEntity> dealers;
 
-  const RouteDealerTimeline({super.key, required this.dealers});
+  /// Danh sách tự cuộn và dựng LƯỜI (chỉ thẻ đang trong khung nhìn) — tuyến có thể 1–2.000 điểm bán; bọc trong
+  /// `SingleChildScrollView` + `shrinkWrap` thì dựng cả 2.000 thẻ mỗi lần GPS đổi/gõ tìm kiếm.
+  final ScrollController? controller;
+  final EdgeInsetsGeometry? padding;
+
+  const RouteDealerTimeline({super.key, required this.dealers, this.controller, this.padding});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final livePoint = ref.watch(currentPointProvider).value;
+    final defaultRadius = ref.watch(mobileRulesProvider).visit.defaultRadiusM;
 
     if (dealers.isEmpty) {
       return Center(
@@ -54,14 +60,13 @@ class RouteDealerTimeline extends ConsumerWidget {
     }
 
     return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+      controller: controller,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: padding,
       itemCount: dealers.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final dealer = dealers[index];
-        final mobileRules = ref.watch(mobileRulesProvider);
-        final defaultRadius = mobileRules.visit.defaultRadiusM;
         final allowedRadius = dealer.geofenceRadiusM ??
             (dealer.customer is CustomerEntity
                 ? (dealer.customer as CustomerEntity).geofenceRadiusM

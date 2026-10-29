@@ -59,6 +59,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     if (mounted) setState(() {});
   }
 
+  void _clearSearch() {
+    _searchController.clear();
+    ref.read(routeViewModelProvider.notifier).setSearchQuery('');
+  }
+
   Future<void> _requestLocationPermission() async {
     final position = await ref
         .read(locationServiceProvider)
@@ -605,7 +610,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                             child: TextField(
                               focusNode: _searchFocusNode,
                               controller: _searchController,
-                              onChanged: (val) => vm.setSearchQuery(val),
+                              onChanged: vm.setSearchQueryDebounced,
                               style: AppTypography.bodyMedium(
                                 color: isDark
                                     ? AppColors.darkOnSurface
@@ -697,10 +702,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                           Icons.clear_rounded,
                                           size: 16,
                                         ),
-                                        onPressed: () {
-                                          _searchController.clear();
-                                          vm.setSearchQuery('');
-                                        },
+                                        onPressed: _clearSearch,
                                       )
                                     : null,
                                 suffixIconConstraints:
@@ -847,8 +849,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                                 if (state.searchTarget != SearchTarget.all) {
                                                   vm.setSearchTarget(SearchTarget.all);
                                                 } else {
-                                                  _searchController.clear();
-                                                  vm.setSearchQuery('');
+                                                  _clearSearch();
                                                 }
                                               },
                                             )
@@ -880,23 +881,14 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
                                     ),
                                   ],
                                 )
-                              : SingleChildScrollView(
+                              : RouteDealerTimeline(
+                                  dealers: state.routeDetail!.dealers,
                                   controller: _scrollController,
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.marginMobile,
-                                    vertical: AppSpacing.stackMd,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      RouteDealerTimeline(
-                                        dealers: state.routeDetail!.dealers,
-                                      ),
-                                      const SizedBox(height: 160),
-                                    ],
+                                  padding: const EdgeInsets.fromLTRB(
+                                    AppSpacing.marginMobile,
+                                    AppSpacing.stackMd,
+                                    AppSpacing.marginMobile,
+                                    160, // Khoảng trống tránh bị che bởi menu tròn và nav bar
                                   ),
                                 ),
                         ),
