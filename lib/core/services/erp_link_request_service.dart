@@ -17,7 +17,7 @@ class ErpLinkRole {
 
   /// Nhãn tiếng Việt của vai.
   static String label(String role) => switch (role) {
-        owner => 'Chính khách',
+        owner => 'Chính khách hàng',
         showroom => 'Showroom',
         c2 => 'Đại lý C2',
         _ => role,
