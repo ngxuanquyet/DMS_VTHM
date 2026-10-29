@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/localization/language_provider.dart';
@@ -33,6 +34,9 @@ class AttendanceDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen> {
+  /// Đang lấy vị trí cho lượt chấm — khoá nút (lấy GPS mới mất vài giây, bấm đúp là hai lượt).
+  bool _locating = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,10 +46,25 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
   }
 
   Future<void> _initGpsAndConfig() async {
-    final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context, showDialog: false);
+    final locationService = ref.read(locationServiceProvider);
+    final pos = await locationService.checkAndGetLocation(context, showDialog: false);
     if (pos != null && mounted) {
-      ref.read(attendanceViewModelProvider.notifier).updateUserLocation(pos);
+      await ref.read(attendanceViewModelProvider.notifier).updateUserLocation(pos);
     }
+    // `checkAndGetLocation` trả bản cache (có thể từ hàng giờ trước) ⇒ tự lấy thêm vị trí MỚI rồi cập nhật lại.
+    // Chờ lần trên xong mới cập nhật: hai lượt tải cấu hình chạy chồng thì lượt về sau (có thể của vị trí cũ) thắng.
+    final fresh = await locationService.getFreshPosition();
+    if (fresh != null && mounted) {
+      await ref.read(attendanceViewModelProvider.notifier).updateUserLocation(fresh);
+    }
+  }
+
+  /// Vị trí cho lượt chấm: vị trí MỚI từ GPS; không được (chưa quyền / tắt GPS / quá giờ) mới qua đường có hộp thoại
+  /// xin quyền (có thể trả bản cache).
+  Future<Position?> _positionForPunch(BuildContext context) async {
+    final locationService = ref.read(locationServiceProvider);
+    return await locationService.getFreshPosition() ??
+        (context.mounted ? await locationService.checkAndGetLocation(context) : null);
   }
 
   @override
@@ -116,7 +135,9 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
             )
           : RefreshIndicator(
               onRefresh: () async {
-                final pos = await ref.read(locationServiceProvider).checkAndGetLocation(context, showDialog: false);
+                final locationService = ref.read(locationServiceProvider);
+                final pos = await locationService.getFreshPosition() ??
+                    (context.mounted ? await locationService.checkAndGetLocation(context, showDialog: false) : null);
                 await vm.loadInitialData(lat: pos?.latitude, lng: pos?.longitude);
               },
               child: SingleChildScrollView(
@@ -256,7 +277,6 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
   ) {
     final canPunch = state.canPunch;
     final hasLocations = state.hasLocations;
-    final isBlockedByGeofence = state.isBlockedByGeofence;
     final isPunching = state.isPunching;
 
     // Nếu tài khoản không thể chấm (chưa có mã nhân viên)
@@ -281,9 +301,11 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
 
     // Nhãn nút lấy từ today.next_action_label ("Vào" hoặc "Ra" §2 SPEC-2026-10-06)
     final punchActionLabel = state.config?.today?.nextActionLabel;
-    final punchText = isPunching
-        ? 'Đang gửi lượt chấm...'
-        : (punchActionLabel != null ? 'Chấm $punchActionLabel' : 'Chấm công');
+    final punchText = _locating
+        ? 'Đang lấy vị trí...'
+        : isPunching
+            ? 'Đang gửi lượt chấm...'
+            : (punchActionLabel != null ? 'Chấm $punchActionLabel' : 'Chấm công');
     final punchIcon = state.config?.today?.nextAction == 'out'
         ? Icons.logout_rounded
         : (state.config?.today?.nextAction == 'in' ? Icons.login_rounded : Icons.fingerprint_rounded);
@@ -291,19 +313,26 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     return AppButton(
       text: punchText,
       height: 52,
-      isLoading: isPunching,
+      isLoading: isPunching || _locating,
       icon: punchIcon,
-      onPressed: isPunching
+      onPressed: isPunching || _locating
           ? null
           : () async {
-              // 1. Lấy vị trí GPS hiện tại
-              final position = await ref
-                  .read(locationServiceProvider)
-                  .checkAndGetLocation(context);
+              // 1. Lấy vị trí GPS hiện tại — vị trí MỚI, không dùng bản cache có thể đã cũ
+              setState(() => _locating = true);
+              final Position? position;
+              try {
+                position = await _positionForPunch(context);
+              } finally {
+                if (mounted) setState(() => _locating = false);
+              }
               if (position == null) return;
 
-              // Cập nhật toạ độ vào state
+              // Cập nhật toạ độ vào state (tính lại khoảng cách tới địa điểm chấm công theo vị trí mới)
               await vm.updateUserLocation(position);
+              if (!mounted) return;
+              // Đọc LẠI state sau khi cập nhật vị trí — `state`/`isBlockedByGeofence` ở trên là bản lúc dựng nút.
+              final latest = ref.read(attendanceViewModelProvider);
 
               // 🔴 KIỂM TRA CHỐNG GIAN LẬN (MOCK LOCATION & CLOCK SKEW) TRƯỚC KHI CHẤM CÔNG
               if (context.mounted) {
@@ -317,8 +346,8 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               }
 
               // 2. Nếu ngoài vùng và nhóm enforce_geofence: hiển thị cảnh báo
-              if (isBlockedByGeofence) {
-                final targetLocation = state.activeLocation ?? state.closestLocation;
+              if (latest.isBlockedByGeofence) {
+                final targetLocation = latest.activeLocation ?? latest.closestLocation;
                 if (context.mounted && targetLocation != null) {
                   AttendanceOutOfRangeDialog.show(
                     context,
@@ -332,7 +361,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               }
 
               // 3. Nếu không yêu cầu ảnh (min_photos == 0): gửi trực tiếp
-              final minPhotos = state.config?.photo.minPhotos ?? 2;
+              final minPhotos = latest.config?.photo.minPhotos ?? 2;
               if (minPhotos == 0) {
                 await vm.submitPunchWithPhotos(position: position);
                 return;

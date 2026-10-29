@@ -28,6 +28,31 @@ class LocationService {
 
   LocationService(this._ref);
 
+  /// Lấy vị trí MỚI từ GPS — KHÁC [checkAndGetLocation] (trả ngay bản cache, có thể từ hàng giờ trước). Không bật hộp
+  /// thoại nào: chưa cấp quyền / tắt GPS / quá [timeLimit] ⇒ `null`, người gọi tự quyết dùng gì thay. Lấy được thì cập
+  /// nhật luôn cache cho các màn khác.
+  Future<Position?> getFreshPosition({Duration timeLimit = const Duration(seconds: 8)}) async {
+    if (kIsWeb) return null;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return null;
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(accuracy: LocationAccuracy.high, timeLimit: timeLimit),
+      );
+      _cachedPosition = position;
+      // Cập nhật trạng thái GPS của app như các nhánh khác — lỗi ở đây không được làm mất vị trí vừa lấy.
+      try {
+        unawaited(
+          _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false).catchError((_) => false),
+        );
+      } catch (_) {}
+      return position;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void dispose() {
     _serviceStatusSubscription?.cancel();
   }

@@ -6,6 +6,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/map/goong_providers.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/router/route_return_watcher.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -37,7 +38,7 @@ class RouteScreen extends ConsumerStatefulWidget {
   ConsumerState<RouteScreen> createState() => _RouteScreenState();
 }
 
-class _RouteScreenState extends ConsumerState<RouteScreen> {
+class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -45,9 +46,56 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   bool _isMapView = false;
   DealerEntity? _selectedDealerOnMap;
 
+  /// Biết lúc QUAY VỀ màn Tuyến (từ tab khác, hoặc đóng màn check-in / chấm công / chi tiết phủ lên) để tính lại
+  /// khoảng cách — màn nằm trong StatefulShellRoute nên được giữ nguyên, `initState` không chạy lại.
+  RouteReturnWatcher? _returnWatcher;
+  bool _refreshingOrigin = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_returnWatcher == null) {
+      final delegate = GoRouter.maybeOf(context)?.routerDelegate;
+      if (delegate != null) {
+        _returnWatcher = RouteReturnWatcher(delegate, path: '/routes', onReturn: () {
+          if (mounted) _refreshDistanceOrigin();
+        });
+      }
+    }
+  }
+
+  /// Lấy vị trí MỚI một lần rồi tính lại khoảng cách cả tuyến — khi mở màn và mỗi lần quay về màn. Không theo GPS liên
+  /// tục (giật trên tuyến 1.000+ điểm), không bật hộp thoại; không lấy được thì giữ khoảng cách đang có.
+  Future<void> _refreshDistanceOrigin() async {
+    if (_refreshingOrigin) return;
+    _refreshingOrigin = true;
+    try {
+      final position = await ref.read(locationServiceProvider).getFreshPosition();
+      if (position != null && mounted) {
+        // Bản đồ tuyến (chấm vị trí) đọc currentPointProvider — làm mới để nó lấy vị trí vừa có, khớp với danh sách.
+        ref.invalidate(currentPointProvider);
+        ref
+            .read(routeViewModelProvider.notifier)
+            .updateUserLocation(lat: position.latitude, lng: position.longitude);
+      }
+    } finally {
+      _refreshingOrigin = false;
+    }
+  }
+
+  /// App quay lại từ nền (vd đang đi tới cửa hàng kế tiếp rồi mở app) mà màn Tuyến đang ở trên cùng ⇒ cũng tính lại
+  /// khoảng cách — đường dẫn không đổi nên [RouteReturnWatcher] không thấy.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && (_returnWatcher?.isAtPath ?? false)) {
+      _refreshDistanceOrigin();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _searchFocusNode.addListener(_onSearchFocusOrTextChanged);
     _searchController.addListener(_onSearchFocusOrTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -70,7 +118,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
     ref.read(routeViewModelProvider.notifier).setSearchQuery('');
   }
 
-  /// Lấy vị trí MỘT lần khi mở màn — làm gốc tính khoảng cách cho cả tuyến ([RouteDealerTimeline.originLat]).
+  /// Xin quyền + lấy vị trí khi mở màn — làm gốc tính khoảng cách cho cả tuyến ([RouteDealerTimeline.originLat]).
   Future<void> _requestLocationPermission() async {
     final position = await ref
         .read(locationServiceProvider)
@@ -81,6 +129,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
       ref
           .read(routeViewModelProvider.notifier)
           .updateUserLocation(lat: position.latitude, lng: position.longitude);
+      // `checkAndGetLocation` trả bản cache (có thể đã cũ) ⇒ lấy thêm vị trí mới, xong thì tính lại khoảng cách.
+      _refreshDistanceOrigin();
       return;
     }
     // Không lấy được vị trí mới (từ chối quyền, tắt GPS, quá giờ) ⇒ dùng vị trí đã biết gần nhất, nếu có.
@@ -94,6 +144,8 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _returnWatcher?.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _scrollController.dispose();
@@ -374,10 +426,11 @@ class _RouteScreenState extends ConsumerState<RouteScreen> {
   }
 
   Future<void> _handleRefreshGps() async {
-    final position = await ref
-        .read(locationServiceProvider)
-        .checkAndGetLocation(context);
-    if (position == null) return;
+    // Người dùng bấm làm mới ⇒ vị trí MỚI từ GPS; không được (chưa quyền / tắt GPS) mới qua đường có hộp thoại xin quyền.
+    final locationService = ref.read(locationServiceProvider);
+    final position = await locationService.getFreshPosition() ??
+        (mounted ? await locationService.checkAndGetLocation(context) : null);
+    if (position == null || !mounted) return;
     ref.invalidate(currentPointProvider);
     ref
         .read(routeViewModelProvider.notifier)
