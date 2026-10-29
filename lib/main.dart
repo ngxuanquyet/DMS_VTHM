@@ -74,11 +74,13 @@ class VthmApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
-    final profileState = ref.watch(profileViewModelProvider);
+    // Chỉ theo dõi chế độ tối — theo dõi trọn hồ sơ thì mỗi lần hồ sơ tải/đổi là dựng lại cả MaterialApp.
+    final isDarkMode = ref.watch(profileViewModelProvider.select((s) => s.isDarkMode));
     // Watch current language to rebuild the app on language change
     ref.watch(languageProvider);
-    // Initialize & watch real-time connectivity monitor
-    ref.watch(connectivityProvider);
+    // Initialize real-time connectivity monitor — giữ provider sống nhưng KHÔNG dựng lại cả app mỗi lần mạng đổi
+    // (màn nào cần trạng thái mạng tự theo dõi).
+    ref.watch(connectivityProvider.select((_) => true));
     // Connect ref to FCM Push Service
     ref.watch(fcmPushServiceProvider);
 
@@ -88,7 +90,7 @@ class VthmApp extends ConsumerWidget {
       scaffoldMessengerKey: rootScaffoldMessengerKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: profileState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
       routerConfig: router,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();

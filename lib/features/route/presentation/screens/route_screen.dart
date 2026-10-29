@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -46,6 +48,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
   final ScrollController _scrollController = ScrollController();
   bool _isMapView = false;
   DealerEntity? _selectedDealerOnMap;
+
+  /// Khoảng thẻ tóm tắt điểm bán chiếm từ đáy bản đồ (chế độ bản đồ) — nút nổi đặt ngay trên nó, không che nút đóng.
+  double? _mapCardHeight;
 
   /// Biết lúc QUAY VỀ màn Tuyến (từ tab khác, hoặc đóng màn check-in / chấm công / chi tiết phủ lên) để tính lại
   /// khoảng cách — màn nằm trong StatefulShellRoute nên được giữ nguyên, `initState` không chạy lại.
@@ -890,6 +895,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                   setState(() => _selectedDealerOnMap = dealer);
                                 }
                               },
+                              onSummaryCardHeightChanged: (h) => setState(() => _mapCardHeight = h),
                             )
                           : AppRefreshIndicator(
                           // Giữ thao tác kéo, ẩn vòng xoay — tiến trình hiện bằng thanh chạy ở đầu danh sách.
@@ -1023,17 +1029,28 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
               onToggleMapView: () => setState(() {
                 _isMapView = !_isMapView;
                 if (!_isMapView) _selectedDealerOnMap = null;
+                _mapCardHeight = null;
               }),
               isSortedByDistance: state.isSortedByDistance,
               isMapView: _isMapView,
               pendingOfflineCount: pendingOfflineCount,
               isSyncing: state.status == RouteStatus.loading,
-              bottomOffset: (_isMapView && _selectedDealerOnMap != null) ? 202.0 : 88.0,
+              bottomOffset: _menuBottomOffset(),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Khoảng cách từ đáy màn tới nút nổi: chế độ bản đồ có thẻ điểm bán thì nổi trên mép thẻ 12px (đo thật — thẻ cao
+  /// thấp theo nội dung), chưa đo được thì dùng mức cũ. Bản đồ là phần cuối của cột nội dung, nằm trong SafeArea ⇒ đáy
+  /// bản đồ cách đáy màn đúng phần đệm dưới.
+  double _menuBottomOffset() {
+    if (!_isMapView || _selectedDealerOnMap == null) return 88.0;
+    final cardHeight = _mapCardHeight;
+    if (cardHeight == null) return 202.0;
+    return math.max(88.0, MediaQuery.paddingOf(context).bottom + cardHeight + 12);
   }
 
   Widget _buildActiveVisitBanner(

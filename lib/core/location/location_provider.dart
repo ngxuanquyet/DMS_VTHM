@@ -55,6 +55,14 @@ class LocationNotifier extends StateNotifier<LocationState>
   StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
   Timer? _pollingTimer;
 
+  /// Dò dự phòng chỉ chạy khi app ĐANG MỞ — ở nền (paused/hidden) huỷ hẳn timer: không ai thấy hộp thoại, thức dậy chỉ
+  /// tốn pin. `inactive` (kéo thanh cài đặt nhanh xuống để bật GPS) vẫn tính là đang mở.
+  DateTime? _lastFastCheck;
+
+  /// Nhịp dò dự phòng khi GPS ĐANG BẬT (chỉ để bắt lúc bị tắt mà stream bỏ sót). GPS tắt thì dò mỗi tick 4 s để ẩn
+  /// hộp "Chưa bật vị trí" ngay khi người dùng bật lại.
+  static const _pollWhileEnabled = Duration(seconds: 30);
+
   LocationNotifier(this.ref) : super(const LocationState()) {
     WidgetsBinding.instance.addObserver(this);
     _initLocationListener();
@@ -70,8 +78,13 @@ class LocationNotifier extends StateNotifier<LocationState>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
+    }
     // When returning from quick settings shade / settings screen, check immediately
     if (state == AppLifecycleState.resumed) {
+      _startFallbackPolling();
       checkLocationStatus(showDialogIfDisabled: true);
     }
   }
@@ -125,17 +138,27 @@ class LocationNotifier extends StateNotifier<LocationState>
         });
       } catch (_) {}
 
-      // Fallback polling (4s interval) to guarantee response on Android devices if OS stream misses
-      final bindingName = WidgetsBinding.instance.runtimeType.toString();
-      if (!bindingName.contains('TestWidgetsFlutterBinding') &&
-          !bindingName.contains('AutomatedTestWidgetsFlutterBinding')) {
-        _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-          if (mounted) {
-            _checkLocationFast();
-          }
-        });
-      }
+      _startFallbackPolling();
     }
+  }
+
+  /// Fallback polling to guarantee response on Android devices if OS stream misses (nhịp: xem _pollWhileEnabled).
+  void _startFallbackPolling() {
+    if (kIsWeb || _pollingTimer != null || !mounted) return;
+    final bindingName = WidgetsBinding.instance.runtimeType.toString();
+    if (bindingName.contains('TestWidgetsFlutterBinding') ||
+        bindingName.contains('AutomatedTestWidgetsFlutterBinding')) {
+      return;
+    }
+    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      final last = _lastFastCheck;
+      if (state.isServiceEnabled && last != null && DateTime.now().difference(last) < _pollWhileEnabled) {
+        return;
+      }
+      _lastFastCheck = DateTime.now();
+      _checkLocationFast();
+    });
   }
 
   /// Fast background polling check

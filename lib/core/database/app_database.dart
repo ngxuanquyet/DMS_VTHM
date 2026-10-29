@@ -74,13 +74,14 @@ class AppDatabase extends _$AppDatabase {
         super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
           await _createCustomerIndexes();
+          await _createQueueIndexes();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -90,6 +91,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await _createCustomerIndexes();
           }
+          if (from < 4) {
+            await _createQueueIndexes();
+          }
         },
       );
 
@@ -98,6 +102,17 @@ class AppDatabase extends _$AppDatabase {
   Future<void> _createCustomerIndexes() async {
     await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_id ON local_customers (id)');
     await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_code ON local_customers (code)');
+  }
+
+  /// Index hàng đợi: mọi truy vấn theo tập lọc `owner_user_id` + `state` (đếm/liệt kê/gửi — badge trên thanh trên cùng
+  /// đếm lại sau MỖI lần ghi hàng đợi); liên kết cha–con tra theo `client_uuid` / `parent_uuid`. Thiếu index thì mỗi
+  /// lượt quét cả bảng, kể cả dòng `done` chưa tới hạn dọn.
+  Future<void> _createQueueIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sync_queue_owner_state ON sync_queue_entries (owner_user_id, state, id)',
+    );
+    await customStatement('CREATE INDEX IF NOT EXISTS idx_sync_queue_client_uuid ON sync_queue_entries (client_uuid)');
+    await customStatement('CREATE INDEX IF NOT EXISTS idx_sync_queue_parent_uuid ON sync_queue_entries (parent_uuid)');
   }
 
   /// Người đang đăng nhập (usr_user.id) — AuthViewModel đặt lúc đăng nhập/khôi phục phiên, xoá lúc đăng xuất.

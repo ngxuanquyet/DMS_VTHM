@@ -28,10 +28,26 @@ class LocationService {
 
   LocationService(this._ref);
 
+  /// Lượt lấy vị trí mới đang chạy — nhiều nơi cùng gọi (Tuyến tính khoảng cách + chấm công + check-in khi quay về
+  /// app) thì dùng chung một lượt GPS thay vì bật GPS độ chính xác cao song song.
+  Future<Position?>? _freshInflight;
+  bool _backgroundRefreshing = false;
+
   /// Lấy vị trí MỚI từ GPS — KHÁC [checkAndGetLocation] (trả ngay bản cache, có thể từ hàng giờ trước). Không bật hộp
   /// thoại nào: chưa cấp quyền / tắt GPS / quá [timeLimit] ⇒ `null`, người gọi tự quyết dùng gì thay. Lấy được thì cập
-  /// nhật luôn cache cho các màn khác.
-  Future<Position?> getFreshPosition({Duration timeLimit = const Duration(seconds: 8)}) async {
+  /// nhật luôn cache cho các màn khác. Đang có lượt chạy thì trả chung lượt đó ([timeLimit] của lượt đầu).
+  Future<Position?> getFreshPosition({Duration timeLimit = const Duration(seconds: 8)}) {
+    final inflight = _freshInflight;
+    if (inflight != null) return inflight;
+    final fresh = _fetchFreshPosition(timeLimit);
+    _freshInflight = fresh;
+    unawaited(fresh.whenComplete(() {
+      if (identical(_freshInflight, fresh)) _freshInflight = null;
+    }));
+    return fresh;
+  }
+
+  Future<Position?> _fetchFreshPosition(Duration timeLimit) async {
     if (kIsWeb) return null;
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return null;
@@ -216,6 +232,9 @@ class LocationService {
   }
 
   void _refreshPositionInBackground() {
+    // Đã có lượt GPS đang chạy (làm mới ngầm hoặc lấy vị trí mới) thì nó sẽ cập nhật cache — không bật thêm lượt nữa.
+    if (_backgroundRefreshing || _freshInflight != null) return;
+    _backgroundRefreshing = true;
     unawaited(
       Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -225,7 +244,9 @@ class LocationService {
       ).then((freshPos) {
         _cachedPosition = freshPos;
         _ref.read(locationProvider.notifier).checkLocationStatus(showDialogIfDisabled: false);
-      }).catchError((_) {}),
+      }).catchError((_) {}).whenComplete(() {
+        _backgroundRefreshing = false;
+      }),
     );
   }
 

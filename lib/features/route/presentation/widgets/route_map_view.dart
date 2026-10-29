@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -42,10 +43,16 @@ class RouteMapView extends ConsumerStatefulWidget {
   final List<DealerEntity> dealers;
   final ValueChanged<DealerEntity?>? onSelectedDealerChanged;
 
+  /// Khoảng thẻ tóm tắt điểm bán chiếm tính từ ĐÁY bản đồ (chiều cao thẻ + lề dưới), báo mỗi khi thẻ bố cục lại với
+  /// cỡ khác — để màn chứa đẩy nút nổi lên trên thẻ: chiều cao thẻ đổi theo nội dung (nhãn duyệt, địa chỉ dài, cỡ chữ
+  /// máy) nên không đặt cứng được.
+  final ValueChanged<double>? onSummaryCardHeightChanged;
+
   const RouteMapView({
     super.key,
     required this.dealers,
     this.onSelectedDealerChanged,
+    this.onSummaryCardHeightChanged,
   });
 
   @override
@@ -62,6 +69,9 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   GoongTrip? _currentTrip;
   List<LatLng> _tripPoints = [];
   List<DealerEntity> _orderedDealers = [];
+
+  /// Lề dưới của thẻ tóm tắt trong bản đồ.
+  static const double _summaryCardBottomMargin = 12;
 
   List<DealerEntity> get _dealersWithCoords =>
       widget.dealers.where((d) => d.lat != null && d.lng != null).toList();
@@ -91,23 +101,55 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
   @override
   void didUpdateWidget(covariant RouteMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_selectedDealer != null &&
-        !widget.dealers.any((d) => d.id == _selectedDealer!.id)) {
-      _selectedDealer = _displayDealers.isNotEmpty
-          ? _displayDealers.first
-          : null;
-      widget.onSelectedDealerChanged?.call(_selectedDealer);
+    if (identical(oldWidget.dealers, widget.dealers)) return;
+
+    // Tập điểm có toạ độ đổi THÀNH VIÊN (kể cả khi tổng số giữ nguyên) ⇒ thứ tự lộ trình cũ hết đúng: bỏ, hiện theo danh
+    // sách mới và gọi lại API lộ trình. Không đổi thành viên thì thay bản chụp bằng bản mới theo id — không thì ghim và
+    // thẻ tóm tắt giữ mãi trạng thái cũ (điểm vừa ghé xong vẫn màu "chưa ghé").
+    final membershipChanged = _coordIds(oldWidget.dealers) != _coordIds(widget.dealers);
+    if (membershipChanged) {
+      _orderedDealers = [];
+    } else if (_orderedDealers.isNotEmpty) {
+      final byId = {for (final d in widget.dealers) d.id: d};
+      _orderedDealers = [for (final d in _orderedDealers) byId[d.id] ?? d];
     }
 
-    final oldCoordsCount = oldWidget.dealers
-        .where((d) => d.lat != null && d.lng != null)
-        .length;
-    final newCoordsCount = _dealersWithCoords.length;
-    if (oldCoordsCount != newCoordsCount && _styleLoaded) {
+    final selected = _selectedDealer;
+    if (selected != null) {
+      final fresh = _dealersWithCoords.where((d) => d.id == selected.id).firstOrNull;
+      if (fresh == null) {
+        // Điểm đang chọn bị gỡ hoặc mất toạ độ ⇒ không còn ghim trên bản đồ: chuyển sang điểm đầu.
+        _selectedDealer = _displayDealers.isNotEmpty
+            ? _displayDealers.first
+            : null;
+        // Báo sau khung hình: didUpdateWidget chạy giữa lúc màn cha đang dựng, gọi setState của nó ngay là lỗi.
+        final next = _selectedDealer;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onSelectedDealerChanged?.call(next);
+        });
+      } else {
+        _selectedDealer = fresh;
+      }
+    }
+
+    if (!_styleLoaded) return;
+    if (membershipChanged) {
       _drawOverlays();
       _fetchAndDrawTrip();
+    } else if (_pinSignature(oldWidget.dealers) != _pinSignature(widget.dealers)) {
+      _drawOverlays();
     }
   }
+
+  /// Tập id điểm bán có toạ độ (đã sắp) — đổi là phải tính lại lộ trình.
+  static String _coordIds(List<DealerEntity> dealers) =>
+      ([for (final d in dealers) if (d.lat != null && d.lng != null) d.id]..sort()).join(';');
+
+  /// Thứ quyết định ghim vẽ ra (id, trạng thái, toạ độ) — đổi thì vẽ lại ghim, không gọi lại API lộ trình.
+  static String _pinSignature(List<DealerEntity> dealers) => [
+        for (final d in dealers)
+          if (d.lat != null && d.lng != null) '${d.id}|${d.status.name}|${d.lat}|${d.lng}',
+      ].join(';');
 
   Future<void> _fetchAndDrawTrip() async {
     final dealersWithCoords = _dealersWithCoords;
@@ -800,13 +842,16 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
           Positioned(
             left: 12,
             right: 12,
-            bottom: 12,
-            child: _buildDealerSummaryCard(
+            bottom: _summaryCardBottomMargin,
+            child: _SizeReporter(
+              onHeightChanged: (h) => widget.onSummaryCardHeightChanged?.call(h + _summaryCardBottomMargin),
+              child: _buildDealerSummaryCard(
               context,
               _selectedDealer!,
               selectedDistance,
               _displayDealers,
               isDark,
+            ),
             ),
           )
         else
@@ -1391,5 +1436,39 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         ),
       ],
     );
+  }
+}
+
+/// Báo chiều cao con mỗi khi nó BỐ CỤC LẠI với cỡ khác (đổi nội dung, cỡ chữ, ảnh tải xong…) — không phụ thuộc lượt
+/// dựng của widget cha. Báo sau khung hình để nơi nhận được phép `setState`.
+class _SizeReporter extends SingleChildRenderObjectWidget {
+  final ValueChanged<double> onHeightChanged;
+
+  const _SizeReporter({required this.onHeightChanged, required Widget super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderSizeReporter(onHeightChanged);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderSizeReporter renderObject) {
+    renderObject.onHeightChanged = onHeightChanged;
+  }
+}
+
+class _RenderSizeReporter extends RenderProxyBox {
+  _RenderSizeReporter(this.onHeightChanged);
+
+  ValueChanged<double> onHeightChanged;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final height = size.height;
+    if (_reported != null && (height - _reported!).abs() < 1) return;
+    _reported = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onHeightChanged(height);
+    });
   }
 }

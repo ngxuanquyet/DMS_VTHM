@@ -11,6 +11,7 @@ class _FakeGeolocator extends GeolocatorPlatform {
   LocationPermission permission = LocationPermission.whileInUse;
   Object? error;
   int currentCalls = 0;
+  Duration delay = Duration.zero;
 
   @override
   Future<bool> isLocationServiceEnabled() async => serviceEnabled;
@@ -21,6 +22,7 @@ class _FakeGeolocator extends GeolocatorPlatform {
   @override
   Future<Position> getCurrentPosition({LocationSettings? locationSettings}) async {
     currentCalls++;
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
     if (error != null) throw error!;
     return Position(
       latitude: 21.03,
@@ -69,5 +71,21 @@ void main() {
       ..permission = LocationPermission.always
       ..error = Exception('timeout');
     expect(await service.getFreshPosition(), isNull);
+  });
+
+  test('nhiều nơi cùng gọi ⇒ dùng chung MỘT lượt GPS; xong rồi gọi lại thì lấy lượt mới', () async {
+    fake.delay = const Duration(milliseconds: 20);
+    final results = await Future.wait([
+      service.getFreshPosition(),
+      service.getFreshPosition(),
+      service.getFreshPosition(),
+    ]);
+    expect(results.every((p) => p?.latitude == 21.03), isTrue);
+    expect(fake.currentCalls, 1);
+
+    // Gọi lại sau khi lượt trước xong — không treo, không trả lượt cũ.
+    final again = await service.getFreshPosition().timeout(const Duration(seconds: 2));
+    expect(again?.latitude, 21.03);
+    expect(fake.currentCalls, 2);
   });
 }
