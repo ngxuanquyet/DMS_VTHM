@@ -86,7 +86,6 @@ void main() {
         channelIds: [1, 4],
         territoryCodes: ['MN2'],
         regionId: 8,
-        groupId: 3,
       );
 
       final customerMap = context['@customer'] as Map<String, dynamic>;
@@ -95,7 +94,7 @@ void main() {
       expect(customerMap['territory_codes'], ['MN2']);
       expect(customerMap['type_id'], 2);
       expect(customerMap['region_id'], 8);
-      expect(customerMap['group_id'], 3);
+      expect(customerMap.containsKey('group_id'), isFalse); // #24471: gỡ biến @customer.group_id
 
       // Khi không truyền channelIds và territoryCodes thì mặc định là mảng rỗng []
       final defaultContext = MarketFormFillArgs.buildCustomerContext();

@@ -7,7 +7,6 @@ class CustomerDto {
   final String code;
   final String name;
   final int? customerTypeId;
-  final int? customerGroupId;
   final String? customerTypeName;
   final int? channelId;
   final String? channelName;
@@ -55,7 +54,6 @@ class CustomerDto {
     required this.code,
     required this.name,
     this.customerTypeId,
-    this.customerGroupId,
     this.customerTypeName,
     this.channelId,
     this.channelName,
@@ -119,13 +117,6 @@ class CustomerDto {
     final rawCustomerTypeId = json['customer_type_id'] is int
         ? json['customer_type_id'] as int
         : int.tryParse(json['customer_type_id']?.toString() ?? '');
-
-    final rawCustomerGroupId = json['customer_group_id'] is int
-        ? json['customer_group_id'] as int
-        : int.tryParse(json['customer_group_id']?.toString() ?? '') ??
-            (dynamicMap['customer_group_id'] != null
-                ? int.tryParse(dynamicMap['customer_group_id'].toString())
-                : null);
 
     // Đọc đa dạng các khóa tên loại điểm bán từ server
     String? parsedTypeName = json['customer_type_name']?.toString() ??
@@ -356,7 +347,6 @@ class CustomerDto {
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       customerTypeId: rawCustomerTypeId,
-      customerGroupId: rawCustomerGroupId,
       customerTypeName: parsedTypeName,
       channelId: json['channel_id'] is int
           ? json['channel_id'] as int
@@ -448,7 +438,6 @@ class CustomerDto {
       code: code,
       name: name,
       customerTypeId: customerTypeId,
-      customerGroupId: customerGroupId,
       type: resolvedType,
       channelId: channelId,
       channelName: channelName,

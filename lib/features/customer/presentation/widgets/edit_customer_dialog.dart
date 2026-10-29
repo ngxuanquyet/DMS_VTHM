@@ -103,7 +103,7 @@ class _EditCustomerDialogState extends ConsumerState<EditCustomerDialog> {
     // Classifications & Administrative divisions
     'type', 'customer_type', 'customer_type_id', 'customer_type_name',
     'channel', 'channel_id', 'channel_name',
-    'region', 'region_id', 'region_name', 'area_id', 'area_name', 'customer_group_id', 'customer_group_name',
+    'region', 'region_id', 'region_name', 'area_id', 'area_name',
     'province', 'province_id', 'province_name', 'province_code',
     'ward', 'ward_id', 'ward_name', 'ward_code',
     'district', 'district_id', 'district_name', 'district_code',

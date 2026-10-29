@@ -51,7 +51,6 @@ class MarketFormFillArgs {
     List<int>? channelIds,
     List<String>? territoryCodes,
     int? regionId,
-    int? groupId,
   }) {
     return {
       '@customer': {
@@ -59,7 +58,6 @@ class MarketFormFillArgs {
         'channel_ids': channelIds ?? <int>[],
         'territory_codes': territoryCodes ?? <String>[],
         'region_id': regionId,
-        'group_id': groupId,
       }
     };
   }

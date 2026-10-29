@@ -245,7 +245,6 @@ void main() {
             'type_id': 2,
             'channel_id': 10,
             'region_id': 1,
-            'group_id': 3,
           }
         },
       );
@@ -260,7 +259,6 @@ void main() {
             'type_id': 1,
             'channel_id': 10,
             'region_id': 1,
-            'group_id': 3,
           }
         },
       );

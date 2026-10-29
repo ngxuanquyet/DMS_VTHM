@@ -258,7 +258,7 @@ class DynamicFormField {
   /// Nguồn dữ liệu: 'fixed', 'mobiwork', v.v.
   final String? source;
 
-  /// Danh mục liên kết: 'customer_type', 'customer_group', 'region', 'sales_channel', 'sales_territory'.
+  /// Danh mục liên kết: 'customer_type', 'region', 'sales_channel', 'sales_territory'.
   final String? catalog;
 
   /// Giá trị server tính sẵn cho người đang đăng nhập (khoá `default` — ô Kênh/Tuyến bật "tự điền theo phòng ban",

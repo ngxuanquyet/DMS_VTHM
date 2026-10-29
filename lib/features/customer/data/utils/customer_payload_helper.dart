@@ -7,7 +7,6 @@ const Set<String> kAllowedCustomerRootKeys = {
   'name',
   'region_id',
   'customer_type_id',
-  'customer_group_id',
   // #23682: bỏ `channel_id` (kênh MobiWork cũ) — server bỏ qua từ 19/10/2026, sẽ gỡ ở bước 2.
   'status',
   'address',
@@ -97,7 +96,6 @@ const Set<String> kCustomerFixedKeys = {
   'name',
   'region_id',
   'customer_type_id',
-  'customer_group_id',
   // #23682: bỏ `channel_id` (kênh MobiWork cũ) — server bỏ qua từ 19/10/2026, sẽ gỡ ở bước 2.
   'status',
   'address',
@@ -235,15 +233,11 @@ class CustomerPayloadHelper {
       }
     }
 
-    // 7. Các trường phân loại: customer_type_id, customer_group_id
+    // 7. Trường phân loại: customer_type_id
     // Spec 20/10/2026 (§3): Bỏ gửi channel_id (server tự gán theo phòng người tạo)
     if (sourceData['customer_type_id'] != null) {
       final tId = int.tryParse(sourceData['customer_type_id'].toString());
       if (tId != null) payload['customer_type_id'] = tId;
-    }
-    if (sourceData['customer_group_id'] != null) {
-      final gId = int.tryParse(sourceData['customer_group_id'].toString());
-      if (gId != null) payload['customer_group_id'] = gId;
     }
 
     // 7b. Kênh + tuyến tự khai (chốt 21/10/2026): gửi khi nhân viên chọn; vắng ⇒ server gán theo phòng người tạo.

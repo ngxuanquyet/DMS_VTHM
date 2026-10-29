@@ -74,7 +74,6 @@ class CustomerEntity {
   final String code;
   final String name;
   final int? customerTypeId;
-  final int? customerGroupId;
   final String type;
   final int? channelId;
   final String? channelName;
@@ -130,7 +129,6 @@ class CustomerEntity {
     required this.code,
     required this.name,
     this.customerTypeId,
-    this.customerGroupId,
     required this.type,
     this.channelId,
     this.channelName,

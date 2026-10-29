@@ -49,7 +49,6 @@ class CustomerLocalDataSource {
     final int? regionId =
         data['region_id'] != null ? int.tryParse(data['region_id'].toString()) : null;
     int? customerTypeId = data['customer_type_id'] != null ? int.tryParse(data['customer_type_id'].toString()) : null;
-    int? customerGroupId = data['customer_group_id'] != null ? int.tryParse(data['customer_group_id'].toString()) : null;
     int? channelId = data['channel_id'] != null ? int.tryParse(data['channel_id'].toString()) : null;
     int? geofenceRadiusM = data['geofence_radius_m'] != null ? int.tryParse(data['geofence_radius_m'].toString()) : null;
 
@@ -232,7 +231,6 @@ class CustomerLocalDataSource {
           if (payloadMap['ward_id'] != null) 'ward_id': payloadMap['ward_id'],
           if (deliveryAddress != null && deliveryAddress.isNotEmpty) 'delivery_address': deliveryAddress,
           if (birthday != null && birthday.isNotEmpty) 'birthday': birthday,
-          if (customerGroupId != null) 'customer_group_id': customerGroupId,
           'routes': [if (route.isNotEmpty) route],
           'route_ids': routeIds,
           if (allPhotos.isNotEmpty) 'photo_tokens': allPhotos,

@@ -96,9 +96,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     if (c.customerTypeId != null && c.customerTypeId! > 0) {
       data['customer_type_id'] = c.customerTypeId;
     }
-    if (c.customerGroupId != null && c.customerGroupId! > 0) {
-      data['customer_group_id'] = c.customerGroupId;
-    }
     if (c.regionId != null && c.regionId! > 0) {
       data['region_id'] = c.regionId;
     }
@@ -353,14 +350,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         changes['customer_type_id'] = newTypeId;
       }
 
-      // Nhóm khách hàng
-      final newGroupId = formData['customer_group_id'] is num
-          ? (formData['customer_group_id'] as num).toInt()
-          : int.tryParse(formData['customer_group_id']?.toString() ?? '');
-      if (newGroupId != null && newGroupId != c.customerGroupId) {
-        changes['customer_group_id'] = newGroupId;
-      }
-
       // Spec 20/10/2026 (§3): Server bỏ qua channel_id, app thôi gửi channel_id
       changes.remove('channel_id');
 
@@ -499,7 +488,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
 
       // Các trường động (dynamic fields) gửi trong 'data'
       const fixedKeys = {
-        'name', 'customer_type_id', 'customer_group_id', 'channel_id', 'region_id',
+        'name', 'customer_type_id', 'channel_id', 'region_id',
         'route_ids', 'route_id', 'address', 'delivery_address', 'province_name', 'ward_name',
         'contact_name', 'contact_person', 'contact_title', 'phone', 'email', 'coords', 'lat', 'lng',
         'photo_file_id', 'photos', 'photo_tokens', 'code', 'id', 'status', 'is_active',

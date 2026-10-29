@@ -1139,7 +1139,6 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       channelIds: customerChannelIds,
       territoryCodes: customerTerritoryCodes,
       regionId: customer?.regionId,
-      groupId: customer?.customerGroupId,
     );
 
     showModalBottomSheet(
