@@ -11,6 +11,7 @@ import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/database/database_provider.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
+import 'package:vthm_dms/core/network/refresh_outcome.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
 import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_source.dart';
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
@@ -196,6 +197,21 @@ void main() {
 
     expect(adapter.requestedPages, [1]);
     expect(forced.length, 199);
+  });
+
+  test('kéo làm mới đi chung lượt tải ngầm (bắt đầu NGOÀI lượt làm mới) mà lượt đó hỏng ⇒ lượt làm mới biết là hỏng', () async {
+    final adapter = PagedCustomersAdapter(199);
+    await buildRepo(adapter).getCustomers(forceRefresh: true);
+    container.dispose();
+    final repo = buildRepo(adapter);
+    adapter.failNext = 1;
+
+    await repo.getCustomers(); // mở màn: tải ngầm bắt đầu ngoài lượt làm mới (sẽ hỏng)
+    final outcome = await RefreshOutcome.track(() async {
+      await repo.getCustomers(forceRefresh: true); // kéo làm mới: đi chung lượt đó
+    });
+
+    expect(outcome.failed, greaterThan(0));
   });
 
   test('tài khoản KHÔNG có điểm bán nào: tải xong báo màn, màn nạp lại KHÔNG tải tiếp (không lặp vô tận)', () async {

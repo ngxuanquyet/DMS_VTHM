@@ -10,6 +10,7 @@ import '../states/travel_state.dart';
 import '../viewmodels/travel_view_model.dart';
 import '../widgets/travel_day_card.dart';
 import '../widgets/travel_summary_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 /// Màn hình "Quãng đường của tôi"
 /// Gọi GET /dms/travel/mine, hiện road_km + is_complete (§4.1 & Checklist §7)
@@ -47,7 +48,7 @@ class _MyTravelScreenState extends ConsumerState<MyTravelScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () => vm.loadMyTravel(refresh: true),
         color: const Color(0xFF0D9488),
         child: ListView(

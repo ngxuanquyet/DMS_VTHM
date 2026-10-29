@@ -4,6 +4,7 @@ import '../../../../core/network/api_client.dart';
 import '../models/location_access_log_model.dart';
 import '../models/location_ping_point_model.dart';
 import '../models/location_ping_response_model.dart';
+import '../../../../core/network/refresh_outcome.dart';
 
 /// Các ngoại lệ đặc thù theo §1 & §2 API-VI-TRI-NHAN-VIEN-MOBILE-2026-10-09.md
 class LocationTrackingDisabledException implements Exception {
@@ -96,11 +97,18 @@ class EmployeeTrackingApiService {
         },
       );
       if (response.data is Map<String, dynamic>) {
-        return LocationAccessLogResponseModel.fromJson(response.data as Map<String, dynamic>);
+        final log = LocationAccessLogResponseModel.fromJson(response.data as Map<String, dynamic>);
+        // Gọi Dio trực tiếp (không qua ApiClient) ⇒ tự ghi kết quả cho "kéo xuống làm mới" (RefreshOutcome).
+        RefreshOutcome.record(reachedServer: true);
+        return log;
       }
       throw Exception('Phản hồi server không đúng định dạng');
     } on DioException catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       _handleDioError(e);
+      rethrow;
+    } catch (_) {
+      RefreshOutcome.record(reachedServer: false);
       rethrow;
     }
   }

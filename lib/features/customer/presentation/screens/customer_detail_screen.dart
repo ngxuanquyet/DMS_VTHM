@@ -23,6 +23,8 @@ import '../widgets/pending_sync_dismissible.dart';
 import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
 import '../widgets/erp_links_form_field.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
+import '../../../../core/network/refresh_outcome.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -93,7 +95,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     } catch (_) {}
   }
 
-  Future<void> _handleRefresh() async {
+  /// [fromPull]: gọi từ kéo-xuống-làm-mới — AppRefreshIndicator đã báo kết quả, không hiện thêm thông báo riêng.
+  Future<void> _handleRefresh({bool fromPull = false}) async {
     if (_customer.id <= 0) return;
     setState(() => _isLoading = true);
     try {
@@ -123,17 +126,25 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           );
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Đã cập nhật dữ liệu mới nhất!'),
-            duration: Duration(seconds: 1),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (!fromPull) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã cập nhật dữ liệu mới nhất!'),
+              duration: Duration(seconds: 1),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
+        // Kéo làm mới: AppRefreshIndicator báo không tải được (ghi vào lượt làm mới — lỗi có thể không do mạng, vd
+        // dữ liệu server sai định dạng) — không hiện thêm hộp thoại lỗi.
+        if (fromPull) {
+          RefreshOutcome.record(reachedServer: false);
+          return;
+        }
         AppErrorDialog.show(
           context,
           title: 'Lỗi làm mới chi tiết điểm bán',
@@ -259,8 +270,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           ],
         ),
         bottomNavigationBar: _buildBottomActionBar(isDark),
-        body: RefreshIndicator(
-          onRefresh: _handleRefresh,
+        body: AppRefreshIndicator(
+          onRefresh: () => _handleRefresh(fromPull: true),
           color: AppColors.primary,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),

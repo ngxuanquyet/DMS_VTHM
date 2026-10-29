@@ -15,6 +15,7 @@ import '../../domain/entities/user_profile_detail_entity.dart';
 import '../../domain/entities/user_relation_entity.dart';
 import '../states/personal_info_state.dart';
 import '../viewmodels/personal_info_view_model.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class PersonalInfoScreen extends ConsumerWidget {
   const PersonalInfoScreen({super.key});
@@ -65,7 +66,7 @@ class PersonalInfoScreen extends ConsumerWidget {
           ),
         ),
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () => viewModel.loadData(isRefresh: true),
         color: AppColors.primary,
         child: _buildBody(context, state, viewModel, strings, isDark),

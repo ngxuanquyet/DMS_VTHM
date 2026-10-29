@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../domain/entities/travel_day_entity.dart';
 import '../viewmodels/travel_view_model.dart';
 import '../widgets/travel_leg_item_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 /// Màn hình Chi tiết chặng di chuyển của 1 ngày công
 /// Gọi GET /dms/travel/legs/{userId}/{workDate} (§4.2 & Checklist §7)
@@ -62,7 +63,7 @@ class _TravelLegDetailScreenState
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () => vm.loadLegsForDay(day, refresh: true),
         color: const Color(0xFF0D9488),
         child: ListView(

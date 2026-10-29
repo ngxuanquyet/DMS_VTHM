@@ -30,6 +30,7 @@ import '../widgets/pending_sync_dismissible.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/services/erp_catalog_service.dart';
 import '../widgets/customer_filter_drawer.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class CustomerScreen extends ConsumerStatefulWidget {
   const CustomerScreen({super.key});
@@ -917,7 +918,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
                             ),
                           ),
                         )
-                      : RefreshIndicator(
+                      : AppRefreshIndicator(
                           color: AppColors.primaryContainer,
                           onRefresh: () async {
                             await Future.wait([

@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/datasources/employee_tracking_api_service.dart';
 import '../../data/models/location_access_log_model.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class LocationAccessLogScreen extends ConsumerStatefulWidget {
   const LocationAccessLogScreen({super.key});
@@ -95,7 +96,7 @@ class _LocationAccessLogScreenState extends ConsumerState<LocationAccessLogScree
         showBackButton: true,
         showAvatar: false,
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () => _loadLogs(page: 1),
         color: AppColors.primary,
         child: CustomScrollView(

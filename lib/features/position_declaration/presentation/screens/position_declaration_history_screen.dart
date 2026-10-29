@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/position_declaration_entity.dart';
 import '../viewmodels/position_declaration_view_model.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 /// Màn hình Lịch sử khai báo vị trí
 /// Hiển thị danh sách các lần khai báo trong quá khứ lưu trữ cục bộ (local storage),
@@ -106,7 +107,7 @@ class _PositionDeclarationHistoryScreenState
           }
         },
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () async {
           await ref
               .read(positionDeclarationViewModelProvider.notifier)

@@ -11,6 +11,7 @@ import '../../../../core/widgets/top_app_bar.dart';
 import '../states/notifications_state.dart';
 import '../viewmodels/notifications_view_model.dart';
 import '../widgets/notification_item_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -95,7 +96,7 @@ class NotificationsScreen extends ConsumerWidget {
                     ),
                   ),
                 )
-              : RefreshIndicator(
+              : AppRefreshIndicator(
               color: AppColors.primaryContainer,
               onRefresh: () => vm.loadNotifications(),
               child: SingleChildScrollView(

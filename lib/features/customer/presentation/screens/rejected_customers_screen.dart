@@ -11,6 +11,7 @@ import '../../domain/entities/customer_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../viewmodels/rejected_read_status_notifier.dart';
 import '../widgets/customer_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 /// Màn hình chuyên biệt hiển thị danh sách Điểm bán & Lượt viếng thăm bị từ chối duyệt.
 /// Theo đúng yêu cầu: Mỗi điểm bán sẽ hiển thị kèm các lượt viếng thăm của nó ở ngay bên dưới,
@@ -182,7 +183,7 @@ class _RejectedCustomersScreenState
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: _handleRefresh,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),

@@ -9,6 +9,7 @@ import 'package:vthm_dms/features/position_declaration/presentation/viewmodels/p
 import '../viewmodels/visit_report_view_model.dart';
 import '../widgets/daily_activity_timeline_card.dart';
 import '../widgets/visit_report_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 /// Màn hình Báo cáo viếng thăm & Hoạt động trong ngày
 /// Cung cấp cái nhìn tổng thể về số điểm chăm sóc, tỷ lệ mở/đóng cửa,
@@ -77,7 +78,7 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         onRefresh: () async {
           await reportVm.loadVisits(forceRefresh: true);
         },

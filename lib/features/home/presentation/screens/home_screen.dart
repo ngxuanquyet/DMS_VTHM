@@ -41,6 +41,7 @@ import '../../../daily_report/presentation/widgets/daily_activity_timeline_card.
 import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
 import '../../../../core/services/erp_catalog_service.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -403,7 +404,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     ),
                   ),
                 )
-              : RefreshIndicator(
+              : AppRefreshIndicator(
                   color: AppColors.primaryContainer,
                   onRefresh: () => homeVM.loadDashboard(isRefresh: true),
                   child: SingleChildScrollView(

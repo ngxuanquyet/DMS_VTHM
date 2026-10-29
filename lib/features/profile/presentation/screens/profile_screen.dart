@@ -21,6 +21,7 @@ import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../../route/presentation/widgets/active_visit_blocking_dialog.dart';
 import '../../../route/presentation/viewmodels/open_visit.dart';
 import '../viewmodels/profile_view_model.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -325,7 +326,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-      body: RefreshIndicator(
+      body: AppRefreshIndicator(
         color: AppColors.primaryContainer,
         onRefresh: () => profileVM.loadProfile(),
         child: SingleChildScrollView(

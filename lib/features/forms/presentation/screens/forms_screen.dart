@@ -16,6 +16,7 @@ import '../viewmodels/forms_view_model.dart';
 import '../widgets/forms_circular_menu.dart';
 import '../widgets/market_form_card.dart';
 import 'market_form_fill_screen.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class FormsScreen extends ConsumerStatefulWidget {
   const FormsScreen({super.key});
@@ -432,7 +433,7 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
                                     ),
                                   ],
                                 )
-                          : RefreshIndicator(
+                          : AppRefreshIndicator(
                               color: AppColors.primary,
                               onRefresh: () => vm.loadForms(),
                               child: ListView.separated(

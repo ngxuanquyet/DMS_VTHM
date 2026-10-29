@@ -26,6 +26,7 @@ import '../widgets/attendance_out_of_range_dialog.dart';
 import '../widgets/attendance_photo_capture_dialog.dart';
 import '../widgets/attendance_shift_card.dart';
 import '../widgets/gps_location_card.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 
 class AttendanceDetailScreen extends ConsumerStatefulWidget {
@@ -135,7 +136,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
           ? const Center(
               child: AppLoading(size: 220),
             )
-          : RefreshIndicator(
+          : AppRefreshIndicator(
               onRefresh: () async {
                 final locationService = ref.read(locationServiceProvider);
                 final pos = await locationService.getFreshPosition() ??

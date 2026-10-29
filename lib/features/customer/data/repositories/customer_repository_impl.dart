@@ -8,6 +8,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/network/refresh_outcome.dart';
 import '../../../../core/services/geo_catalog_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/utils/account_key.dart';
@@ -107,7 +108,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
     try {
       // Lưu cache vào SQLite cục bộ (tự động ghi đè và dọn dẹp các khách hàng đã bị xóa trên server)
       if (query == null || query.isEmpty) {
-        await _sharedFullFetch(page, perPage, await _account());
+        // Kéo làm mới có thể đi chung lượt tải đã chạy từ trước (ngoài lượt làm mới) — ghi kết quả của nó cho lượt này.
+        try {
+          await _sharedFullFetch(page, perPage, await _account());
+          RefreshOutcome.record(reachedServer: true);
+        } catch (e) {
+          if (e is! _AccountChangedException) RefreshOutcome.record(reachedServer: false);
+          rethrow;
+        }
       } else {
         await _fetchAndCache(page, perPage, query, await _account());
       }

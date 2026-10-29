@@ -30,6 +30,7 @@ import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/constants/search_target.dart';
 import '../../../../core/services/erp_catalog_service.dart';
 import '../../../../core/widgets/search_target_chips.dart';
+import '../../../../core/widgets/app_refresh_indicator.dart';
 
 class RouteScreen extends ConsumerStatefulWidget {
   const RouteScreen({super.key});
@@ -890,7 +891,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                 }
                               },
                             )
-                          : RefreshIndicator(
+                          : AppRefreshIndicator(
                           // Giữ thao tác kéo, ẩn vòng xoay — tiến trình hiện bằng thanh chạy ở đầu danh sách.
                           color: Colors.transparent,
                           backgroundColor: Colors.transparent,

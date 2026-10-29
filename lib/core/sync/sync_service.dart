@@ -11,6 +11,7 @@ import '../database/database_provider.dart';
 import '../errors/app_exceptions.dart';
 import '../network/api_client.dart';
 import '../network/connectivity_provider.dart';
+import '../network/refresh_outcome.dart';
 import '../services/app_notification_service.dart';
 import '../utils/image_upload_helper.dart';
 import '../utils/system_clock.dart';
@@ -161,7 +162,12 @@ class SyncService {
   /// Kích hoạt xử lý hàng đợi đồng bộ.
   /// Tuân thủ Bất biến §3.3 Luật 4: Duy nhất MỘT tiến trình gửi chạy tại một thời điểm.
   /// Nếu [force] = true: cưỡng chế reset trạng thái stuck, bỏ qua kiểm tra nextAttemptAt (người dùng bấm đồng bộ).
-  Future<SyncResult> syncQueue({bool force = false}) async {
+  ///
+  /// Không tính vào kết quả "kéo xuống làm mới" ([RefreshOutcome.untracked]): đẩy hàng đợi không phải tải dữ liệu mới.
+  Future<SyncResult> syncQueue({bool force = false}) =>
+      RefreshOutcome.untracked(() => _syncQueue(force: force));
+
+  Future<SyncResult> _syncQueue({required bool force}) async {
     if (_isSyncing) {
       debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();

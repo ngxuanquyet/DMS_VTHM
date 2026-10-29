@@ -6,6 +6,7 @@ import '../constants/app_constants.dart';
 import '../errors/app_exceptions.dart';
 import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
+import 'refresh_outcome.dart';
 
 import '../services/anti_fraud_service.dart';
 import '../services/error_tracker_service.dart';
@@ -209,10 +210,13 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
@@ -230,10 +234,13 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
@@ -254,10 +261,13 @@ class ApiClient {
         queryParameters: queryParameters,
         options: uploadOptions,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
@@ -275,10 +285,13 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
@@ -296,10 +309,13 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
@@ -317,15 +333,21 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
+      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
       return response.data;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
+      RefreshOutcome.record(reachedServer: false);
       throw AppException(e.toString());
     }
   }
 
   AppException _handleDioError(DioException error) {
+    // Lượt làm mới (kéo xuống) cần biết lời gọi có lấy được dữ liệu không — mọi lỗi (mất mạng, quá giờ, 401/403/404, 5xx)
+    // đều là KHÔNG.
+    RefreshOutcome.record(reachedServer: false);
     // Tự động ghi nhận và sinh mã lỗi Incident Error ID
     final errorRecord = ErrorTrackerService.instance.trackDioError(error);
     final errorId = errorRecord.id;

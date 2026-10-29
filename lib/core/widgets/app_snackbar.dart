@@ -152,16 +152,45 @@ class AppSnackBar {
     String message, {
     Duration duration = const Duration(seconds: 3),
   }) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
+    showSuccessOn(ScaffoldMessenger.of(context), message, duration: duration);
+  }
+
+  /// Như [showSuccess] nhưng nhận sẵn [messenger] — dùng khi phải lấy messenger TRƯỚC một lượt `await` (widget gọi có thể
+  /// đã bị gỡ khỏi cây khi lượt chờ xong, vd màn đổi sang vòng tải trong lúc làm mới).
+  static void showSuccessOn(
+    ScaffoldMessengerState messenger,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    _showOn(messenger, message, const Color(0xFF10B981), Icons.check_circle_rounded, duration);
+  }
+
+  /// Thông báo cảnh báo nhẹ (màu cam) — vd làm mới không tới được server, đang hiện dữ liệu trên máy.
+  static void showWarningOn(
+    ScaffoldMessengerState messenger,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    _showOn(messenger, message, const Color(0xFFF59E0B), Icons.cloud_off_rounded, duration);
+  }
+
+  static void _showOn(
+    ScaffoldMessengerState messenger,
+    String message,
+    Color background,
+    IconData icon,
+    Duration duration,
+  ) {
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF10B981),
+        backgroundColor: background,
         behavior: SnackBarBehavior.floating,
         duration: duration,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            Icon(icon, color: Colors.white, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
