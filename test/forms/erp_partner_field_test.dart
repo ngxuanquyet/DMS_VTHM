@@ -156,7 +156,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('NPP cấp hàng'), findsOneWidget);
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
 
       // Mở sheet là gọi trang 1 với đúng mã ô
@@ -191,7 +191,7 @@ void main() {
       await tester.pumpWidget(_wrapMarketForm(fake, key, multiple: true));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('ABUL KHAIR STEEL'));
@@ -215,7 +215,7 @@ void main() {
       await tester.pumpWidget(_wrapMarketForm(fake, key));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
 
       expect(find.text('Không có kết nối mạng. Vui lòng kiểm tra lại.'), findsOneWidget);
@@ -247,7 +247,7 @@ void main() {
       await tester.pumpWidget(_wrapMarketForm(fake, key));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
 
       expect(find.text('Khách lẻ'), findsOneWidget);
@@ -271,7 +271,7 @@ void main() {
       await tester.pumpWidget(_wrapMarketForm(fake, key, multiple: true));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('ABUL KHAIR STEEL'));
@@ -304,7 +304,7 @@ void main() {
       await tester.pumpWidget(_wrapMarketForm(fake, key));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('erp-partner-details-01200001')), findsNothing);
 
@@ -411,7 +411,7 @@ void main() {
 
       expect(formKey.currentState!.validate(), isFalse);
 
-      await tester.tap(find.text('Chạm để tìm khách hàng pháp nhân...'));
+      await tester.tap(find.text('Chạm để tìm khách hàng...'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('ABUL KHAIR STEEL'));
       await tester.pumpAndSettle();

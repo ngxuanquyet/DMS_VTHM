@@ -143,7 +143,7 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _ErpPartnerPickerSheet(
-        title: widget.label.isNotEmpty ? widget.label : 'Chọn khách hàng pháp nhân',
+        title: widget.label.isNotEmpty ? widget.label : 'Chọn khách hàng',
         fieldCode: widget.fieldCode,
         multiple: widget.multiple,
         initialSelected: initialSelected,
@@ -217,7 +217,7 @@ class _ErpPartnerFieldWidgetState extends ConsumerState<ErpPartnerFieldWidget> {
                 Expanded(
                   child: !hasValue
                       ? Text(
-                          'Chạm để tìm khách hàng pháp nhân...',
+                          'Chạm để tìm khách hàng...',
                           style: AppTypography.bodyMedium(
                             color: isDark
                                 ? AppColors.darkOnSurfaceVariant.withValues(alpha: 0.6)
@@ -781,7 +781,7 @@ class _ErpPartnerPickerSheetState extends ConsumerState<_ErpPartnerPickerSheet> 
           padding: const EdgeInsets.all(24),
           child: Text(
             q.isEmpty
-                ? 'Chưa có khách hàng pháp nhân nào cho ô này.'
+                ? 'Chưa có khách hàng nào cho ô này.'
                 : 'Không tìm thấy khách hàng phù hợp với "$q"',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium(

@@ -137,11 +137,11 @@ void main() {
       expect(find.text('Tuyến bán hàng'), findsOneWidget);
 
       // Verify Section 3: Trạng thái khách hàng
-      expect(find.text('Trạng thái khách hàng'), findsOneWidget);
+      expect(find.text('Trạng thái điểm bán'), findsOneWidget);
       expect(find.text('Đang hoạt động'), findsOneWidget);
 
       // Verify Section 4: Loại khách hàng
-      expect(find.text('Loại khách hàng'), findsOneWidget);
+      expect(find.text('Loại điểm bán'), findsOneWidget);
 
       // Verify Buttons
       expect(find.text('Đặt lại'), findsOneWidget);

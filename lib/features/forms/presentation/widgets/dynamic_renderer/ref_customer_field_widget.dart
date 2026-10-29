@@ -353,7 +353,7 @@ class _RefCustomerFieldWidgetState
                               ],
                             )
                           : Text(
-                              'Chạm để chọn điểm bán / khách hàng...',
+                              'Chạm để chọn điểm bán...',
                               style: AppTypography.bodyMedium(
                                 color: isDark
                                     ? AppColors.darkOnSurfaceVariant

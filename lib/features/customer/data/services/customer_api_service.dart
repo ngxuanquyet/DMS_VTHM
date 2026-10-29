@@ -64,7 +64,7 @@ class CustomerApiService {
     if (response is Map<String, dynamic>) {
       return CustomerApiResponse.fromJson(response);
     }
-    throw Exception('Phản hồi API khách hàng không đúng định dạng');
+    throw Exception('Phản hồi API điểm bán không đúng định dạng');
   }
 
   /// Lấy chi tiết một điểm bán
@@ -131,7 +131,7 @@ class CustomerApiService {
     if (response is Map<String, dynamic>) {
       return response;
     }
-    throw Exception('Phản hồi schema form khách hàng không đúng định dạng');
+    throw Exception('Phản hồi schema form điểm bán không đúng định dạng');
   }
 
   /// Thêm mới điểm bán

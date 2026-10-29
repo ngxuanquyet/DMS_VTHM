@@ -234,9 +234,9 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
 
                   const SizedBox(height: 22),
 
-                  // Section 3: Trạng thái khách hàng
+                  // Section 3: Trạng thái điểm bán
                   _buildSectionTitle(
-                    title: 'Trạng thái khách hàng',
+                    title: 'Trạng thái điểm bán',
                     icon: Icons.verified_user_outlined,
                     isDark: isDark,
                   ),
@@ -269,9 +269,9 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
 
                   const SizedBox(height: 22),
 
-                  // Section 4: Loại khách hàng
+                  // Section 4: Loại điểm bán
                   _buildSectionTitle(
-                    title: 'Loại khách hàng',
+                    title: 'Loại điểm bán',
                     icon: Icons.category_outlined,
                     isDark: isDark,
                   ),

@@ -114,7 +114,7 @@ class _CustomerFilterDrawerState extends State<CustomerFilterDrawer> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Bộ lọc khách hàng',
+                          'Bộ lọc điểm bán',
                           style: AppTypography.titleMedium(
                             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                           ).copyWith(fontWeight: FontWeight.w700),
@@ -242,9 +242,9 @@ class _CustomerFilterDrawerState extends State<CustomerFilterDrawer> {
                   ),
                   const SizedBox(height: 22),
 
-                  // Section 2: Tuyến khách hàng
+                  // Section 2: Tuyến điểm bán
                   _buildSectionTitle(
-                    title: 'Tuyến khách hàng',
+                    title: 'Tuyến điểm bán',
                     icon: Icons.alt_route_rounded,
                     isDark: isDark,
                   ),
@@ -262,9 +262,9 @@ class _CustomerFilterDrawerState extends State<CustomerFilterDrawer> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Section 3: Loại khách hàng
+                  // Section 3: Loại điểm bán
                   _buildSectionTitle(
-                    title: 'Loại khách hàng',
+                    title: 'Loại điểm bán',
                     icon: Icons.category_outlined,
                     isDark: isDark,
                   ),

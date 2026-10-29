@@ -35,9 +35,9 @@ enum SearchTarget {
       case SearchTarget.all:
         return 'Tìm theo tên, mã, tuyến, địa chỉ, SĐT...';
       case SearchTarget.name:
-        return 'Tìm theo tên khách hàng / điểm bán...';
+        return 'Tìm theo tên điểm bán...';
       case SearchTarget.code:
-        return 'Tìm theo mã khách hàng (VD: KH01)...';
+        return 'Tìm theo mã điểm bán (VD: KH01)...';
       case SearchTarget.route:
         return 'Tìm theo tên tuyến bán hàng...';
       case SearchTarget.address:

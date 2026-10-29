@@ -615,7 +615,7 @@ class SyncService {
       if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
         payload['customer_id'] = parentCustomer.serverId;
       } else {
-        _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của khách hàng cha cho lượt viếng thăm');
+        _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của điểm bán cha cho lượt viếng thăm');
       }
     }
 

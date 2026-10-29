@@ -475,10 +475,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     _buildRouteAndManagementCard(isDark),
                     const SizedBox(height: 16),
 
-                    // 5b. Khách hàng ERP (#24331): mối nối + đề xuất, sửa = gửi đề xuất chờ duyệt — chỉ điểm bán đã có trên server.
+                    // 5b. Khách hàng (#24331): mối nối + đề xuất, sửa = gửi đề xuất chờ duyệt — chỉ điểm bán đã có trên server.
                     if (_customer.id > 0) ...[
                       _buildSectionCard(
-                        title: 'Khách hàng ERP',
+                        title: 'Khách hàng',
                         icon: Icons.link_rounded,
                         isDark: isDark,
                         children: [ErpLinksDetailCard(customerId: _customer.id)],
@@ -821,7 +821,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     InkWell(
                       onTap: () => _copyToClipboard(
                         _customer.code.isNotEmpty ? _customer.code : 'KH${_customer.id}',
-                        'Mã khách hàng',
+                        'Mã điểm bán',
                       ),
                       child: const Icon(
                         Icons.copy_rounded,

@@ -33,18 +33,18 @@ class AppStrings {
 
   // Navigation
   String get navHome => isVietnamese ? 'Trang chủ' : 'Home';
-  String get navCustomers => isVietnamese ? 'Khách hàng' : 'Customers';
+  String get navCustomers => isVietnamese ? 'Điểm bán' : 'Outlets';
   String get navRoutes => isVietnamese ? 'Tuyến' : 'Routes';
   String get navForms => isVietnamese ? 'Biểu mẫu' : 'Forms';
   String get navProfile => isVietnamese ? 'Cá nhân' : 'Profile';
 
   // Customers
-  String get customerScreenTitle => isVietnamese ? 'Khách hàng' : 'Customers';
+  String get customerScreenTitle => isVietnamese ? 'Điểm bán' : 'Outlets';
   String get customerSubtitle => isVietnamese
       ? 'Danh sách phụ trách & định vị'
       : 'Assigned List & Location';
   String get customerSearchHint => isVietnamese
-      ? 'Tìm tên, mã KH, số điện thoại, tuyến...'
+      ? 'Tìm tên, mã điểm bán, số điện thoại, tuyến...'
       : 'Search name, code, phone, route...';
   String get filterToday => isVietnamese ? 'Hôm nay' : 'Today';
   String get filterVisited => isVietnamese ? 'Đã ghé' : 'Visited';
@@ -436,11 +436,11 @@ class AppStrings {
   String get checkoutActionCaps =>
       isVietnamese ? 'CHECK-OUT' : 'CHECK-OUT';
   String get customerDefaultName =>
-      isVietnamese ? 'Khách hàng' : 'Customer';
+      isVietnamese ? 'Điểm bán' : 'Outlet';
 
   // Circular Menus & Sync Toasts
   String get menuAddCustomer =>
-      isVietnamese ? 'Thêm mới khách hàng' : 'Add New Customer';
+      isVietnamese ? 'Thêm mới điểm bán' : 'Add New Outlet';
   String get menuAddStore =>
       isVietnamese ? 'Thêm điểm bán' : 'Add Store';
   String get menuUpload =>
@@ -580,7 +580,7 @@ class AppStrings {
 
   // Edit Customer Dialog
   String get editCustomerTitle =>
-      isVietnamese ? 'Sửa thông tin khách hàng' : 'Edit Customer Information';
+      isVietnamese ? 'Sửa thông tin điểm bán' : 'Edit Outlet Information';
   String get noChangesMade =>
       isVietnamese ? 'Không có thay đổi nào được thực hiện.' : 'No changes were made.';
   String get fieldsUpdatedSuccess =>

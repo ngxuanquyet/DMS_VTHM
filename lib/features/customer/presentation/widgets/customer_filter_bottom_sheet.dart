@@ -103,9 +103,9 @@ class _CustomerFilterBottomSheetState extends State<CustomerFilterBottomSheet> {
           ),
           const SizedBox(height: 16),
 
-          // Tuyến khách hàng
+          // Tuyến điểm bán
           _buildDropdownSection(
-            title: 'Tuyến khách hàng',
+            title: 'Tuyến điểm bán',
             icon: Icons.alt_route_rounded,
             value: _selectedRoute,
             items: widget.state.availableRoutes,
@@ -119,9 +119,9 @@ class _CustomerFilterBottomSheetState extends State<CustomerFilterBottomSheet> {
           ),
           const SizedBox(height: 16),
 
-          // Loại khách hàng
+          // Loại điểm bán
           _buildDropdownSection(
-            title: 'Loại khách hàng',
+            title: 'Loại điểm bán',
             icon: Icons.category_outlined,
             value: _selectedType,
             items: widget.state.availableCustomerTypes,

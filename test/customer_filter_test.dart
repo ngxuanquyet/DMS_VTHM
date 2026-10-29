@@ -332,8 +332,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Bộ lọc nâng cao'), findsOneWidget);
-      expect(find.text('Tuyến khách hàng'), findsOneWidget);
-      expect(find.text('Loại khách hàng'), findsOneWidget);
+      expect(find.text('Tuyến điểm bán'), findsOneWidget);
+      expect(find.text('Loại điểm bán'), findsOneWidget);
       expect(find.text('Kênh bán hàng'), findsOneWidget);
 
       // Tap Apply
@@ -392,10 +392,10 @@ void main() {
       await tester.tap(find.text('Open Drawer'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Bộ lọc khách hàng'), findsOneWidget);
+      expect(find.text('Bộ lọc điểm bán'), findsOneWidget);
       expect(find.text('Trạng thái điểm bán'), findsOneWidget);
-      expect(find.text('Tuyến khách hàng'), findsOneWidget);
-      expect(find.text('Loại khách hàng'), findsOneWidget);
+      expect(find.text('Tuyến điểm bán'), findsOneWidget);
+      expect(find.text('Loại điểm bán'), findsOneWidget);
       expect(find.text('Kênh phân phối'), findsOneWidget);
       expect(find.text('Sắp xếp khoảng cách'), findsOneWidget);
 
@@ -404,7 +404,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Drawer closed
-      expect(find.text('Bộ lọc khách hàng'), findsNothing);
+      expect(find.text('Bộ lọc điểm bán'), findsNothing);
     });
 
     test('Customer with multiple routes is included in availableRoutes and matched when filtering', () async {

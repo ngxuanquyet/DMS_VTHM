@@ -145,7 +145,7 @@ void main() {
       expect(grouped.length, 2);
 
       final summary = SyncEntityGroupHelper.buildSummaryText(entries);
-      expect(summary, '1 khách hàng, 1 lượt viếng thăm');
+      expect(summary, '1 điểm bán, 1 lượt viếng thăm');
     });
   });
 }

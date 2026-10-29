@@ -68,7 +68,7 @@ void main() {
 
   test('thông báo sau khi tạo nói số đề xuất đã gửi', () {
     expect(addCustomerSuccessMessage(hasPending: false), 'Đã tạo điểm bán và ghi nhận lượt viếng thăm.');
-    expect(addCustomerSuccessMessage(hasPending: false, linkProposals: 2), contains('Đã chọn 2 khách ERP để đề xuất nối'));
+    expect(addCustomerSuccessMessage(hasPending: false, linkProposals: 2), contains('Đã chọn 2 khách hàng để đề xuất nối'));
     expect(addCustomerSuccessMessage(hasPending: true, linkProposals: 2), contains('sẽ được đề xuất nối khi đồng bộ'),
         reason: 'ngoại tuyến chưa gửi gì');
   });

@@ -154,10 +154,10 @@ void main() {
 
       // Hiển thị nhãn và dấu * bắt buộc
       expect(find.textContaining('Điểm bán khảo sát'), findsOneWidget);
-      expect(find.text('Chạm để chọn điểm bán / khách hàng...'), findsOneWidget);
+      expect(find.text('Chạm để chọn điểm bán...'), findsOneWidget);
 
       // Chạm để mở bottom sheet chọn điểm bán
-      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.tap(find.text('Chạm để chọn điểm bán...'));
       await tester.pumpAndSettle();
 
       // Bottom sheet hiển thị tiêu đề và danh sách điểm bán
@@ -210,7 +210,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.tap(find.text('Chạm để chọn điểm bán...'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'hoang huong');
@@ -254,7 +254,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.tap(find.text('Chạm để chọn điểm bán...'));
       await tester.pumpAndSettle();
 
       // Cảnh báo danh sách chạm trần 2.000 dòng
@@ -290,7 +290,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.tap(find.text('Chạm để chọn điểm bán...'));
       await tester.pumpAndSettle();
 
       // Thông báo chưa được giao tuyến nào (§1b)
@@ -438,7 +438,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Open customer picker sheet
-      await tester.tap(find.text('Chạm để chọn điểm bán / khách hàng...'));
+      await tester.tap(find.text('Chạm để chọn điểm bán...'));
       await tester.pumpAndSettle();
 
       // Notice about distance sorting should be visible

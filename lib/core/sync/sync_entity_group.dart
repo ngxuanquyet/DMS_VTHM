@@ -129,7 +129,7 @@ class SyncEntityGroupHelper {
 
     // 2. Khách hàng
     for (final c in customers) {
-      String name = 'Khách hàng mới';
+      String name = 'Điểm bán mới';
       String? address;
       String? route;
       try {
@@ -153,7 +153,7 @@ class SyncEntityGroupHelper {
         GroupedSyncItem(
           key: c.clientUuid,
           entityType: 'customer',
-          title: 'Thêm khách hàng mới: $name',
+          title: 'Thêm điểm bán mới: $name',
           subtitle: sub.join(' • '),
           icon: Icons.person_add_alt_1_rounded,
           color: const Color(0xFF10B981),
@@ -307,7 +307,7 @@ class SyncEntityGroupHelper {
     }
 
     final parts = <String>[];
-    if (customerCount > 0) parts.add('$customerCount khách hàng');
+    if (customerCount > 0) parts.add('$customerCount điểm bán');
     if (visitCount > 0) parts.add('$visitCount lượt viếng thăm');
     if (formCount > 0) parts.add('$formCount biểu mẫu');
     if (declCount > 0) parts.add('$declCount khai báo vị trí');

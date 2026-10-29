@@ -86,7 +86,7 @@ void main() {
       expect(find.byIcon(Icons.cloud_off_rounded), findsOneWidget);
     });
 
-    testWidgets('Modal accurately identifies customer entity as "Thêm khách hàng mới" and not check-in', (tester) async {
+    testWidgets('Modal accurately identifies customer entity as "Thêm điểm bán mới" and not check-in', (tester) async {
       final customerEntry = SyncQueueEntry(
         id: 1,
         entity: 'customer',
@@ -127,7 +127,7 @@ void main() {
       await tester.tap(find.text('1 chờ'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Thêm khách hàng mới: Đại lý Sơn Hà'), findsOneWidget);
+      expect(find.text('Thêm điểm bán mới: Đại lý Sơn Hà'), findsOneWidget);
       expect(find.textContaining('Tuyến: Tuyến 1'), findsOneWidget);
       expect(find.byIcon(Icons.person_add_alt_1_rounded), findsOneWidget);
       expect(find.textContaining('Lượt check-in & toạ độ'), findsNothing);

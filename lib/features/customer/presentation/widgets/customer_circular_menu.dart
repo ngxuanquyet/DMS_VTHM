@@ -26,7 +26,7 @@ class CustomerMenuItem {
 }
 
 /// Circular Radial Floating Menu cho màn Khách hàng (CustomerScreen)
-/// Bao gồm 5 option: Thêm mới khách hàng, Đồng bộ, Tải lên, Định vị, Sắp xếp theo khoảng cách
+/// Bao gồm 5 option: Thêm mới điểm bán, Đồng bộ, Tải lên, Định vị, Sắp xếp theo khoảng cách
 class CustomerCircularMenu extends ConsumerStatefulWidget {
   final VoidCallback onAddCustomer;
   final VoidCallback onSync;
@@ -163,7 +163,7 @@ class _CustomerCircularMenuState extends ConsumerState<CustomerCircularMenu>
 
     final items = [
       CustomerMenuItem(
-        label: 'Thêm mới khách hàng',
+        label: 'Thêm mới điểm bán',
         icon: Icons.person_add_alt_1_rounded,
         color: const Color(0xFF8B5CF6), // Purple
         onTap: () {

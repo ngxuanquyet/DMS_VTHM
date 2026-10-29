@@ -156,14 +156,14 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: Text(
-                  'Điểm bán liên quan khách ERP nào?',
+                  'Điểm bán liên quan khách hàng nào?',
                   style: AppTypography.titleMedium(color: chuChinh),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  'Chọn khách ERP và vai của điểm bán với từng khách — quản lý sẽ duyệt mối nối.',
+                  'Chọn khách hàng và vai của điểm bán với từng khách hàng — quản lý sẽ duyệt mối nối.',
                   style: AppTypography.bodySmall(color: chuPhu),
                 ),
               ),
@@ -178,8 +178,8 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                   decoration: InputDecoration(
                     isDense: true,
                     hintText: widget.catalog == null
-                        ? 'Chưa có danh mục khách ERP trên máy — cần mạng để tải lần đầu'
-                        : 'Tìm khách ERP theo tên, mã, địa chỉ…',
+                        ? 'Chưa có danh mục khách hàng trên máy — cần mạng để tải lần đầu'
+                        : 'Tìm khách hàng theo tên, mã, địa chỉ…',
                     prefixIcon: const Icon(Icons.search_rounded),
                     suffixIcon: _o.text.isEmpty
                         ? null
@@ -217,8 +217,8 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                       if (ketQua.isEmpty)
                         _GhiChu(
                           text: trungDaChon > 0
-                              ? 'Khách khớp "$_daTim" đã nằm trong danh sách đã chọn / đã đề xuất.'
-                              : 'Không có khách ERP nào khớp "$_daTim".',
+                              ? 'Khách hàng khớp "$_daTim" đã nằm trong danh sách đã chọn / đã đề xuất.'
+                              : 'Không có khách hàng nào khớp "$_daTim".',
                           color: chuPhu,
                         )
                       else
@@ -252,7 +252,7 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                       if (goiY.isEmpty)
                         _GhiChu(
                           text: widget.suggestions.isEmpty
-                              ? 'Không thấy khách ERP trùng SĐT, mã số thuế hay tên. Gõ tên hoặc mã vào ô tìm ở trên.'
+                              ? 'Không thấy khách hàng trùng SĐT, mã số thuế hay tên. Gõ tên hoặc mã vào ô tìm ở trên.'
                               : 'Đã chọn hết các gợi ý.',
                           color: chuPhu,
                         )
@@ -291,7 +291,7 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                   key: const Key('erp-link-confirm'),
                   onPressed: () => Navigator.pop(context, ErpLinkPickResult(picks: _chon.map((p) => p.copy()).toList())),
                   icon: const Icon(Icons.check_rounded),
-                  label: Text(_chon.isEmpty ? 'Xong (chưa chọn khách nào)' : 'Xác nhận ${_chon.length} khách ERP'),
+                  label: Text(_chon.isEmpty ? 'Xong (chưa chọn khách hàng nào)' : 'Xác nhận ${_chon.length} khách hàng'),
                 ),
               ),
             ],

@@ -474,7 +474,7 @@ class CustomerLocalDataSource {
         .get();
 
     if (existingRows.isEmpty) {
-      throw Exception('Không tìm thấy bản ghi khách hàng offline với UUID: $clientUuid');
+      throw Exception('Không tìm thấy bản ghi điểm bán offline với UUID: $clientUuid');
     }
 
     final existing = existingRows.first;

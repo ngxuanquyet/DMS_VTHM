@@ -1367,8 +1367,8 @@ String addCustomerSuccessMessage({required bool hasPending, int linkProposals = 
   if (linkProposals == 0) return base;
   // Đề xuất đi KÈM lượt tạo (#24327) — ngoại tuyến thì chưa gửi gì.
   return hasPending
-      ? '$base $linkProposals khách ERP sẽ được đề xuất nối khi đồng bộ.'
-      : '$base Đã chọn $linkProposals khách ERP để đề xuất nối, chờ quản lý duyệt.';
+      ? '$base $linkProposals khách hàng sẽ được đề xuất nối khi đồng bộ.'
+      : '$base Đã chọn $linkProposals khách hàng để đề xuất nối, chờ quản lý duyệt.';
 }
 
 /// Vẽ ô "Khách hàng ERP" (`erp_links`, #24331) trong form động — dùng chung form tạo / form sửa.
@@ -1384,5 +1384,5 @@ Widget erpLinksFieldBuilder(DynamicFormField field, dynamic value, String? error
 /// Kiểm ô "Khách hàng ERP" khi TẠO: bắt buộc (admin đặt) ⇒ ≥1 khách hoặc tick "Chưa xác định NPP".
 String? erpLinksCreateValidator(DynamicFormField field, dynamic value) =>
     field.isRequired && !ErpLinksValue.fromJson(value).satisfiesRequired
-        ? 'Chọn ít nhất một khách ERP hoặc tick "Chưa xác định NPP".'
+        ? 'Chọn ít nhất một khách hàng hoặc tick "Chưa xác định NPP".'
         : null;

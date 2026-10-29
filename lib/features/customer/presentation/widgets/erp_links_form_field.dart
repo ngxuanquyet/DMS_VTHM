@@ -104,7 +104,7 @@ class ErpLinksValue {
 
 /// Ô "Khách hàng ERP" (#24331, spec DIEM-BAN-KHACH-ERP §12) — form tạo = form sửa = màn chi tiết.
 ///
-/// Tạo: danh sách khách thêm mới + nút "+ Thêm khách ERP" (khung chọn: gợi ý theo tên/SĐT/địa chỉ đang nhập + tìm trên danh mục
+/// Tạo: danh sách khách thêm mới + nút "+ Thêm khách hàng" (khung chọn: gợi ý theo tên/SĐT/địa chỉ đang nhập + tìm trên danh mục
 /// lưu máy) + ô tick "Chưa xác định NPP". Sửa / chi tiết: thêm mối nối hiện có (Đã duyệt), đề xuất chờ duyệt, đề xuất bị từ chối
 /// kèm lý do; mối nối đã duyệt có "Đổi vai" / "Gỡ nối". Mọi thay đổi là ĐỀ XUẤT chờ quản lý duyệt — NV không huỷ được đề xuất.
 class ErpLinksFormField extends ConsumerStatefulWidget {
@@ -224,7 +224,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
                   leading: const Icon(Icons.swap_horiz_rounded),
                   title: Text('Đổi vai thành ${ErpLinkRole.label(r)}'),
                   enabled: duoc.contains(r) && !(r == ErpLinkRole.owner && chinhKhachKhac),
-                  subtitle: duoc.contains(r) ? null : const Text('Kênh của khách không được nối vai này'),
+                  subtitle: duoc.contains(r) ? null : const Text('Kênh của khách hàng không được nối vai này'),
                   onTap: () => Navigator.pop(ctx, r),
                 ),
             ListTile(
@@ -270,7 +270,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (dangTai) _Ghi(text: 'Đang tải khách ERP của điểm bán…', color: chuPhu),
+          if (dangTai) _Ghi(text: 'Đang tải khách hàng của điểm bán…', color: chuPhu),
           if (loiTai != null) _Ghi(text: loiTai, color: chuPhu),
           for (final l in state?.links ?? const <ErpLinkState>[])
             _TheTrangThai(
@@ -303,7 +303,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               nhan: switch (p.action) {
                 ErpLinkAction.changeRole => 'Chờ duyệt · đổi vai ${p.beforeRoleLabel ?? ''} → ${p.roleLabel}',
                 ErpLinkAction.remove => 'Chờ duyệt · gỡ nối',
-                _ => 'Chờ duyệt · thêm khách',
+                _ => 'Chờ duyệt · thêm khách hàng',
               },
               mau: AppColors.warning,
             ),
@@ -331,7 +331,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
             ),
           if (_id != null && state != null && state.links.isEmpty && state.pending.isEmpty && v.add.isEmpty)
             _Ghi(
-              text: state.unknown ? 'Đã đánh dấu "Chưa xác định NPP".' : 'Điểm bán chưa nối khách ERP nào.',
+              text: state.unknown ? 'Đã đánh dấu "Chưa xác định NPP".' : 'Điểm bán chưa nối khách hàng nào.',
               color: AppColors.warning,
             ),
           const SizedBox(height: 4),
@@ -341,7 +341,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               key: const Key('erp-links-add'),
               onPressed: () => _them(state),
               icon: const Icon(Icons.add_link_rounded),
-              label: const Text('Thêm khách ERP'),
+              label: const Text('Thêm khách hàng'),
             ),
           ),
           if (_id == null && widget.isRequired && v.add.isEmpty)
@@ -359,7 +359,7 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
     }
 
     final noiDung = _tai == null
-        ? than(null, loiTai: _id != null ? 'Cần mạng để xem mối nối hiện có — vẫn thêm được khách, gửi khi đồng bộ.' : null)
+        ? than(null, loiTai: _id != null ? 'Cần mạng để xem mối nối hiện có — vẫn thêm được khách hàng, gửi khi đồng bộ.' : null)
         : FutureBuilder<ErpLinkStateOfStore>(
             future: _tai,
             builder: (_, snap) => snap.connectionState != ConnectionState.done
@@ -421,7 +421,7 @@ class _ErpLinksDetailCardState extends ConsumerState<ErpLinksDetailCard> {
         _lan++;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã gửi $n đề xuất nối khách ERP, chờ quản lý duyệt.'), behavior: SnackBarBehavior.floating),
+        SnackBar(content: Text('Đã gửi $n đề xuất nối khách hàng, chờ quản lý duyệt.'), behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
@@ -437,7 +437,7 @@ class _ErpLinksDetailCardState extends ConsumerState<ErpLinksDetailCard> {
         children: [
           ErpLinksFormField(
             key: ValueKey('erp-links-detail-$_lan'),
-            label: 'Mối nối với khách hàng ERP',
+            label: 'Mối nối với khách hàng',
             value: _v,
             onChanged: (v) => setState(() => _v = v),
           ),

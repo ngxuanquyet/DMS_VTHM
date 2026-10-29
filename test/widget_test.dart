@@ -188,7 +188,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     // Kiểm tra đủ 5 options text
-    expect(find.text('Thêm mới khách hàng'), findsOneWidget);
+    expect(find.text('Thêm mới điểm bán'), findsOneWidget);
     expect(find.text('Tải lên'), findsOneWidget);
     expect(
         find.descendant(
@@ -251,7 +251,7 @@ void main() {
     );
 
     await tester.pump();
-    expect(find.text('Khách hàng'), findsOneWidget);
+    expect(find.text('Điểm bán'), findsOneWidget);
 
     // Initial opacity is 1.0
     final initialOpacityFinder = find.descendant(
@@ -474,7 +474,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.widgets_rounded));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Thêm mới khách hàng'), findsOneWidget);
+    expect(find.text('Thêm mới điểm bán'), findsOneWidget);
 
     // Trigger tab switch event
     container.read(closeFloatingMenuProvider.notifier).state++;
@@ -483,7 +483,7 @@ void main() {
 
     // Menu should now be closed
     expect(find.byIcon(Icons.widgets_rounded), findsOneWidget);
-    expect(find.text('Thêm mới khách hàng'), findsNothing);
+    expect(find.text('Thêm mới điểm bán'), findsNothing);
   });
 
   testWidgets('RouteCircularMenu closes automatically on tab switch signal', (WidgetTester tester) async {
@@ -565,7 +565,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.widgets_rounded));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Thêm mới khách hàng'), findsOneWidget);
+    expect(find.text('Thêm mới điểm bán'), findsOneWidget);
 
     // Switch away (TickerMode disabled)
     tickerNotifier.value = false;
@@ -578,7 +578,7 @@ void main() {
 
     // Must remain closed!
     expect(find.byIcon(Icons.widgets_rounded), findsOneWidget);
-    expect(find.text('Thêm mới khách hàng'), findsNothing);
+    expect(find.text('Thêm mới điểm bán'), findsNothing);
   });
 
   testWidgets('CheckInScreen exits immediately when nothing has been written', (WidgetTester tester) async {

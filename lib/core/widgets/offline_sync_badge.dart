@@ -540,7 +540,7 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
 
   String title = 'Dữ liệu cần kiểm tra lại';
   if (entry.entity == 'customer') {
-    title = 'Thông tin khách hàng mới';
+    title = 'Thông tin điểm bán mới';
   } else if (entry.entity == 'form_submission') {
     title = 'Phiếu khảo sát thị trường';
   } else if (entry.entity == 'declaration') {

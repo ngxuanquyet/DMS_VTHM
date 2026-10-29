@@ -460,7 +460,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
       return updated;
     }
 
-    throw Exception('Không tìm thấy khách hàng ID: $id');
+    throw Exception('Không tìm thấy điểm bán ID: $id');
   }
 
   bool _isNetworkError(dynamic e) {
@@ -487,7 +487,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
       (c) => (id > 0 && c.id == id) || (clientUuid != null && c.clientUuid == clientUuid),
     );
     if (index == -1) {
-      throw Exception('Không tìm thấy khách hàng ID: $id để cập nhật offline');
+      throw Exception('Không tìm thấy điểm bán ID: $id để cập nhật offline');
     }
 
     final current = _cachedCustomers[index];
