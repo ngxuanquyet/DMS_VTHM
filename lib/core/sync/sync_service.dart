@@ -503,6 +503,15 @@ class SyncService {
       rawSource['data'] = dataMap;
     }
 
+    // Vật tư khai lúc tạo (#24526): đổi ảnh trên máy ra token NGAY lúc đồng bộ, như thao tác vật tư của lượt. Lỗi tải
+    // ảnh ném ra ⇒ mục thử lại, không gửi điểm bán thiếu ảnh vật tư (bản ngoại tuyến server BỎ thao tác sai).
+    if (rawSource['materials'] is List) {
+      rawSource['materials'] = await resolveCreateMaterials(
+        rawSource['materials'],
+        (file) async => (await _ref.read(formsApiServiceProvider).uploadPhoto(file)).token,
+      );
+    }
+
     // Dọn sạch các trường nội bộ của app khỏi rawSource để tránh lọt vào payload gửi lên server
     rawSource.remove('local_photo_paths');
     rawSource.remove('localPhotoPaths');
@@ -581,6 +590,16 @@ class SyncService {
           updatedDynamicFieldsJson = jsonEncode(dyn);
         }
       } catch (_) {}
+
+      if (rawSource['materials'] is List) {
+        await cacheCreatedOutletMaterials(
+          serverId,
+          (rawSource['materials'] as List)
+              .whereType<Map>()
+              .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m)))
+              .toList(),
+        );
+      }
 
       await _db.markCustomerSynced(
         entry.clientUuid,

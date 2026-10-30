@@ -186,6 +186,9 @@ class CustomerLocalDataSource {
 
     // Chuẩn bị payload cho hàng đợi sync_queue: lưu cả danh sách ảnh cục bộ để SyncService upload khi có mạng
     final queuePayload = Map<String, dynamic>.from(payloadMap);
+    // Vật tư khai lúc tạo (#24526): giữ NGUYÊN thao tác (kể cả đường dẫn ảnh + `detail_photo_fields`) — SyncService đổi
+    // ảnh ra token lúc gửi rồi mới dựng khuôn §2.
+    if (data['materials'] is List) queuePayload['materials'] = data['materials'];
     if (allPhotos.isNotEmpty) {
       queuePayload['photo_tokens'] = allPhotos;
       queuePayload['photo_token'] = allPhotos.first;

@@ -14,6 +14,7 @@ import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
+import '../models/material_create_rules.dart';
 import '../models/visit_material_model.dart';
 import '../services/visit_material_api_service.dart';
 
@@ -111,7 +112,7 @@ Future<void> forgetCachedMaterialOp(String clientUuid) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     for (final key in prefs.getKeys().where((k) => k.startsWith(visitMaterialsCachePrefix)).toList()) {
-      if (key == visitMaterialsLastCatalogKey) continue;
+      if (key == visitMaterialsLastCatalogKey || key == visitMaterialsCreateCatalogKey) continue;
       final raw = prefs.getString(key);
       if (raw == null) continue;
       final decoded = jsonDecode(raw);
@@ -122,6 +123,66 @@ Future<void> forgetCachedMaterialOp(String clientUuid) async {
   } catch (e) {
     debugPrint('[VisitMaterial] Gỡ thao tác bị từ chối khỏi cache lỗi: $e');
   }
+}
+
+/// Cache danh mục + luật "Tạo điểm bán" (GĐ1b #24526) — dùng khi mất mạng; cùng tiền tố ⇒ xoá khi đăng xuất.
+const String visitMaterialsCreateCatalogKey = '${visitMaterialsCachePrefix}_create_catalog';
+
+/// Thao tác vật tư lúc tạo điểm bán (khoá `materials` của payload tạo, dạng [MaterialOperation.toJson]) ⇒ đổi ảnh trên
+/// máy ra token qua [upload] (cùng luồng ảnh thao tác vật tư của lượt). Lỗi tải ảnh được ném ra (hàng đợi thử lại).
+Future<List<Map<String, dynamic>>> resolveCreateMaterials(
+  dynamic raw,
+  Future<String> Function(File file) upload,
+) async {
+  if (raw is! List) return const [];
+  final out = <Map<String, dynamic>>[];
+  for (final m in raw.whereType<Map>()) {
+    final op = MaterialOperation.fromJson(Map<String, dynamic>.from(m));
+    out.add((await resolveOperationPhotos(op, upload)).toJson());
+  }
+  return out;
+}
+
+/// Bản cache điểm bán cho điểm bán VỪA TẠO kèm vật tư: danh mục của form tạo + các thao tác đã khai (đã được server nhận
+/// cùng lượt tạo). Loại bắt buộc của luật VIẾNG THĂM chưa biết ⇒ đánh dấu `required_unknown` (màn lượt đầu cảnh báo,
+/// không coi là đủ / không chặn cứng).
+Map<String, dynamic> createdOutletCacheEntry(Map<String, dynamic> rawCatalog, List<MaterialOperation> ops) => {
+      'visit_client_uuid': null,
+      'data': {
+        'catalog': rawCatalog,
+        'items': const [],
+        'required_unknown': true,
+      },
+      'ops': [
+        for (final op in ops) {'visit': 'create', 'op': op.toJson(), 'ok': true},
+      ],
+    };
+
+/// Ghi [createdOutletCacheEntry] cho điểm bán [customerId] (nếu chưa có cache thật từ GET).
+Future<void> cacheCreatedOutletMaterials(int customerId, List<MaterialOperation> ops) async {
+  if (customerId <= 0 || ops.isEmpty) return;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$visitMaterialsCachePrefix$customerId';
+    if (prefs.getString(key) != null) return;
+    final rawCat = prefs.getString(visitMaterialsCreateCatalogKey);
+    final decoded = rawCat == null ? null : jsonDecode(rawCat);
+    final catalog = decoded is Map && decoded['catalog'] is Map
+        ? Map<String, dynamic>.from(decoded['catalog'] as Map)
+        : <String, dynamic>{};
+    await prefs.setString(key, jsonEncode(createdOutletCacheEntry(catalog, ops)));
+  } catch (e) {
+    debugPrint('[VisitMaterial] Lưu cache vật tư điểm bán mới lỗi: $e');
+  }
+}
+
+/// Kết quả nạp danh mục tạo điểm bán.
+class CreateCatalogLoadResult {
+  final MaterialCreateCatalog? catalog;
+  final bool forbidden;
+  final bool fromCache;
+
+  const CreateCatalogLoadResult({this.catalog, this.forbidden = false, this.fromCache = false});
 }
 
 /// Kết quả dựng từ cache.
@@ -179,6 +240,8 @@ CachedMaterials? materialsFromCache({
   if (outletEntry != null && outletEntry['data'] is Map) {
     data = VisitMaterialsData.fromJson(Map<String, dynamic>.from(outletEntry['data'] as Map));
     sameVisit = outletEntry['visit_client_uuid'] == visitClientUuid;
+    // Cache dựng lúc tạo điểm bán: chưa biết loại bắt buộc của luật viếng thăm ⇒ cảnh báo như điểm bán khác.
+    if ((outletEntry['data'] as Map)['required_unknown'] == true) fromOther = true;
   } else if (lastCatalog != null) {
     data = VisitMaterialsData.fromJson(lastCatalog).withoutRequired();
     fromOther = true;
@@ -372,6 +435,23 @@ class VisitMaterialRepository {
       requiredFromOtherOutlet: cached.requiredFromOtherOutlet,
       error: error,
     );
+  }
+
+  /// Danh mục + luật "Tạo điểm bán": có mạng ⇒ GET và lưu cache; không có / lỗi tạm ⇒ cache. 403 ⇒ ẩn bước vật tư.
+  Future<CreateCatalogLoadResult> loadCreateCatalog() async {
+    if (_ref.read(connectivityProvider).isOnline) {
+      try {
+        final (raw, catalog) = await _api.getCreateCatalog();
+        final prefs = await _prefs();
+        await prefs?.setString(visitMaterialsCreateCatalogKey, jsonEncode(raw));
+        return CreateCatalogLoadResult(catalog: catalog);
+      } catch (e) {
+        if (e is AppException && e.statusCode == 403) return const CreateCatalogLoadResult(forbidden: true);
+      }
+    }
+    final cached = _decode((await _prefs())?.getString(visitMaterialsCreateCatalogKey));
+    if (cached == null) return const CreateCatalogLoadResult();
+    return CreateCatalogLoadResult(catalog: MaterialCreateCatalog.fromJson(cached), fromCache: true);
   }
 
   /// Gửi MỘT thao tác: trực tuyến gửi ngay (đọc `results[0].ok`); mất mạng / lượt chưa lên server ⇒ xếp hàng đợi với

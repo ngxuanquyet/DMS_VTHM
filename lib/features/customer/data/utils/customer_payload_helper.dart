@@ -1,5 +1,8 @@
 import 'package:uuid/uuid.dart';
 
+import '../../../visit/data/models/material_create_rules.dart';
+import '../../../visit/data/models/visit_material_model.dart';
+
 /// Danh sách trắng 25 khoá gốc duy nhất được chấp nhận ở POST /crm/customers
 /// theo đặc tả specs/api/API-TAO-DIEM-BAN-HOP-DONG-HIEN-HANH-2026-09-30.md (§2).
 /// BẤT KỲ KHOÁ NÀO KHÁC Ở GỐC BODY ĐỀU BỊ SERVER TỪ CHỐI 422!
@@ -37,6 +40,8 @@ const Set<String> kAllowedCustomerRootKeys = {
   // Bước nối khách ERP (#24327) — server đọc, không phải ô động.
   'erp_links',
   'erp_link_unknown',
+  // Vật tư khai lúc tạo (#24526) — mảng thao tác `add` khuôn POST /dms/visits/{id}/materials.
+  'materials',
   'data',
 };
 
@@ -125,6 +130,8 @@ const Set<String> kCustomerFixedKeys = {
   // Bước nối khách ERP (#24327) — server đọc, không phải ô động.
   'erp_links',
   'erp_link_unknown',
+  // Vật tư khai lúc tạo (#24526) — khoá gốc riêng, không phải ô động.
+  'materials',
 };
 
 class CustomerPayloadHelper {
@@ -268,6 +275,16 @@ class CustomerPayloadHelper {
               .toList()
           : <Map<String, dynamic>>[];
       payload['erp_link_unknown'] = sourceData['erp_link_unknown'] == true;
+    }
+
+    // 7d. Vật tư khai lúc tạo (#24526): nguồn là [MaterialOperation.toJson] (ảnh ĐÃ đổi ra token ở nơi gọi) ⇒ khuôn §2.
+    if (sourceData['materials'] is List) {
+      final items = createMaterialsPayload(
+        (sourceData['materials'] as List)
+            .whereType<Map>()
+            .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m))),
+      );
+      if (items.isNotEmpty) payload['materials'] = items;
     }
 
     // 8. Thông tin liên hệ & địa chỉ (fixed fields)

@@ -20,7 +20,7 @@ import '../widgets/material_condition_badges.dart';
 typedef MaterialSubmitter = Future<String?> Function(MaterialOperation op);
 
 /// Mã ô ảnh dựng thêm vào bộ vẽ biểu mẫu (không trùng mã ô của schema chi tiết).
-const String _photoCode = '__material_photos';
+const String materialPhotoFieldCode = '__material_photos';
 const String _reasonCode = '__material_reason';
 
 MarketFormBlockEntity _syntheticBlock(String code, String label, String inputType, {bool required = false}) =>
@@ -80,7 +80,7 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
     });
     _blocks = [
       ...widget.type.detailBlocks,
-      _syntheticBlock(_photoCode, ref.read(stringsProvider).materialsPhotos, 'image'),
+      _syntheticBlock(materialPhotoFieldCode, ref.read(stringsProvider).materialsPhotos, 'image'),
     ];
   }
 
@@ -146,7 +146,7 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
       setState(() => _error = strings.materialsCheckForm);
       return;
     }
-    final photos = (answers.remove(_photoCode) as List?)?.map((e) => e.toString()).toList() ?? <String>[];
+    final photos = (answers.remove(materialPhotoFieldCode) as List?)?.map((e) => e.toString()).toList() ?? <String>[];
     if (widget.type.requirePhoto && _total > 0 && photos.isEmpty) {
       setState(() => _error = strings.materialsPhotoRequired);
       return;
@@ -366,14 +366,14 @@ class _MaterialRemoveScreenState extends ConsumerState<_MaterialRemoveScreen> {
     final strings = ref.read(stringsProvider);
     _blocks = [
       _syntheticBlock(_reasonCode, strings.materialsRemoveReason, 'textarea', required: true),
-      _syntheticBlock(_photoCode, strings.materialsRemovePhotos, 'image', required: true),
+      _syntheticBlock(materialPhotoFieldCode, strings.materialsRemovePhotos, 'image', required: true),
     ];
   }
 
   Future<void> _submit() async {
     final strings = ref.read(stringsProvider);
     final answers = _rendererKey.currentState?.validateAndGetAnswers();
-    final photos = (answers?[_photoCode] as List?)?.map((e) => e.toString()).toList() ?? const <String>[];
+    final photos = (answers?[materialPhotoFieldCode] as List?)?.map((e) => e.toString()).toList() ?? const <String>[];
     final reason = answers?[_reasonCode]?.toString().trim() ?? '';
     if (answers == null || reason.isEmpty || photos.isEmpty) {
       setState(() => _error = strings.materialsCheckForm);

@@ -19,6 +19,9 @@ import '../../domain/repositories/customer_repository.dart';
 import '../datasources/customer_local_data_source.dart';
 import '../services/customer_api_service.dart';
 import '../utils/customer_payload_helper.dart';
+import '../../../visit/data/models/visit_material_model.dart';
+import '../../../visit/data/repositories/visit_material_repository.dart';
+import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 
 final customerApiServiceProvider = Provider<CustomerApiService>((ref) {
   return CustomerApiService(ref.read(apiClientProvider));
@@ -623,6 +626,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
         final serverCode = dto.code.isNotEmpty ? dto.code : '';
 
         if (serverId > 0) {
+          // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
+          if (cleanPayload['materials'] is List) {
+            await cacheCreatedOutletMaterials(
+              serverId,
+              (cleanPayload['materials'] as List)
+                  .whereType<Map>()
+                  .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m)))
+                  .toList(),
+            );
+          }
           final entity = _buildSyncedCustomerEntity(
             data: data,
             serverId: serverId,
@@ -668,6 +681,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
     return localEntity;
   }
 
+  /// Ảnh vật tư ⇒ token qua `POST /dms/form-photos` (cùng luồng ảnh thao tác vật tư của lượt). Không có Ref (test) ⇒
+  /// coi như mất mạng: createCustomer rơi về hàng đợi.
+  Future<String> _uploadMaterialPhoto(File file) async {
+    final ref = _ref;
+    if (ref == null) throw const NetworkException();
+    return (await ref.read(formsApiServiceProvider).uploadPhoto(file)).token;
+  }
+
   Future<Map<String, dynamic>> _prepareCleanCustomerPayload(Map<String, dynamic> data) async {
     // 1. Tải ảnh lên server để lấy token nếu đang là đường dẫn cục bộ
     final resolvedTokens = <String>[];
@@ -703,9 +724,22 @@ class CustomerRepositoryImpl implements CustomerRepository {
       }
     }
 
+    // 1b. Vật tư khai lúc tạo (#24526): ảnh đổi ra token qua /dms/form-photos (luồng ảnh vật tư của lượt). Lỗi tải ảnh
+    // ném ra ⇒ createCustomer rơi về đường hàng đợi (đổi ảnh lúc đồng bộ), không gửi thiếu ảnh.
+    var source = data;
+    if (data['materials'] is List) {
+      source = {
+        ...data,
+        'materials': await resolveCreateMaterials(
+          data['materials'],
+          _uploadMaterialPhoto,
+        ),
+      };
+    }
+
     // 2. Sử dụng CustomerPayloadHelper để xây dựng payload chuẩn 25 khoá gốc
     return CustomerPayloadHelper.buildCustomerApiPayload(
-      sourceData: data,
+      sourceData: source,
       resolvedPhotoTokens: resolvedTokens.isNotEmpty ? resolvedTokens : null,
       isOfflineSync: false,
     );

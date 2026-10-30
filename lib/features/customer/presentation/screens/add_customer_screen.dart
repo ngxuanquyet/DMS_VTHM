@@ -17,6 +17,11 @@ import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../widgets/erp_links_form_field.dart';
+import '../widgets/outlet_create_materials_section.dart';
+import '../../../../core/localization/language_provider.dart';
+import '../../../visit/data/models/material_create_rules.dart';
+import '../../../visit/data/models/visit_material_model.dart';
+import '../../../visit/data/repositories/visit_material_repository.dart';
 import '../../../route/domain/entities/route_entity.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 
@@ -526,8 +531,44 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
+  /// Bước "Vật tư tại điểm" (#24526): danh mục + luật "Tạo điểm bán" (cache dùng ngoại tuyến), thao tác đã khai.
+  MaterialCreateCatalog? _materialCatalog;
+  bool _materialCatalogLoaded = false;
+  bool _materialsForbidden = false;
+  Map<int, MaterialOperation> _materialOps = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMaterialCatalog();
+  }
+
+  Future<void> _loadMaterialCatalog() async {
+    final res = await ref.read(visitMaterialRepositoryProvider).loadCreateCatalog();
+    if (!mounted) return;
+    setState(() {
+      _materialCatalog = res.catalog;
+      _materialsForbidden = res.forbidden;
+      _materialCatalogLoaded = true;
+    });
+  }
+
+  /// Loại vật tư bắt buộc cho điểm bán đang nhập — tính TẠI MÁY theo loại / khu vực / kênh × tuyến của form.
+  List<OutletMaterialType> _requiredMaterialTypes(Map<String, dynamic> form) {
+    final catalog = _materialCatalog;
+    if (catalog == null || _materialsForbidden) return const [];
+    return catalog.requiredTypesFor(
+      customerTypeId: int.tryParse(form['customer_type_id']?.toString() ?? ''),
+      regionId: int.tryParse(form['region_id']?.toString() ?? ''),
+      pairs: pairsOfNewOutlet(form['own_channel_ids'], form['territory_code']),
+    );
+  }
+
+  static const _materialAxisKeys = ['customer_type_id', 'region_id', 'own_channel_ids', 'territory_code'];
+
 
   bool _hasUserInput() {
+    if (_materialOps.isNotEmpty) return true;
     if (_formKey.currentState != null) {
       final data = _formKey.currentState!.getFormData();
       for (final entry in data.entries) {
@@ -709,6 +750,19 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       return;
     }
 
+    // 5. Vật tư bắt buộc (#24526): chặn TRƯỚC khi gửi / xếp hàng — server không chặn lượt tạo từ hàng đợi ngoại tuyến.
+    // Khai số lượng 0 ("không có") vẫn tính là đã khai.
+    final missingMaterials = missingCreateMaterials(_requiredMaterialTypes(formData), _materialOps.values);
+    if (missingMaterials.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ref.read(stringsProvider).createMaterialsMissing(missingMaterials.map((t) => t.name).join(', '))),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -740,6 +794,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       payload.remove('status');
 
       payload['route_ids'] = finalRouteIds;
+
+      // Vật tư khai lúc tạo: thao tác thô (ảnh có thể còn là đường dẫn) — đổi ảnh ra token ở bước gửi / đồng bộ.
+      if (_materialOps.isNotEmpty) {
+        payload['materials'] = _materialOps.values.map((o) => o.toJson()).toList();
+      }
 
       // 🔴 Theo spec 15/10/2026: Tránh gửi CẢ coords lẫn lat/lng phẳng gây lỗi 422
       if (payload['coords'] != null) {
@@ -1265,12 +1324,38 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                             ..._savedFormData,
                           },
                           onChanged: (data) {
+                            // Đổi loại / khu vực / kênh / tuyến ⇒ tính lại loại vật tư bắt buộc.
+                            final axisChanged = _materialAxisKeys.any(
+                              (k) => data.containsKey(k) && jsonEncode(data[k]) != jsonEncode(_savedFormData[k]),
+                            );
                             _savedFormData.addAll(data);
+                            if (axisChanged && _materialCatalog != null) setState(() {});
                           },
                           onSubmit: _handleSubmit,
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                           customValidators: {'erp_links': erpLinksCreateValidator},
                         ),
+                        if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
+                          OutletCreateMaterialsSection(
+                            catalog: _materialCatalog!,
+                            requiredTypes: _requiredMaterialTypes({
+                              'route_ids': defaultRouteId,
+                              ..._savedFormData,
+                              ...?_formKey.currentState?.getFormData(),
+                            }),
+                            ops: _materialOps,
+                            onChanged: (next) => setState(() => _materialOps = next),
+                          )
+                        else if (_materialCatalogLoaded && !_materialsForbidden && _materialCatalog == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: Text(
+                              ref.watch(stringsProvider).createMaterialsNoCatalog,
+                              style: AppTypography.labelSmall(
+                                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

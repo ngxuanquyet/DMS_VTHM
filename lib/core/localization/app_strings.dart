@@ -677,5 +677,18 @@ class AppStrings {
       : 'Retired condition — saving will reset this count to 0';
   String materialsCheckoutBlocked(String names) =>
       isVietnamese ? 'Chưa kiểm vật tư bắt buộc: $names' : 'Required materials not checked: $names';
+
+  // Vật tư khai lúc tạo điểm bán (#24526)
+  String get createMaterialsTitle => isVietnamese ? 'Vật tư tại điểm' : 'Materials at outlet';
+  String get createMaterialsHint => isVietnamese
+      ? 'Khai vật tư đang có tại điểm bán. Loại có ⚠️ là bắt buộc — không có thì khai số lượng 0.'
+      : 'Declare materials at this outlet. ⚠️ types are required — declare 0 if none.';
+  String get createMaterialsNoCatalog => isVietnamese
+      ? 'Chưa tải được danh mục vật tư — kết nối mạng để khai vật tư.'
+      : 'Material catalog not loaded — connect to declare materials.';
+  String createMaterialsMissing(String names) => isVietnamese
+      ? 'Chưa khai vật tư bắt buộc: $names. Không có thì khai số lượng 0.'
+      : 'Required materials not declared: $names. Declare 0 if none.';
+  String get createMaterialsUndo => isVietnamese ? 'Bỏ khai' : 'Undo';
 }
 
