@@ -42,6 +42,10 @@ const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_c
 const int visitMaterialMaxServerFailures = 10;
 const Duration visitMaterialGiveUpAfter = Duration(minutes: 30);
 
+/// Hai lỗi máy chủ cách nhau quá khoảng này thì KHÔNG còn là "liên tiếp" — bắt đầu chuỗi mới. Lớn hơn trần lịch thử lại
+/// (5 phút) cộng biên: máy ngoại tuyến / tắt máy vài giờ giữa hai lỗi không được tính thành "đã lỗi 30 phút".
+const Duration visitMaterialFailureChainGap = Duration(minutes: 10);
+
 /// Trần chờ đẩy thao tác vật tư trước check-out trực tuyến — quá trần thì check-out đi hàng đợi (vẫn đứng sau vật tư),
 /// nút check-out không quay mãi.
 const Duration visitMaterialFlushTimeout = Duration(seconds: 20);
@@ -71,13 +75,21 @@ int visitMaterialServerFailures(String payload) {
     if (!p.containsKey('_server_failures') && !p.containsKey('_server_failure_first_ms')) return (payload, false);
     p
       ..remove('_server_failures')
-      ..remove('_server_failure_first_ms');
+      ..remove('_server_failure_first_ms')
+      ..remove('_server_failure_last_ms');
     return (jsonEncode(p), false);
   }
-  final failures = (p['_server_failures'] is num ? (p['_server_failures'] as num).toInt() : 0) + 1;
-  final first = p['_server_failure_first_ms'] is num ? (p['_server_failure_first_ms'] as num).toInt() : nowMs;
+  final last = p['_server_failure_last_ms'] is num ? (p['_server_failure_last_ms'] as num).toInt() : null;
+  // Khoảng nghỉ dài (ngoại tuyến, tắt máy — không có lần gửi nào để cắt chuỗi) ⇒ chuỗi cũ hết hiệu lực. Payload xếp hàng
+  // từ bản app trước (có mốc đầu, THIẾU mốc gần nhất) cũng coi là đứt — không biết lần lỗi cuối là khi nào.
+  final broken = last == null
+      ? p.containsKey('_server_failure_first_ms')
+      : nowMs - last > visitMaterialFailureChainGap.inMilliseconds;
+  final failures = (broken || p['_server_failures'] is! num ? 0 : (p['_server_failures'] as num).toInt()) + 1;
+  final first = !broken && p['_server_failure_first_ms'] is num ? (p['_server_failure_first_ms'] as num).toInt() : nowMs;
   p['_server_failures'] = failures;
   p['_server_failure_first_ms'] = first;
+  p['_server_failure_last_ms'] = nowMs;
   final giveUp =
       failures >= visitMaterialMaxServerFailures && nowMs - first >= visitMaterialGiveUpAfter.inMilliseconds;
   return (jsonEncode(p), giveUp);

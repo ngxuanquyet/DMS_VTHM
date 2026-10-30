@@ -713,13 +713,23 @@ void main() {
     });
 
     test('#3 đủ 30 phút nhưng CHƯA đủ số lần ⇒ chưa bỏ cuộc; đủ CẢ HAI ⇒ bỏ cuộc', () {
-      var (p, stop) = failN(basePayload, 2, startMs: t0, stepMs: 40 * minute);
-      expect(stop, isFalse);
-      (p, stop) = failN(p, visitMaterialMaxServerFailures - 3, startMs: t0 + 90 * minute);
+      // Lỗi cách nhau 4 phút (trong khoảng "liên tiếp"): 9 lần trải 32 phút ⇒ đủ thời gian, thiếu số lần.
+      var (p, stop) = failN(basePayload, visitMaterialMaxServerFailures - 1, startMs: t0, stepMs: 4 * minute);
       expect(visitMaterialServerFailures(p), visitMaterialMaxServerFailures - 1);
       expect(stop, isFalse);
-      (p, stop) = recordVisitMaterialFailure(p, serverError: true, nowMs: t0 + 100 * minute);
+      (p, stop) = recordVisitMaterialFailure(p, serverError: true, nowMs: t0 + 36 * minute);
       expect(stop, isTrue);
+    });
+
+    test('#3 khoảng nghỉ dài giữa hai lỗi (ngoại tuyến / tắt máy) ⇒ chuỗi mới, không tính thành "đã lỗi 30 phút"', () {
+      // 2 lỗi lúc 10:00, máy ngoại tuyến 5 giờ, rồi 8 lỗi 502 dồn trong 1 phút lúc triển khai.
+      var (p, _) = failN(basePayload, 2, startMs: t0);
+      final (p2, stop) = failN(p, visitMaterialMaxServerFailures - 2, startMs: t0 + 300 * minute, stepMs: 5000);
+      expect(stop, isFalse);
+      expect(visitMaterialServerFailures(p2), visitMaterialMaxServerFailures - 2, reason: 'chuỗi cũ bị cắt');
+      expect(jsonDecode(p2)['_server_failure_first_ms'], t0 + 300 * minute);
+      expect(visitMaterialFailureChainGap > const Duration(minutes: 5), isTrue, reason: 'lớn hơn trần lịch thử lại');
+      p = p2;
     });
 
     test('#3 lỗi mạng xen giữa ⇒ cắt chuỗi, đếm lại từ đầu (cả mốc lỗi đầu)', () {
@@ -733,6 +743,18 @@ void main() {
       // Lỗi mạng khi chưa có chuỗi lỗi ⇒ payload giữ nguyên (không ghi DB thừa).
       expect(recordVisitMaterialFailure(basePayload, serverError: false, nowMs: t0).$1, basePayload);
       expect(recordVisitMaterialFailure('{hỏng', serverError: true, nowMs: t0), ('{hỏng', false));
+    });
+
+    test('#3 payload từ bản app trước (có mốc đầu, thiếu mốc gần nhất) ⇒ chuỗi mới, không bỏ cuộc ngay', () {
+      final old = jsonEncode({
+        ...jsonDecode(basePayload) as Map<String, dynamic>,
+        '_server_failures': visitMaterialMaxServerFailures - 1,
+        '_server_failure_first_ms': t0,
+      });
+      final (p, stop) = recordVisitMaterialFailure(old, serverError: true, nowMs: t0 + 300 * minute);
+      expect(stop, isFalse);
+      expect(visitMaterialServerFailures(p), 1);
+      expect(jsonDecode(p)['_server_failure_last_ms'], t0 + 300 * minute);
     });
 
     test('trần có giới hạn hợp lý', () {
