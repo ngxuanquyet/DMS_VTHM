@@ -195,6 +195,12 @@ class AppDatabase extends _$AppDatabase {
     return into(syncQueueEntries).insert(owned);
   }
 
+  /// Ghi lại payload của một mục (vd bộ đếm lỗi máy chủ của thao tác vật tư).
+  Future<void> updatePayload(int id, String payload) async {
+    await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id)))
+        .write(SyncQueueEntriesCompanion(payload: Value(payload)));
+  }
+
   /// Đánh dấu mục đang gửi
   Future<bool> markSending(int id) async {
     final updated = await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id)))
@@ -480,6 +486,14 @@ class AppDatabase extends _$AppDatabase {
           ..limit(1))
         .getSingleOrNull();
     return row != null;
+  }
+
+  /// clientUuid các thao tác vật tư server đã từ chối (dead) — mọi lượt; để cache không tính chúng là "đã kiểm".
+  Future<Set<String>> getDeadVisitMaterialUuids() async {
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) => isMine(tbl) & tbl.entity.equals('visit_material') & tbl.state.equals('dead')))
+        .get();
+    return rows.map((r) => r.clientUuid).toSet();
   }
 
   /// Mục check-out phải nhường cho thao tác vật tư chưa gửi của CÙNG lượt (thứ tự FIFO + lịch thử lại có thể cho

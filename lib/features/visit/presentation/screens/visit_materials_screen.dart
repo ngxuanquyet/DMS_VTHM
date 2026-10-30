@@ -79,7 +79,12 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
 
     final data = _data;
     if (data != null) {
-      final next = applyMaterialOperation(data, op, outletMaterialId: outcome.outletMaterialId);
+      final next = applyMaterialOperation(
+        data,
+        op,
+        outletMaterialId: outcome.outletMaterialId,
+        trusted: !outcome.queued,
+      );
       if (mounted) setState(() => _data = next);
       vm.applyMaterialRequirements(
         outcome.requirements?.missingMaterials ?? next.missingAfterLocal,

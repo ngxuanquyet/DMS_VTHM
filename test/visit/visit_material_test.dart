@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
+import 'package:vthm_dms/core/services/anti_fraud_service.dart';
 import 'package:vthm_dms/core/sync/sync_entity_group.dart';
 import 'package:vthm_dms/features/visit/data/models/visit_material_model.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_material_repository.dart';
@@ -402,7 +403,7 @@ void main() {
       });
     });
 
-    test('detail_photo_fields + clicked_at_ms đi qua payload hàng đợi, KHÔNG lên API', () {
+    test('detail_photo_fields + clicked_at_server_ms đi qua payload hàng đợi, KHÔNG lên API', () {
       const op = MaterialOperation(
         clientUuid: 'u',
         materialTypeId: 73,
@@ -412,15 +413,15 @@ void main() {
           'anh_ke': ['/data/a.jpg'],
         },
         detailPhotoFields: ['anh_ke'],
-        clickedAtMs: 1234,
+        clickedAtServerMs: 1234,
       );
       final back = materialOperationFromQueuePayload(jsonEncode({'op': op.toJson()}))!;
       expect(back.detailPhotoFields, ['anh_ke']);
-      expect(back.clickedAtMs, 1234);
+      expect(back.clickedAtServerMs, 1234);
       expect(back.hasLocalPhotos, isTrue);
       final item = back.toItemJson();
       expect(item.containsKey('detail_photo_fields'), isFalse);
-      expect(item.containsKey('clicked_at_ms'), isFalse);
+      expect(item.containsKey('clicked_at_server_ms'), isFalse);
     });
   });
 
@@ -542,16 +543,34 @@ void main() {
       expect(c.data.missingAfterLocal.single.materialTypeId, 74);
     });
 
-    test('điểm bán chưa có cache ⇒ loại bắt buộc theo lần tải gần nhất (gắn cờ); không có gì ⇒ null', () {
+    test('#3 danh mục của điểm bán KHÁC chỉ để cảnh báo: gắn cờ, KHÔNG đòi loại bắt buộc nào; không có gì ⇒ null', () {
       final data = getBody()['data'] as Map<String, dynamic>;
       final c = materialsFromCache(
         lastCatalog: {'catalog': data['catalog'], 'required_type_ids': data['required_type_ids']},
         visitClientUuid: 'visitC',
       )!;
       expect(c.requiredFromOtherOutlet, isTrue);
-      expect(c.data.items, isEmpty);
-      expect(c.data.missingAfterLocal.single.name, 'Biển hiệu');
+      expect(c.data.items, isEmpty, reason: 'không dựng dòng trống ép "+ Thêm" loại có thể không áp dụng');
+      expect(c.data.missingAfterLocal, isEmpty, reason: 'luật theo loại điểm bán ⇒ không chặn cứng check-out');
+      expect(c.data.addableTypes.map((t) => t.id), containsAll([73, 74, 75]), reason: 'danh mục vẫn dùng được');
       expect(materialsFromCache(visitClientUuid: 'visitC'), isNull);
+    });
+
+    test('#5 op lượt TRƯỚC bị server từ chối (dead) không áp vào hiện trạng', () {
+      final entry = appendOpToCacheEntry(
+        outletEntry('visitA'),
+        'visitA',
+        const MaterialOperation(
+          clientUuid: 'bad',
+          materialTypeId: 73,
+          action: MaterialAction.update,
+          conditionCounts: {'good': 99},
+        ),
+      );
+      final ok = materialsFromCache(outletEntry: entry, visitClientUuid: 'visitB')!;
+      expect(ok.data.items.firstWhere((i) => i.materialTypeId == 73).quantity, 99);
+      final dead = materialsFromCache(outletEntry: entry, visitClientUuid: 'visitB', deadUuids: {'bad'})!;
+      expect(dead.data.items.firstWhere((i) => i.materialTypeId == 73).quantity, 5);
     });
   });
 
@@ -576,7 +595,7 @@ void main() {
                 materialTypeId: 73,
                 action: MaterialAction.update,
                 conditionCounts: const {'good': 1},
-                clickedAtMs: clickedAt,
+                clickedAtServerMs: clickedAt,
               ).toJson(),
             }),
             state: 'pending',
@@ -596,6 +615,49 @@ void main() {
 
       final newer = overlayPendingQueue(parse(), [pending('n', asOf + 60000)]);
       expect(newer.items.firstWhere((i) => i.materialTypeId == 73).quantity, 1);
+    });
+
+    test('#2 giờ máy lệch: thao tác server đã nhận (trusted) luôn hiện; mốc 0 (chưa biết giờ máy chủ) không so', () {
+      final asOf = parseAsOf('2026-10-30 12:10:03+07')!.millisecondsSinceEpoch;
+      // Máy chạy CHẬM 1 giờ: mốc bấm (nếu lấy giờ máy) trông như trước as_of dù bấm sau.
+      final skewed = MaterialOperation(
+        clientUuid: 's',
+        materialTypeId: 73,
+        action: MaterialAction.update,
+        conditionCounts: const {'good': 2},
+        clickedAtServerMs: asOf - 3600 * 1000,
+      );
+      final trusted = applyMaterialOperation(parse(), skewed, trusted: true);
+      expect(trusted.items.firstWhere((i) => i.materialTypeId == 73).quantity, 2);
+
+      // Cache: thao tác gửi trực tuyến xong (ok) được áp thẳng khi dựng lại, kể cả mốc "trước" as_of.
+      final entry = appendOpToCacheEntry(
+        {'visit_client_uuid': 'v', 'data': getBody()['data'], 'ops': const []},
+        'v',
+        skewed,
+        serverOk: true,
+      );
+      final c = materialsFromCache(outletEntry: entry, visitClientUuid: 'v')!;
+      expect(c.data.items.firstWhere((i) => i.materialTypeId == 73).quantity, 2);
+
+      final unknownClock = applyMaterialOperation(
+        parse(),
+        const MaterialOperation(
+          clientUuid: 'u',
+          materialTypeId: 73,
+          action: MaterialAction.update,
+          conditionCounts: {'good': 3},
+        ),
+      );
+      expect(unknownClock.items.firstWhere((i) => i.materialTypeId == 73).quantity, 3);
+    });
+
+    test('#2 mốc bấm lấy theo GIỜ MÁY CHỦ (header Date + đồng hồ đơn điệu), không theo giờ máy', () {
+      final server = DateTime.utc(2020, 1, 1, 8);
+      AntiFraudService.recordServerTime(server);
+      final ms = serverClockNowMs();
+      expect(ms, greaterThanOrEqualTo(server.millisecondsSinceEpoch));
+      expect(ms - server.millisecondsSinceEpoch, lessThan(5000), reason: 'giờ máy năm 2026 không lọt vào mốc');
     });
 
     test('số 0 tường minh (tình trạng đã tắt) không thành huy hiệu', () {
@@ -621,6 +683,65 @@ void main() {
         {'good': 2, 'old_code': 0},
         reason: 'gửi 0 tường minh để server xoá số ở mã đã tắt',
       );
+    });
+  });
+
+  group('#1 lối thoát: thao tác vật tư lỗi máy chủ lặp lại không giữ check-out mãi', () {
+    test('bộ đếm lỗi máy chủ nằm trong payload, giữ nguyên phần còn lại', () {
+      final payload = jsonEncode({
+        'visit_id': 5,
+        'op': const MaterialOperation(clientUuid: 'm', materialTypeId: 73, action: MaterialAction.confirm).toJson(),
+      });
+      expect(visitMaterialServerFailures(payload), 0);
+      var p = payload;
+      for (var i = 1; i <= visitMaterialMaxServerFailures; i++) {
+        p = withVisitMaterialServerFailures(p, visitMaterialServerFailures(p) + 1);
+      }
+      expect(visitMaterialServerFailures(p), visitMaterialMaxServerFailures);
+      expect(materialOperationFromQueuePayload(p)!.clientUuid, 'm');
+      expect(jsonDecode(p)['visit_id'], 5);
+      expect(visitMaterialServerFailures('{hỏng'), 0);
+      expect(withVisitMaterialServerFailures('{hỏng', 3), '{hỏng');
+    });
+
+    test('trần có giới hạn hợp lý', () {
+      expect(visitMaterialMaxServerFailures, inInclusiveRange(3, 20));
+      expect(visitMaterialFlushTimeout.inSeconds, inInclusiveRange(5, 60));
+    });
+
+    test('bỏ cuộc (dead) ⇒ check-out được thả; DB ghi lại payload bộ đếm', () async {
+      final db = AppDatabase(NativeDatabase.memory(), 1);
+      addTearDown(db.close);
+      final matId = await db.enqueue(SyncQueueEntriesCompanion.insert(
+        entity: 'visit_material',
+        op: 'save',
+        clientUuid: 'm1',
+        parentUuid: const Value('visitA'),
+        payload: '{"visit_id":5,"op":{}}',
+        createdAt: 0,
+        createdElapsed: 0,
+        bootId: 'b',
+      ));
+      await db.enqueue(SyncQueueEntriesCompanion.insert(
+        entity: 'visit',
+        op: 'checkout',
+        clientUuid: 'c1',
+        parentUuid: const Value('visitA'),
+        payload: '{}',
+        createdAt: 0,
+        createdElapsed: 0,
+        bootId: 'b',
+      ));
+      final checkout = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit');
+      expect(await db.isCheckoutHeldByMaterials(checkout), isTrue);
+
+      await db.updatePayload(matId, withVisitMaterialServerFailures('{"visit_id":5,"op":{}}', 4));
+      final mat = (await db.getVisitMaterialEntries('visitA')).single;
+      expect(visitMaterialServerFailures(mat.payload), 4);
+
+      await db.markDead(matId, 'Máy chủ lỗi 10 lần liên tiếp');
+      expect(await db.isCheckoutHeldByMaterials(checkout), isFalse);
+      expect(await db.getDeadVisitMaterialUuids(), {'m1'});
     });
   });
 }

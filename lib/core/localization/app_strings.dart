@@ -670,8 +670,8 @@ class AppStrings {
       ? 'Máy chưa tải được danh sách vật tư bắt buộc. Check-out lúc này có thể bị máy chủ từ chối khi đồng bộ nếu điểm bán có vật tư bắt buộc chưa kiểm. Vẫn check-out?'
       : 'The required material list has not been loaded. Checking out now may be rejected by the server when syncing. Check out anyway?';
   String get materialsRequiredFromOtherOutlet => isVietnamese
-      ? 'Điểm bán chưa có dữ liệu vật tư trên máy — loại bắt buộc lấy theo lần tải gần nhất, có thể chưa đúng với điểm bán này.'
-      : 'No saved data for this outlet — required types are taken from the last download and may differ.';
+      ? 'Điểm bán chưa có dữ liệu vật tư trên máy — chưa biết loại nào bắt buộc ở điểm bán này. Danh mục lấy theo lần tải gần nhất; check-out có thể bị máy chủ từ chối khi đồng bộ.'
+      : 'No saved data for this outlet — required types are unknown here. Catalog is from the last download; checkout may be rejected when syncing.';
   String get materialsDisabledCondition => isVietnamese
       ? 'Tình trạng đã ngừng dùng — lưu thay đổi sẽ đưa số này về 0'
       : 'Retired condition — saving will reset this count to 0';

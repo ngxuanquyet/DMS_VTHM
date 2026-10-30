@@ -32,6 +32,36 @@ const String visitMaterialsCachePrefix = 'dms_visit_materials_';
 /// Cùng tiền tố [visitMaterialsCachePrefix] nên cũng bị xoá khi đăng xuất.
 const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_catalog';
 
+/// Trần lỗi MÁY CHỦ (5xx / phản hồi sai — không tính mất mạng) liên tiếp của MỘT thao tác vật tư trong hàng đợi trước khi
+/// bỏ cuộc (dead). Check-out của lượt phải chờ thao tác vật tư ([AppDatabase.isCheckoutHeldByMaterials]); không có trần
+/// thì lỗi tất định giữ check-out mãi ⇒ lượt treo trên server, check-in lượt sau và đăng xuất bị chặn. 10 lần theo nhịp
+/// thử lại 2s→4s→8s→16s→5 phút ≈ 30 phút máy chủ lỗi liên tục — đủ dài để qua một lần máy chủ khởi động lại / triển
+/// khai, đủ ngắn để NV còn ở gần điểm bán khi thấy "Lỗi đồng bộ". Không là tham số server: đây là luật chống kẹt của
+/// hàng đợi trên máy, không phải nghiệp vụ.
+const int visitMaterialMaxServerFailures = 10;
+
+/// Trần chờ đẩy thao tác vật tư trước check-out trực tuyến — quá trần thì check-out đi hàng đợi (vẫn đứng sau vật tư),
+/// nút check-out không quay mãi.
+const Duration visitMaterialFlushTimeout = Duration(seconds: 20);
+
+/// Số lần lỗi máy chủ đã ghi trong payload hàng đợi (khoá `_server_failures`; không bị "Đồng bộ ngay" đặt lại như
+/// `attempts`).
+int visitMaterialServerFailures(String payload) {
+  try {
+    final p = jsonDecode(payload);
+    if (p is Map && p['_server_failures'] is num) return (p['_server_failures'] as num).toInt();
+  } catch (_) {}
+  return 0;
+}
+
+String withVisitMaterialServerFailures(String payload, int failures) {
+  try {
+    final p = jsonDecode(payload);
+    if (p is Map) return jsonEncode({...p, '_server_failures': failures});
+  } catch (_) {}
+  return payload;
+}
+
 /// Kết quả dựng từ cache.
 class CachedMaterials {
   final VisitMaterialsData data;
@@ -40,12 +70,18 @@ class CachedMaterials {
   const CachedMaterials(this.data, {this.requiredFromOtherOutlet = false});
 }
 
-/// Ghi thêm một thao tác vào bản cache điểm bán `{visit_client_uuid, data, ops: [{visit, op}]}` (tạo mới nếu chưa có).
-Map<String, dynamic> appendOpToCacheEntry(Map<String, dynamic>? entry, String visitClientUuid, MaterialOperation op) {
+/// Ghi thêm một thao tác vào bản cache điểm bán `{visit_client_uuid, data, ops: [{visit, op, ok}]}` (tạo mới nếu chưa
+/// có). [serverOk] = server đã trả `ok:true` ⇒ khi dựng lại được áp thẳng, không so mốc giờ.
+Map<String, dynamic> appendOpToCacheEntry(
+  Map<String, dynamic>? entry,
+  String visitClientUuid,
+  MaterialOperation op, {
+  bool serverOk = false,
+}) {
   final out = Map<String, dynamic>.from(entry ?? const {'visit_client_uuid': null, 'data': null});
   final ops = (out['ops'] is List ? List<dynamic>.from(out['ops'] as List) : <dynamic>[])
     ..removeWhere((o) => o is Map && o['op'] is Map && (o['op'] as Map)['client_uuid'] == op.clientUuid)
-    ..add({'visit': visitClientUuid, 'op': op.toJson()});
+    ..add({'visit': visitClientUuid, 'op': op.toJson(), 'ok': serverOk});
   out['ops'] = ops;
   return out;
 }
@@ -62,16 +98,18 @@ VisitMaterialsData overlayPendingQueue(VisitMaterialsData data, List<SyncQueueEn
 }
 
 /// Dựng mục Vật tư từ cache (ngoại tuyến / lượt chưa lên server):
-/// 1. nền = GET gần nhất của điểm bán; chưa có ⇒ danh mục + loại bắt buộc của lần GET gần nhất ở điểm bán khác;
-///    không có cả hai ⇒ null (màn báo "chưa tải được");
+/// 1. nền = GET gần nhất của điểm bán; chưa có ⇒ danh mục của lần GET gần nhất ở điểm bán khác, KHÔNG kèm loại bắt
+///    buộc (luật theo loại điểm bán — chỉ cảnh báo, không chặn cứng); không có cả hai ⇒ null (màn báo "chưa tải được");
 /// 2. thao tác của lượt TRƯỚC đã ghi thêm vào cache ⇒ áp, rồi xoá cờ "đã kiểm" ([VisitMaterialsData.resetForNewVisit])
 ///    nếu nền là của lượt khác;
-/// 3. thao tác của lượt NÀY (cache + hàng đợi, trừ mục bị server từ chối) ⇒ áp.
+/// 3. thao tác của lượt NÀY (cache + hàng đợi) ⇒ áp.
+/// Thao tác bị server từ chối (mục hàng đợi dead — [deadUuids], kể cả của lượt trước) bị bỏ ở mọi bước.
 CachedMaterials? materialsFromCache({
   Map<String, dynamic>? outletEntry,
   Map<String, dynamic>? lastCatalog,
   required String visitClientUuid,
   List<SyncQueueEntry> queueEntries = const [],
+  Set<String> deadUuids = const {},
 }) {
   VisitMaterialsData data;
   var fromOther = false;
@@ -80,31 +118,31 @@ CachedMaterials? materialsFromCache({
     data = VisitMaterialsData.fromJson(Map<String, dynamic>.from(outletEntry['data'] as Map));
     sameVisit = outletEntry['visit_client_uuid'] == visitClientUuid;
   } else if (lastCatalog != null) {
-    data = VisitMaterialsData.fromJson(lastCatalog);
+    data = VisitMaterialsData.fromJson(lastCatalog).withoutRequired();
     fromOther = true;
   } else {
     return null;
   }
 
-  final dead = queueEntries.where((e) => e.state == 'dead').map((e) => e.clientUuid).toSet();
-  final cachedOps = <(String?, MaterialOperation)>[];
+  final dead = {...deadUuids, ...queueEntries.where((e) => e.state == 'dead').map((e) => e.clientUuid)};
+  final cachedOps = <(String?, MaterialOperation, bool)>[];
   if (outletEntry?['ops'] is List) {
     for (final o in outletEntry!['ops'] as List) {
       if (o is Map && o['op'] is Map) {
         final op = MaterialOperation.fromJson(Map<String, dynamic>.from(o['op'] as Map));
-        if (!dead.contains(op.clientUuid)) cachedOps.add((o['visit']?.toString(), op));
+        if (!dead.contains(op.clientUuid)) cachedOps.add((o['visit']?.toString(), op, o['ok'] == true));
       }
     }
   }
 
-  for (final (visit, op) in cachedOps) {
-    if (visit != visitClientUuid) data = applyMaterialOperation(data, op);
+  for (final (visit, op, ok) in cachedOps) {
+    if (visit != visitClientUuid) data = applyMaterialOperation(data, op, trusted: ok);
   }
-  if (!sameVisit) data = data.resetForNewVisit();
+  if (!sameVisit && !fromOther) data = data.resetForNewVisit();
   final seen = <String>{};
-  for (final (visit, op) in cachedOps) {
+  for (final (visit, op, ok) in cachedOps) {
     if (visit == visitClientUuid) {
-      data = applyMaterialOperation(data, op);
+      data = applyMaterialOperation(data, op, trusted: ok);
       seen.add(op.clientUuid);
     }
   }
@@ -244,11 +282,16 @@ class VisitMaterialRepository {
     }
 
     final prefs = await _prefs();
+    Set<String> deadUuids = const {};
+    try {
+      deadUuids = await _db.getDeadVisitMaterialUuids();
+    } catch (_) {}
     final cached = materialsFromCache(
       outletEntry: _decode(prefs?.getString(_outletKey(customerId))),
       lastCatalog: _decode(prefs?.getString(visitMaterialsLastCatalogKey)),
       visitClientUuid: visitClientUuid,
       queueEntries: await _queueEntries(visitClientUuid),
+      deadUuids: deadUuids,
     );
     if (cached == null) {
       return MaterialsLoadResult(error: error);
@@ -281,7 +324,7 @@ class VisitMaterialRepository {
         if (r == null) {
           return const MaterialSubmitOutcome(ok: false, error: 'Phản hồi lưu vật tư không hợp lệ từ máy chủ.');
         }
-        if (r.ok) await _appendCachedOp(customerId, visitClientUuid, current);
+        if (r.ok) await _appendCachedOp(customerId, visitClientUuid, current, serverOk: true);
         return MaterialSubmitOutcome(
           ok: r.ok,
           error: r.ok ? null : (r.error ?? 'Không lưu được thao tác vật tư.'),
@@ -374,12 +417,22 @@ class VisitMaterialRepository {
     } catch (_) {}
   }
 
-  Future<void> _appendCachedOp(int customerId, String visitClientUuid, MaterialOperation op) async {
+  Future<void> _appendCachedOp(
+    int customerId,
+    String visitClientUuid,
+    MaterialOperation op, {
+    bool serverOk = false,
+  }) async {
     if (customerId <= 0) return;
     final prefs = await _prefs();
     if (prefs == null) return;
     try {
-      final next = appendOpToCacheEntry(_decode(prefs.getString(_outletKey(customerId))), visitClientUuid, op);
+      final next = appendOpToCacheEntry(
+        _decode(prefs.getString(_outletKey(customerId))),
+        visitClientUuid,
+        op,
+        serverOk: serverOk,
+      );
       await prefs.setString(_outletKey(customerId), jsonEncode(next));
     } catch (_) {}
   }

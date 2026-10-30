@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../../core/services/anti_fraud_service.dart';
 import '../../../forms/data/models/market_form_model.dart';
 import '../../../forms/domain/entities/market_form_entity.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
@@ -255,6 +256,16 @@ class VisitMaterialsData {
     );
   }
 
+  /// Bản không đòi loại bắt buộc nào — khi danh sách bắt buộc chỉ là ước đoán (lấy từ điểm bán khác): luật phụ thuộc
+  /// loại điểm bán nên KHÔNG được chặn cứng check-out bằng nó, chỉ cảnh báo.
+  VisitMaterialsData withoutRequired() => VisitMaterialsData(
+        types: types,
+        conditions: conditions,
+        items: items,
+        requiredTypeIds: const [],
+        missingRequired: const [],
+      );
+
   VisitMaterialsData copyWith({List<OutletMaterialItem>? items}) => VisitMaterialsData(
         types: types,
         conditions: conditions,
@@ -298,8 +309,9 @@ class MaterialOperation {
   /// ô chọn nhiều cũng là `List<String>` nhưng không phải ảnh.
   final List<String> detailPhotoFields;
 
-  /// Lúc bấm (ms epoch) — để lớp phủ trên máy không đè hiện trạng server MỚI hơn ([applyMaterialOperation]).
-  final int clickedAtMs;
+  /// Lúc bấm theo GIỜ MÁY CHỦ ước tính ([serverClockNowMs]) — cùng đồng hồ với `as_of`, để lớp phủ thao tác CHƯA lên
+  /// server không đè hiện trạng mới hơn ([applyMaterialOperation]). 0 = không ước tính được ⇒ không so.
+  final int clickedAtServerMs;
 
   const MaterialOperation({
     required this.clientUuid,
@@ -310,7 +322,7 @@ class MaterialOperation {
     this.photos = const [],
     this.reason,
     this.detailPhotoFields = const [],
-    this.clickedAtMs = 0,
+    this.clickedAtServerMs = 0,
   });
 
   /// Phần tử `items[i]` đúng hợp đồng: chỉ gửi khoá mà thao tác cần.
@@ -349,7 +361,7 @@ class MaterialOperation {
         'photos': photos,
         'reason': reason,
         'detail_photo_fields': detailPhotoFields,
-        'clicked_at_ms': clickedAtMs,
+        'clicked_at_server_ms': clickedAtServerMs,
       };
 
   factory MaterialOperation.fromJson(Map<String, dynamic> json) => MaterialOperation(
@@ -363,7 +375,7 @@ class MaterialOperation {
         detailPhotoFields: json['detail_photo_fields'] is List
             ? (json['detail_photo_fields'] as List).map((e) => e.toString()).toList()
             : const [],
-        clickedAtMs: _toInt(json['clicked_at_ms']) ?? 0,
+        clickedAtServerMs: _toInt(json['clicked_at_server_ms']) ?? 0,
       );
 
   MaterialOperation withPhotos(List<String> resolved, {Map<String, dynamic>? details}) => MaterialOperation(
@@ -375,7 +387,7 @@ class MaterialOperation {
         photos: resolved,
         reason: reason,
         detailPhotoFields: detailPhotoFields,
-        clickedAtMs: clickedAtMs,
+        clickedAtServerMs: clickedAtServerMs,
       );
 
   /// Còn ảnh nằm trên máy (ở `photos` hoặc ô ẢNH [detailPhotoFields] trong `details`) chưa đổi ra token.
@@ -457,9 +469,15 @@ class MaterialSaveResponse {
 /// Áp một thao tác (đã gửi được hoặc đang nằm hàng đợi) lên danh sách hiện có — để màn hình và cổng check-out ngoại
 /// tuyến thấy ngay "đã kiểm", không chờ server.
 ///
-/// Thao tác bấm TRƯỚC `as_of` của dòng (người khác cập nhật sau mình) chỉ đánh dấu "đã kiểm", không đè số / chi tiết —
-/// đúng luật server (hiện trạng chỉ bị đè khi `recorded_at ≥ as_of`).
-VisitMaterialsData applyMaterialOperation(VisitMaterialsData data, MaterialOperation op, {int? outletMaterialId}) {
+/// Thao tác CHƯA lên server bấm TRƯỚC `as_of` của dòng (người khác cập nhật sau mình) chỉ đánh dấu "đã kiểm", không đè
+/// số / chi tiết — đúng luật server (hiện trạng chỉ bị đè khi `recorded_at ≥ as_of`). Hai mốc cùng là giờ máy chủ.
+/// [trusted] = server đã trả `ok:true` cho thao tác ⇒ áp thẳng, không so (giờ máy lệch không được giấu chính nó).
+VisitMaterialsData applyMaterialOperation(
+  VisitMaterialsData data,
+  MaterialOperation op, {
+  int? outletMaterialId,
+  bool trusted = false,
+}) {
   final items = List<OutletMaterialItem>.from(data.items);
   final idx = items.indexWhere((i) => i.materialTypeId == op.materialTypeId);
   OutletMaterialItem base;
@@ -472,8 +490,10 @@ VisitMaterialsData applyMaterialOperation(VisitMaterialsData data, MaterialOpera
   // id âm = dòng đã khai trên máy, chưa có id server.
   final newId = outletMaterialId ?? base.id ?? -op.materialTypeId;
   final asOf = parseAsOf(base.asOf);
-  final olderThanServer =
-      op.clickedAtMs > 0 && asOf != null && asOf.millisecondsSinceEpoch > op.clickedAtMs;
+  final olderThanServer = !trusted &&
+      op.clickedAtServerMs > 0 &&
+      asOf != null &&
+      asOf.millisecondsSinceEpoch > op.clickedAtServerMs;
   OutletMaterialItem next;
   switch (olderThanServer ? MaterialAction.confirm : op.action) {
     case MaterialAction.confirm:
@@ -520,3 +540,6 @@ MaterialOperation? materialOperationFromQueuePayload(String payload) {
   } catch (_) {}
   return null;
 }
+
+/// Giờ máy chủ ước tính lúc này (ms epoch) — 0 khi chưa có mốc header Date. Dùng cho [MaterialOperation.clickedAtServerMs].
+int serverClockNowMs() => AntiFraudService.estimatedServerNowUtc()?.millisecondsSinceEpoch ?? 0;

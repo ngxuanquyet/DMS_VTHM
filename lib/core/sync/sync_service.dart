@@ -180,19 +180,30 @@ class SyncService {
     }
   }
 
-  /// Đẩy hết thao tác vật tư của lượt [visitClientUuid] lên server TRƯỚC check-out trực tuyến (server từ chối thao tác
-  /// sau giờ ra). Lượt gửi đang chạy thì CHỜ nó xong rồi gửi tiếp. Trả `false` nếu vẫn còn mục chưa gửi được.
-  Future<bool> flushVisitMaterials(String visitClientUuid) async {
-    for (var round = 0; round < 3; round++) {
-      await waitUntilIdle();
-      if (!await _db.hasOpenVisitMaterials(visitClientUuid)) return true;
-      await syncQueue(force: true);
+  /// Đẩy CHỈ các thao tác vật tư của lượt [visitClientUuid] lên server TRƯỚC check-out trực tuyến (server từ chối thao
+  /// tác sau giờ ra). Không reset lịch thử lại / không xử lý phần còn lại của hàng đợi. Lượt gửi đang chạy thì CHỜ nó
+  /// xong. Có trần [timeout] để nút check-out không quay mãi. Trả `false` nếu vẫn còn mục chưa gửi được.
+  Future<bool> flushVisitMaterials(
+    String visitClientUuid, {
+    Duration timeout = visitMaterialFlushTimeout,
+  }) async {
+    try {
+      return await _flushVisitMaterials(visitClientUuid).timeout(timeout);
+    } on TimeoutException {
+      debugPrint('[SyncService] Hết ${timeout.inSeconds}s chờ đẩy vật tư của lượt $visitClientUuid.');
+      return false;
     }
+  }
+
+  Future<bool> _flushVisitMaterials(String visitClientUuid) async {
+    await waitUntilIdle();
+    if (!await _db.hasOpenVisitMaterials(visitClientUuid)) return true;
+    await RefreshOutcome.untracked(() => _syncQueue(force: false, onlyVisitMaterialsOf: visitClientUuid));
     await waitUntilIdle();
     return !await _db.hasOpenVisitMaterials(visitClientUuid);
   }
 
-  Future<SyncResult> _syncQueue({required bool force}) async {
+  Future<SyncResult> _syncQueue({required bool force, String? onlyVisitMaterialsOf}) async {
     if (_isSyncing) {
       debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();
@@ -220,7 +231,11 @@ class SyncService {
 
       // Lấy danh sách pending theo FIFO, tối đa 50 mục (§3.3 Luật 6)
       // Không bao giờ lấy các mục 'dead' (lỗi 4xx vĩnh viễn không retry)
-      final entries = await _db.getPendingQueueEntries(limit: 50, force: force);
+      // Chế độ đẩy vật tư của MỘT lượt (trước check-out trực tuyến): chỉ mục pending của lượt đó, bỏ qua lịch thử lại
+      // của riêng chúng (người dùng đang chờ ở nút check-out), không đụng mục khác.
+      final entries = onlyVisitMaterialsOf != null
+          ? (await _db.getVisitMaterialEntries(onlyVisitMaterialsOf)).where((e) => e.state == 'pending').toList()
+          : await _db.getPendingQueueEntries(limit: 50, force: force);
       if (entries.isEmpty) {
         // Hàng đợi rỗng ⇒ KHÔNG tải lại gì: lượt định kỳ 60s / đổi mạng / màn gọi đồng bộ mà ép tải lại toàn bộ điểm
         // bán (1.000+ điểm ≈ 11 lượt API + ghi SQLite + các màn nạp lại) mỗi phút là nguồn giật + tốn dữ liệu. Danh sách
@@ -250,6 +265,8 @@ class SyncService {
         // Check-out nhường thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
         if (await _db.isCheckoutHeldByMaterials(entry)) {
           debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn thao tác vật tư của lượt chưa gửi.');
+          // Tính là "chưa xong" — kết quả/thông báo đồng bộ không được báo thành công khi lượt còn chưa check-out.
+          retryableCount++;
           continue;
         }
 
@@ -815,7 +832,8 @@ class SyncService {
     );
     final res = await _ref.read(visitMaterialApiServiceProvider).saveMaterials(visitId, body);
     final r = res.resultFor(resolved.clientUuid, 0);
-    if (r == null) throw AppException('Phản hồi lưu vật tư không hợp lệ từ máy chủ.');
+    // Phản hồi 200 mà thiếu kết quả = máy chủ trả sai — tính như lỗi máy chủ (đếm vào trần bỏ cuộc), không phải lỗi mạng.
+    if (r == null) throw AppException('Phản hồi lưu vật tư không hợp lệ từ máy chủ.', 502);
     if (!r.ok) throw AppException(r.error ?? 'Máy chủ từ chối thao tác vật tư.', 422);
 
     await _db.markDone(entry.id, serverId: r.logId);
@@ -1359,7 +1377,10 @@ class SyncService {
     List<SyncDeadError> currentDeadErrors,
   ) async {
     // 1. §9: Nếu nhận 422 "đã check-out rồi" hoặc "đã đóng" -> Coi là THÀNH CÔNG để dọn hàng đợi
+    // Không áp cho vật tư: câu lỗi vật tư ("Lượt viếng thăm này đã check-out.", lỗi ô chi tiết mang nhãn tự do…) mà
+    // lỡ chứa cụm này thì thao tác bị nuốt thành "đã gửi".
     if (statusCode == 422 &&
+        entry.entity != 'visit_material' &&
         (errorMsg.contains('đã check-out rồi') || errorMsg.contains('đã đóng'))) {
       debugPrint('[SyncService] Mục #${entry.id} nhận 422 (đã check-out rồi) -> Coi là thành công (§9).');
       await _db.markDone(entry.id);
@@ -1377,7 +1398,19 @@ class SyncService {
     // 3. Phân loại lỗi 4xx (400 <= statusCode < 500):
     // -> LỖI HỎNG VĨNH VIỄN (Permanent Client Error)
     // -> KHÔNG RETRY, chuyển sang 'dead', báo cho người dùng biết
-    if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+    // Lối thoát cho thao tác vật tư: lỗi máy chủ (5xx / trả sai) lặp lại tới trần thì bỏ cuộc (dead) — nếu không,
+    // check-out của lượt bị giữ mãi sau nó ([AppDatabase.isCheckoutHeldByMaterials]) và lượt treo trên server.
+    var giveUp = false;
+    if (entry.entity == 'visit_material' && statusCode != null && statusCode >= 500) {
+      final failures = visitMaterialServerFailures(entry.payload) + 1;
+      await _db.updatePayload(entry.id, withVisitMaterialServerFailures(entry.payload, failures));
+      if (failures >= visitMaterialMaxServerFailures) {
+        giveUp = true;
+        errorMsg = 'Máy chủ lỗi $failures lần liên tiếp khi lưu vật tư — đã dừng gửi: $errorMsg';
+      }
+    }
+
+    if (giveUp || (statusCode != null && statusCode >= 400 && statusCode < 500)) {
       debugPrint('[SyncService] [4xx - LỖI HỎNG VĨNH VIỄN] Mục #${entry.id} ($statusCode): $errorMsg -> Chuyển "dead", KHÔNG RETRY.');
       await _db.markDead(entry.id, errorMsg);
 

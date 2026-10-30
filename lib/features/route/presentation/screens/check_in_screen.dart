@@ -59,7 +59,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   /// 403 khi nạp vật tư ⇒ tài khoản không có quyền vật tư, ẩn mục Vật tư (#24522).
   bool _materialsForbidden = false;
 
-  /// Ngoại tuyến mà máy chưa từng tải danh sách vật tư bắt buộc ⇒ không biết cổng ④ đòi gì: cảnh báo, không coi là đủ.
+  /// Chưa có danh sách vật tư bắt buộc của CHÍNH điểm bán (chưa từng tải, hoặc chỉ có danh mục của điểm bán khác) ⇒
+  /// không biết cổng ④ đòi gì: hỏi lại trước khi check-out, KHÔNG chặn cứng (luật theo loại điểm bán). Đặt lại khi
+  /// GET vật tư sau đó thành công.
   bool _materialsUnknown = false;
 
   @override
@@ -96,7 +98,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       setState(() => _materialsForbidden = true);
       return;
     }
-    setState(() => _materialsUnknown = res.data == null);
+    setState(() => _materialsUnknown = res.data == null || res.requiredFromOtherOutlet);
     if (res.data != null) vm.applyMaterialRequirements(res.data!.missingAfterLocal);
   }
 
@@ -118,7 +120,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   }
 
   Future<void> _openMaterials(CheckInState state) async {
-    await Navigator.of(context).push(
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => VisitMaterialsScreen(
           customerId: _effectiveCustomerId(state),
@@ -126,6 +128,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         ),
       ),
     );
+    // Màn Vật tư vừa tải / lưu ⇒ nạp lại để cập nhật cờ "chưa biết danh sách bắt buộc" + cổng ④.
+    await _prefetchMaterials();
   }
 
   @override
@@ -1712,6 +1716,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Lượt ngoại tuyến vừa lên server (có id thật) ⇒ GET vật tư được rồi: nạp lại để thay danh sách ước đoán.
+    ref.listen<int>(checkInViewModelProvider.select((s) => s.visitId), (prev, next) {
+      if (next > 0 && (prev ?? 0) <= 0) _prefetchMaterials();
+    });
     final state = ref.watch(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);

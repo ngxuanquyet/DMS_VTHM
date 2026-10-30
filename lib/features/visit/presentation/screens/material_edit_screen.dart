@@ -130,7 +130,7 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
         clientUuid: const Uuid().v4(),
         materialTypeId: widget.type.id,
         action: MaterialAction.confirm,
-        clickedAtMs: DateTime.now().millisecondsSinceEpoch,
+        clickedAtServerMs: serverClockNowMs(),
       ));
 
   /// Mã các ô ảnh trong schema chi tiết — chỉ chúng được đổi đường dẫn ảnh ra token khi gửi.
@@ -166,7 +166,7 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
       details: details,
       photos: photos,
       detailPhotoFields: _detailPhotoFields,
-      clickedAtMs: DateTime.now().millisecondsSinceEpoch,
+      clickedAtServerMs: serverClockNowMs(),
     ));
   }
 
@@ -389,7 +389,7 @@ class _MaterialRemoveScreenState extends ConsumerState<_MaterialRemoveScreen> {
       action: MaterialAction.remove,
       reason: reason,
       photos: photos,
-      clickedAtMs: DateTime.now().millisecondsSinceEpoch,
+      clickedAtServerMs: serverClockNowMs(),
     ));
     if (!mounted) return;
     if (err == null) {

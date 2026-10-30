@@ -102,18 +102,21 @@ class AntiFraudService {
   /// Lấy mốc thời gian máy chủ đã ghi nhận gần nhất
   static DateTime? get lastServerTimeUtc => _lastServerTimeUtc;
 
+  /// Giờ MÁY CHỦ ước tính lúc này = mốc header Date gần nhất + thời gian trôi theo đồng hồ đơn điệu (không phụ thuộc
+  /// giờ máy). null khi chưa có mốc hoặc máy đã khởi động lại sau mốc.
+  static DateTime? estimatedServerNowUtc() {
+    if (_lastServerTimeUtc == null || _lastServerTimeMonotonicMs == null) return null;
+    final elapsedMs = SystemClock.nowMonotonicMs - _lastServerTimeMonotonicMs!;
+    if (elapsedMs < 0) return null;
+    return _lastServerTimeUtc!.add(Duration(milliseconds: elapsedMs));
+  }
+
   /// Tính toán độ lệch đồng hồ máy so với máy chủ (tính bằng phút)
   /// Sử dụng đồng hồ đơn điệu Monotonic Stopwatch để không bị ảnh hưởng khi user đổi giờ máy.
   static int getEstimatedClockSkewMinutes() {
-    if (_lastServerTimeUtc == null || _lastServerTimeMonotonicMs == null) {
-      return 0; // Chưa có mốc đối chiếu máy chủ
-    }
-
-    final elapsedMs = SystemClock.nowMonotonicMs - _lastServerTimeMonotonicMs!;
-    if (elapsedMs < 0) return 0;
-
     // Thời gian máy chủ ước tính ở hiện tại
-    final estimatedServerTimeUtc = _lastServerTimeUtc!.add(Duration(milliseconds: elapsedMs));
+    final estimatedServerTimeUtc = estimatedServerNowUtc();
+    if (estimatedServerTimeUtc == null) return 0; // Chưa có mốc đối chiếu máy chủ
     final currentClientTimeUtc = DateTime.now().toUtc();
 
     final diffMs = currentClientTimeUtc.difference(estimatedServerTimeUtc).inMilliseconds;

@@ -51,6 +51,7 @@ import '../../../../core/services/app_notification_service.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../travel/presentation/viewmodels/travel_view_model.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
+import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialFlushTimeout;
 
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
   return RouteApiService(
@@ -1231,17 +1232,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final req = state.requirements;
     if (req == null) return;
     final isClosed = state.visitResult == 'closed';
-    // Bỏ câu chặn vật tư CŨ: câu nêu đủ tên mọi loại đang thiếu (dựa `missing_materials`, không dò chữ "vật tư").
-    final blockers = req.blockers
-        .where((b) => req.missingMaterials.isEmpty || !req.missingMaterials.every((m) => b.contains(m.name)))
-        .toList();
-    if (!isClosed && missing.isNotEmpty) blockers.add(_missingMaterialsBlocker(missing));
+    // KHÔNG sửa `blockers` (dò chữ trong câu dễ xoá nhầm câu khác): cổng ④ ở nút check-out đọc thẳng
+    // `missingMaterials`, còn câu chặn cũ của server chỉ hiện khi `satisfied` vẫn false.
     final satisfied = (isClosed || req.secondsRemaining <= 0) &&
         (isClosed || req.missingForms.isEmpty) &&
         req.photosMissing <= 0 &&
         (isClosed || missing.isEmpty);
     state = state.copyWith(
-      requirements: req.copyWith(missingMaterials: missing, satisfied: satisfied, blockers: blockers),
+      requirements: req.copyWith(missingMaterials: missing, satisfied: satisfied),
     );
   }
 
@@ -2517,7 +2515,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         if (isOnline) {
           // Lượt gửi đang chạy thì syncQueue trả về rỗng ngay ⇒ CHỜ nó xong trước rồi mới ép gửi.
           final sync = ref!.read(syncServiceProvider);
-          await sync.waitUntilIdle();
+          await sync.waitUntilIdle().timeout(visitMaterialFlushTimeout, onTimeout: () {});
           await sync.syncQueue(force: true);
           final db = ref!.read(appDatabaseProvider);
           final entry = await db.getEntryByClientUuid(_sessionClientUuid);
