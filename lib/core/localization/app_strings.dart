@@ -686,6 +686,11 @@ class AppStrings {
   String get materialsDisabledCondition => isVietnamese
       ? 'Tình trạng đã ngừng dùng — lưu thay đổi sẽ đưa số này về 0'
       : 'Retired condition — saving will reset this count to 0';
+  String get materialsCheckoutRowLabel => isVietnamese ? 'Vật tư bắt buộc' : 'Required materials';
+  String materialsCheckoutRowValue(int n) => n > 0
+      ? (isVietnamese ? 'Đã kiểm $n/$n loại (Đạt)' : 'Checked $n/$n types (OK)')
+      : (isVietnamese ? 'Không có loại bắt buộc' : 'No required types');
+  String get materialsGoCheck => isVietnamese ? 'Đi kiểm vật tư' : 'Check materials';
   String materialsCheckoutBlocked(String names) =>
       isVietnamese ? 'Chưa kiểm vật tư bắt buộc: $names' : 'Required materials not checked: $names';
 

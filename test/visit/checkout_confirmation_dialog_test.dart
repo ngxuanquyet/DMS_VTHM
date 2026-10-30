@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/core/localization/app_language.dart';
+import 'package:vthm_dms/core/localization/app_strings.dart';
 import 'package:vthm_dms/features/route/presentation/widgets/checkout_confirmation_dialog.dart';
 
 void main() {
@@ -11,6 +13,7 @@ void main() {
     int surveyTotalCount = 0,
     bool isClosed = false,
     double? distanceMeters,
+    ({String label, String value})? materialRow,
     ValueChanged<bool>? onResult,
   }) {
     return MaterialApp(
@@ -28,6 +31,7 @@ void main() {
                   surveyTotalCount: surveyTotalCount,
                   isClosed: isClosed,
                   distanceMeters: distanceMeters,
+                  materialRow: materialRow,
                 );
                 onResult?.call(result);
               },
@@ -169,6 +173,37 @@ void main() {
 
       expect(result, isFalse);
       expect(find.byType(CheckoutConfirmationDialog), findsNothing);
+    });
+
+    testWidgets('dòng Vật tư bắt buộc: có số loại ⇒ "Đã kiểm n/n loại (Đạt)"; 0 ⇒ không có; null / đóng cửa ⇒ ẩn', (tester) async {
+      setupPhoneViewport(tester);
+      const s = AppStrings(AppLanguage.vi);
+      Future<void> open({int? count, bool closed = false}) async {
+        // Dựng lại cây — hộp lần trước không được nằm đè lên nút mở.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(buildTestWidget(
+          dealerName: 'Đại lý A',
+          durationText: '00:10:00',
+          photoCount: 2,
+          isClosed: closed,
+          materialRow: count == null ? null : (label: s.materialsCheckoutRowLabel, value: s.materialsCheckoutRowValue(count)),
+        ));
+        await tester.tap(find.text('Open Checkout Confirmation'));
+        await tester.pumpAndSettle();
+      }
+
+      await open(count: 3);
+      expect(find.text('Vật tư bắt buộc'), findsOneWidget);
+      expect(find.text('Đã kiểm 3/3 loại (Đạt)'), findsOneWidget);
+
+      await open(count: 0);
+      expect(find.text('Không có loại bắt buộc'), findsOneWidget);
+
+      await open();
+      expect(find.text('Vật tư bắt buộc'), findsNothing);
+
+      await open(count: 2, closed: true);
+      expect(find.text('Vật tư bắt buộc'), findsNothing);
     });
   });
 }

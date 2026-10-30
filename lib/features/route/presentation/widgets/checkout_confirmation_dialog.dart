@@ -13,6 +13,10 @@ class CheckoutConfirmationDialog extends StatelessWidget {
   final bool isClosed;
   final double? distanceMeters;
 
+  /// Dòng "Vật tư bắt buộc" (chữ đã dịch, do màn check-in dựng khi cổng ④ ĐÃ qua); null = ẩn (đóng cửa, không có
+  /// quyền, chưa biết luật, chưa có requirements).
+  final ({String label, String value})? materialRow;
+
   const CheckoutConfirmationDialog({
     super.key,
     required this.dealerName,
@@ -22,6 +26,7 @@ class CheckoutConfirmationDialog extends StatelessWidget {
     this.surveyTotalCount = 0,
     this.isClosed = false,
     this.distanceMeters,
+    this.materialRow,
   });
 
   /// Hiển thị hộp thoại và trả về `true` nếu người dùng xác nhận check-out, ngược lại `false`.
@@ -34,6 +39,7 @@ class CheckoutConfirmationDialog extends StatelessWidget {
     int surveyTotalCount = 0,
     bool isClosed = false,
     double? distanceMeters,
+    ({String label, String value})? materialRow,
   }) async {
     final result = await showDialog<bool>(
       context: context,
@@ -46,6 +52,7 @@ class CheckoutConfirmationDialog extends StatelessWidget {
         surveyTotalCount: surveyTotalCount,
         isClosed: isClosed,
         distanceMeters: distanceMeters,
+        materialRow: materialRow,
       ),
     );
     return result ?? false;
@@ -263,6 +270,19 @@ class CheckoutConfirmationDialog extends StatelessWidget {
                               : 'Không có biểu mẫu'),
                       isDark: isDark,
                     ),
+
+                    if (!isClosed && materialRow != null) ...[
+                      const Divider(height: 16, thickness: 0.8),
+                      // Vật tư bắt buộc (#24522) — tới được hộp này là cổng ④ đã qua.
+                      _buildSummaryRow(
+                        icon: Icons.inventory_2_outlined,
+                        iconBg: const Color(0xFFE0E7FF),
+                        iconColor: const Color(0xFF4F46E5),
+                        label: materialRow!.label,
+                        value: materialRow!.value,
+                        isDark: isDark,
+                      ),
+                    ],
 
                     if (distanceMeters != null) ...[
                       const Divider(height: 16, thickness: 0.8),

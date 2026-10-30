@@ -64,6 +64,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   /// GET vật tư sau đó thành công.
   bool _materialsUnknown = false;
 
+  /// Số loại vật tư bắt buộc của lượt (bản nạp gần nhất) — dòng "Vật tư bắt buộc" của hộp xác nhận check-out.
+  int? _requiredMaterialCount;
+
   @override
   void initState() {
     super.initState();
@@ -113,10 +116,16 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         );
     if (!mounted) return;
     if (res.forbidden) {
-      setState(() => _materialsForbidden = true);
+      setState(() {
+        _materialsForbidden = true;
+        _requiredMaterialCount = null;
+      });
       return;
     }
-    setState(() => _materialsUnknown = res.data == null || res.requiredFromOtherOutlet);
+    setState(() {
+      _materialsUnknown = res.data == null || res.requiredFromOtherOutlet;
+      _requiredMaterialCount = _materialsUnknown ? null : res.data!.requiredTypeIds.length;
+    });
     if (res.data != null) vm.applyMaterialRequirements(res.data!.missingAfterLocal);
   }
 
@@ -1326,7 +1335,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     );
   }
 
-  void _showBlockersDialog(List<String> blockers) {
+  /// [action]: nút đi sửa ngay (vd "Đi kiểm vật tư") cạnh "ĐÃ HIỂU" — đóng hộp rồi chạy.
+  void _showBlockersDialog(List<String> blockers, {({String label, VoidCallback onPressed})? action}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final parsedBlockers = blockers.map((b) {
       String text = b;
@@ -1463,6 +1473,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ],
         ),
         actions: [
+          if (action != null)
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                action.onPressed();
+              },
+              child: Text(action.label),
+            ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -2653,11 +2671,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
                                   // Ưu tiên 4: VẬT TƯ BẮT BUỘC (#24522) — server đã có câu trong blockers
                                   if (!isClosed && req != null && req.missingMaterials.isNotEmpty) {
-                                    _showBlockersDialog([
-                                      strings.materialsCheckoutBlocked(
-                                        req.missingMaterials.map((m) => m.name).join(', '),
+                                    _showBlockersDialog(
+                                      [
+                                        strings.materialsCheckoutBlocked(
+                                          req.missingMaterials.map((m) => m.name).join(', '),
+                                        ),
+                                      ],
+                                      action: (
+                                        label: strings.materialsGoCheck,
+                                        // Đọc lượt MỚI lúc bấm (không dùng bản chụp lúc dựng nút); màn đã đóng thì thôi.
+                                        onPressed: () {
+                                          if (mounted) _openMaterials(ref.read(checkInViewModelProvider));
+                                        },
                                       ),
-                                    ]);
+                                    );
                                     return;
                                   }
                                   if (!isClosed &&
@@ -2757,6 +2784,18 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       surveyTotalCount: surveyCount,
                                       isClosed: isClosed,
                                       distanceMeters: checkoutDistanceM,
+                                      // Chỉ khi cổng ④ THẬT SỰ đã xét (có requirements, không còn thiếu) — không có req thì
+                                      // cổng bị bỏ qua, ghi "Đạt" là nói sai.
+                                      materialRow: _materialsForbidden ||
+                                              _materialsUnknown ||
+                                              _requiredMaterialCount == null ||
+                                              req == null ||
+                                              req.missingMaterials.isNotEmpty
+                                          ? null
+                                          : (
+                                              label: strings.materialsCheckoutRowLabel,
+                                              value: strings.materialsCheckoutRowValue(_requiredMaterialCount!),
+                                            ),
                                     );
 
                                     if (!isConfirmed || !context.mounted) return;
