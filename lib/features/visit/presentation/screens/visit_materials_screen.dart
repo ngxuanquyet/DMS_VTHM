@@ -33,6 +33,7 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
   VisitMaterialsData? _data;
   bool _loading = true;
   bool _fromCache = false;
+  bool _requiredFromOtherOutlet = false;
   bool _forbidden = false;
   String? _error;
 
@@ -55,6 +56,7 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
       _loading = false;
       _data = res.data;
       _fromCache = res.fromCache;
+      _requiredFromOtherOutlet = res.requiredFromOtherOutlet;
       _forbidden = res.forbidden;
       _error = res.error;
     });
@@ -68,6 +70,7 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final outcome = await ref.read(visitMaterialRepositoryProvider).submit(
           visitId: ref.read(checkInViewModelProvider).visitId,
+          customerId: widget.customerId,
           visitClientUuid: vm.sessionClientUuid,
           dealerName: widget.dealerName,
           op: op,
@@ -187,6 +190,17 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(strings.materialsOfflineCache,
+                    style: const TextStyle(fontSize: 12, color: AppColors.warning, fontWeight: FontWeight.w600)),
+              ),
+            if (_requiredFromOtherOutlet)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(strings.materialsRequiredFromOtherOutlet,
                     style: const TextStyle(fontSize: 12, color: AppColors.warning, fontWeight: FontWeight.w600)),
               ),
             if (data.items.isEmpty)

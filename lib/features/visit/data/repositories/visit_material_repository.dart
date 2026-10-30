@@ -28,6 +28,94 @@ final visitMaterialRepositoryProvider = Provider<VisitMaterialRepository>((ref) 
 /// Tiền tố khoá cache danh mục + hiện trạng vật tư theo điểm bán — xoá khi đăng xuất (auth_repository_impl).
 const String visitMaterialsCachePrefix = 'dms_visit_materials_';
 
+/// Khoá cache danh mục + loại bắt buộc của lần GET gần nhất (không theo điểm bán) — dùng khi điểm bán chưa có cache.
+/// Cùng tiền tố [visitMaterialsCachePrefix] nên cũng bị xoá khi đăng xuất.
+const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_catalog';
+
+/// Kết quả dựng từ cache.
+class CachedMaterials {
+  final VisitMaterialsData data;
+  final bool requiredFromOtherOutlet;
+
+  const CachedMaterials(this.data, {this.requiredFromOtherOutlet = false});
+}
+
+/// Ghi thêm một thao tác vào bản cache điểm bán `{visit_client_uuid, data, ops: [{visit, op}]}` (tạo mới nếu chưa có).
+Map<String, dynamic> appendOpToCacheEntry(Map<String, dynamic>? entry, String visitClientUuid, MaterialOperation op) {
+  final out = Map<String, dynamic>.from(entry ?? const {'visit_client_uuid': null, 'data': null});
+  final ops = (out['ops'] is List ? List<dynamic>.from(out['ops'] as List) : <dynamic>[])
+    ..removeWhere((o) => o is Map && o['op'] is Map && (o['op'] as Map)['client_uuid'] == op.clientUuid)
+    ..add({'visit': visitClientUuid, 'op': op.toJson()});
+  out['ops'] = ops;
+  return out;
+}
+
+/// Thao tác còn chờ gửi (pending/sending) áp lên dữ liệu GET vừa tải — GET chưa biết chúng.
+VisitMaterialsData overlayPendingQueue(VisitMaterialsData data, List<SyncQueueEntry> entries) {
+  var out = data;
+  for (final e in entries) {
+    if (e.state != 'pending' && e.state != 'sending') continue;
+    final op = materialOperationFromQueuePayload(e.payload);
+    if (op != null) out = applyMaterialOperation(out, op);
+  }
+  return out;
+}
+
+/// Dựng mục Vật tư từ cache (ngoại tuyến / lượt chưa lên server):
+/// 1. nền = GET gần nhất của điểm bán; chưa có ⇒ danh mục + loại bắt buộc của lần GET gần nhất ở điểm bán khác;
+///    không có cả hai ⇒ null (màn báo "chưa tải được");
+/// 2. thao tác của lượt TRƯỚC đã ghi thêm vào cache ⇒ áp, rồi xoá cờ "đã kiểm" ([VisitMaterialsData.resetForNewVisit])
+///    nếu nền là của lượt khác;
+/// 3. thao tác của lượt NÀY (cache + hàng đợi, trừ mục bị server từ chối) ⇒ áp.
+CachedMaterials? materialsFromCache({
+  Map<String, dynamic>? outletEntry,
+  Map<String, dynamic>? lastCatalog,
+  required String visitClientUuid,
+  List<SyncQueueEntry> queueEntries = const [],
+}) {
+  VisitMaterialsData data;
+  var fromOther = false;
+  var sameVisit = false;
+  if (outletEntry != null && outletEntry['data'] is Map) {
+    data = VisitMaterialsData.fromJson(Map<String, dynamic>.from(outletEntry['data'] as Map));
+    sameVisit = outletEntry['visit_client_uuid'] == visitClientUuid;
+  } else if (lastCatalog != null) {
+    data = VisitMaterialsData.fromJson(lastCatalog);
+    fromOther = true;
+  } else {
+    return null;
+  }
+
+  final dead = queueEntries.where((e) => e.state == 'dead').map((e) => e.clientUuid).toSet();
+  final cachedOps = <(String?, MaterialOperation)>[];
+  if (outletEntry?['ops'] is List) {
+    for (final o in outletEntry!['ops'] as List) {
+      if (o is Map && o['op'] is Map) {
+        final op = MaterialOperation.fromJson(Map<String, dynamic>.from(o['op'] as Map));
+        if (!dead.contains(op.clientUuid)) cachedOps.add((o['visit']?.toString(), op));
+      }
+    }
+  }
+
+  for (final (visit, op) in cachedOps) {
+    if (visit != visitClientUuid) data = applyMaterialOperation(data, op);
+  }
+  if (!sameVisit) data = data.resetForNewVisit();
+  final seen = <String>{};
+  for (final (visit, op) in cachedOps) {
+    if (visit == visitClientUuid) {
+      data = applyMaterialOperation(data, op);
+      seen.add(op.clientUuid);
+    }
+  }
+  for (final e in queueEntries) {
+    if (e.state == 'dead' || seen.contains(e.clientUuid)) continue;
+    final op = materialOperationFromQueuePayload(e.payload);
+    if (op != null) data = applyMaterialOperation(data, op);
+  }
+  return CachedMaterials(data, requiredFromOtherOutlet: fromOther);
+}
+
 /// Kết quả nạp mục Vật tư.
 class MaterialsLoadResult {
   final VisitMaterialsData? data;
@@ -37,9 +125,18 @@ class MaterialsLoadResult {
 
   /// Đang dùng bản lưu trên máy (ngoại tuyến / lượt chưa lên server).
   final bool fromCache;
+
+  /// Điểm bán chưa có cache riêng ⇒ loại bắt buộc lấy theo lần tải gần nhất ở điểm bán KHÁC (có thể lệch luật).
+  final bool requiredFromOtherOutlet;
   final String? error;
 
-  const MaterialsLoadResult({this.data, this.forbidden = false, this.fromCache = false, this.error});
+  const MaterialsLoadResult({
+    this.data,
+    this.forbidden = false,
+    this.fromCache = false,
+    this.requiredFromOtherOutlet = false,
+    this.error,
+  });
 }
 
 /// Kết quả gửi một thao tác.
@@ -61,7 +158,7 @@ class MaterialSubmitOutcome {
   });
 }
 
-/// Đổi mọi ảnh còn nằm trên máy (ở `photos` và ở ô ảnh trong `details`) ra token qua [upload]
+/// Đổi mọi ảnh còn nằm trên máy (ở `photos` và ở ô ẢNH [MaterialOperation.detailPhotoFields] của `details`) ra token qua [upload]
 /// (`POST /dms/form-photos` — cùng luồng ô ảnh biểu mẫu thị trường). Lỗi tải ảnh ĐƯỢC ném ra để hàng đợi thử lại —
 /// không gửi thao tác thiếu ảnh. Tệp không còn trên máy thì bỏ (server sẽ báo nếu thiếu ảnh bắt buộc).
 Future<MaterialOperation> resolveOperationPhotos(
@@ -95,7 +192,10 @@ Future<MaterialOperation> resolveOperationPhotos(
     details = <String, dynamic>{};
     for (final e in op.details!.entries) {
       final v = e.value;
-      details[e.key] = (v is List && v.every((x) => x is String)) ? await resolveList(v.cast<String>()) : v;
+      // CHỈ ô ảnh của schema — ô chọn nhiều cũng là danh sách chuỗi, đụng vào là xoá trắng giá trị.
+      details[e.key] = (op.detailPhotoFields.contains(e.key) && v is List)
+          ? await resolveList(v.map((x) => x.toString()).toList())
+          : v;
     }
   }
   return op.withPhotos(photos, details: details);
@@ -119,8 +219,8 @@ class VisitMaterialRepository {
   Future<String> _uploadPhoto(File file) async =>
       (await _ref.read(formsApiServiceProvider).uploadPhoto(file)).token;
 
-  /// Nạp mục Vật tư. Lượt đã lên server + có mạng ⇒ gọi API (và lưu cache theo điểm bán); còn lại ⇒ cache.
-  /// Thao tác còn nằm hàng đợi của lượt này được áp đè lên để hiện "đã kiểm".
+  /// Nạp mục Vật tư. Lượt đã lên server + có mạng ⇒ gọi API (lưu cache theo điểm bán + danh mục/loại bắt buộc gần nhất);
+  /// còn lại ⇒ cache ([materialsFromCache]). Thao tác còn nằm hàng đợi của lượt này được áp đè lên để hiện "đã kiểm".
   Future<MaterialsLoadResult> load({
     required int visitId,
     required int customerId,
@@ -132,8 +232,7 @@ class VisitMaterialRepository {
       try {
         final (raw, data) = await _api.getMaterials(visitId);
         await _writeCache(customerId, visitClientUuid, raw);
-        final overlaid = await _overlayQueued(data, visitClientUuid, includeSent: false);
-        return MaterialsLoadResult(data: overlaid);
+        return MaterialsLoadResult(data: overlayPendingQueue(data, await _queueEntries(visitClientUuid)));
       } catch (e) {
         if (e is AppException && e.statusCode == 403) {
           return const MaterialsLoadResult(forbidden: true);
@@ -144,18 +243,30 @@ class VisitMaterialRepository {
       }
     }
 
-    final cached = await _readCache(customerId, visitClientUuid);
+    final prefs = await _prefs();
+    final cached = materialsFromCache(
+      outletEntry: _decode(prefs?.getString(_outletKey(customerId))),
+      lastCatalog: _decode(prefs?.getString(visitMaterialsLastCatalogKey)),
+      visitClientUuid: visitClientUuid,
+      queueEntries: await _queueEntries(visitClientUuid),
+    );
     if (cached == null) {
       return MaterialsLoadResult(error: error);
     }
-    final overlaid = await _overlayQueued(cached, visitClientUuid, includeSent: true);
-    return MaterialsLoadResult(data: overlaid, fromCache: true, error: error);
+    return MaterialsLoadResult(
+      data: cached.data,
+      fromCache: true,
+      requiredFromOtherOutlet: cached.requiredFromOtherOutlet,
+      error: error,
+    );
   }
 
   /// Gửi MỘT thao tác: trực tuyến gửi ngay (đọc `results[0].ok`); mất mạng / lượt chưa lên server ⇒ xếp hàng đợi với
-  /// CHÍNH `client_uuid` của thao tác (server khử trùng nếu lượt trực tuyến đã kịp ghi).
+  /// CHÍNH `client_uuid` của thao tác (server khử trùng nếu lượt trực tuyến đã kịp ghi). Thao tác được nhận (gửi xong
+  /// hoặc xếp hàng) ghi thêm vào cache điểm bán — mất mạng sau đó cổng ④ vẫn thấy "đã kiểm".
   Future<MaterialSubmitOutcome> submit({
     required int visitId,
+    required int customerId,
     required String visitClientUuid,
     required String dealerName,
     required MaterialOperation op,
@@ -170,6 +281,7 @@ class VisitMaterialRepository {
         if (r == null) {
           return const MaterialSubmitOutcome(ok: false, error: 'Phản hồi lưu vật tư không hợp lệ từ máy chủ.');
         }
+        if (r.ok) await _appendCachedOp(customerId, visitClientUuid, current);
         return MaterialSubmitOutcome(
           ok: r.ok,
           error: r.ok ? null : (r.error ?? 'Không lưu được thao tác vật tư.'),
@@ -185,6 +297,7 @@ class VisitMaterialRepository {
     }
 
     await enqueue(visitId: visitId, visitClientUuid: visitClientUuid, dealerName: dealerName, op: current);
+    await _appendCachedOp(customerId, visitClientUuid, current);
     return const MaterialSubmitOutcome(ok: true, queued: true);
   }
 
@@ -215,52 +328,59 @@ class VisitMaterialRepository {
     );
   }
 
-  Future<VisitMaterialsData> _overlayQueued(
-    VisitMaterialsData data,
-    String visitClientUuid, {
-    required bool includeSent,
-  }) async {
-    List<SyncQueueEntry> entries;
+  Future<List<SyncQueueEntry>> _queueEntries(String visitClientUuid) async {
     try {
-      entries = await _db.getVisitMaterialEntries(visitClientUuid);
+      return await _db.getVisitMaterialEntries(visitClientUuid);
     } catch (_) {
-      return data;
+      return const [];
     }
-    var out = data;
-    for (final e in entries) {
-      final keep = e.state == 'pending' || e.state == 'sending' || (includeSent && e.state == 'done');
-      if (!keep) continue;
-      final op = materialOperationFromQueuePayload(e.payload);
-      if (op != null) out = applyMaterialOperation(out, op);
-    }
-    return out;
   }
 
-  Future<void> _writeCache(int customerId, String visitClientUuid, Map<String, dynamic> raw) async {
-    if (customerId <= 0) return;
+  Future<SharedPreferences?> _prefs() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      return await SharedPreferences.getInstance();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _outletKey(int customerId) => '$visitMaterialsCachePrefix$customerId';
+
+  static Map<String, dynamic>? _decode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final d = jsonDecode(raw);
+      return d is Map ? Map<String, dynamic>.from(d) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// GET mới ⇒ thay cache điểm bán (bỏ thao tác đã ghi thêm — GET đã gồm chúng) + lưu danh mục và loại bắt buộc gần nhất.
+  Future<void> _writeCache(int customerId, String visitClientUuid, Map<String, dynamic> raw) async {
+    final prefs = await _prefs();
+    if (prefs == null) return;
+    try {
+      if (customerId > 0) {
+        await prefs.setString(
+          _outletKey(customerId),
+          jsonEncode({'visit_client_uuid': visitClientUuid, 'data': raw, 'ops': const []}),
+        );
+      }
       await prefs.setString(
-        '$visitMaterialsCachePrefix$customerId',
-        jsonEncode({'visit_client_uuid': visitClientUuid, 'data': raw}),
+        visitMaterialsLastCatalogKey,
+        jsonEncode({'catalog': raw['catalog'], 'required_type_ids': raw['required_type_ids']}),
       );
     } catch (_) {}
   }
 
-  /// Bản cache của lượt KHÁC thì "đã kiểm trong lượt" không còn đúng ⇒ [VisitMaterialsData.resetForNewVisit].
-  Future<VisitMaterialsData?> _readCache(int customerId, String visitClientUuid) async {
-    if (customerId <= 0) return null;
+  Future<void> _appendCachedOp(int customerId, String visitClientUuid, MaterialOperation op) async {
+    if (customerId <= 0) return;
+    final prefs = await _prefs();
+    if (prefs == null) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$visitMaterialsCachePrefix$customerId');
-      if (raw == null || raw.isEmpty) return null;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map || decoded['data'] is! Map) return null;
-      final data = VisitMaterialsData.fromJson(Map<String, dynamic>.from(decoded['data'] as Map));
-      if (decoded['visit_client_uuid'] == visitClientUuid) return data;
-      return data.resetForNewVisit();
-    } catch (_) {
-      return null;
-    }
+      final next = appendOpToCacheEntry(_decode(prefs.getString(_outletKey(customerId))), visitClientUuid, op);
+      await prefs.setString(_outletKey(customerId), jsonEncode(next));
+    } catch (_) {}
   }
 }

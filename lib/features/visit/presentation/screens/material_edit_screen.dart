@@ -56,6 +56,10 @@ class MaterialEditScreen extends ConsumerStatefulWidget {
 class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
   final GlobalKey<MarketFormRendererState> _rendererKey = GlobalKey();
   final Map<String, TextEditingController> _countControllers = {};
+
+  /// Số ở tình trạng ĐÃ TẮT (không còn trong danh mục) của dòng hiện có — hiện chỉ đọc. Server không nhận số khác 0 ở
+  /// mã đã tắt, nên "Lưu" gửi 0 TƯỜNG MINH cho các mã này (không lặng lẽ bỏ khoá); "✓ Không đổi" giữ nguyên.
+  final Map<String, int> _retiredCounts = {};
   late final List<MarketFormBlockEntity> _blocks;
   bool _submitting = false;
   String? _error;
@@ -70,6 +74,10 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
       final v = counts[c.code] ?? 0;
       _countControllers[c.code] = TextEditingController(text: v > 0 ? '$v' : '');
     }
+    final known = widget.conditions.map((c) => c.code).toSet();
+    counts.forEach((code, n) {
+      if (!known.contains(code) && n > 0) _retiredCounts[code] = n;
+    });
     _blocks = [
       ...widget.type.detailBlocks,
       _syntheticBlock(_photoCode, ref.read(stringsProvider).materialsPhotos, 'image'),
@@ -122,7 +130,14 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
         clientUuid: const Uuid().v4(),
         materialTypeId: widget.type.id,
         action: MaterialAction.confirm,
+        clickedAtMs: DateTime.now().millisecondsSinceEpoch,
       ));
+
+  /// Mã các ô ảnh trong schema chi tiết — chỉ chúng được đổi đường dẫn ảnh ra token khi gửi.
+  List<String> get _detailPhotoFields => widget.type.detailBlocks
+      .where((b) => b.isImage || b.resolved.inputType.toLowerCase() == 'file')
+      .map((b) => b.resolved.code)
+      .toList();
 
   Future<void> _save() async {
     final strings = ref.read(stringsProvider);
@@ -147,9 +162,11 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
       clientUuid: const Uuid().v4(),
       materialTypeId: widget.type.id,
       action: _isNew ? MaterialAction.add : MaterialAction.update,
-      conditionCounts: _counts,
+      conditionCounts: {..._counts, for (final code in _retiredCounts.keys) code: 0},
       details: details,
       photos: photos,
+      detailPhotoFields: _detailPhotoFields,
+      clickedAtMs: DateTime.now().millisecondsSinceEpoch,
     ));
   }
 
@@ -208,6 +225,23 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
             ),
             const SizedBox(height: 12),
             ...widget.conditions.map((c) => _buildCountRow(c, isDark)),
+            ..._retiredCounts.entries.map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      ConditionDot(color: conditionColor('dark')),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${e.key}: ${e.value} — ${strings.materialsDisabledCondition}',
+                          style: AppTypography.bodyMedium(
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
             if (widget.type.detailBlocks.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -355,6 +389,7 @@ class _MaterialRemoveScreenState extends ConsumerState<_MaterialRemoveScreen> {
       action: MaterialAction.remove,
       reason: reason,
       photos: photos,
+      clickedAtMs: DateTime.now().millisecondsSinceEpoch,
     ));
     if (!mounted) return;
     if (err == null) {

@@ -468,6 +468,27 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// Lượt [visitClientUuid] còn thao tác vật tư CHƯA lên server (pending — kể cả đang chờ thử lại — hoặc sending).
+  /// Server chỉ nhận thao tác vật tư trước giờ check-out và cổng ④ đòi chúng ⇒ check-out của lượt phải đứng chờ.
+  Future<bool> hasOpenVisitMaterials(String visitClientUuid) async {
+    final row = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('visit_material') &
+              tbl.parentUuid.equals(visitClientUuid) &
+              (tbl.state.equals('pending') | tbl.state.equals('sending')))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null;
+  }
+
+  /// Mục check-out phải nhường cho thao tác vật tư chưa gửi của CÙNG lượt (thứ tự FIFO + lịch thử lại có thể cho
+  /// check-out vượt lên ⇒ 422 cổng ④ ⇒ dead, lượt treo).
+  Future<bool> isCheckoutHeldByMaterials(SyncQueueEntry entry) async {
+    if (entry.entity != 'visit' || entry.op != 'checkout' || entry.parentUuid == null) return false;
+    return hasOpenVisitMaterials(entry.parentUuid!);
+  }
+
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
   Future<List<SyncQueueEntry>> getAllPendingQueueEntries() {
     return (select(syncQueueEntries)

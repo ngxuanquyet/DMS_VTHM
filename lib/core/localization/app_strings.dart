@@ -663,6 +663,18 @@ class AppStrings {
   String get materialsForbidden => isVietnamese
       ? 'Tài khoản chưa được cấp quyền cập nhật vật tư.'
       : 'Your account is not allowed to update materials.';
+  String get materialsRequiredUnknown => isVietnamese
+      ? 'Chưa tải được danh sách vật tư bắt buộc'
+      : 'Required material list not loaded yet';
+  String get materialsRequiredUnknownCheckout => isVietnamese
+      ? 'Máy chưa tải được danh sách vật tư bắt buộc. Check-out lúc này có thể bị máy chủ từ chối khi đồng bộ nếu điểm bán có vật tư bắt buộc chưa kiểm. Vẫn check-out?'
+      : 'The required material list has not been loaded. Checking out now may be rejected by the server when syncing. Check out anyway?';
+  String get materialsRequiredFromOtherOutlet => isVietnamese
+      ? 'Điểm bán chưa có dữ liệu vật tư trên máy — loại bắt buộc lấy theo lần tải gần nhất, có thể chưa đúng với điểm bán này.'
+      : 'No saved data for this outlet — required types are taken from the last download and may differ.';
+  String get materialsDisabledCondition => isVietnamese
+      ? 'Tình trạng đã ngừng dùng — lưu thay đổi sẽ đưa số này về 0'
+      : 'Retired condition — saving will reset this count to 0';
   String materialsCheckoutBlocked(String names) =>
       isVietnamese ? 'Chưa kiểm vật tư bắt buộc: $names' : 'Required materials not checked: $names';
 }

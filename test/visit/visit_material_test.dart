@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/sync/sync_entity_group.dart';
@@ -312,8 +314,10 @@ void main() {
         details: {
           'anh_ke': [f2.path],
           'so_ma_hang': 3,
+          'loai_hang': ['gach_op', 'gach_lat'],
         },
         photos: [token, f1.path, '${dir.path}/khong-co.jpg'],
+        detailPhotoFields: const ['anh_ke'],
       );
       final out = await resolveOperationPhotos(op, (file) async {
         uploaded.add(file.path);
@@ -323,6 +327,7 @@ void main() {
       expect(out.photos, [token, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1']);
       expect(out.details!['anh_ke'], ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2']);
       expect(out.details!['so_ma_hang'], 3);
+      expect(out.details!['loai_hang'], ['gach_op', 'gach_lat'], reason: 'ô chọn nhiều KHÔNG phải ảnh');
       expect(out.clientUuid, 'u');
       expect(out.hasLocalPhotos, isFalse);
     });
@@ -372,5 +377,250 @@ void main() {
     expect(groups, hasLength(1));
     expect(groups.single.entityType, 'visit');
     expect(groups.single.subtitle, contains('2 thao tác vật tư'));
+  });
+
+  group('#2 ô chọn nhiều trong details không bị coi là ảnh', () {
+    test('List<String> ở ô không phải ảnh ⇒ không có ảnh trên máy, giữ nguyên giá trị khi gửi', () async {
+      const op = MaterialOperation(
+        clientUuid: 'u',
+        materialTypeId: 73,
+        action: MaterialAction.update,
+        conditionCounts: {'good': 1},
+        details: {
+          'loai_hang': ['gach_op', 'gach_lat'],
+        },
+      );
+      expect(op.hasLocalPhotos, isFalse);
+      var uploads = 0;
+      final out = await resolveOperationPhotos(op, (_) async {
+        uploads++;
+        return 'x';
+      });
+      expect(uploads, 0);
+      expect(out.toItemJson()['details'], {
+        'loai_hang': ['gach_op', 'gach_lat'],
+      });
+    });
+
+    test('detail_photo_fields + clicked_at_ms đi qua payload hàng đợi, KHÔNG lên API', () {
+      const op = MaterialOperation(
+        clientUuid: 'u',
+        materialTypeId: 73,
+        action: MaterialAction.update,
+        conditionCounts: {},
+        details: {
+          'anh_ke': ['/data/a.jpg'],
+        },
+        detailPhotoFields: ['anh_ke'],
+        clickedAtMs: 1234,
+      );
+      final back = materialOperationFromQueuePayload(jsonEncode({'op': op.toJson()}))!;
+      expect(back.detailPhotoFields, ['anh_ke']);
+      expect(back.clickedAtMs, 1234);
+      expect(back.hasLocalPhotos, isTrue);
+      final item = back.toItemJson();
+      expect(item.containsKey('detail_photo_fields'), isFalse);
+      expect(item.containsKey('clicked_at_ms'), isFalse);
+    });
+  });
+
+  group('#1 thứ tự hàng đợi: check-out nhường thao tác vật tư của cùng lượt', () {
+    late AppDatabase db;
+    setUp(() => db = AppDatabase(NativeDatabase.memory(), 1));
+    tearDown(() => db.close());
+
+    Future<int> enqueue(String entity, String op, String uuid, String? parent, {int? nextAttemptAt}) =>
+        db.enqueue(SyncQueueEntriesCompanion.insert(
+          entity: entity,
+          op: op,
+          clientUuid: uuid,
+          parentUuid: Value(parent),
+          payload: '{}',
+          createdAt: 0,
+          createdElapsed: 0,
+          bootId: 'b',
+          nextAttemptAt: Value(nextAttemptAt),
+        ));
+
+    test('vật tư đang chờ thử lại (backoff) ⇒ vòng FIFO chỉ thấy check-out, nhưng check-out bị giữ', () async {
+      final future = DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch;
+      final matId = await enqueue('visit_material', 'save', 'm1', 'visitA', nextAttemptAt: future);
+      await enqueue('visit', 'checkout', 'c1', 'visitA');
+
+      final due = await db.getPendingQueueEntries();
+      expect(due.map((e) => e.entity), ['visit'], reason: 'lịch thử lại cho check-out vượt lên — chính là lỗi cũ');
+      expect(await db.isCheckoutHeldByMaterials(due.single), isTrue);
+
+      await db.markDone(matId);
+      expect(await db.isCheckoutHeldByMaterials(due.single), isFalse);
+    });
+
+    test('mục vật tư bị từ chối (dead) không giữ check-out mãi; vật tư lượt khác không liên quan', () async {
+      final matId = await enqueue('visit_material', 'save', 'm1', 'visitA');
+      await enqueue('visit_material', 'save', 'm2', 'visitB');
+      await enqueue('visit', 'checkout', 'c1', 'visitA');
+      final checkout = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit');
+      expect(await db.isCheckoutHeldByMaterials(checkout), isTrue);
+      await db.markDead(matId, 'Lượt viếng thăm này đã check-out.');
+      expect(await db.isCheckoutHeldByMaterials(checkout), isFalse);
+      expect(await db.hasOpenVisitMaterials('visitB'), isTrue);
+    });
+
+    test('mục không phải check-out không bao giờ bị giữ', () async {
+      await enqueue('visit_material', 'save', 'm1', 'visitA');
+      await enqueue('visit_photo', 'upload', 'p1', 'visitA');
+      final photo = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit_photo');
+      expect(await db.isCheckoutHeldByMaterials(photo), isFalse);
+    });
+  });
+
+  group('#3/#4 cache sau khi gửi + khi chưa có cache điểm bán', () {
+    Map<String, dynamic> outletEntry(String visit) =>
+        {'visit_client_uuid': visit, 'data': getBody()['data'], 'ops': const []};
+
+    test('gửi trực tuyến xong ghi thêm vào cache ⇒ mất mạng, mở lại cùng lượt vẫn "đã kiểm", cổng ④ đủ', () {
+      final entry = appendOpToCacheEntry(
+        outletEntry('visitA'),
+        'visitA',
+        const MaterialOperation(clientUuid: 'x1', materialTypeId: 74, action: MaterialAction.add, conditionCounts: {}),
+      );
+      final c = materialsFromCache(outletEntry: entry, visitClientUuid: 'visitA')!;
+      expect(c.data.missingAfterLocal, isEmpty);
+      expect(c.data.items.firstWhere((i) => i.materialTypeId == 74).checkedInVisit, isTrue);
+      expect(c.requiredFromOtherOutlet, isFalse);
+
+      // Gửi lại cùng uuid không nhân đôi.
+      final again = appendOpToCacheEntry(
+        entry,
+        'visitA',
+        const MaterialOperation(clientUuid: 'x1', materialTypeId: 74, action: MaterialAction.add, conditionCounts: {}),
+      );
+      expect((again['ops'] as List), hasLength(1));
+    });
+
+    test('lượt MỚI dùng cache lượt trước: hiện trạng giữ, cờ đã kiểm xoá, loại bắt buộc lại thiếu', () {
+      final entry = appendOpToCacheEntry(
+        outletEntry('visitA'),
+        'visitA',
+        const MaterialOperation(
+          clientUuid: 'x1',
+          materialTypeId: 74,
+          action: MaterialAction.add,
+          conditionCounts: {'good': 2},
+        ),
+      );
+      final c = materialsFromCache(outletEntry: entry, visitClientUuid: 'visitB')!;
+      final bh = c.data.items.firstWhere((i) => i.materialTypeId == 74);
+      expect(bh.quantity, 2);
+      expect(bh.checkedInVisit, isFalse);
+      expect(c.data.missingAfterLocal.single.materialTypeId, 74);
+    });
+
+    test('thao tác trong hàng đợi bị server từ chối (dead) không được tính là đã kiểm', () {
+      final entry = appendOpToCacheEntry(
+        outletEntry('visitA'),
+        'visitA',
+        const MaterialOperation(clientUuid: 'x1', materialTypeId: 74, action: MaterialAction.confirm),
+      );
+      final dead = SyncQueueEntry(
+        id: 1,
+        entity: 'visit_material',
+        op: 'save',
+        clientUuid: 'x1',
+        parentUuid: 'visitA',
+        payload: '{}',
+        state: 'dead',
+        attempts: 0,
+        nextAttemptAt: null,
+        lastError: null,
+        createdAt: 0,
+        createdElapsed: 0,
+        bootId: 'b',
+        serverId: null,
+      );
+      final c = materialsFromCache(outletEntry: entry, visitClientUuid: 'visitA', queueEntries: [dead])!;
+      expect(c.data.missingAfterLocal.single.materialTypeId, 74);
+    });
+
+    test('điểm bán chưa có cache ⇒ loại bắt buộc theo lần tải gần nhất (gắn cờ); không có gì ⇒ null', () {
+      final data = getBody()['data'] as Map<String, dynamic>;
+      final c = materialsFromCache(
+        lastCatalog: {'catalog': data['catalog'], 'required_type_ids': data['required_type_ids']},
+        visitClientUuid: 'visitC',
+      )!;
+      expect(c.requiredFromOtherOutlet, isTrue);
+      expect(c.data.items, isEmpty);
+      expect(c.data.missingAfterLocal.single.name, 'Biển hiệu');
+      expect(materialsFromCache(visitClientUuid: 'visitC'), isNull);
+    });
+  });
+
+  group('#5 lớp phủ không đè dữ liệu GET mới hơn', () {
+    test('as_of server dạng "+07" đọc được', () {
+      expect(parseAsOf('2026-10-30 12:10:03+07')!.toUtc(), DateTime.utc(2026, 10, 30, 5, 10, 3));
+      expect(parseAsOf(null), isNull);
+      expect(parseAsOf('rác'), isNull);
+    });
+
+    test('thao tác bấm TRƯỚC as_of chỉ đánh dấu đã kiểm, bấm SAU thì đè số', () {
+      final asOf = parseAsOf('2026-10-30 12:10:03+07')!.millisecondsSinceEpoch;
+      SyncQueueEntry pending(String uuid, int clickedAt) => SyncQueueEntry(
+            id: 1,
+            entity: 'visit_material',
+            op: 'save',
+            clientUuid: uuid,
+            parentUuid: 'v',
+            payload: jsonEncode({
+              'op': MaterialOperation(
+                clientUuid: uuid,
+                materialTypeId: 73,
+                action: MaterialAction.update,
+                conditionCounts: const {'good': 1},
+                clickedAtMs: clickedAt,
+              ).toJson(),
+            }),
+            state: 'pending',
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+            createdAt: clickedAt,
+            createdElapsed: 0,
+            bootId: 'b',
+            serverId: null,
+          );
+
+      final older = overlayPendingQueue(parse(), [pending('o', asOf - 60000)]);
+      final keOld = older.items.firstWhere((i) => i.materialTypeId == 73);
+      expect(keOld.quantity, 5, reason: 'người khác cập nhật sau mình — giữ số server');
+      expect(keOld.checkedInVisit, isTrue);
+
+      final newer = overlayPendingQueue(parse(), [pending('n', asOf + 60000)]);
+      expect(newer.items.firstWhere((i) => i.materialTypeId == 73).quantity, 1);
+    });
+
+    test('số 0 tường minh (tình trạng đã tắt) không thành huy hiệu', () {
+      final d = applyMaterialOperation(
+        parse(),
+        const MaterialOperation(
+          clientUuid: 'z',
+          materialTypeId: 73,
+          action: MaterialAction.update,
+          conditionCounts: {'good': 2, 'old_code': 0},
+        ),
+      );
+      final ke = d.items.firstWhere((i) => i.materialTypeId == 73);
+      expect(ke.conditionCounts, {'good': 2});
+      expect(ke.quantity, 2);
+      expect(
+        const MaterialOperation(
+          clientUuid: 'z',
+          materialTypeId: 73,
+          action: MaterialAction.update,
+          conditionCounts: {'good': 2, 'old_code': 0},
+        ).toItemJson()['condition_counts'],
+        {'good': 2, 'old_code': 0},
+        reason: 'gửi 0 tường minh để server xoá số ở mã đã tắt',
+      );
+    });
   });
 }

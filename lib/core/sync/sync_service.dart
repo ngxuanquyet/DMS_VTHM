@@ -84,6 +84,9 @@ class SyncService {
 
   bool _isSyncing = false;
 
+  /// Hoàn tất khi lượt gửi ĐANG chạy xong (null khi rảnh) — để nơi gọi CHỜ thay vì nhận kết quả rỗng của lời gọi trùng.
+  Completer<void>? _runDone;
+
   bool get isSyncing => _isSyncing;
 
   /// Mục con chưa lấy được serverId của mục cha. Mặc định là lỗi tạm (thử lại sau). Chỉ ném 4xx (đi đường dead chuẩn
@@ -170,12 +173,33 @@ class SyncService {
   Future<SyncResult> syncQueue({bool force = false}) =>
       RefreshOutcome.untracked(() => _syncQueue(force: force));
 
+  /// Chờ lượt gửi đang chạy (nếu có) xong.
+  Future<void> waitUntilIdle() async {
+    while (_runDone != null) {
+      await _runDone!.future;
+    }
+  }
+
+  /// Đẩy hết thao tác vật tư của lượt [visitClientUuid] lên server TRƯỚC check-out trực tuyến (server từ chối thao tác
+  /// sau giờ ra). Lượt gửi đang chạy thì CHỜ nó xong rồi gửi tiếp. Trả `false` nếu vẫn còn mục chưa gửi được.
+  Future<bool> flushVisitMaterials(String visitClientUuid) async {
+    for (var round = 0; round < 3; round++) {
+      await waitUntilIdle();
+      if (!await _db.hasOpenVisitMaterials(visitClientUuid)) return true;
+      await syncQueue(force: true);
+    }
+    await waitUntilIdle();
+    return !await _db.hasOpenVisitMaterials(visitClientUuid);
+  }
+
   Future<SyncResult> _syncQueue({required bool force}) async {
     if (_isSyncing) {
       debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();
     }
     _isSyncing = true;
+    final runDone = Completer<void>();
+    _runDone = runDone;
 
     int successCount = 0;
     int retryableCount = 0;
@@ -221,6 +245,12 @@ class SyncService {
         if (entry.ownerUserId != _db.ownerUserId) {
           debugPrint('[SyncService] Đã đổi người đăng nhập, dừng lô đồng bộ.');
           break;
+        }
+
+        // Check-out nhường thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
+        if (await _db.isCheckoutHeldByMaterials(entry)) {
+          debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn thao tác vật tư của lượt chưa gửi.');
+          continue;
         }
 
         final status = await _processEntry(entry, currentDeadErrors);
@@ -276,6 +306,8 @@ class SyncService {
       );
     } finally {
       _isSyncing = false;
+      _runDone = null;
+      runDone.complete();
       // Gửi xong thì không giữ mãi trong máy: mọi lượt (kể cả hàng đợi rỗng) dọn mục done quá hạn giữ (+ tệp ảnh).
       unawaited(_db.purgeDoneEntries().catchError((Object e) {
         debugPrint('[SyncService] Lỗi dọn mục đã gửi: $e');

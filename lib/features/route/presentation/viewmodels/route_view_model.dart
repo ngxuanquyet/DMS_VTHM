@@ -1231,7 +1231,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final req = state.requirements;
     if (req == null) return;
     final isClosed = state.visitResult == 'closed';
-    final blockers = req.blockers.where((b) => !b.toLowerCase().contains('vật tư')).toList();
+    // Bỏ câu chặn vật tư CŨ: câu nêu đủ tên mọi loại đang thiếu (dựa `missing_materials`, không dò chữ "vật tư").
+    final blockers = req.blockers
+        .where((b) => req.missingMaterials.isEmpty || !req.missingMaterials.every((m) => b.contains(m.name)))
+        .toList();
     if (!isClosed && missing.isNotEmpty) blockers.add(_missingMaterialsBlocker(missing));
     final satisfied = (isClosed || req.secondsRemaining <= 0) &&
         (isClosed || req.missingForms.isEmpty) &&
@@ -2512,7 +2515,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       try {
         final isOnline = ref!.read(connectivityProvider).isOnline;
         if (isOnline) {
-          await ref!.read(syncServiceProvider).syncQueue(force: true);
+          // Lượt gửi đang chạy thì syncQueue trả về rỗng ngay ⇒ CHỜ nó xong trước rồi mới ép gửi.
+          final sync = ref!.read(syncServiceProvider);
+          await sync.waitUntilIdle();
+          await sync.syncQueue(force: true);
           final db = ref!.read(appDatabaseProvider);
           final entry = await db.getEntryByClientUuid(_sessionClientUuid);
           if (entry != null && entry.serverId != null && entry.serverId! > 0) {
@@ -2533,6 +2539,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
       } catch (err) {
         debugPrint('[CheckInViewModel] Checkout pre-sync error: $err');
+      }
+    }
+
+    // 2b. Thao tác vật tư của lượt PHẢI lên server trước check-out (#24522: server từ chối thao tác sau giờ ra, cổng ④
+    // đòi chúng). Còn mục chưa gửi được ⇒ check-out đi hàng đợi, nơi nó đứng chờ sau thao tác vật tư của lượt.
+    if (state.visitId > 0 && ref != null) {
+      try {
+        if (ref!.read(connectivityProvider).isOnline &&
+            !await ref!.read(syncServiceProvider).flushVisitMaterials(_sessionClientUuid)) {
+          return await _checkoutOffline(request: request, lat: lat, lng: lng);
+        }
+      } catch (err) {
+        debugPrint('[CheckInViewModel] Đẩy thao tác vật tư trước check-out lỗi: $err');
       }
     }
 

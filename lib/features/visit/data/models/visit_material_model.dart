@@ -294,6 +294,13 @@ class MaterialOperation {
   final List<String> photos;
   final String? reason;
 
+  /// Mã các ô ẢNH trong `details` (theo `input_type` của schema loại) — CHỈ những ô này được đổi đường dẫn ra token;
+  /// ô chọn nhiều cũng là `List<String>` nhưng không phải ảnh.
+  final List<String> detailPhotoFields;
+
+  /// Lúc bấm (ms epoch) — để lớp phủ trên máy không đè hiện trạng server MỚI hơn ([applyMaterialOperation]).
+  final int clickedAtMs;
+
   const MaterialOperation({
     required this.clientUuid,
     required this.materialTypeId,
@@ -302,6 +309,8 @@ class MaterialOperation {
     this.details,
     this.photos = const [],
     this.reason,
+    this.detailPhotoFields = const [],
+    this.clickedAtMs = 0,
   });
 
   /// Phần tử `items[i]` đúng hợp đồng: chỉ gửi khoá mà thao tác cần.
@@ -339,6 +348,8 @@ class MaterialOperation {
         'details': details,
         'photos': photos,
         'reason': reason,
+        'detail_photo_fields': detailPhotoFields,
+        'clicked_at_ms': clickedAtMs,
       };
 
   factory MaterialOperation.fromJson(Map<String, dynamic> json) => MaterialOperation(
@@ -349,6 +360,10 @@ class MaterialOperation {
         details: json['details'] is Map ? Map<String, dynamic>.from(json['details'] as Map) : null,
         photos: json['photos'] is List ? (json['photos'] as List).map((e) => e.toString()).toList() : const [],
         reason: json['reason']?.toString(),
+        detailPhotoFields: json['detail_photo_fields'] is List
+            ? (json['detail_photo_fields'] as List).map((e) => e.toString()).toList()
+            : const [],
+        clickedAtMs: _toInt(json['clicked_at_ms']) ?? 0,
       );
 
   MaterialOperation withPhotos(List<String> resolved, {Map<String, dynamic>? details}) => MaterialOperation(
@@ -359,12 +374,15 @@ class MaterialOperation {
         details: details ?? this.details,
         photos: resolved,
         reason: reason,
+        detailPhotoFields: detailPhotoFields,
+        clickedAtMs: clickedAtMs,
       );
 
-  /// Còn ảnh nằm trên máy (ở `photos` hoặc ô ảnh trong `details`) chưa đổi ra token.
+  /// Còn ảnh nằm trên máy (ở `photos` hoặc ô ẢNH [detailPhotoFields] trong `details`) chưa đổi ra token.
   bool get hasLocalPhotos {
     if (photos.any((p) => !isPhotoToken(p))) return true;
-    for (final v in (details ?? const {}).values) {
+    for (final code in detailPhotoFields) {
+      final v = details?[code];
       if (v is List && v.any((p) => p is String && !isPhotoToken(p))) return true;
     }
     return false;
@@ -438,6 +456,9 @@ class MaterialSaveResponse {
 
 /// Áp một thao tác (đã gửi được hoặc đang nằm hàng đợi) lên danh sách hiện có — để màn hình và cổng check-out ngoại
 /// tuyến thấy ngay "đã kiểm", không chờ server.
+///
+/// Thao tác bấm TRƯỚC `as_of` của dòng (người khác cập nhật sau mình) chỉ đánh dấu "đã kiểm", không đè số / chi tiết —
+/// đúng luật server (hiện trạng chỉ bị đè khi `recorded_at ≥ as_of`).
 VisitMaterialsData applyMaterialOperation(VisitMaterialsData data, MaterialOperation op, {int? outletMaterialId}) {
   final items = List<OutletMaterialItem>.from(data.items);
   final idx = items.indexWhere((i) => i.materialTypeId == op.materialTypeId);
@@ -450,14 +471,18 @@ VisitMaterialsData applyMaterialOperation(VisitMaterialsData data, MaterialOpera
   }
   // id âm = dòng đã khai trên máy, chưa có id server.
   final newId = outletMaterialId ?? base.id ?? -op.materialTypeId;
+  final asOf = parseAsOf(base.asOf);
+  final olderThanServer =
+      op.clickedAtMs > 0 && asOf != null && asOf.millisecondsSinceEpoch > op.clickedAtMs;
   OutletMaterialItem next;
-  switch (op.action) {
+  switch (olderThanServer ? MaterialAction.confirm : op.action) {
     case MaterialAction.confirm:
       next = base.copyWith(checkedInVisit: true);
       break;
     case MaterialAction.add:
     case MaterialAction.update:
-      final counts = Map<String, int>.from(op.conditionCounts ?? const {});
+      // Số 0 tường minh (xoá số ở tình trạng đã tắt) không hiện thành huy hiệu.
+      final counts = Map<String, int>.from(op.conditionCounts ?? const {})..removeWhere((_, n) => n <= 0);
       final mergedDetails = <String, dynamic>{...?base.details, ...?op.details};
       next = base.copyWith(
         id: newId,
@@ -477,6 +502,12 @@ VisitMaterialsData applyMaterialOperation(VisitMaterialsData data, MaterialOpera
     items.add(next);
   }
   return data.copyWith(items: items);
+}
+
+/// `as_of` server ("2026-10-30 12:10:03+07") → DateTime; null khi không có / sai dạng.
+DateTime? parseAsOf(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  return DateTime.tryParse(raw) ?? DateTime.tryParse(raw.replaceFirst(' ', 'T'));
 }
 
 /// Đọc payload một dòng hàng đợi `visit_material` (dạng `{visit_id, dealer_name, op: {...}}`).

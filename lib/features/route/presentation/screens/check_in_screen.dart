@@ -59,6 +59,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   /// 403 khi nạp vật tư ⇒ tài khoản không có quyền vật tư, ẩn mục Vật tư (#24522).
   bool _materialsForbidden = false;
 
+  /// Ngoại tuyến mà máy chưa từng tải danh sách vật tư bắt buộc ⇒ không biết cổng ④ đòi gì: cảnh báo, không coi là đủ.
+  bool _materialsUnknown = false;
+
   @override
   void initState() {
     super.initState();
@@ -79,8 +82,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   /// Nạp sẵn vật tư sau check-in: lưu danh mục để dùng ngoại tuyến, biết có quyền không, và (ngoại tuyến) dựng cổng
   /// check-out ④ từ bản lưu trên máy — khi trực tuyến `requirements` của server đã mang `missing_materials`.
   Future<void> _prefetchMaterials() async {
+    if (!mounted) return;
     final state = ref.read(checkInViewModelProvider);
-    if (!mounted || state.visitId == 0) return;
+    if (state.visitId == 0) return;
     final vm = ref.read(checkInViewModelProvider.notifier);
     final res = await ref.read(visitMaterialRepositoryProvider).load(
           visitId: state.visitId,
@@ -92,7 +96,25 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       setState(() => _materialsForbidden = true);
       return;
     }
+    setState(() => _materialsUnknown = res.data == null);
     if (res.data != null) vm.applyMaterialRequirements(res.data!.missingAfterLocal);
+  }
+
+  /// Chưa biết danh sách vật tư bắt buộc (chưa từng tải) ⇒ hỏi lại trước khi check-out — server có thể từ chối.
+  Future<bool> _confirmCheckoutWithoutMaterialList() async {
+    final strings = ref.read(stringsProvider);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(strings.materialsTaskTitle),
+        content: Text(strings.materialsRequiredUnknownCheckout),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(strings.cancel)),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(strings.continueAction)),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   Future<void> _openMaterials(CheckInState state) async {
@@ -2463,6 +2485,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                   title: strings.materialsTaskTitle,
                                   subtitle: isClosed
                                       ? strings.materialsClosedExempt
+                                      : _materialsUnknown
+                                      ? strings.materialsRequiredUnknown
                                       : ((req?.missingMaterials.isNotEmpty ?? false)
                                           ? strings.materialsMissingCount(req!.missingMaterials.length)
                                           : strings.materialsTapToCheck),
@@ -2603,17 +2627,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
                                   // Ưu tiên 4: VẬT TƯ BẮT BUỘC (#24522) — server đã có câu trong blockers
                                   if (!isClosed && req != null && req.missingMaterials.isNotEmpty) {
-                                    final materialBlockers =
-                                        req.blockers.where((b) => b.toLowerCase().contains('vật tư')).toList();
-                                    _showBlockersDialog(materialBlockers.isNotEmpty
-                                        ? materialBlockers
-                                        : [
-                                            strings.materialsCheckoutBlocked(
-                                              req.missingMaterials.map((m) => m.name).join(', '),
-                                            ),
-                                          ]);
+                                    _showBlockersDialog([
+                                      strings.materialsCheckoutBlocked(
+                                        req.missingMaterials.map((m) => m.name).join(', '),
+                                      ),
+                                    ]);
                                     return;
                                   }
+                                  if (!isClosed &&
+                                      _materialsUnknown &&
+                                      !_materialsForbidden &&
+                                      !await _confirmCheckoutWithoutMaterialList()) {
+                                    return;
+                                  }
+                                  if (!context.mounted) return;
 
                                   // Fallback: blockers khác từ server
                                   if (req != null && !req.satisfied && req.blockers.isNotEmpty) {
