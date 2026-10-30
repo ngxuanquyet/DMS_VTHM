@@ -61,6 +61,12 @@ void main() {
       expect(ruleAppliesToNewOutlet(r(rule(1, customerTypes: [], regions: [])), customerTypeId: 99), isTrue);
     });
 
+    test('không biết cặp server sẽ lấp (meta cũ) ⇒ luật giới hạn kênh/tuyến coi như TRÚNG (đòi thừa, không đòi thiếu)', () {
+      expect(ruleAppliesToNewOutlet(r(rule(1, channels: [7])), pairsUnknown: true), isTrue);
+      expect(ruleAppliesToNewOutlet(r(rule(1, channels: [7], customerTypes: [10])), customerTypeId: 11, pairsUnknown: true), isFalse,
+          reason: 'trục loại/khu vực vẫn khớp bình thường');
+    });
+
     test('kênh × tuyến: điểm bán mới chưa có cặp ⇒ CHỈ luật mà cả hai cột null áp', () {
       expect(ruleAppliesToNewOutlet(r(rule(1, channels: [7]))), isFalse);
       expect(ruleAppliesToNewOutlet(r(rule(1, territories: ['MB1']))), isFalse);
@@ -305,6 +311,13 @@ void main() {
         resolveCreateMaterials(raw, skipRejectedMaterialPhotos((_) async => throw const NetworkException())),
         throwsA(isA<NetworkException>()),
       );
+      // 401 / 408 / 429 là lỗi TẠM ⇒ ném để thử lại, không bỏ ảnh vĩnh viễn.
+      for (final code in [401, 408, 429]) {
+        await expectLater(
+          resolveCreateMaterials(raw, skipRejectedMaterialPhotos((_) async => throw AppException('Tạm', code))),
+          throwsA(isA<AppException>()),
+        );
+      }
     });
   });
 }

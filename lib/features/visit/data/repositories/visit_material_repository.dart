@@ -152,7 +152,8 @@ Future<String?> Function(File file) skipRejectedMaterialPhotos(Future<String> Fu
         return await upload(file);
       } on AppException catch (e) {
         final code = e.statusCode;
-        if (code != null && code >= 400 && code < 500) {
+        // 401 (phiên hết hạn), 408 (quá giờ), 429 (quá tải) là lỗi TẠM ⇒ ném để thử lại, không bỏ ảnh vĩnh viễn.
+        if (code != null && code >= 400 && code < 500 && code != 401 && code != 408 && code != 429) {
           debugPrint('[VisitMaterial] Ảnh vật tư bị từ chối ($code), bỏ ảnh, vẫn tạo điểm bán: ${e.message}');
           return null;
         }

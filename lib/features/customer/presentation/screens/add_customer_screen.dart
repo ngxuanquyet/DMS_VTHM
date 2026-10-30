@@ -569,6 +569,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     return catalog.requiredTypesFor(
       customerTypeId: int.tryParse(form['customer_type_id']?.toString() ?? ''),
       regionId: int.tryParse(form['region_id']?.toString() ?? ''),
+      // Meta đời cũ chưa có mặc định kênh/tuyến ⇒ không biết cặp server sẽ lấp ⇒ coi trục cặp là TRÚNG (đòi thừa, an toàn;
+      // đòi thiếu thì lượt ngoại tuyến tạo điểm bán thiếu vật tư bắt buộc mà server không chặn).
+      pairsUnknown: choices == null,
       pairs: serverFilledPairs(
         sentChannelIds: sentChannelIds,
         sentTerritoryCode: sentTerritoryCode,
@@ -768,7 +771,14 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // Khai số lượng 0 ("không có") vẫn tính là đã khai.
     // Danh mục chưa tải được mà đang có mạng ⇒ thử tải lại ngay (không thì server trả 400 mãi mà không có chỗ khai).
     if (_materialCatalog == null && !_materialsForbidden && ref.read(connectivityProvider).isOnline) {
-      await _loadMaterialCatalog();
+      // Khoá nút Lưu TRONG lúc chờ mạng: không thì bấm lần hai lọt qua chốt `_isSubmitting` ở đầu hàm ⇒ hai POST tạo
+      // điểm bán (đường trực tuyến không có client_uuid sinh sẵn) ⇒ điểm bán trùng.
+      setState(() => _isSubmitting = true);
+      try {
+        await _loadMaterialCatalog();
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
       if (!mounted) return;
     }
     final missingMaterials = missingCreateMaterials(

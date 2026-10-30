@@ -93,6 +93,7 @@ bool ruleAppliesToNewOutlet(
   int? customerTypeId,
   int? regionId,
   List<OutletChannelTerritoryPair> pairs = const [],
+  bool pairsUnknown = false,
 }) {
   bool axis(List<int>? allowed, int? value) => allowed == null || (value != null && allowed.contains(value));
   if (!axis(rule.customerTypeIds, customerTypeId)) return false;
@@ -101,6 +102,8 @@ bool ruleAppliesToNewOutlet(
   final channels = rule.salesChannelIds;
   final territories = rule.territoryCodes;
   if (channels == null && territories == null) return true;
+  // Không biết cặp server sẽ lấp ⇒ coi là trúng (đòi thừa thay vì đòi thiếu).
+  if (pairsUnknown) return true;
   for (final p in pairs) {
     final channelOk = channels == null || (p.channelId != null && channels.contains(p.channelId));
     final territoryOk = territories == null || (p.territoryCode != null && territories.contains(p.territoryCode));
@@ -151,11 +154,14 @@ class MaterialCreateCatalog {
     int? customerTypeId,
     int? regionId,
     List<OutletChannelTerritoryPair> pairs = const [],
+    bool pairsUnknown = false,
   }) {
     var all = false;
     final ids = <int>{};
     for (final r in rules) {
-      if (!ruleAppliesToNewOutlet(r, customerTypeId: customerTypeId, regionId: regionId, pairs: pairs)) continue;
+      if (!ruleAppliesToNewOutlet(r, customerTypeId: customerTypeId, regionId: regionId, pairs: pairs, pairsUnknown: pairsUnknown)) {
+        continue;
+      }
       if (r.materialTypeIds == null) {
         all = true;
         break;
