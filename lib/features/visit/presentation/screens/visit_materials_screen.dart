@@ -13,7 +13,7 @@ import '../../../../core/widgets/top_app_bar.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../data/models/visit_material_model.dart';
 import '../../data/repositories/visit_material_repository.dart';
-import '../widgets/material_condition_badges.dart';
+import '../widgets/material_card.dart';
 import 'material_edit_screen.dart';
 
 /// Mục "Vật tư" của lượt viếng thăm đang mở (#24522): vật tư tại điểm bán theo LOẠI + SỐ LƯỢNG chia theo tình trạng,
@@ -213,7 +213,8 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Text(strings.materialsEmpty, textAlign: TextAlign.center),
               ),
-            ...data.items.map((i) => _buildRow(i, data, strings, isDark)),
+            if (data.items.isNotEmpty) _buildSummary(data, strings, isDark),
+            ..._sorted(data).map((i) => _buildRow(i, data, strings)),
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: () => _pickTypeToAdd(strings),
@@ -237,86 +238,99 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
     );
   }
 
-  Widget _buildRow(OutletMaterialItem item, VisitMaterialsData data, AppStrings strings, bool isDark) {
-    final muted = item.isEmptyQuantity;
-    final textColor = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
-    final subColor = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
-
-    Widget trailing;
-    if (item.checkedInVisit) {
-      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.success),
-        const SizedBox(width: 4),
-        Text(strings.materialsChecked,
-            style: const TextStyle(fontSize: 11, color: AppColors.success, fontWeight: FontWeight.w700)),
-      ]);
-    } else if (item.isRequired) {
-      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.warning),
-        const SizedBox(width: 4),
-        Text(strings.materialsRequired,
-            style: const TextStyle(fontSize: 11, color: AppColors.warning, fontWeight: FontWeight.w700)),
-      ]);
-    } else {
-      trailing = Icon(Icons.chevron_right, color: subColor);
+  /// Thứ tự thẻ: việc còn thiếu lên đầu — bắt buộc chưa kiểm → chưa kiểm → đã kiểm lượt này → không có tại điểm.
+  static List<OutletMaterialItem> _sorted(VisitMaterialsData data) {
+    final items = data.items;
+    int rank(OutletMaterialItem i) {
+      if (_isRequired(data, i) && !i.checkedInVisit) return 0;
+      if (i.isEmptyQuantity) return 3;
+      return i.checkedInVisit ? 2 : 1;
     }
 
-    final lastCheck = item.asOf != null && item.asOf!.length >= 10
-        ? strings.materialsLastCheck(_shortDate(item.asOf!), item.lastUserName)
-        : null;
+    final indexed = items.asMap().entries.toList()
+      ..sort((a, b) {
+        final r = rank(a.value).compareTo(rank(b.value));
+        return r != 0 ? r : a.key.compareTo(b.key);
+      });
+    return indexed.map((e) => e.value).toList();
+  }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 0.5,
-      child: InkWell(
+  /// Dải tổng quan: đã kiểm x/y loại + số loại bắt buộc còn thiếu + thanh tiến độ.
+  Widget _buildSummary(VisitMaterialsData data, AppStrings strings, bool isDark) {
+    final total = data.items.length;
+    final checked = data.items.where((i) => i.checkedInVisit).length;
+    final missing = data.missingAfterLocal.length;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _openEdit(item.type, item),
-        child: Opacity(
-          opacity: muted ? 0.55 : 1,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.type.name,
-                          style: AppTypography.titleMedium(color: textColor).copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      if (item.isBlank)
-                        Text(strings.materialsNotDeclared, style: TextStyle(fontSize: 12, color: subColor))
-                      else
-                        Wrap(
-                          spacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              muted ? strings.materialsNone : strings.materialsQuantity(item.quantity ?? 0, item.type.unit),
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor),
-                            ),
-                            MaterialConditionBadges(counts: item.conditionCounts ?? const {}, conditions: data.conditions),
-                          ],
-                        ),
-                      if (lastCheck != null) ...[
-                        const SizedBox(height: 2),
-                        Text(lastCheck, style: TextStyle(fontSize: 11, color: subColor)),
-                      ],
-                    ],
-                  ),
-                ),
-                trailing,
-              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(strings.materialsSummary(checked, total),
+                  style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface)
+                      .copyWith(fontWeight: FontWeight.w700)),
+              if (missing > 0)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.warning),
+                  const SizedBox(width: 2),
+                  Text(strings.materialsRequiredLeft(missing),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.warning)),
+                ]),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 0 : checked / total,
+              minHeight: 6,
+              color: missing > 0 ? AppColors.warning : AppColors.success,
+              backgroundColor: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  /// "2026-10-30 12:10:03+07" → "30/10".
-  static String _shortDate(String raw) {
-    final d = raw.substring(0, 10).split('-');
-    return d.length == 3 ? '${d[2]}/${d[1]}' : raw.substring(0, 10);
+  /// Bắt buộc theo `required_type_ids` của bản đang dùng — chế độ "không chắc luật" ([VisitMaterialsData.withoutRequired])
+  /// xoá danh sách đó nhưng `items[].is_required` còn; thẻ phải khớp dải tổng quan.
+  static bool _isRequired(VisitMaterialsData data, OutletMaterialItem i) =>
+      i.isRequired && data.requiredTypeIds.contains(i.materialTypeId);
+
+  Widget _buildRow(OutletMaterialItem item, VisitMaterialsData data, AppStrings strings) {
+    final status = item.checkedInVisit
+        ? MaterialCardStatus.checked
+        : _isRequired(data, item)
+            ? MaterialCardStatus.required
+            : MaterialCardStatus.pending;
+    return MaterialCard(
+      strings: strings,
+      // Loại trong danh mục mang `schema` chi tiết (nhãn ô); `items[].type` thì không.
+      type: data.typeById(item.materialTypeId) ?? item.type,
+      conditions: data.conditions,
+      counts: item.isBlank ? null : (item.conditionCounts ?? const {}),
+      details: item.details,
+      photos: item.lastPhotos,
+      status: status,
+      footer: item.asOf != null && item.asOf!.length >= 10
+          ? strings.materialsLastCheck(_shortDateTime(item.asOf!), item.lastUserName)
+          : null,
+      onTap: () => _openEdit(item.type, item),
+    );
+  }
+
+  /// "2026-10-30 12:10:03+07" → "30/10 12:10"; chỉ có ngày → "30/10". Server trả giờ VN kèm múi, giữ nguyên như chuỗi.
+  static String _shortDateTime(String raw) {
+    final day = '${raw.substring(8, 10)}/${raw.substring(5, 7)}';
+    return raw.length >= 16 ? '$day ${raw.substring(11, 16)}' : day;
   }
 }

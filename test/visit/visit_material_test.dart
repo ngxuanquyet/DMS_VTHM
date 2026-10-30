@@ -6,11 +6,14 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
+import 'package:vthm_dms/core/localization/app_language.dart';
+import 'package:vthm_dms/core/localization/app_strings.dart';
 import 'package:vthm_dms/core/services/anti_fraud_service.dart';
 import 'package:vthm_dms/core/sync/sync_entity_group.dart';
 import 'package:vthm_dms/features/visit/data/models/visit_material_model.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_material_repository.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_requirements_entity.dart';
+import 'package:vthm_dms/features/visit/presentation/widgets/material_card.dart';
 
 /// Vật tư tại điểm bán trong lượt viếng thăm (#24522) — hợp đồng API-VAT-TU-MOBILE-2026-10-30.
 void main() {
@@ -94,6 +97,51 @@ void main() {
       expect([moi.minPhotos, moi.maxPhotos], [2, 3]);
       final lech = OutletMaterialType.fromJson({'id': 2, 'name': 'y', 'min_photos': 5, 'max_photos': 2});
       expect(lech.minPhotos, 2, reason: 'tối thiểu kẹp ≤ tối đa — không thì form không bao giờ lưu được');
+    });
+
+    test('thẻ vật tư: chi tiết theo thứ tự biểu mẫu, lựa chọn ra NHÃN, bỏ ô trống/ô ảnh; ảnh token vs tệp máy', () {
+      final t = OutletMaterialType.fromJson({
+        'id': 9,
+        'name': 'Tủ',
+        'schema': {
+          'blocks': [
+            {'type': 'field', 'ref': 'vi_tri', 'required': false, 'resolved': {'code': 'vi_tri', 'label': 'Vị trí', 'input_type': 'select',
+              'config': {'options': [{'value': 'mt', 'label': 'Mặt tiền'}]}}},
+            {'type': 'field', 'ref': 'anh', 'required': false, 'resolved': {'code': 'anh', 'label': 'Ảnh', 'input_type': 'image'}},
+            {'type': 'field', 'ref': 'ok', 'required': false, 'resolved': {'code': 'ok', 'label': 'Đúng hàng', 'input_type': 'checkbox'}},
+            {'type': 'field', 'ref': 'trong', 'required': false, 'resolved': {'code': 'trong', 'label': 'Trống', 'input_type': 'text'}},
+          ]
+        }
+      });
+      const s = AppStrings(AppLanguage.vi);
+      final rows = materialDetailRows(t, {'ok': true, 'vi_tri': 'mt', 'anh': ['x'], 'trong': '', 'cu': 5}, s);
+      expect(rows.map((r) => '${r.key}=${r.value}'), ['Vị trí=Mặt tiền', 'Đúng hàng=Có', 'cu=5']);
+
+      // Loại đã gỡ khỏi danh mục (không schema): danh sách ảnh không thành dòng chi tiết; số 5.0 ra "5".
+      final mo = materialDetailRows(const OutletMaterialType(id: 1, name: 'x'),
+          {'anh': ['0123456789abcdef0123456789abcdef'], 'so': 5.0, 'kt': ['60x90/cm']}, s);
+      expect(mo.map((r) => '${r.key}=${r.value}'), ['so=5', 'kt=60x90/cm']);
+      final cb = materialDetailRows(t, {'ok': 'true'}, s);
+      expect(cb.single.value, 'Có');
+
+      final tok = MaterialPhoto.fromRaw('0123456789abcdef0123456789abcdef');
+      expect(tok.url, '/dms/form-photos/public/0123456789abcdef0123456789abcdef');
+      expect(MaterialPhoto.fromRaw('/data/user/0/cache/a.jpg').localPath, '/data/user/0/cache/a.jpg');
+    });
+
+    test('lưu cục bộ: ảnh = ảnh của CHÍNH lần ghi (rỗng thì rỗng), người/giờ cũ bỏ đi', () {
+      final d = parse();
+      final before = d.items.firstWhere((i) => i.materialTypeId == 73);
+      expect(before.lastPhotos, isNotEmpty);
+      final next = applyMaterialOperation(
+        d,
+        const MaterialOperation(clientUuid: 'u', materialTypeId: 73, action: MaterialAction.update, conditionCounts: {'good': 1}),
+        trusted: true,
+      );
+      final after = next.items.firstWhere((i) => i.materialTypeId == 73);
+      expect(after.lastPhotos, isEmpty);
+      expect(after.asOf, isNull);
+      expect(after.lastUserName, isNull);
     });
 
     test('"+ Thêm loại" = loại đang bật trừ loại đã có dòng (có id); dòng trống vẫn thêm được', () {

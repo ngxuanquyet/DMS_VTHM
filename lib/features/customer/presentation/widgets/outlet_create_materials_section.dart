@@ -8,7 +8,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/presentation/screens/material_edit_screen.dart';
-import '../../../visit/presentation/widgets/material_condition_badges.dart';
+import '../../../visit/presentation/widgets/material_card.dart';
 
 /// Bước "Vật tư tại điểm" của form TẠO điểm bán (#24526): loại bắt buộc (⚠️, dòng trống khi chưa khai) + loại đã khai +
 /// "+ Thêm loại vật tư". Bấm dòng ⇒ dùng LẠI [MaterialEditScreen] của lượt viếng thăm (số lượng theo tình trạng, chi tiết
@@ -118,6 +118,10 @@ class OutletCreateMaterialsSection extends ConsumerWidget {
             strings.createMaterialsHint,
             style: AppTypography.labelSmall(color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
           ),
+          if (requiredTypes.isNotEmpty || ops.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _summary(strings, requiredTypes.length + declaredOptional.length),
+          ],
           const SizedBox(height: 8),
           ...requiredTypes.map((t) => _row(context, strings, t, isRequired: true)),
           ...declaredOptional.map((t) => _row(context, strings, t, isRequired: false)),
@@ -132,33 +136,46 @@ class OutletCreateMaterialsSection extends ConsumerWidget {
     );
   }
 
+  /// "Đã khai x/y loại · ⚠ Bắt buộc còn n".
+  Widget _summary(AppStrings strings, int total) {
+    final missing = requiredTypes.where((t) => !ops.containsKey(t.id)).length;
+    return Wrap(
+      spacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(strings.createMaterialsSummary(ops.length, total),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        if (missing > 0)
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.warning),
+            const SizedBox(width: 2),
+            Text(strings.materialsRequiredLeft(missing),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.warning)),
+          ]),
+      ],
+    );
+  }
+
   Widget _row(BuildContext context, AppStrings strings, OutletMaterialType type, {required bool isRequired}) {
     final op = ops[type.id];
-    final counts = op?.conditionCounts ?? const <String, int>{};
-    final total = counts.values.fold<int>(0, (a, b) => a + b);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
+    return MaterialCard(
+      strings: strings,
+      type: catalog.typeById(type.id) ?? type,
+      conditions: catalog.conditions,
+      counts: op == null ? null : (op.conditionCounts ?? const {}),
+      details: op?.details,
+      photos: op == null ? const [] : op.photos.map(MaterialPhoto.fromRaw).toList(),
+      status: op == null && isRequired ? MaterialCardStatus.required : MaterialCardStatus.none,
+      compactDetails: true,
       onTap: () => _edit(context, type),
-      leading: isRequired && op == null
-          ? const Icon(Icons.warning_amber_rounded, color: AppColors.warning)
-          : Icon(op == null ? Icons.radio_button_unchecked : Icons.check_circle_rounded,
-              color: op == null ? AppColors.outline : AppColors.success),
-      title: Text(type.name),
-      subtitle: op == null
-          ? Text(strings.materialsNotDeclared)
-          : Wrap(
-              spacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(total == 0 ? strings.materialsNone : strings.materialsQuantity(total, type.unit)),
-                MaterialConditionBadges(counts: counts, conditions: catalog.conditions),
-              ],
-            ),
-      trailing: op == null
-          ? const Icon(Icons.chevron_right)
+      action: op == null
+          ? null
           : IconButton(
               tooltip: strings.createMaterialsUndo,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              iconSize: 20,
+              style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
               icon: const Icon(Icons.close),
               onPressed: () => onChanged(Map.of(ops)..remove(type.id)),
             ),

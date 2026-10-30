@@ -109,10 +109,20 @@ class MaterialPhoto {
   final String token;
   final String url;
 
-  const MaterialPhoto({required this.token, this.url = ''});
+  /// Ảnh vừa chụp trên máy (chưa có token) — thẻ vật tư hiện từ tệp.
+  final String? localPath;
+
+  const MaterialPhoto({required this.token, this.url = '', this.localPath});
 
   factory MaterialPhoto.fromJson(Map<String, dynamic> json) =>
       MaterialPhoto(token: json['token']?.toString() ?? '', url: json['url']?.toString() ?? '');
+
+  /// Phần tử `photos` của một thao tác: token 32 hex (đã tải lên) hoặc đường dẫn tệp trên máy — cùng quy ước bộ vẽ
+  /// biểu mẫu ([MarketFormRenderer]).
+  factory MaterialPhoto.fromRaw(String raw) {
+    final s = raw.trim();
+    return isPhotoToken(s) ? MaterialPhoto(token: s, url: '/dms/form-photos/public/$s') : MaterialPhoto(token: '', localPath: s);
+  }
 }
 
 /// Một dòng vật tư tại điểm bán. `id == null` = loại bắt buộc điểm bán CHƯA từng khai (dòng trống).
@@ -180,7 +190,9 @@ class OutletMaterialItem {
     Map<String, int>? conditionCounts,
     int? quantity,
     Map<String, dynamic>? details,
+    List<MaterialPhoto>? lastPhotos,
     bool? checkedInVisit,
+    bool clearLastCheck = false,
   }) =>
       OutletMaterialItem(
         id: id ?? this.id,
@@ -189,9 +201,9 @@ class OutletMaterialItem {
         conditionCounts: conditionCounts ?? this.conditionCounts,
         quantity: quantity ?? this.quantity,
         details: details ?? this.details,
-        asOf: asOf,
-        lastUserName: lastUserName,
-        lastPhotos: lastPhotos,
+        asOf: clearLastCheck ? null : asOf,
+        lastUserName: clearLastCheck ? null : lastUserName,
+        lastPhotos: lastPhotos ?? this.lastPhotos,
         isRequired: isRequired,
         checkedInVisit: checkedInVisit ?? this.checkedInVisit,
       );
@@ -518,11 +530,22 @@ VisitMaterialsData applyMaterialOperation(
         conditionCounts: counts,
         quantity: counts.values.fold<int>(0, (a, b) => a + b),
         details: mergedDetails,
+        // Lần ghi này thành "lần kiểm gần nhất": ảnh của CHÍNH nó (rỗng = không ảnh — không mượn ảnh lượt trước);
+        // người/giờ cũ bỏ đi tới lần tải lại, nhãn "Đã kiểm lượt này" đã nói đủ.
+        lastPhotos: op.photos.map(MaterialPhoto.fromRaw).toList(),
+        clearLastCheck: true,
         checkedInVisit: true,
       );
       break;
     case MaterialAction.remove:
-      next = base.copyWith(id: newId, conditionCounts: const {}, quantity: 0, checkedInVisit: true);
+      next = base.copyWith(
+        id: newId,
+        conditionCounts: const {},
+        quantity: 0,
+        lastPhotos: op.photos.map(MaterialPhoto.fromRaw).toList(),
+        clearLastCheck: true,
+        checkedInVisit: true,
+      );
       break;
   }
   if (idx >= 0) {

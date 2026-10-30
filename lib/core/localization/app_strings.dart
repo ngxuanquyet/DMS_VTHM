@@ -626,15 +626,23 @@ class AppStrings {
       isVietnamese ? 'Đã có đủ mọi loại vật tư trong danh mục.' : 'All catalog types are already listed.';
   String get materialsEmpty =>
       isVietnamese ? 'Điểm bán chưa khai vật tư nào.' : 'No materials recorded at this outlet.';
-  String get materialsNotDeclared => isVietnamese ? '— chưa khai —' : '— not declared —';
-  String get materialsNone => isVietnamese ? 'Không có' : 'None';
   String get materialsRequired => isVietnamese ? 'Bắt buộc' : 'Required';
-  String get materialsChecked => isVietnamese ? 'Đã kiểm' : 'Checked';
-  String materialsQuantity(int n, String unit) =>
-      isVietnamese ? 'SL $n${unit.isNotEmpty ? ' $unit' : ''}' : 'Qty $n${unit.isNotEmpty ? ' $unit' : ''}';
   String materialsLastCheck(String when, String? who) => isVietnamese
       ? 'Kiểm $when${who != null && who.isNotEmpty ? ' · $who' : ''}'
       : 'Checked $when${who != null && who.isNotEmpty ? ' · $who' : ''}';
+  String get materialsTapToDeclare => isVietnamese ? 'Chưa khai — chạm để kiểm' : 'Not declared — tap to check';
+  String get materialsNotPresent => isVietnamese ? 'Không có tại điểm' : 'Not at this outlet';
+  String materialsCount(int n, String unit) => unit.isNotEmpty ? '$n $unit' : '$n';
+  String get materialsCheckedThisVisit => isVietnamese ? 'Đã kiểm lượt này' : 'Checked this visit';
+  String get materialsPending => isVietnamese ? 'Chưa kiểm' : 'Not checked';
+  String materialsMoreDetails(int n) => isVietnamese ? '+$n thông tin' : '+$n more';
+  String get materialsYes => isVietnamese ? 'Có' : 'Yes';
+  String get materialsNo => isVietnamese ? 'Không' : 'No';
+  String materialsSummary(int checked, int total) =>
+      isVietnamese ? 'Đã kiểm $checked/$total loại' : 'Checked $checked/$total types';
+  String materialsRequiredLeft(int n) => isVietnamese ? 'Bắt buộc còn $n' : '$n required left';
+  String createMaterialsSummary(int declared, int total) =>
+      isVietnamese ? 'Đã khai $declared/$total loại' : 'Declared $declared/$total types';
   String get materialsOfflineCache => isVietnamese
       ? 'Đang ngoại tuyến — hiện bản lưu trên máy, thao tác sẽ tự gửi khi có mạng.'
       : 'Offline — showing saved data; changes will be sent when online.';
