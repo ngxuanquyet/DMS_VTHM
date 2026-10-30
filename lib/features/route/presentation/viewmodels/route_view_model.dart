@@ -12,6 +12,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/rules/mobile_rules_model.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/utils/string_utils.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../customer/data/datasources/customer_local_data_source.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
@@ -28,6 +29,7 @@ import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../../visit/data/models/checkin_request_model.dart';
 import '../../../visit/data/models/checkout_request_model.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
+import '../../../visit/data/services/visit_progress_store.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/repositories/visit_repository.dart';
@@ -963,6 +965,118 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   DateTime? _targetDoneTime;
   String _sessionClientUuid = const Uuid().v4();
 
+  /// false trong lúc khôi phục một lượt đang mở — chưa nạp tiến độ đã lưu ([VisitProgressStore]) thì không được ghi
+  /// đè nó bằng danh sách ảnh / biểu mẫu rỗng của trạng thái vừa dựng lại.
+  bool _progressReady = true;
+
+  /// Mã lần khôi phục gần nhất — lần khôi phục CŨ (người dùng đã sang lượt khác) không được mở lại [_progressReady] giữa
+  /// lúc lần mới còn đang nạp (mở sớm ⇒ lần ghi kế tiếp đè ô lưu của lượt mới bằng danh sách rỗng).
+  int _restoreToken = 0;
+
+  /// Bắt đầu một lần khôi phục: chặn ghi tới khi nạp xong; trả mã để chỉ chính lần đó được mở lại.
+  int _beginRestore() {
+    _progressReady = false;
+    return ++_restoreToken;
+  }
+
+  /// Kết thúc lần khôi phục [token] — chỉ mở lại việc ghi nếu đó vẫn là lần mới nhất.
+  void _endRestore(int token) {
+    if (token == _restoreToken) _progressReady = true;
+  }
+
+  /// Huỷ mọi lần khôi phục đang chạy (lượt đóng / check-in mới) và mở việc ghi.
+  void _cancelRestores() {
+    _restoreToken++;
+    _progressReady = true;
+  }
+
+  /// Mọi lần đổi trạng thái đi qua đây — ảnh / biểu mẫu đã nộp đổi thì lưu xuống máy, lượt đóng thì xoá; khỏi phải
+  /// nhớ gọi lưu ở từng chỗ chụp, xoá ảnh, nộp phiếu.
+  @override
+  set state(CheckInState value) {
+    final prev = super.state;
+    super.state = value;
+    _persistProgress(prev, value);
+  }
+
+  void _persistProgress(CheckInState prev, CheckInState next) {
+    // Xoá ô lưu KHÔNG ở đây (mọi lần về 0) mà ở chỗ lượt THẬT SỰ đóng: [resetSession], huỷ lượt.
+    if (!_progressReady || next.visitId == 0) return;
+    if (prev.visitId == next.visitId &&
+        identical(prev.photos, next.photos) &&
+        setEquals(prev.submittedSurveyConfigIds, next.submittedSurveyConfigIds)) {
+      return;
+    }
+    VisitProgressStore.save(
+      visitId: next.visitId,
+      clientUuid: _sessionClientUuid,
+      photos: next.photos,
+      submittedConfigIds: next.submittedSurveyConfigIds,
+    );
+  }
+
+  /// Ảnh của lượt còn trong hàng đợi đồng bộ (chụp ngoại tuyến / tải lỗi mạng) — nạp lại khi vào lại lượt sau khi app bị
+  /// tắt. Gọi ở CẢ hai đường vào lại (danh sách tuyến và khôi phục lượt đang mở).
+  Future<void> _restoreQueuedPhotos(int forVisitId) async {
+    try {
+      if (ref != null && _sessionClientUuid.isNotEmpty) {
+        final db = ref!.read(appDatabaseProvider);
+        final photoEntries = await (db.select(db.syncQueueEntries)
+          ..where((t) =>
+              t.entity.equals('visit_photo') &
+              t.parentUuid.equals(_sessionClientUuid) &
+              t.state.isNotValue('dead'))
+        ).get();
+        if (state.visitId != forVisitId) return; // đã rời / sang lượt khác trong lúc đọc
+        if (photoEntries.isNotEmpty) {
+          final restoredPhotos = photoEntries.map((e) {
+            Map<String, dynamic> p = {};
+            try {
+              p = jsonDecode(e.payload) as Map<String, dynamic>;
+            } catch (_) {}
+            return VisitPhotoEntity(
+              id: -e.id,
+              token: '',
+              url: e.localPath ?? '',
+              photoType: p['photo_type']?.toString() ?? 'other',
+              photoTypeLabel: _photoTypeLabel(p['photo_type']?.toString() ?? 'other'),
+              takenAt: DateTime.fromMillisecondsSinceEpoch(e.createdAt).toIso8601String(),
+            );
+          }).toList();
+          // GỘP (không thay): ảnh người dùng chụp trong lúc đang đọc hàng đợi không được mất.
+          final have = state.photos.map((x) => x.id).toSet();
+          state = state.copyWith(photos: [...state.photos, ...restoredPhotos.where((x) => !have.contains(x.id))]);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Nạp lại ảnh đã tải lên + biểu mẫu đã nộp của lượt đang mở sau khi app bị tắt hẳn (state trong bộ nhớ đã mất);
+  /// gộp với ảnh còn chờ trong hàng đợi đồng bộ đã có trong state.
+  Future<void> _restoreLocalProgress(int forVisitId, int token) async {
+    try {
+      final saved = await VisitProgressStore.load(visitId: forVisitId, clientUuid: _sessionClientUuid);
+      if (saved != null && state.visitId == forVisitId) {
+        final have = state.photos.map((p) => p.id).toSet();
+        state = state.copyWith(
+          photos: [...saved.photos.where((p) => !have.contains(p.id)), ...state.photos],
+          submittedSurveyConfigIds: {...state.submittedSurveyConfigIds, ...saved.submittedConfigIds},
+        );
+      }
+    } catch (_) {}
+    if (token != _restoreToken) return; // lần khôi phục khác đã thay chỗ
+    _endRestore(token);
+    // Thao tác xảy ra TRONG lúc đang nạp bị bỏ qua (chưa sẵn sàng) ⇒ ghi một lần trạng thái đã gộp — chỉ khi vẫn đúng lượt.
+    if (state.visitId == forVisitId) {
+      VisitProgressStore.save(
+        visitId: state.visitId,
+        clientUuid: _sessionClientUuid,
+        photos: state.photos,
+        submittedConfigIds: state.submittedSurveyConfigIds,
+      );
+    }
+  }
+
   CheckInViewModel({
     required this.getDealerCheckinUseCase,
     required this.checkoutDealerUseCase,
@@ -1108,8 +1222,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     _targetDoneTime = null;
     _sessionClientUuid = const Uuid().v4();
     _setLiveDuration('00:00:00');
+    _cancelRestores();
+    VisitProgressStore.clear();
     state = const CheckInState();
   }
+
+  /// Nhãn loại ảnh lượt — MỘT nơi cho ảnh vừa chụp và ảnh nạp lại từ hàng đợi.
+  static String _photoTypeLabel(String type) => switch (type) {
+        'display' => 'Ảnh trưng bày',
+        'store_front' => 'Mặt tiền',
+        'closed_store' => 'Ảnh đóng cửa',
+        'posm' => 'POSM',
+        'document' => 'Tài liệu',
+        _ => 'Ảnh chụp',
+      };
 
   /// Khởi động giám sát khoảng cách đến điểm bán (Cảnh báo Geofence Exit)
   void startGeofenceWatcher({
@@ -1356,7 +1482,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
 
     if (existingVisit != null) {
-      _sessionClientUuid = existingVisit.clientUuid ?? const Uuid().v4();
+      // Cùng lượt đang có trong bộ nhớ mà server không trả uuid ⇒ GIỮ uuid phiên hiện tại (hàng đợi khoá theo nó).
+      _sessionClientUuid = existingVisit.clientUuid ??
+          (state.visitId == existingVisit.id ? _sessionClientUuid : const Uuid().v4());
+      final token = _beginRestore();
       _setupVisitTimer(existingVisit.checkinAt);
 
       state = CheckInState(
@@ -1368,10 +1497,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         visitId: existingVisit.id,
         visitEntity: existingVisit,
         requirements: existingVisit.requirements ?? state.requirements,
-        photos: state.photos.isNotEmpty
-            ? state.photos
-            : (existingVisit.photoUrls.isNotEmpty ? state.photos : const []),
-        submittedSurveyConfigIds: state.submittedSurveyConfigIds,
+        // Chỉ giữ ảnh / biểu mẫu trong bộ nhớ khi đúng là CÙNG lượt — không bê của lượt trước sang (rồi bị lưu xuống máy).
+        photos: state.visitId == existingVisit.id ? state.photos : const [],
+        submittedSurveyConfigIds: state.visitId == existingVisit.id ? state.submittedSurveyConfigIds : const {},
         visitNote: state.visitNote,
         closedNote: existingVisit.closedNote ?? state.closedNote,
         visitResult: existingVisit.visitResult ?? state.visitResult,
@@ -1384,6 +1512,32 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
               ? (dealer.customer as CustomerEntity).id
               : (int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), '')) ??
                     0));
+      final resumed = existingVisit;
+      unawaited(() async {
+        try {
+          // Lượt lấy từ danh sách tuyến (server) có thể không mang client_uuid ⇒ lấy uuid của lượt đang mở đã lưu trên máy
+          // (cùng id) — ảnh hàng đợi + tiến độ đã lưu đều khoá theo uuid phiên gốc.
+          if (resumed.clientUuid == null) {
+            try {
+              final saved = await visitRepository.getActiveVisit();
+              if (saved != null &&
+                  saved.id == resumed.id &&
+                  state.visitId == resumed.id &&
+                  (saved.clientUuid ?? '').isNotEmpty) {
+                _sessionClientUuid = saved.clientUuid!;
+              }
+            } catch (_) {}
+          }
+          // Người dùng đã rời / mở lượt khác trong lúc chờ ⇒ thôi, không đổ dữ liệu lượt này vào lượt kia.
+          if (state.visitId != resumed.id) return;
+          await _restoreQueuedPhotos(resumed.id);
+          if (state.visitId != resumed.id) return;
+          await _restoreLocalProgress(resumed.id, token);
+        } finally {
+          // Lỗi bất ngờ / rời lượt giữa chừng không được để việc lưu tắt luôn — nhưng chỉ lần khôi phục mới nhất được mở.
+          _endRestore(token);
+        }
+      }());
       loadSurveyForms(customerId);
       refreshRequirements(visitResult: existingVisit.visitResult ?? state.visitResult);
       return;
@@ -1391,6 +1545,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     // Trường hợp mới bắt đầu check-in
     _sessionClientUuid = const Uuid().v4();
+    _cancelRestores();
     _elapsedSeconds = 0;
     _setLiveDuration('00:00:00');
     _startTimer();
@@ -1443,6 +1598,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         return true;
       }
     }
+    int? token;
     try {
       final saved = await visitRepository.getActiveVisit();
       if (saved != null && saved.isOpen) {
@@ -1453,6 +1609,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             ? _formatTimeHHmmss(saved.checkinAt)
             : _formatTimeHHmmss(DateTime.now());
         _sessionClientUuid = saved.clientUuid ?? _sessionClientUuid;
+        token = _beginRestore();
         _setupVisitTimer(saved.checkinAt);
 
         DealerCheckinDataEntity? checkinData = state.checkinData;
@@ -1479,37 +1636,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           closedNote: saved.closedNote ?? '',
         );
 
-        // Khôi phục ảnh offline nếu có trong hàng đợi syncQueue
-        try {
-          if (state.photos.isEmpty && ref != null && _sessionClientUuid.isNotEmpty) {
-            final db = ref!.read(appDatabaseProvider);
-            final photoEntries = await (db.select(db.syncQueueEntries)
-              ..where((t) =>
-                  t.entity.equals('visit_photo') &
-                  t.parentUuid.equals(_sessionClientUuid) &
-                  t.state.isNotValue('dead'))
-            ).get();
-            if (photoEntries.isNotEmpty) {
-              final restoredPhotos = photoEntries.map((e) {
-                Map<String, dynamic> p = {};
-                try {
-                  p = jsonDecode(e.payload) as Map<String, dynamic>;
-                } catch (_) {}
-                return VisitPhotoEntity(
-                  id: -e.id,
-                  token: '',
-                  url: e.localPath ?? '',
-                  photoType: p['photo_type']?.toString() ?? 'other',
-                  photoTypeLabel: p['photo_type'] == 'display'
-                      ? 'Ảnh trưng bày'
-                      : 'Ảnh khác',
-                  takenAt: DateTime.fromMillisecondsSinceEpoch(e.createdAt).toIso8601String(),
-                );
-              }).toList();
-              state = state.copyWith(photos: restoredPhotos);
-            }
-          }
-        } catch (_) {}
+        await _restoreQueuedPhotos(saved.id);
+        await _restoreLocalProgress(saved.id, token);
 
         loadSurveyForms(saved.customerId);
         refreshRequirements(visitResult: saved.visitResult ?? 'visited');
@@ -1530,7 +1658,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         }
         return true;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Lỗi giữa chừng (sau _beginRestore) không được để việc lưu tiến độ tắt mãi — chỉ kết thúc ĐÚNG lần của mình
+      // (lần khôi phục mới hơn đang chạy thì nó tự mở).
+      if (token != null) _endRestore(token);
+    }
     return false;
   }
 
@@ -2023,7 +2155,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (!await offlineDir.exists()) {
         await offlineDir.create(recursive: true);
       }
-      final fileName = 'visit_photo_${DateTime.now().millisecondsSinceEpoch}_${const Uuid().v4().substring(0, 8)}.jpg';
+      final fileName = PhotoWatermarkHelper.keepMarkerName(
+        file,
+        'visit_photo_${DateTime.now().millisecondsSinceEpoch}_${const Uuid().v4().substring(0, 8)}.jpg',
+      );
       persistentFile = await file.copy(p.join(offlineDir.path, fileName));
     } catch (_) {
       persistentFile = file;
@@ -2037,15 +2172,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       url: persistentFile.path,
       localPath: persistentFile.path,
       photoType: apiPhotoType,
-      photoTypeLabel: apiPhotoType == 'display'
-          ? 'Ảnh trưng bày'
-          : (apiPhotoType == 'store_front'
-              ? 'Mặt tiền'
-              : (apiPhotoType == 'closed_store'
-                  ? 'Ảnh đóng cửa'
-                  : (apiPhotoType == 'posm'
-                      ? 'POSM'
-                      : (apiPhotoType == 'document' ? 'Tài liệu' : 'Ảnh chụp')))),
+      photoTypeLabel: _photoTypeLabel(apiPhotoType),
       photoTypeColor: 'primary',
       takenAt: DateTime.now().toIso8601String(),
     );
@@ -2213,6 +2340,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           if (file.existsSync()) await file.delete();
         } catch (_) {}
       }
+      // Ảnh nạp lại từ hàng đợi ([_restoreQueuedPhotos], id = -id dòng hàng đợi): bỏ cả dòng hàng đợi, không thì mở lại app
+      // ảnh quay về / vẫn bị tải lên.
+      if (photoId < 0 && ref != null) {
+        try {
+          final db = ref!.read(appDatabaseProvider);
+          await (db.delete(db.syncQueueEntries)
+                ..where((t) =>
+                    t.id.equals(-photoId) &
+                    t.entity.equals('visit_photo') &
+                    t.parentUuid.equals(_sessionClientUuid) &
+                    t.state.equals('pending')))
+              .go();
+        } catch (_) {}
+      }
       state = state.copyWith(photos: updatedPhotos);
       _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
       return (true, null);
@@ -2293,6 +2434,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
               ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
             } catch (_) {}
           }
+          VisitProgressStore.clear();
           state = state.copyWith(visitId: 0, visitEntity: null);
         }
         if (!_isNetworkError(e)) {

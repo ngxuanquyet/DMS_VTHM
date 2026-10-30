@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../../core/services/geo_catalog_service.dart';
@@ -152,7 +153,8 @@ class CustomerLocalDataSource {
         final srcFile = File(cleanPath);
         if (await srcFile.exists()) {
           final ext = p.extension(cleanPath).isNotEmpty ? p.extension(cleanPath) : '.jpg';
-          final destPath = p.join(offlinePhotosDir.path, '${clientUuid}_photo_$i$ext');
+          final destPath =
+              p.join(offlinePhotosDir.path, PhotoWatermarkHelper.keepMarkerName(srcFile, '${clientUuid}_photo_$i$ext'));
           final copiedFile = await srcFile.copy(destPath);
           permanentPhotoPaths.add(copiedFile.path);
         } else {

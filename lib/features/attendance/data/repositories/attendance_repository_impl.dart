@@ -14,6 +14,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/utils/account_key.dart';
 import '../../../../core/utils/system_clock.dart';
@@ -321,7 +322,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         await attDir.create(recursive: true);
       }
       final persistentFile = await file.copy(
-        p.join(attDir.path, 'att_${photoType}_${nowMs}_$photoUuid.jpg'),
+        p.join(attDir.path, PhotoWatermarkHelper.keepMarkerName(file, 'att_${photoType}_${nowMs}_$photoUuid.jpg')),
       );
       localSavedPath = persistentFile.path;
     } catch (e) {

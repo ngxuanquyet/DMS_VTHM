@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -81,6 +83,25 @@ class FakeDioAdapter implements HttpClientAdapter {
       return ResponseBody.fromString(
         jsonEncode(res),
         200,
+        headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+      );
+    }
+
+    if (options.path.startsWith('/dms/visits/') && options.path.endsWith('/photos') && options.method == 'POST') {
+      final res = {
+        'success': true,
+        'data': {
+          'id': 501,
+          'token': '0123456789abcdef0123456789abcdef',
+          'url': '/dms/visit-photos/public/0123456789abcdef0123456789abcdef',
+          'photo_type': 'display',
+          'photo_type_label': 'Ảnh trưng bày',
+          'taken_at': '2026-10-12 09:02:00+07',
+        },
+      };
+      return ResponseBody.fromString(
+        jsonEncode(res),
+        201,
         headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
       );
     }
@@ -266,6 +287,98 @@ void main() {
       expect(container.read(checkInViewModelProvider).visitId, equals(firstVisitId));
       expect(container.read(checkInViewModelProvider).visitNote, equals('Ghi chú phiên trước'));
       expect(container.read(checkInViewModelProvider).visitEntity?.isOpen, isTrue);
+    });
+
+    test('2b. Có mạng: chụp ảnh + nộp biểu mẫu -> TẮT HẲN app -> vào lại từ danh sách tuyến: còn đủ ảnh + biểu mẫu', () async {
+      final checkInVm = container.read(checkInViewModelProvider.notifier);
+      checkInVm.initCheckinWithDealer(testDealer);
+      expect(await checkInVm.performCheckin(customerId: 101, lat: 10.7769, lng: 106.7009), isNull);
+
+      // Ảnh màn check-in đã đóng watermark (tên `wm_…`): bản sao lưu lâu dài phải GIỮ dấu, không thì lúc tải lên bị đóng
+      // thêm lớp thứ hai (lỗi chồng 2 watermark 30/10/2026).
+      final img = File('${tempDir.path}/wm_a.jpg')..writeAsBytesSync([0xFF, 0xD8, 0xFF, 0xD9]);
+      final (ok, _) = await checkInVm.uploadPhoto(img, photoType: 'display');
+      expect(ok, isTrue);
+      expect(p.basename(container.read(checkInViewModelProvider).photos.single.localPath!), startsWith('wm_'));
+      checkInVm.markSurveySubmitted(7);
+      expect(container.read(checkInViewModelProvider).photos.single.id, 501);
+      final openVisit = container.read(checkInViewModelProvider).visitEntity;
+      await Future<void>.delayed(const Duration(milliseconds: 50)); // lần ghi máy xong
+
+      // Tắt hẳn app: bộ nhớ (container) mất, chỉ còn bộ nhớ máy (SharedPreferences).
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          apiClientProvider.overrideWithValue(apiClient),
+          connectivityProvider.overrideWith((ref) => fakeConnectivity),
+          visitRepositoryProvider.overrideWithValue(visitRepository),
+          mobileRulesProvider.overrideWith((ref) => FakeRulesNotifier(
+                apiClient,
+                const MobileRules(visit: VisitRules(requireGeofence: false, minDurationMinutes: 0)),
+              )),
+        ],
+      );
+      final vm2 = container.read(checkInViewModelProvider.notifier);
+      expect(container.read(checkInViewModelProvider).photos, isEmpty);
+
+      vm2.initCheckinWithDealer(testDealer.copyWith(status: DealerVisitStatus.inProgress, visit: openVisit));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final st = container.read(checkInViewModelProvider);
+      expect(st.visitId, 88801);
+      expect(st.photos.map((p) => p.id), [501], reason: 'ảnh đã tải lên phải hiện lại');
+      expect(st.submittedSurveyConfigIds, {7}, reason: 'biểu mẫu đã nộp phải hiện lại');
+
+      // Đóng lượt ⇒ xoá tiến độ đã lưu: lượt sau không mượn ảnh cũ.
+      vm2.resetSession();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('visit_progress_v1'), isNull);
+    });
+
+    test('2c. Ảnh tải lỗi mạng (vào hàng đợi) -> TẮT HẲN app -> vào lại từ danh sách tuyến: ảnh hàng đợi vẫn hiện', () async {
+      final checkInVm = container.read(checkInViewModelProvider.notifier);
+      checkInVm.initCheckinWithDealer(testDealer);
+      expect(await checkInVm.performCheckin(customerId: 101, lat: 10.7769, lng: 106.7009), isNull);
+      final openVisit = container.read(checkInViewModelProvider).visitEntity;
+
+      fakeDioAdapter.failNetwork = true;
+      final img = File('${tempDir.path}/wm_b.jpg')..writeAsBytesSync([0xFF, 0xD8, 0xFF, 0xD9]);
+      final (ok, _) = await checkInVm.uploadPhoto(img, photoType: 'display');
+      expect(ok, isTrue);
+      fakeDioAdapter.failNetwork = false;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          apiClientProvider.overrideWithValue(apiClient),
+          connectivityProvider.overrideWith((ref) => fakeConnectivity),
+          visitRepositoryProvider.overrideWithValue(visitRepository),
+          mobileRulesProvider.overrideWith((ref) => FakeRulesNotifier(
+                apiClient,
+                const MobileRules(visit: VisitRules(requireGeofence: false, minDurationMinutes: 0)),
+              )),
+        ],
+      );
+      final vm2 = container.read(checkInViewModelProvider.notifier);
+      // Lượt từ server KHÔNG mang client_uuid — uuid phiên gốc phải lấy lại từ lượt đang mở lưu trên máy.
+      vm2.initCheckinWithDealer(testDealer.copyWith(
+        status: DealerVisitStatus.inProgress,
+        visit: VisitEntity.fromJson(openVisit!.toJson()..remove('client_uuid')),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(container.read(checkInViewModelProvider).photos, hasLength(1));
+
+      // Xoá ảnh nạp lại từ hàng đợi ⇒ bỏ luôn dòng hàng đợi (không thì mở lại app ảnh quay về / vẫn bị tải lên).
+      final restoredId = container.read(checkInViewModelProvider).photos.single.id;
+      expect(restoredId, isNegative);
+      await vm2.deletePhoto(restoredId);
+      final left = await (db.select(db.syncQueueEntries)..where((t) => t.entity.equals('visit_photo'))).get();
+      expect(left, isEmpty);
     });
 
     test('3. Check-in Offline -> Tạm rời: Phiên offline được bảo lưu nguyên vẹn trong SQLite và RAM', () async {

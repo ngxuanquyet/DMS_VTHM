@@ -370,14 +370,16 @@ class AppDatabase extends _$AppDatabase {
         if (roots.any((r) => p.isWithin(r, path))) files.add(path);
       } catch (_) {}
     }
-    // Ảnh điểm bán do customer_local_data_source chép vào offline_customer_photos/<clientUuid>_photo_<i>.<ext>.
+    // Ảnh điểm bán do customer_local_data_source chép vào offline_customer_photos/<clientUuid>_photo_<i>.<ext> — có thể
+    // mang tiền tố `wm_` (PhotoWatermarkHelper.keepMarkerName giữ dấu đã đóng watermark); bỏ sót là ảnh ở lại máy.
     if (docs != null && customerUuids.isNotEmpty) {
       try {
         final dir = Directory(p.join(docs, 'offline_customer_photos'));
         if (await dir.exists()) {
           await for (final f in dir.list()) {
             final name = p.basename(f.path);
-            if (customerUuids.any((u) => name.startsWith('${u}_photo_'))) files.add(f.path);
+            final bare = name.startsWith('wm_') ? name.substring(3) : name;
+            if (customerUuids.any((u) => bare.startsWith('${u}_photo_'))) files.add(f.path);
           }
         }
       } catch (e) {

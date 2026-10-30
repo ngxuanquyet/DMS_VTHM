@@ -22,6 +22,13 @@ class PhotoWatermarkHelper {
     return name.startsWith('wm_') || name.contains('_wm_') || name.contains('watermarked');
   }
 
+  /// Tên tệp MỚI khi sao/đổi tên ảnh [source] — giữ dấu "đã đóng watermark" ([isWatermarked] nhận theo TÊN).
+  ///
+  /// 🔴 Mọi chỗ sao ảnh sang thư mục lưu lâu dài với tên mới PHẢI đặt tên qua đây: tên mới mất `wm_` thì lúc tải lên
+  /// [ImageUploadHelper.prepareImageForUpload] tưởng ảnh chưa đóng và đóng thêm lớp thứ hai (ảnh chồng 2 watermark,
+  /// 30/10/2026: ảnh viếng thăm, ảnh điểm bán tạo ngoại tuyến, ảnh chấm công).
+  static String keepMarkerName(File source, String newName) => isWatermarked(source) ? 'wm_$newName' : newName;
+
   /// Đóng dấu toạ độ, thời gian và thông tin điểm bán lên tệp ảnh [imageFile]
   /// Ở góc dưới bên phải hiển thị logo xác thực thương hiệu từ [logoAsset]
   static Future<File> addWatermark({
