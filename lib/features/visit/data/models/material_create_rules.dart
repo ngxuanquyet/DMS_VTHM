@@ -53,17 +53,36 @@ class OutletChannelTerritoryPair {
   const OutletChannelTerritoryPair(this.channelId, this.territoryCode);
 }
 
-/// Cặp kênh × tuyến của điểm bán đang tạo từ ô Kênh (một / nhiều) + ô Tuyến (một mã). Không chọn gì ⇒ không có cặp.
-List<OutletChannelTerritoryPair> pairsOfNewOutlet(dynamic ownChannelIds, dynamic territoryCode) {
-  final channels = (ownChannelIds is List ? ownChannelIds : (ownChannelIds == null ? const [] : [ownChannelIds]))
+/// Giá trị "Toàn kênh" của ô Tuyến (= `ChoiceCatalogService::TERRITORY_ALL` của server) — lưu tuyến trống.
+const String _territoryAll = '_ALL';
+
+/// Cặp kênh × tuyến điểm bán đang tạo SẼ CÓ trên server — lấp phần để trống y như server (hợp đồng §4.1):
+/// * chỉ gửi tuyến (kênh rỗng) ⇒ server lấy các kênh mặc định của phòng KHỚP tuyến đó (rỗng thì mọi kênh mặc định).
+///   App không có bảng phòng × tuyến nên lấy MỌI kênh mặc định — tập cặp ⊇ của server ⇒ chỉ có thể đòi THỪA loại
+///   bắt buộc (server vẫn nhận thao tác thừa), không bao giờ đòi thiếu;
+/// * kênh rỗng (kể cả ô Kênh bị ẩn / khoá trống, hoặc app không gửi vì giữ giá trị điền sẵn) ⇒ kênh mặc định của phòng;
+/// * tuyến rỗng ⇒ tuyến mặc định của phòng; "Toàn kênh" (`_ALL`, ở ô hoặc ở mặc định) ⇒ không tuyến.
+/// [sentChannelIds]/[sentTerritoryCode] = giá trị app GỬI (vắng = null). Mặc định lấy từ `meta.createChoices`.
+List<OutletChannelTerritoryPair> serverFilledPairs({
+  dynamic sentChannelIds,
+  dynamic sentTerritoryCode,
+  List<int> defaultChannelIds = const [],
+  String? defaultTerritoryCode,
+}) {
+  var channels = (sentChannelIds is List ? sentChannelIds : (sentChannelIds == null ? const [] : [sentChannelIds]))
       .map((e) => int.tryParse(e.toString()))
       .whereType<int>()
       .toSet()
       .toList();
-  final territory = territoryCode?.toString().trim() ?? '';
-  final t = territory.isEmpty ? null : territory;
-  if (channels.isEmpty) return t == null ? const [] : [OutletChannelTerritoryPair(null, t)];
-  return channels.map((c) => OutletChannelTerritoryPair(c, t)).toList();
+  if (channels.isEmpty) channels = defaultChannelIds.toSet().toList();
+
+  final sent = sentTerritoryCode?.toString().trim() ?? '';
+  final def = defaultTerritoryCode?.trim() ?? '';
+  final raw = sent.isEmpty ? def : sent;
+  final String? territory = (raw.isEmpty || raw == _territoryAll) ? null : raw;
+
+  if (channels.isEmpty) return territory == null ? const [] : [OutletChannelTerritoryPair(null, territory)];
+  return channels.map((c) => OutletChannelTerritoryPair(c, territory)).toList();
 }
 
 /// Luật áp cho điểm bán đang tạo khi MỌI trục khác null đều chứa giá trị của điểm bán; trục Kênh × Tuyến khớp theo CẶP

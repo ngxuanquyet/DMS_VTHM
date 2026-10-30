@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -547,20 +548,33 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     final res = await ref.read(visitMaterialRepositoryProvider).loadCreateCatalog();
     if (!mounted) return;
     setState(() {
-      _materialCatalog = res.catalog;
+      // Lần tải lại hỏng (mất mạng giữa chừng) không xoá danh mục đã có.
+      _materialCatalog = res.catalog ?? _materialCatalog;
       _materialsForbidden = res.forbidden;
       _materialCatalogLoaded = true;
     });
   }
 
-  /// Loại vật tư bắt buộc cho điểm bán đang nhập — tính TẠI MÁY theo loại / khu vực / kênh × tuyến của form.
-  List<OutletMaterialType> _requiredMaterialTypes(Map<String, dynamic> form) {
+  /// Loại vật tư bắt buộc cho điểm bán đang nhập — tính TẠI MÁY theo loại / khu vực / cặp kênh × tuyến điểm bán SẼ CÓ
+  /// trên server ([serverFilledPairs]: lấp kênh/tuyến trống bằng mặc định của phòng như server).
+  /// [sentChannelIds]/[sentTerritoryCode] = giá trị app gửi đi (vắng ⇒ server lấp mặc định).
+  List<OutletMaterialType> _requiredMaterialTypes(
+    Map<String, dynamic> form, {
+    required dynamic sentChannelIds,
+    required dynamic sentTerritoryCode,
+  }) {
     final catalog = _materialCatalog;
     if (catalog == null || _materialsForbidden) return const [];
+    final choices = ref.read(customerMetaProvider).valueOrNull?.createChoices;
     return catalog.requiredTypesFor(
       customerTypeId: int.tryParse(form['customer_type_id']?.toString() ?? ''),
       regionId: int.tryParse(form['region_id']?.toString() ?? ''),
-      pairs: pairsOfNewOutlet(form['own_channel_ids'], form['territory_code']),
+      pairs: serverFilledPairs(
+        sentChannelIds: sentChannelIds,
+        sentTerritoryCode: sentTerritoryCode,
+        defaultChannelIds: choices?.defaultChannelIds ?? const [],
+        defaultTerritoryCode: choices?.defaultTerritoryCode,
+      ),
     );
   }
 
@@ -752,7 +766,20 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
     // 5. Vật tư bắt buộc (#24526): chặn TRƯỚC khi gửi / xếp hàng — server không chặn lượt tạo từ hàng đợi ngoại tuyến.
     // Khai số lượng 0 ("không có") vẫn tính là đã khai.
-    final missingMaterials = missingCreateMaterials(_requiredMaterialTypes(formData), _materialOps.values);
+    // Danh mục chưa tải được mà đang có mạng ⇒ thử tải lại ngay (không thì server trả 400 mãi mà không có chỗ khai).
+    if (_materialCatalog == null && !_materialsForbidden && ref.read(connectivityProvider).isOnline) {
+      await _loadMaterialCatalog();
+      if (!mounted) return;
+    }
+    final missingMaterials = missingCreateMaterials(
+      _requiredMaterialTypes(
+        formData,
+        // Đúng giá trị SẼ GỬI: giữ nguyên giá trị điền sẵn thì app không gửi kênh/tuyến ⇒ server lấp mặc định.
+        sentChannelIds: boGuiKenhTuyen ? null : formData['own_channel_ids'],
+        sentTerritoryCode: boGuiKenhTuyen ? null : formData['territory_code'],
+      ),
+      _materialOps.values,
+    );
     if (missingMaterials.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1005,6 +1032,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     } catch (e) {
       if (mounted) {
         AppSnackBar.showError(context, e);
+        // Server chặn vì vật tư (vd chưa khai bắt buộc) mà máy chưa có / có danh mục cũ ⇒ tải lại để mở mục khai.
+        if (e.toString().toLowerCase().contains('vật tư') && !_materialsForbidden) {
+          unawaited(_loadMaterialCatalog());
+        }
       }
     } finally {
       if (mounted) {
@@ -1015,6 +1046,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Có mạng lại mà chưa có danh mục vật tư ⇒ tải lại để mở mục khai.
+    ref.listen(connectivityProvider, (prev, next) {
+      if (next.isOnline && !(prev?.isOnline ?? false) && _materialCatalog == null && !_materialsForbidden) {
+        _loadMaterialCatalog();
+      }
+    });
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final schemaAsync = ref.watch(customerFormSchemaProvider);
     final meta = ref.watch(customerMetaProvider).valueOrNull ?? kDefaultCustomerMeta;
@@ -1338,22 +1375,39 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                         if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
                           OutletCreateMaterialsSection(
                             catalog: _materialCatalog!,
-                            requiredTypes: _requiredMaterialTypes({
-                              'route_ids': defaultRouteId,
-                              ..._savedFormData,
-                              ...?_formKey.currentState?.getFormData(),
-                            }),
+                            requiredTypes: () {
+                              final form = {
+                                'route_ids': defaultRouteId,
+                                ..._savedFormData,
+                                ...?_formKey.currentState?.getFormData(),
+                              };
+                              return _requiredMaterialTypes(
+                                form,
+                                sentChannelIds: form['own_channel_ids'],
+                                sentTerritoryCode: form['territory_code'],
+                              );
+                            }(),
                             ops: _materialOps,
                             onChanged: (next) => setState(() => _materialOps = next),
                           )
                         else if (_materialCatalogLoaded && !_materialsForbidden && _materialCatalog == null)
                           Padding(
                             padding: const EdgeInsets.only(top: 16),
-                            child: Text(
-                              ref.watch(stringsProvider).createMaterialsNoCatalog,
-                              style: AppTypography.labelSmall(
-                                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                              ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    ref.watch(stringsProvider).createMaterialsNoCatalog,
+                                    style: AppTypography.labelSmall(
+                                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _loadMaterialCatalog,
+                                  child: Text(ref.watch(stringsProvider).retry),
+                                ),
+                              ],
                             ),
                           ),
                       ],

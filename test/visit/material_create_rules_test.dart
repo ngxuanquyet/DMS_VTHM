@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/core/errors/app_exceptions.dart';
 import 'package:vthm_dms/features/customer/data/utils/customer_payload_helper.dart';
 import 'package:vthm_dms/features/visit/data/models/material_create_rules.dart';
 import 'package:vthm_dms/features/visit/data/models/visit_material_model.dart';
@@ -84,15 +86,62 @@ void main() {
       expect(ruleAppliesToNewOutlet(r(rule(1, channels: [7], territories: ['MB1'])), pairs: onlyChannel), isFalse);
     });
 
-    test('cặp của điểm bán đang tạo từ ô Kênh (một/nhiều) × ô Tuyến', () {
-      expect(pairsOfNewOutlet(null, null), isEmpty);
-      expect(pairsOfNewOutlet([], ''), isEmpty);
-      final multi = pairsOfNewOutlet([7, '8', 7], 'MB1');
-      expect(multi.map((p) => '${p.channelId}·${p.territoryCode}'), ['7·MB1', '8·MB1']);
-      final single = pairsOfNewOutlet(7, null);
-      expect(single.single.channelId, 7);
-      expect(single.single.territoryCode, isNull);
-      expect(pairsOfNewOutlet(null, 'MB1').single.channelId, isNull);
+  });
+
+  group('Lấp kênh/tuyến trống y như server trước khi khớp (§4.1)', () {
+    String show(List<OutletChannelTerritoryPair> ps) => ps.map((p) => '${p.channelId}·${p.territoryCode}').join(',');
+
+    test('chọn đủ kênh + tuyến ⇒ dùng đúng giá trị gửi (bỏ trùng kênh)', () {
+      expect(
+        show(serverFilledPairs(sentChannelIds: [7, '8', 7], sentTerritoryCode: 'MB1', defaultChannelIds: [1], defaultTerritoryCode: 'MN2')),
+        '7·MB1,8·MB1',
+      );
+      expect(show(serverFilledPairs(sentChannelIds: 7, sentTerritoryCode: 'MB1')), '7·MB1', reason: 'ô Kênh chọn một');
+    });
+
+    test('kênh rỗng (ô ẩn / khoá trống / không gửi) ⇒ kênh mặc định của phòng', () {
+      expect(
+        show(serverFilledPairs(sentChannelIds: null, sentTerritoryCode: 'MB1', defaultChannelIds: [1, 2], defaultTerritoryCode: 'MN2')),
+        '1·MB1,2·MB1',
+        reason: 'chỉ gửi tuyến ⇒ kênh của phòng (app lấy mọi kênh mặc định — tập ⊇ server, chỉ đòi thừa)',
+      );
+      expect(
+        show(serverFilledPairs(sentChannelIds: [], sentTerritoryCode: '', defaultChannelIds: [1], defaultTerritoryCode: 'MN2')),
+        '1·MN2',
+      );
+    });
+
+    test('tuyến rỗng ⇒ tuyến mặc định của phòng', () {
+      expect(
+        show(serverFilledPairs(sentChannelIds: [7], sentTerritoryCode: '  ', defaultChannelIds: [1], defaultTerritoryCode: 'MN2')),
+        '7·MN2',
+      );
+    });
+
+    test('giữ giá trị điền sẵn (app không gửi kênh/tuyến) ⇒ đúng bộ mặc định server tự gán', () {
+      expect(
+        show(serverFilledPairs(defaultChannelIds: [1, 2], defaultTerritoryCode: 'MN2')),
+        '1·MN2,2·MN2',
+      );
+    });
+
+    test('"Toàn kênh" (_ALL) ở ô hoặc ở mặc định ⇒ không tuyến', () {
+      expect(show(serverFilledPairs(sentChannelIds: [7], sentTerritoryCode: '_ALL', defaultTerritoryCode: 'MN2')), '7·null');
+      expect(show(serverFilledPairs(defaultChannelIds: [1], defaultTerritoryCode: '_ALL')), '1·null');
+    });
+
+    test('không có gì cả (phòng không có mặc định) ⇒ không cặp ⇒ chỉ luật kênh/tuyến null áp', () {
+      expect(serverFilledPairs(), isEmpty);
+      expect(show(serverFilledPairs(sentTerritoryCode: 'MB1')), 'null·MB1');
+    });
+
+    test('luật kênh × tuyến TRÚNG nhờ lấp mặc định (bản cũ chỉ dùng ô trống ⇒ đòi thiếu)', () {
+      final x = r(rule(1, channels: [1], territories: ['MN2']));
+      expect(ruleAppliesToNewOutlet(x), isFalse);
+      expect(
+        ruleAppliesToNewOutlet(x, pairs: serverFilledPairs(defaultChannelIds: [1], defaultTerritoryCode: 'MN2')),
+        isTrue,
+      );
     });
   });
 
@@ -216,5 +265,46 @@ void main() {
     expect(bh.checkedInVisit, isFalse);
     expect(c.requiredFromOtherOutlet, isTrue);
     expect(c.data.missingAfterLocal, isEmpty);
+  });
+
+  group('Ảnh vật tư bị /dms/form-photos từ chối khi đồng bộ lượt tạo ngoại tuyến', () {
+    test('4xx ⇒ bỏ ảnh đó, thao tác + điểm bán vẫn đi tiếp; 5xx / mạng ⇒ ném để thử lại', () async {
+      final dir = await Directory.systemTemp.createTemp('vat_tu_tao');
+      addTearDown(() => dir.delete(recursive: true));
+      final bad = File('${dir.path}/bad.jpg')..writeAsBytesSync([1]);
+      final good = File('${dir.path}/good.jpg')..writeAsBytesSync([2]);
+      final raw = [
+        MaterialOperation(
+          clientUuid: 'u',
+          materialTypeId: 2,
+          action: MaterialAction.add,
+          conditionCounts: const {'good': 1},
+          photos: [bad.path, good.path],
+        ).toJson(),
+      ];
+
+      final resolved = await resolveCreateMaterials(
+        raw,
+        skipRejectedMaterialPhotos((f) async {
+          if (f.path == bad.path) throw const AppException('Tệp không hợp lệ.', 422);
+          return 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        }),
+      );
+      final op = MaterialOperation.fromJson(resolved.single);
+      expect(op.photos, ['eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee']);
+      expect(op.clientUuid, 'u');
+
+      await expectLater(
+        resolveCreateMaterials(
+          raw,
+          skipRejectedMaterialPhotos((_) async => throw const AppException('Lỗi máy chủ', 503)),
+        ),
+        throwsA(isA<AppException>()),
+      );
+      await expectLater(
+        resolveCreateMaterials(raw, skipRejectedMaterialPhotos((_) async => throw const NetworkException())),
+        throwsA(isA<NetworkException>()),
+      );
+    });
   });
 }

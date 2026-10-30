@@ -132,7 +132,7 @@ const String visitMaterialsCreateCatalogKey = '${visitMaterialsCachePrefix}_crea
 /// máy ra token qua [upload] (cùng luồng ảnh thao tác vật tư của lượt). Lỗi tải ảnh được ném ra (hàng đợi thử lại).
 Future<List<Map<String, dynamic>>> resolveCreateMaterials(
   dynamic raw,
-  Future<String> Function(File file) upload,
+  Future<String?> Function(File file) upload,
 ) async {
   if (raw is! List) return const [];
   final out = <Map<String, dynamic>>[];
@@ -142,6 +142,23 @@ Future<List<Map<String, dynamic>>> resolveCreateMaterials(
   }
   return out;
 }
+
+/// Bọc [upload] cho lượt tạo điểm bán TỪ HÀNG ĐỢI: ảnh vật tư bị `/dms/form-photos` từ chối (4xx) ⇒ bỏ ảnh đó (ghi
+/// log), KHÔNG ném — nếu ném thì cả mục tạo điểm bán thành dead ⇒ MẤT điểm bán. Cùng hướng server (lượt ngoại tuyến bỏ
+/// thao tác sai, vẫn tạo điểm bán). Lỗi mạng / 5xx vẫn ném để thử lại.
+Future<String?> Function(File file) skipRejectedMaterialPhotos(Future<String> Function(File file) upload) =>
+    (file) async {
+      try {
+        return await upload(file);
+      } on AppException catch (e) {
+        final code = e.statusCode;
+        if (code != null && code >= 400 && code < 500) {
+          debugPrint('[VisitMaterial] Ảnh vật tư bị từ chối ($code), bỏ ảnh, vẫn tạo điểm bán: ${e.message}');
+          return null;
+        }
+        rethrow;
+      }
+    };
 
 /// Bản cache điểm bán cho điểm bán VỪA TẠO kèm vật tư: danh mục của form tạo + các thao tác đã khai (đã được server nhận
 /// cùng lượt tạo). Loại bắt buộc của luật VIẾNG THĂM chưa biết ⇒ đánh dấu `required_unknown` (màn lượt đầu cảnh báo,
@@ -328,7 +345,7 @@ class MaterialSubmitOutcome {
 /// không gửi thao tác thiếu ảnh. Tệp không còn trên máy thì bỏ (server sẽ báo nếu thiếu ảnh bắt buộc).
 Future<MaterialOperation> resolveOperationPhotos(
   MaterialOperation op,
-  Future<String> Function(File file) upload,
+  Future<String?> Function(File file) upload,
 ) async {
   if (!op.hasLocalPhotos) return op;
 
@@ -346,7 +363,8 @@ Future<MaterialOperation> resolveOperationPhotos(
         debugPrint('[VisitMaterial] Ảnh không còn trên máy, bỏ qua: $path');
         continue;
       }
-      out.add(await upload(file));
+      final token = await upload(file);
+      if (token != null) out.add(token);
     }
     return out;
   }

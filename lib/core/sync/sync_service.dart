@@ -508,7 +508,7 @@ class SyncService {
     if (rawSource['materials'] is List) {
       rawSource['materials'] = await resolveCreateMaterials(
         rawSource['materials'],
-        (file) async => (await _ref.read(formsApiServiceProvider).uploadPhoto(file)).token,
+        skipRejectedMaterialPhotos((file) async => (await _ref.read(formsApiServiceProvider).uploadPhoto(file)).token),
       );
     }
 
@@ -591,15 +591,8 @@ class SyncService {
         }
       } catch (_) {}
 
-      if (rawSource['materials'] is List) {
-        await cacheCreatedOutletMaterials(
-          serverId,
-          (rawSource['materials'] as List)
-              .whereType<Map>()
-              .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m)))
-              .toList(),
-        );
-      }
+      // KHÔNG dựng cache vật tư ở đây: lượt ngoại tuyến server BỎ thao tác sai mà vẫn trả 200 ⇒ không biết thao tác nào
+      // thật sự được ghi; lượt viếng thăm đầu có mạng sẽ GET hiện trạng thật.
 
       await _db.markCustomerSynced(
         entry.clientUuid,

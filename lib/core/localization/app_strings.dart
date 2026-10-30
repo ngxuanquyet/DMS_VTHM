@@ -684,8 +684,8 @@ class AppStrings {
       ? 'Khai vật tư đang có tại điểm bán. Loại có ⚠️ là bắt buộc — không có thì khai số lượng 0.'
       : 'Declare materials at this outlet. ⚠️ types are required — declare 0 if none.';
   String get createMaterialsNoCatalog => isVietnamese
-      ? 'Chưa tải được danh mục vật tư — kết nối mạng để khai vật tư.'
-      : 'Material catalog not loaded — connect to declare materials.';
+      ? 'Cần có mạng để tải danh mục vật tư — chưa tải được thì chưa khai được vật tư bắt buộc (máy chủ sẽ chặn tạo).'
+      : 'A network connection is needed to load the material catalog — required materials cannot be declared until then.';
   String createMaterialsMissing(String names) => isVietnamese
       ? 'Chưa khai vật tư bắt buộc: $names. Không có thì khai số lượng 0.'
       : 'Required materials not declared: $names. Declare 0 if none.';
