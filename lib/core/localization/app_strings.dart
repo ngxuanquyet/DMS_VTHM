@@ -644,6 +644,9 @@ class AppStrings {
   String materialsTotal(int n) => isVietnamese ? 'Tổng: $n' : 'Total: $n';
   String get materialsDetails => isVietnamese ? 'Chi tiết' : 'Details';
   String get materialsPhotos => isVietnamese ? 'Ảnh vật tư' : 'Material photos';
+  String materialsPhotosLabel(int min) => min <= 0
+      ? materialsPhotos
+      : (isVietnamese ? 'Ảnh vật tư (tối thiểu $min ảnh khi có vật tư)' : 'Material photos (at least $min when present)');
   String get materialsUnchanged => isVietnamese ? '✓ Không đổi' : '✓ Unchanged';
   String get materialsSave => isVietnamese ? 'Lưu' : 'Save';
   String get materialsRemove => isVietnamese ? 'Gỡ' : 'Remove';

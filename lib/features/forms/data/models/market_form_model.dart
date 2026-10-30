@@ -293,6 +293,12 @@ class MarketFormResolvedModel {
       } catch (_) {}
     }
 
+    // `min_files` (server ImageFieldLimits) — không vượt max.
+    final rawMin = cfg['min_files'] ?? resolvedJson?['min_files'];
+    final parsedMinFiles = lowerType == 'image'
+        ? ((rawMin is num ? rawMin.toInt() : num.tryParse('${rawMin ?? ''}')?.toInt()) ?? 0).clamp(0, parsedMaxFiles)
+        : 0;
+
     final rawOptions = cfg['options'] ?? resolvedJson?['options'] ?? blockJson?['options'];
     if (rawOptions is List) {
       parsedOptions = rawOptions
@@ -328,6 +334,7 @@ class MarketFormResolvedModel {
       options: parsedOptions,
       validation: parsedValidation,
       maxFiles: parsedMaxFiles,
+      minFiles: parsedMinFiles,
     );
   }
 

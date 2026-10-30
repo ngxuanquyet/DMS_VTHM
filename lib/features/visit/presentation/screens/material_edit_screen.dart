@@ -81,7 +81,8 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
     });
     _blocks = [
       ...widget.type.detailBlocks,
-      _syntheticBlock(materialPhotoFieldCode, ref.read(stringsProvider).materialsPhotos, 'image',
+      // Tối thiểu KHÔNG giao cho bộ vẽ (nó đòi cả khi số lượng 0) — chỉ ghi lên nhãn; `_save` kiểm đúng luật server.
+      _syntheticBlock(materialPhotoFieldCode, ref.read(stringsProvider).materialsPhotosLabel(widget.type.minPhotos), 'image',
           maxFiles: widget.type.maxPhotos),
     ];
   }

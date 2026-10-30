@@ -77,6 +77,21 @@ void main() {
       expect(block.resolved.maxFiles, 1);
     });
 
+    test('min_files đọc từ config, kẹp không vượt max_files; vắng = 0', () {
+      MarketFormBlockEntity parse(Map<String, dynamic> config) => MarketFormBlockModel.fromJson({
+            'type': 'field',
+            'ref': 'dms_anh',
+            'required': false,
+            'col_span': 12,
+            'resolved': {'code': 'dms_anh', 'label': 'Ảnh', 'input_type': 'image', 'config': config},
+          }).toEntity();
+      expect(parse({'max_files': 5, 'min_files': 2}).resolved.minFiles, 2);
+      expect(parse({'max_files': 2, 'min_files': 4}).resolved.minFiles, 2);
+      expect(parse({'max_files': 3}).resolved.minFiles, 0);
+      expect(parse({'max_files': 5, 'min_files': 2.0}).resolved.minFiles, 2);
+      expect(parse({'max_files': 5, 'min_files': '3'}).resolved.minFiles, 3);
+    });
+
     test('max_files <= 0 hoặc âm hiểu là 1', () {
       final json = {
         'type': 'field',
@@ -525,6 +540,66 @@ void main() {
       expect(answers!['dms_test_cc_anh_bien_hieu'], ['b83a1130671e0b1f5b75592494186ea5']);
       expect(answers['dms_test_cc_anh_bien_hieu'], isA<List>());
       expect(find.text('1/3 ảnh'), findsOneWidget);
+    });
+
+    testWidgets('min_files: nhãn "x/max ảnh · tối thiểu N"; có ảnh mà chưa đủ tối thiểu thì báo lỗi', (tester) async {
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(
+                key: key,
+                blocks: const [
+                  MarketFormBlockEntity(
+                    ref: 'dms_anh_ke',
+                    type: 'field',
+                    required: false,
+                    colSpan: 12,
+                    resolved: MarketFormResolvedEntity(
+                      code: 'dms_anh_ke', label: 'Ảnh kệ', inputType: 'image', maxFiles: 3, minFiles: 2),
+                  ),
+                ],
+                initialAnswers: const {
+                  'dms_anh_ke': ['b83a1130671e0b1f5b75592494186ea5'],
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('1/3 ảnh · tối thiểu 2'), findsOneWidget);
+      final answers = key.currentState?.validateAndGetAnswers();
+      await tester.pump();
+      expect(answers, isNull);
+      expect(find.text('Ảnh kệ cần ít nhất 2 ảnh.'), findsOneWidget);
+    });
+
+    testWidgets('min_files: ô KHÔNG bắt buộc để trống vẫn qua (tối thiểu chỉ áp khi đã có ảnh, như server)', (tester) async {
+      final key = GlobalKey<MarketFormRendererState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(
+                key: key,
+                blocks: const [
+                  MarketFormBlockEntity(
+                    ref: 'dms_anh_ke',
+                    type: 'field',
+                    required: false,
+                    colSpan: 12,
+                    resolved: MarketFormResolvedEntity(
+                      code: 'dms_anh_ke', label: 'Ảnh kệ', inputType: 'image', maxFiles: 3, minFiles: 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('0/3 ảnh · tối thiểu 2'), findsOneWidget);
+      expect(key.currentState?.validateAndGetAnswers(), isNotNull);
     });
 
     testWidgets('Khi schema có config: [] (không có max_files), UI hiển thị "0/10 ảnh" theo cấu hình hệ thống', (tester) async {

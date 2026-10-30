@@ -91,7 +91,9 @@ class OutletMaterialType {
         name: json['name']?.toString() ?? '',
         unit: json['unit']?.toString() ?? '',
         // Server cũ chỉ trả `require_photo` ⇒ suy ra tối thiểu 1.
-        minPhotos: _toInt(json['min_photos']) ?? (json['require_photo'] == true ? 1 : 0),
+        // Tối thiểu kẹp ≤ tối đa — lệch thì form không bao giờ lưu được.
+        minPhotos: (_toInt(json['min_photos']) ?? (json['require_photo'] == true ? 1 : 0))
+            .clamp(0, (_toInt(json['max_photos']) ?? 10).clamp(1, 10)),
         maxPhotos: (_toInt(json['max_photos']) ?? 10).clamp(1, 10),
         isActive: json['is_active'] != false,
         schema: json['schema'] is Map ? Map<String, dynamic>.from(json['schema'] as Map) : null,

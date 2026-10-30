@@ -76,6 +76,8 @@ class MarketFormResolvedEntity {
   final List<MarketFormOptionEntity> options;
   final MarketFormValidationEntity? validation;
   final int maxFiles; // Số lượng ảnh tối đa của ô (mặc định 10 theo config hệ thống, kẹp trần 10 theo §1)
+  /// Số ảnh tối thiểu (`config.min_files`, 0 = không đòi) — như server: chỉ áp khi ô ĐÃ có ảnh; ô trống do `required` quyết.
+  final int minFiles;
 
   const MarketFormResolvedEntity({
     required this.code,
@@ -86,6 +88,7 @@ class MarketFormResolvedEntity {
     this.options = const [],
     this.validation,
     this.maxFiles = 10,
+    this.minFiles = 0,
   });
 
   bool get isImage => inputType.toLowerCase() == 'image';

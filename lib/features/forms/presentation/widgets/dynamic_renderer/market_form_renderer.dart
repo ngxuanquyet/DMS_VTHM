@@ -114,6 +114,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     return widget.defaultMaxPhotos.clamp(1, 10);
   }
 
+  /// Số ảnh tối thiểu hiệu lực — chỉ ô `image` (như server ImageFieldLimits), không vượt tối đa.
+  int _resolveMinFiles(MarketFormBlockEntity block) =>
+      block.resolved.isImage ? block.resolved.minFiles.clamp(0, _resolveMaxFiles(block)) : 0;
+
   @override
   void dispose() {
     for (final c in _textControllers.values) {
@@ -305,6 +309,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final maxAllowed = _resolveMaxFiles(block);
         if (entries.length > maxAllowed) {
           newErrors[code] = '$label chỉ cho phép tối đa $maxAllowed ảnh.';
+          continue;
+        }
+        final minAllowed = _resolveMinFiles(block);
+        if (entries.isNotEmpty && entries.length < minAllowed) {
+          newErrors[code] = '$label cần ít nhất $minAllowed ảnh.';
           continue;
         }
         if (entries.isNotEmpty) {
@@ -1180,8 +1189,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   ) {
     final code = block.resolved.code;
     final maxFiles = _resolveMaxFiles(block);
+    final minFiles = _resolveMinFiles(block);
     final entries = _photoEntries[code] ?? [];
     final canAddMore = entries.length < maxFiles;
+    final belowMin = entries.length < minFiles;
     final error = _errors[code];
 
     return Column(
@@ -1193,19 +1204,27 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           children: [
             Expanded(child: _buildLabel(block, isDark)),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${entries.length}/$maxFiles ảnh',
-                style: AppTypography.labelSmall(
-                  color: entries.length >= maxFiles
-                      ? AppColors.primary
-                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                ).copyWith(fontWeight: FontWeight.w600),
+            // Flexible: nhãn "· tối thiểu N" dài hơn — ô nửa bề rộng trên máy hẹp không được tràn hàng.
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  minFiles > 0 ? '${entries.length}/$maxFiles ảnh · tối thiểu $minFiles' : '${entries.length}/$maxFiles ảnh',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.labelSmall(
+                    color: entries.isNotEmpty && belowMin
+                        ? AppColors.error
+                        : entries.length >= maxFiles
+                            ? AppColors.primary
+                            : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],

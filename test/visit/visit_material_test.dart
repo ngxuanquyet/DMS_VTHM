@@ -92,6 +92,8 @@ void main() {
       expect(d.typeById(74)!.maxPhotos, 10);
       final moi = OutletMaterialType.fromJson({'id': 1, 'name': 'x', 'min_photos': 2, 'max_photos': 3});
       expect([moi.minPhotos, moi.maxPhotos], [2, 3]);
+      final lech = OutletMaterialType.fromJson({'id': 2, 'name': 'y', 'min_photos': 5, 'max_photos': 2});
+      expect(lech.minPhotos, 2, reason: 'tối thiểu kẹp ≤ tối đa — không thì form không bao giờ lưu được');
     });
 
     test('"+ Thêm loại" = loại đang bật trừ loại đã có dòng (có id); dòng trống vẫn thêm được', () {
