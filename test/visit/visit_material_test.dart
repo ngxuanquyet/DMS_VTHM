@@ -87,7 +87,11 @@ void main() {
       expect(ke.detailBlocks.single.resolved.code, 'so_ma_hang');
       expect(ke.detailBlocks.single.resolved.inputType, 'number');
       expect(d.typeById(74)!.detailBlocks, isEmpty);
-      expect(d.typeById(74)!.requirePhoto, isTrue);
+      // Bản trả cũ chỉ có `require_photo` ⇒ tối thiểu 1, tối đa mặc định 10.
+      expect(d.typeById(74)!.minPhotos, 1);
+      expect(d.typeById(74)!.maxPhotos, 10);
+      final moi = OutletMaterialType.fromJson({'id': 1, 'name': 'x', 'min_photos': 2, 'max_photos': 3});
+      expect([moi.minPhotos, moi.maxPhotos], [2, 3]);
     });
 
     test('"+ Thêm loại" = loại đang bật trừ loại đã có dòng (có id); dòng trống vẫn thêm được', () {

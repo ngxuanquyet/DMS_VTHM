@@ -64,7 +64,11 @@ class OutletMaterialType {
   final String code;
   final String name;
   final String unit;
-  final bool requirePhoto;
+  /// Số ảnh tối thiểu mỗi lần thêm/cập nhật có số lượng > 0 (0 = không bắt ảnh).
+  final int minPhotos;
+
+  /// Số ảnh tối đa mỗi lần ghi (1..10), kể cả gỡ.
+  final int maxPhotos;
   final bool isActive;
 
   /// Schema biểu mẫu chi tiết của loại (cùng định dạng `schema` của `GET /dms/forms/available`); null = không có chi tiết.
@@ -75,7 +79,8 @@ class OutletMaterialType {
     this.code = '',
     required this.name,
     this.unit = '',
-    this.requirePhoto = false,
+    this.minPhotos = 0,
+    this.maxPhotos = 10,
     this.isActive = true,
     this.schema,
   });
@@ -85,7 +90,9 @@ class OutletMaterialType {
         code: json['code']?.toString() ?? '',
         name: json['name']?.toString() ?? '',
         unit: json['unit']?.toString() ?? '',
-        requirePhoto: json['require_photo'] == true,
+        // Server cũ chỉ trả `require_photo` ⇒ suy ra tối thiểu 1.
+        minPhotos: _toInt(json['min_photos']) ?? (json['require_photo'] == true ? 1 : 0),
+        maxPhotos: (_toInt(json['max_photos']) ?? 10).clamp(1, 10),
         isActive: json['is_active'] != false,
         schema: json['schema'] is Map ? Map<String, dynamic>.from(json['schema'] as Map) : null,
       );

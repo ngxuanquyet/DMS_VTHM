@@ -23,12 +23,13 @@ typedef MaterialSubmitter = Future<String?> Function(MaterialOperation op);
 const String materialPhotoFieldCode = '__material_photos';
 const String _reasonCode = '__material_reason';
 
-MarketFormBlockEntity _syntheticBlock(String code, String label, String inputType, {bool required = false}) =>
+MarketFormBlockEntity _syntheticBlock(String code, String label, String inputType,
+        {bool required = false, int maxFiles = 10}) =>
     MarketFormBlockEntity(
       ref: code,
       type: 'field',
       required: required,
-      resolved: MarketFormResolvedEntity(code: code, label: label, inputType: inputType),
+      resolved: MarketFormResolvedEntity(code: code, label: label, inputType: inputType, maxFiles: maxFiles),
     );
 
 /// Form kiểm / sửa / khai một loại vật tư: số lượng theo từng tình trạng (tổng tự cộng), chi tiết theo `schema` của
@@ -80,7 +81,8 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
     });
     _blocks = [
       ...widget.type.detailBlocks,
-      _syntheticBlock(materialPhotoFieldCode, ref.read(stringsProvider).materialsPhotos, 'image'),
+      _syntheticBlock(materialPhotoFieldCode, ref.read(stringsProvider).materialsPhotos, 'image',
+          maxFiles: widget.type.maxPhotos),
     ];
   }
 
@@ -147,8 +149,8 @@ class _MaterialEditScreenState extends ConsumerState<MaterialEditScreen> {
       return;
     }
     final photos = (answers.remove(materialPhotoFieldCode) as List?)?.map((e) => e.toString()).toList() ?? <String>[];
-    if (widget.type.requirePhoto && _total > 0 && photos.isEmpty) {
-      setState(() => _error = strings.materialsPhotoRequired);
+    if (_total > 0 && photos.length < widget.type.minPhotos) {
+      setState(() => _error = strings.materialsPhotoMin(widget.type.minPhotos));
       return;
     }
     // `update`: chỉ gửi ô chi tiết muốn đổi (ô không gửi giữ nguyên) — so với giá trị lần trước.
@@ -366,7 +368,8 @@ class _MaterialRemoveScreenState extends ConsumerState<_MaterialRemoveScreen> {
     final strings = ref.read(stringsProvider);
     _blocks = [
       _syntheticBlock(_reasonCode, strings.materialsRemoveReason, 'textarea', required: true),
-      _syntheticBlock(materialPhotoFieldCode, strings.materialsRemovePhotos, 'image', required: true),
+      _syntheticBlock(materialPhotoFieldCode, strings.materialsRemovePhotos, 'image',
+          required: true, maxFiles: widget.type.maxPhotos),
     ];
   }
 

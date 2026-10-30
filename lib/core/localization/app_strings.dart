@@ -651,9 +651,9 @@ class AppStrings {
   String get materialsRemoveReason => isVietnamese ? 'Lý do gỡ' : 'Reason';
   String get materialsRemovePhotos => isVietnamese ? 'Ảnh xác nhận' : 'Proof photos';
   String get materialsRemoveConfirm => isVietnamese ? 'Xác nhận gỡ' : 'Confirm removal';
-  String get materialsPhotoRequired => isVietnamese
-      ? 'Loại vật tư này cần chụp ít nhất một ảnh khi số lượng lớn hơn 0.'
-      : 'This material type needs at least one photo when quantity is above 0.';
+  String materialsPhotoMin(int n) => isVietnamese
+      ? 'Loại vật tư này cần chụp ít nhất $n ảnh khi số lượng lớn hơn 0.'
+      : 'This material type needs at least $n photo(s) when quantity is above 0.';
   String get materialsCheckForm =>
       isVietnamese ? 'Vui lòng kiểm tra lại các ô bắt buộc.' : 'Please check the required fields.';
   String get materialsSaved => isVietnamese ? 'Đã lưu vật tư.' : 'Materials saved.';
