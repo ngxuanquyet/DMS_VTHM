@@ -1401,12 +1401,17 @@ class SyncService {
     // Lối thoát cho thao tác vật tư: lỗi máy chủ (5xx / trả sai) lặp lại tới trần thì bỏ cuộc (dead) — nếu không,
     // check-out của lượt bị giữ mãi sau nó ([AppDatabase.isCheckoutHeldByMaterials]) và lượt treo trên server.
     var giveUp = false;
-    if (entry.entity == 'visit_material' && statusCode != null && statusCode >= 500) {
-      final failures = visitMaterialServerFailures(entry.payload) + 1;
-      await _db.updatePayload(entry.id, withVisitMaterialServerFailures(entry.payload, failures));
-      if (failures >= visitMaterialMaxServerFailures) {
+    if (entry.entity == 'visit_material' && (statusCode == null || statusCode >= 500)) {
+      final (payload, stop) = recordVisitMaterialFailure(
+        entry.payload,
+        serverError: statusCode != null,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      if (payload != entry.payload) await _db.updatePayload(entry.id, payload);
+      if (stop) {
         giveUp = true;
-        errorMsg = 'Máy chủ lỗi $failures lần liên tiếp khi lưu vật tư — đã dừng gửi: $errorMsg';
+        errorMsg = 'Máy chủ lỗi ${visitMaterialServerFailures(payload)} lần liên tiếp trong hơn '
+            '${visitMaterialGiveUpAfter.inMinutes} phút khi lưu vật tư — đã dừng gửi: $errorMsg';
       }
     }
 
@@ -1420,6 +1425,9 @@ class SyncService {
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         } catch (_) {}
+      } else if (entry.entity == 'visit_material') {
+        // Op bị từ chối không được sống lại thành "đã kiểm" từ cache khi NV xoá dòng lỗi.
+        await forgetCachedMaterialOp(entry.clientUuid);
       } else if (entry.entity == 'declaration') {
         try {
           await _ref.read(positionDeclarationRepositoryProvider).updateLocalDeclarationStatus(

@@ -32,34 +32,84 @@ const String visitMaterialsCachePrefix = 'dms_visit_materials_';
 /// Cùng tiền tố [visitMaterialsCachePrefix] nên cũng bị xoá khi đăng xuất.
 const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_catalog';
 
-/// Trần lỗi MÁY CHỦ (5xx / phản hồi sai — không tính mất mạng) liên tiếp của MỘT thao tác vật tư trong hàng đợi trước khi
-/// bỏ cuộc (dead). Check-out của lượt phải chờ thao tác vật tư ([AppDatabase.isCheckoutHeldByMaterials]); không có trần
-/// thì lỗi tất định giữ check-out mãi ⇒ lượt treo trên server, check-in lượt sau và đăng xuất bị chặn. 10 lần theo nhịp
-/// thử lại 2s→4s→8s→16s→5 phút ≈ 30 phút máy chủ lỗi liên tục — đủ dài để qua một lần máy chủ khởi động lại / triển
-/// khai, đủ ngắn để NV còn ở gần điểm bán khi thấy "Lỗi đồng bộ". Không là tham số server: đây là luật chống kẹt của
-/// hàng đợi trên máy, không phải nghiệp vụ.
+/// Lối thoát cho thao tác vật tư lỗi máy chủ (5xx / phản hồi sai — mất mạng KHÔNG tính) trong hàng đợi: bỏ cuộc (dead)
+/// chỉ khi ĐỦ [visitMaterialMaxServerFailures] lần lỗi liên tiếp VÀ chuỗi lỗi đã kéo dài ≥ [visitMaterialGiveUpAfter].
+/// Check-out của lượt phải chờ thao tác vật tư ([AppDatabase.isCheckoutHeldByMaterials]); không có lối thoát thì lỗi tất
+/// định giữ check-out mãi ⇒ lượt treo trên server, check-in lượt sau và đăng xuất bị chặn. Cần CẢ HAI điều kiện vì
+/// "Đồng bộ ngay" / kéo làm mới / đẩy trước check-out bỏ qua lịch thử lại: chỉ đếm số lần thì vài phút API 502 lúc
+/// triển khai + NV kéo làm mới 10 lần là thao tác chết oan. 30 phút đủ qua một lần máy chủ khởi động lại / triển khai,
+/// đủ ngắn để NV còn ở gần điểm bán khi thấy "Lỗi đồng bộ". Luật chống kẹt của hàng đợi trên máy, không phải nghiệp vụ.
 const int visitMaterialMaxServerFailures = 10;
+const Duration visitMaterialGiveUpAfter = Duration(minutes: 30);
 
 /// Trần chờ đẩy thao tác vật tư trước check-out trực tuyến — quá trần thì check-out đi hàng đợi (vẫn đứng sau vật tư),
 /// nút check-out không quay mãi.
 const Duration visitMaterialFlushTimeout = Duration(seconds: 20);
 
-/// Số lần lỗi máy chủ đã ghi trong payload hàng đợi (khoá `_server_failures`; không bị "Đồng bộ ngay" đặt lại như
-/// `attempts`).
-int visitMaterialServerFailures(String payload) {
+Map<String, dynamic>? _payloadMap(String payload) {
   try {
     final p = jsonDecode(payload);
-    if (p is Map && p['_server_failures'] is num) return (p['_server_failures'] as num).toInt();
+    if (p is Map) return Map<String, dynamic>.from(p);
   } catch (_) {}
-  return 0;
+  return null;
 }
 
-String withVisitMaterialServerFailures(String payload, int failures) {
+/// Số lần lỗi máy chủ liên tiếp đã ghi trong payload hàng đợi (khoá `_server_failures`; không bị "Đồng bộ ngay" đặt
+/// lại như `attempts`).
+int visitMaterialServerFailures(String payload) {
+  final v = _payloadMap(payload)?['_server_failures'];
+  return v is num ? v.toInt() : 0;
+}
+
+/// Ghi một lần lỗi của thao tác vật tư vào payload. [serverError] = máy chủ trả lỗi (5xx / phản hồi sai); false = lỗi
+/// mạng / tạm khác ⇒ chuỗi lỗi máy chủ bị cắt (đặt lại). Trả payload mới (giữ nguyên khi không đổi / payload hỏng) và
+/// có nên bỏ cuộc không.
+(String, bool) recordVisitMaterialFailure(String payload, {required bool serverError, required int nowMs}) {
+  final p = _payloadMap(payload);
+  if (p == null) return (payload, false);
+  if (!serverError) {
+    if (!p.containsKey('_server_failures') && !p.containsKey('_server_failure_first_ms')) return (payload, false);
+    p
+      ..remove('_server_failures')
+      ..remove('_server_failure_first_ms');
+    return (jsonEncode(p), false);
+  }
+  final failures = (p['_server_failures'] is num ? (p['_server_failures'] as num).toInt() : 0) + 1;
+  final first = p['_server_failure_first_ms'] is num ? (p['_server_failure_first_ms'] as num).toInt() : nowMs;
+  p['_server_failures'] = failures;
+  p['_server_failure_first_ms'] = first;
+  final giveUp =
+      failures >= visitMaterialMaxServerFailures && nowMs - first >= visitMaterialGiveUpAfter.inMilliseconds;
+  return (jsonEncode(p), giveUp);
+}
+
+/// Gỡ thao tác [clientUuid] khỏi `ops` của bản cache điểm bán; trả null nếu không có gì đổi.
+Map<String, dynamic>? removeOpFromCacheEntry(Map<String, dynamic> entry, String clientUuid) {
+  if (entry['ops'] is! List) return null;
+  final ops = List<dynamic>.from(entry['ops'] as List);
+  final before = ops.length;
+  ops.removeWhere((o) => o is Map && o['op'] is Map && (o['op'] as Map)['client_uuid'] == clientUuid);
+  if (ops.length == before) return null;
+  return {...entry, 'ops': ops};
+}
+
+/// Server từ chối thao tác vật tư (mục hàng đợi thành dead) ⇒ gỡ nó khỏi cache MỌI điểm bán NGAY — không dựa vào dòng
+/// dead còn trong DB (NV bấm "Xoá" / "Xoá hết lỗi" là dòng mất, op bị từ chối sẽ sống lại thành "đã kiểm").
+Future<void> forgetCachedMaterialOp(String clientUuid) async {
   try {
-    final p = jsonDecode(payload);
-    if (p is Map) return jsonEncode({...p, '_server_failures': failures});
-  } catch (_) {}
-  return payload;
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in prefs.getKeys().where((k) => k.startsWith(visitMaterialsCachePrefix)).toList()) {
+      if (key == visitMaterialsLastCatalogKey) continue;
+      final raw = prefs.getString(key);
+      if (raw == null) continue;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) continue;
+      final next = removeOpFromCacheEntry(Map<String, dynamic>.from(decoded), clientUuid);
+      if (next != null) await prefs.setString(key, jsonEncode(next));
+    }
+  } catch (e) {
+    debugPrint('[VisitMaterial] Gỡ thao tác bị từ chối khỏi cache lỗi: $e');
+  }
 }
 
 /// Kết quả dựng từ cache.
@@ -138,7 +188,9 @@ CachedMaterials? materialsFromCache({
   for (final (visit, op, ok) in cachedOps) {
     if (visit != visitClientUuid) data = applyMaterialOperation(data, op, trusted: ok);
   }
-  if (!sameVisit && !fromOther) data = data.resetForNewVisit();
+  // Cả nhánh "điểm bán khác / cache chưa có data": vẫn reset để cờ "đã kiểm" của op lượt TRƯỚC không lọt sang lượt này
+  // (an toàn vì withoutRequired() đã bỏ loại bắt buộc).
+  if (!sameVisit) data = data.resetForNewVisit();
   final seen = <String>{};
   for (final (visit, op, ok) in cachedOps) {
     if (visit == visitClientUuid) {
@@ -269,8 +321,14 @@ class VisitMaterialRepository {
     if (visitId > 0 && isOnline) {
       try {
         final (raw, data) = await _api.getMaterials(visitId);
-        await _writeCache(customerId, visitClientUuid, raw);
-        return MaterialsLoadResult(data: overlayPendingQueue(data, await _queueEntries(visitClientUuid)));
+        final queue = await _queueEntries(visitClientUuid);
+        await _writeCache(
+          customerId,
+          visitClientUuid,
+          raw,
+          keepOpUuids: queue.where((e) => e.state == 'pending' || e.state == 'sending').map((e) => e.clientUuid).toSet(),
+        );
+        return MaterialsLoadResult(data: overlayPendingQueue(data, queue));
       } catch (e) {
         if (e is AppException && e.statusCode == 403) {
           return const MaterialsLoadResult(forbidden: true);
@@ -399,15 +457,27 @@ class VisitMaterialRepository {
     }
   }
 
-  /// GET mới ⇒ thay cache điểm bán (bỏ thao tác đã ghi thêm — GET đã gồm chúng) + lưu danh mục và loại bắt buộc gần nhất.
-  Future<void> _writeCache(int customerId, String visitClientUuid, Map<String, dynamic> raw) async {
+  /// GET mới ⇒ thay cache điểm bán (bỏ thao tác đã ghi thêm — GET đã gồm chúng, TRỪ [keepOpUuids] còn nằm hàng đợi chưa
+  /// lên server) + lưu danh mục và loại bắt buộc gần nhất.
+  Future<void> _writeCache(
+    int customerId,
+    String visitClientUuid,
+    Map<String, dynamic> raw, {
+    Set<String> keepOpUuids = const {},
+  }) async {
     final prefs = await _prefs();
     if (prefs == null) return;
     try {
       if (customerId > 0) {
+        final old = _decode(prefs.getString(_outletKey(customerId)));
+        final kept = old?['ops'] is List
+            ? (old!['ops'] as List)
+                .where((o) => o is Map && o['op'] is Map && keepOpUuids.contains((o['op'] as Map)['client_uuid']))
+                .toList()
+            : const [];
         await prefs.setString(
           _outletKey(customerId),
-          jsonEncode({'visit_client_uuid': visitClientUuid, 'data': raw, 'ops': const []}),
+          jsonEncode({'visit_client_uuid': visitClientUuid, 'data': raw, 'ops': kept}),
         );
       }
       await prefs.setString(

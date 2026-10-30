@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/services/anti_fraud_service.dart';
 import 'package:vthm_dms/core/sync/sync_entity_group.dart';
@@ -687,25 +688,56 @@ void main() {
   });
 
   group('#1 lối thoát: thao tác vật tư lỗi máy chủ lặp lại không giữ check-out mãi', () {
-    test('bộ đếm lỗi máy chủ nằm trong payload, giữ nguyên phần còn lại', () {
-      final payload = jsonEncode({
-        'visit_id': 5,
-        'op': const MaterialOperation(clientUuid: 'm', materialTypeId: 73, action: MaterialAction.confirm).toJson(),
-      });
-      expect(visitMaterialServerFailures(payload), 0);
-      var p = payload;
-      for (var i = 1; i <= visitMaterialMaxServerFailures; i++) {
-        p = withVisitMaterialServerFailures(p, visitMaterialServerFailures(p) + 1);
+    final basePayload = jsonEncode({
+      'visit_id': 5,
+      'op': const MaterialOperation(clientUuid: 'm', materialTypeId: 73, action: MaterialAction.confirm).toJson(),
+    });
+    const t0 = 1_000_000_000;
+    const minute = 60 * 1000;
+
+    (String, bool) failN(String p, int n, {required int startMs, int stepMs = 1000}) {
+      var cur = p;
+      var stop = false;
+      for (var i = 0; i < n; i++) {
+        (cur, stop) = recordVisitMaterialFailure(cur, serverError: true, nowMs: startMs + i * stepMs);
       }
-      expect(visitMaterialServerFailures(p), visitMaterialMaxServerFailures);
-      expect(materialOperationFromQueuePayload(p)!.clientUuid, 'm');
+      return (cur, stop);
+    }
+
+    test('#3 đủ số lần nhưng CHƯA đủ 30 phút (ép đồng bộ liên tục lúc API 502) ⇒ chưa bỏ cuộc', () {
+      final (p, stop) = failN(basePayload, visitMaterialMaxServerFailures + 5, startMs: t0);
+      expect(stop, isFalse);
+      expect(visitMaterialServerFailures(p), visitMaterialMaxServerFailures + 5);
+      expect(materialOperationFromQueuePayload(p)!.clientUuid, 'm', reason: 'payload còn nguyên thao tác');
       expect(jsonDecode(p)['visit_id'], 5);
-      expect(visitMaterialServerFailures('{hỏng'), 0);
-      expect(withVisitMaterialServerFailures('{hỏng', 3), '{hỏng');
+    });
+
+    test('#3 đủ 30 phút nhưng CHƯA đủ số lần ⇒ chưa bỏ cuộc; đủ CẢ HAI ⇒ bỏ cuộc', () {
+      var (p, stop) = failN(basePayload, 2, startMs: t0, stepMs: 40 * minute);
+      expect(stop, isFalse);
+      (p, stop) = failN(p, visitMaterialMaxServerFailures - 3, startMs: t0 + 90 * minute);
+      expect(visitMaterialServerFailures(p), visitMaterialMaxServerFailures - 1);
+      expect(stop, isFalse);
+      (p, stop) = recordVisitMaterialFailure(p, serverError: true, nowMs: t0 + 100 * minute);
+      expect(stop, isTrue);
+    });
+
+    test('#3 lỗi mạng xen giữa ⇒ cắt chuỗi, đếm lại từ đầu (cả mốc lỗi đầu)', () {
+      var (p, _) = failN(basePayload, visitMaterialMaxServerFailures - 1, startMs: t0);
+      (p, _) = recordVisitMaterialFailure(p, serverError: false, nowMs: t0 + 31 * minute);
+      expect(visitMaterialServerFailures(p), 0);
+      expect(jsonDecode(p).containsKey('_server_failure_first_ms'), isFalse);
+      final (p2, stop) = recordVisitMaterialFailure(p, serverError: true, nowMs: t0 + 32 * minute);
+      expect(stop, isFalse);
+      expect(jsonDecode(p2)['_server_failure_first_ms'], t0 + 32 * minute);
+      // Lỗi mạng khi chưa có chuỗi lỗi ⇒ payload giữ nguyên (không ghi DB thừa).
+      expect(recordVisitMaterialFailure(basePayload, serverError: false, nowMs: t0).$1, basePayload);
+      expect(recordVisitMaterialFailure('{hỏng', serverError: true, nowMs: t0), ('{hỏng', false));
     });
 
     test('trần có giới hạn hợp lý', () {
       expect(visitMaterialMaxServerFailures, inInclusiveRange(3, 20));
+      expect(visitMaterialGiveUpAfter.inMinutes, inInclusiveRange(10, 120));
       expect(visitMaterialFlushTimeout.inSeconds, inInclusiveRange(5, 60));
     });
 
@@ -735,13 +767,95 @@ void main() {
       final checkout = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit');
       expect(await db.isCheckoutHeldByMaterials(checkout), isTrue);
 
-      await db.updatePayload(matId, withVisitMaterialServerFailures('{"visit_id":5,"op":{}}', 4));
+      final (bumped, _) = recordVisitMaterialFailure('{"visit_id":5,"op":{}}', serverError: true, nowMs: t0);
+      await db.updatePayload(matId, bumped);
       final mat = (await db.getVisitMaterialEntries('visitA')).single;
-      expect(visitMaterialServerFailures(mat.payload), 4);
+      expect(visitMaterialServerFailures(mat.payload), 1);
 
       await db.markDead(matId, 'Máy chủ lỗi 10 lần liên tiếp');
       expect(await db.isCheckoutHeldByMaterials(checkout), isFalse);
       expect(await db.getDeadVisitMaterialUuids(), {'m1'});
+    });
+  });
+
+  group('Vòng ba: op bị từ chối không sống lại + reset cờ khi cache chưa có data', () {
+    const opJson = {'client_uuid': 'bad', 'material_type_id': 74, 'action': 'confirm'};
+
+    test('#1 removeOpFromCacheEntry gỡ đúng op, không đổi thì null', () {
+      final entry = {
+        'visit_client_uuid': 'v',
+        'data': null,
+        'ops': [
+          {'visit': 'v', 'op': opJson, 'ok': false},
+          {
+            'visit': 'v',
+            'op': {'client_uuid': 'good', 'material_type_id': 73, 'action': 'confirm'},
+            'ok': true,
+          },
+        ],
+      };
+      final next = removeOpFromCacheEntry(entry, 'bad')!;
+      expect((next['ops'] as List).map((o) => (o as Map)['op']['client_uuid']), ['good']);
+      expect(removeOpFromCacheEntry(next, 'bad'), isNull);
+    });
+
+    test('#1 đánh dead ⇒ gỡ op khỏi cache MỌI điểm bán; xoá dòng lỗi sau đó op không sống lại', () async {
+      final data = getBody()['data'];
+      SharedPreferences.setMockInitialValues({
+        '${visitMaterialsCachePrefix}7': jsonEncode({
+          'visit_client_uuid': 'v',
+          'data': data,
+          'ops': [
+            {'visit': 'v', 'op': opJson, 'ok': false},
+          ],
+        }),
+        visitMaterialsLastCatalogKey: jsonEncode({'catalog': (data as Map)['catalog']}),
+        'khoa_khac': 'x',
+      });
+      // Trước khi gỡ: op confirm Biển hiệu làm cổng ④ tưởng đã kiểm.
+      final prefs = await SharedPreferences.getInstance();
+      Map<String, dynamic> entry() =>
+          Map<String, dynamic>.from(jsonDecode(prefs.getString('${visitMaterialsCachePrefix}7')!) as Map);
+      expect(materialsFromCache(outletEntry: entry(), visitClientUuid: 'v')!.data.missingAfterLocal, isEmpty);
+
+      await forgetCachedMaterialOp('bad');
+
+      // Không truyền deadUuids (dòng dead đã bị NV xoá) mà op vẫn không còn.
+      final c = materialsFromCache(outletEntry: entry(), visitClientUuid: 'v')!;
+      expect(c.data.missingAfterLocal.single.materialTypeId, 74);
+      expect(prefs.getString('khoa_khac'), 'x');
+      expect(prefs.getString(visitMaterialsLastCatalogKey), isNotNull);
+    });
+
+    test('#2 cache {data:null, ops} (điểm bán chưa từng GET): cờ "đã kiểm" của lượt TRƯỚC không lọt sang lượt mới', () {
+      final data = getBody()['data'] as Map<String, dynamic>;
+      final entry = appendOpToCacheEntry(
+        null,
+        'visitA',
+        const MaterialOperation(clientUuid: 'a1', materialTypeId: 73, action: MaterialAction.add, conditionCounts: {'good': 1}),
+      );
+      final c = materialsFromCache(
+        outletEntry: entry,
+        lastCatalog: {'catalog': data['catalog'], 'required_type_ids': data['required_type_ids']},
+        visitClientUuid: 'visitB',
+      )!;
+      expect(c.requiredFromOtherOutlet, isTrue);
+      final ke = c.data.items.firstWhere((i) => i.materialTypeId == 73);
+      expect(ke.quantity, 1, reason: 'hiện trạng từ op lượt trước vẫn giữ');
+      expect(ke.checkedInVisit, isFalse, reason: 'nhưng không tính là đã kiểm ở lượt mới');
+      expect(c.data.missingAfterLocal, isEmpty, reason: 'withoutRequired: không đòi loại bắt buộc');
+
+      // Cùng lượt thì vẫn "đã kiểm".
+      final same = materialsFromCache(
+        outletEntry: appendOpToCacheEntry(
+          null,
+          'visitB',
+          const MaterialOperation(clientUuid: 'b1', materialTypeId: 73, action: MaterialAction.confirm),
+        ),
+        lastCatalog: {'catalog': data['catalog']},
+        visitClientUuid: 'visitB',
+      )!;
+      expect(same.data.items.firstWhere((i) => i.materialTypeId == 73).checkedInVisit, isTrue);
     });
   });
 }

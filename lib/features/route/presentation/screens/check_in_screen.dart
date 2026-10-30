@@ -83,7 +83,25 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   /// Nạp sẵn vật tư sau check-in: lưu danh mục để dùng ngoại tuyến, biết có quyền không, và (ngoại tuyến) dựng cổng
   /// check-out ④ từ bản lưu trên máy — khi trực tuyến `requirements` của server đã mang `missing_materials`.
-  Future<void> _prefetchMaterials() async {
+  /// Lượt nạp vật tư gần nhất — lượt mới CHỜ lượt trước xong rồi mới chạy (postFrame + visitId 0→>0 + rời màn Vật tư có
+  /// thể gọi chồng nhau; hai GET song song ghi đè cache của nhau).
+  Future<void>? _prefetchChain;
+
+  Future<void> _prefetchMaterials() {
+    final previous = _prefetchChain;
+    final next = () async {
+      if (previous != null) {
+        try {
+          await previous;
+        } catch (_) {}
+      }
+      await _prefetchMaterialsOnce();
+    }();
+    _prefetchChain = next;
+    return next;
+  }
+
+  Future<void> _prefetchMaterialsOnce() async {
     if (!mounted) return;
     final state = ref.read(checkInViewModelProvider);
     if (state.visitId == 0) return;
