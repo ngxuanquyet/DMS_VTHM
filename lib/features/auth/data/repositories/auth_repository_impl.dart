@@ -7,6 +7,7 @@ import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../models/user_model.dart';
 import '../services/auth_api_service.dart';
+import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialsCachePrefix;
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthApiService _apiService;
@@ -131,7 +132,8 @@ class AuthRepositoryImpl implements AuthRepository {
             k.startsWith('cached_customer_form_schema') ||
             k.startsWith('cached_customer_meta') ||
             k.startsWith('dms_route_customers_cache') ||
-            k.startsWith('dms_market_forms_'))
+            k.startsWith('dms_market_forms_') ||
+            k.startsWith(visitMaterialsCachePrefix))
         .toList();
     for (final k in keys) {
       await prefs.remove(k);

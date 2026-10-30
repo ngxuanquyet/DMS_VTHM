@@ -1018,10 +1018,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         ? <MissingFormEntity>[]
         : (currentReq?.missingForms ?? <MissingFormEntity>[]);
 
+    // Giữ danh sách cả khi đóng cửa (chỉ không tính vào satisfied) — đổi lại "mở cửa" lúc ngoại tuyến không mất cổng ④.
+    final missingMaterials = currentReq?.missingMaterials ?? <MissingMaterialEntity>[];
+
     final isTimeOk = isClosed || isNewPendingStore || currentSec <= 0;
     final isFormsOk = isClosed || missingForms.isEmpty;
     final isPhotosOk = photosMissing <= 0;
-    final satisfied = isTimeOk && isFormsOk && isPhotosOk;
+    final satisfied = isTimeOk && isFormsOk && isPhotosOk && (isClosed || missingMaterials.isEmpty);
 
     List<String> blockers = [];
     if (!isClosed) {
@@ -1034,6 +1037,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
       if (photosMissing > 0) {
         blockers.add('Bạn cần chụp thêm $photosMissing ảnh nữa.');
+      }
+      if (missingMaterials.isNotEmpty) {
+        blockers.add(_missingMaterialsBlocker(missingMaterials));
       }
     } else {
       if (photosMissing > 0) {
@@ -1048,6 +1054,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       secondsRemaining: (isClosed || isNewPendingStore) ? 0 : currentSec,
       photosMissing: photosMissing,
       missingForms: missingForms,
+      missingMaterials: missingMaterials,
       blockers: blockers,
     );
 
@@ -1202,6 +1209,39 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     } catch (_) {}
   }
 
+  /// clientUuid của phiên lượt — cha của các mục hàng đợi đi kèm lượt (ảnh, vật tư, check-out).
+  String get sessionClientUuid => _sessionClientUuid;
+
+  static String _missingMaterialsBlocker(List<MissingMaterialEntity> missing) =>
+      'Chưa kiểm vật tư bắt buộc: ${missing.map((m) => m.name).join(', ')}';
+
+  /// Cập nhật cổng vật tư ④ (#24522). Có [serverRequirements] (phản hồi lưu vật tư) ⇒ dùng nguyên bản server;
+  /// không có (ngoại tuyến / bản cache) ⇒ thay danh sách loại còn thiếu rồi tính lại `satisfied` + câu chặn tại máy.
+  void applyMaterialRequirements(
+    List<MissingMaterialEntity> missing, {
+    VisitRequirementsEntity? serverRequirements,
+  }) {
+    if (serverRequirements != null) {
+      _targetDoneTime = serverRequirements.secondsRemaining > 0
+          ? DateTime.now().add(Duration(seconds: serverRequirements.secondsRemaining))
+          : null;
+      state = state.copyWith(requirements: serverRequirements);
+      return;
+    }
+    final req = state.requirements;
+    if (req == null) return;
+    final isClosed = state.visitResult == 'closed';
+    final blockers = req.blockers.where((b) => !b.toLowerCase().contains('vật tư')).toList();
+    if (!isClosed && missing.isNotEmpty) blockers.add(_missingMaterialsBlocker(missing));
+    final satisfied = (isClosed || req.secondsRemaining <= 0) &&
+        (isClosed || req.missingForms.isEmpty) &&
+        req.photosMissing <= 0 &&
+        (isClosed || missing.isEmpty);
+    state = state.copyWith(
+      requirements: req.copyWith(missingMaterials: missing, satisfied: satisfied, blockers: blockers),
+    );
+  }
+
   void markSurveySubmitted(int configId) {
     final updated = Set<int>.from(state.submittedSurveyConfigIds)
       ..add(configId);
@@ -1215,7 +1255,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           updatedReq.secondsRemaining <= 0 || state.visitResult == 'closed';
       final isFormsOk = remainingForms.isEmpty || state.visitResult == 'closed';
       final isPhotosOk = updatedReq.photosMissing <= 0;
-      final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+      final newSatisfied =
+          isTimeOk && isFormsOk && isPhotosOk && updatedReq.materialsOk(state.visitResult == 'closed');
 
       List<String> newBlockers = List<String>.from(updatedReq.blockers);
       if (remainingForms.isEmpty) {
@@ -1901,7 +1942,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final isTimeOk = newSec <= 0 || state.visitResult == 'closed';
         final isFormsOk = req.missingForms.isEmpty || state.visitResult == 'closed';
         final isPhotosOk = req.photosMissing <= 0;
-        final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+        final newSatisfied =
+            isTimeOk && isFormsOk && isPhotosOk && req.materialsOk(state.visitResult == 'closed');
 
         List<String> newBlockers = req.blockers;
         if (newSec <= 0) {
@@ -2016,7 +2058,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final isTimeOk = currentReq.secondsRemaining <= 0 || state.visitResult == 'closed';
       final isFormsOk = currentReq.missingForms.isEmpty || state.visitResult == 'closed';
       final isPhotosOk = newPhotosMissing <= 0;
-      final newSatisfied = isTimeOk && isFormsOk && isPhotosOk;
+      final newSatisfied =
+          isTimeOk && isFormsOk && isPhotosOk && currentReq.materialsOk(state.visitResult == 'closed');
 
       List<String> newBlockers = List<String>.from(currentReq.blockers);
       if (newPhotosMissing <= 0) {

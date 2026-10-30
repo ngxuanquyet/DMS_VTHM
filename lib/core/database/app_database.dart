@@ -458,6 +458,16 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
+  /// Thao tác vật tư (#24522) của một lượt viếng thăm ([visitClientUuid] = clientUuid phiên lượt), theo thứ tự bấm —
+  /// để màn Vật tư và cổng check-out ngoại tuyến thấy thao tác còn nằm trên máy.
+  Future<List<SyncQueueEntry>> getVisitMaterialEntries(String visitClientUuid) {
+    return (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) & tbl.entity.equals('visit_material') & tbl.parentUuid.equals(visitClientUuid))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
+        .get();
+  }
+
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
   Future<List<SyncQueueEntry>> getAllPendingQueueEntries() {
     return (select(syncQueueEntries)

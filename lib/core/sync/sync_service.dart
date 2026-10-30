@@ -23,6 +23,9 @@ import '../../features/position_declaration/data/repositories/position_declarati
 import '../../features/route/presentation/viewmodels/route_view_model.dart';
 import '../../features/travel/presentation/viewmodels/travel_view_model.dart';
 import '../../features/visit/data/repositories/visit_repository_impl.dart';
+import '../../features/visit/data/models/visit_material_model.dart';
+import '../../features/visit/data/repositories/visit_material_repository.dart';
+import '../../features/forms/presentation/viewmodels/forms_view_model.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -316,6 +319,8 @@ class SyncService {
         await _syncVisitPhoto(entry);
       } else if (entry.entity == 'form_submission' && entry.op == 'create') {
         await _syncSubmitForm(entry);
+      } else if (entry.entity == 'visit_material' && entry.op == 'save') {
+        await _syncVisitMaterial(entry);
       } else if (entry.entity == 'visit' && entry.op == 'checkout') {
         await _syncCheckoutVisit(entry);
       } else if (entry.entity == 'visit' && entry.op == 'cancel') {
@@ -741,6 +746,48 @@ class SyncService {
     }
 
     debugPrint('[SyncService] Tải ảnh viếng thăm lên thành công cho lượt #$visitId');
+  }
+
+  /// Gửi một thao tác vật tư (#24522) nằm hàng đợi: `is_offline_sync=true` + `queued_seconds` (đồng hồ phần cứng)
+  /// ở cả lô lẫn phần tử, CÙNG `client_uuid` sinh lúc bấm. Phản hồi 200 vẫn có thể `ok:false` ⇒ ném 422 (dead, hiện
+  /// câu lỗi của server ở "Lỗi đồng bộ") — không thử lại mãi một thao tác server đã nói không.
+  Future<void> _syncVisitMaterial(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    final op = materialOperationFromQueuePayload(entry.payload);
+    if (op == null) throw AppException('Thao tác vật tư trên máy bị hỏng, không gửi được.', 422);
+
+    int? visitId = int.tryParse(payload['visit_id']?.toString() ?? '');
+    SyncQueueEntry? parent;
+    if ((visitId == null || visitId <= 0) && entry.parentUuid != null) {
+      parent = await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (parent != null && parent.serverId != null && parent.serverId! > 0) {
+        visitId = parent.serverId;
+      }
+    }
+    if (visitId == null || visitId <= 0) {
+      _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha cho thao tác vật tư');
+    }
+
+    final resolved = await resolveOperationPhotos(
+      op,
+      (file) async => (await _ref.read(formsApiServiceProvider).uploadPhoto(file)).token,
+    );
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    final body = buildMaterialsRequest(
+      [resolved.toItemJson(isOfflineSync: true, queuedSeconds: queuedSec)],
+      isOfflineSync: true,
+      queuedSeconds: queuedSec,
+    );
+    final res = await _ref.read(visitMaterialApiServiceProvider).saveMaterials(visitId, body);
+    final r = res.resultFor(resolved.clientUuid, 0);
+    if (r == null) throw AppException('Phản hồi lưu vật tư không hợp lệ từ máy chủ.');
+    if (!r.ok) throw AppException(r.error ?? 'Máy chủ từ chối thao tác vật tư.', 422);
+
+    await _db.markDone(entry.id, serverId: r.logId);
+    debugPrint('[SyncService] Đồng bộ thao tác vật tư thành công cho lượt #$visitId (uuid ${entry.clientUuid})');
   }
 
   /// Đồng bộ Check-out viếng thăm lên server (§7 & §9)

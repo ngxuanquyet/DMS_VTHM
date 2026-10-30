@@ -39,6 +39,8 @@ import '../../../forms/presentation/widgets/market_form_card.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../domain/entities/route_entity.dart';
 import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
+import '../../../visit/data/repositories/visit_material_repository.dart';
+import '../../../visit/presentation/screens/visit_materials_screen.dart';
 
 class CheckInScreen extends ConsumerStatefulWidget {
   final DealerEntity? dealer;
@@ -54,13 +56,54 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isCheckingIn = false;
 
+  /// 403 khi nạp vật tư ⇒ tài khoản không có quyền vật tư, ẩn mục Vật tư (#24522).
+  bool _materialsForbidden = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initAndCheckin();
       await _checkLostData();
+      await _prefetchMaterials();
     });
+  }
+
+  /// id điểm bán của lượt đang mở (điểm bán đã nạp → điểm bán của tuyến → mã số trong dealer.id).
+  int _effectiveCustomerId(CheckInState state) {
+    if (state.customer is CustomerEntity) return (state.customer as CustomerEntity).id;
+    if (widget.dealer?.customer is CustomerEntity) return (widget.dealer!.customer as CustomerEntity).id;
+    return int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0;
+  }
+
+  /// Nạp sẵn vật tư sau check-in: lưu danh mục để dùng ngoại tuyến, biết có quyền không, và (ngoại tuyến) dựng cổng
+  /// check-out ④ từ bản lưu trên máy — khi trực tuyến `requirements` của server đã mang `missing_materials`.
+  Future<void> _prefetchMaterials() async {
+    final state = ref.read(checkInViewModelProvider);
+    if (!mounted || state.visitId == 0) return;
+    final vm = ref.read(checkInViewModelProvider.notifier);
+    final res = await ref.read(visitMaterialRepositoryProvider).load(
+          visitId: state.visitId,
+          customerId: _effectiveCustomerId(state),
+          visitClientUuid: vm.sessionClientUuid,
+        );
+    if (!mounted) return;
+    if (res.forbidden) {
+      setState(() => _materialsForbidden = true);
+      return;
+    }
+    if (res.data != null) vm.applyMaterialRequirements(res.data!.missingAfterLocal);
+  }
+
+  Future<void> _openMaterials(CheckInState state) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisitMaterialsScreen(
+          customerId: _effectiveCustomerId(state),
+          dealerName: state.checkinData?.dealer.name ?? '',
+        ),
+      ),
+    );
   }
 
   @override
@@ -2408,6 +2451,32 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                               ],
                               const SizedBox(height: 12),
 
+                              // Task: Vật tư tại điểm bán (#24522) — cổng check-out ④
+                              if (isOpenVisit && !_materialsForbidden) ...[
+                                _buildTaskCard(
+                                  context: context,
+                                  isDark: isDark,
+                                  icon: Icons.inventory_2_outlined,
+                                  iconColor: isClosed || (req?.missingMaterials.isEmpty ?? true)
+                                      ? const Color(0xFF10B981)
+                                      : AppColors.error,
+                                  title: strings.materialsTaskTitle,
+                                  subtitle: isClosed
+                                      ? strings.materialsClosedExempt
+                                      : ((req?.missingMaterials.isNotEmpty ?? false)
+                                          ? strings.materialsMissingCount(req!.missingMaterials.length)
+                                          : strings.materialsTapToCheck),
+                                  trailing: (!isClosed && (req?.missingMaterials.isNotEmpty ?? false))
+                                      ? const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 20)
+                                      : Icon(
+                                          Icons.chevron_right,
+                                          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+                                        ),
+                                  onTap: () => _openMaterials(state),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+
                               // Task 3: Notes
                               _buildTaskCard(
                                 context: context,
@@ -2436,11 +2505,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
                         // 5. Lịch sử viếng thăm của điểm bán (§2.4 SPEC 16/10/2026)
                         () {
-                          final effectiveCustomerId = state.customer is CustomerEntity
-                              ? (state.customer as CustomerEntity).id
-                              : (widget.dealer?.customer is CustomerEntity
-                                  ? (widget.dealer!.customer as CustomerEntity).id
-                                  : (int.tryParse(state.checkinData?.dealer.id.replaceAll(RegExp(r'[^\d]'), '') ?? '') ?? 0));
+                          final effectiveCustomerId = _effectiveCustomerId(state);
                           if (effectiveCustomerId <= 0) return const SizedBox.shrink();
                           return Padding(
                             padding: const EdgeInsets.fromLTRB(
@@ -2533,6 +2598,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                   // Ưu tiên 3: ẢNH CHỤP (Photos)
                                   if (req != null && req.photosMissing > 0) {
                                     _showPhotoWarningDialog(req.photosMissing, vm);
+                                    return;
+                                  }
+
+                                  // Ưu tiên 4: VẬT TƯ BẮT BUỘC (#24522) — server đã có câu trong blockers
+                                  if (!isClosed && req != null && req.missingMaterials.isNotEmpty) {
+                                    final materialBlockers =
+                                        req.blockers.where((b) => b.toLowerCase().contains('vật tư')).toList();
+                                    _showBlockersDialog(materialBlockers.isNotEmpty
+                                        ? materialBlockers
+                                        : [
+                                            strings.materialsCheckoutBlocked(
+                                              req.missingMaterials.map((m) => m.name).join(', '),
+                                            ),
+                                          ]);
                                     return;
                                   }
 

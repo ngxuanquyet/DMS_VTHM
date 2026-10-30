@@ -610,5 +610,60 @@ class AppStrings {
   String get locationAccessLogDesc => isVietnamese
       ? 'Nhật ký truy cập toạ độ theo Luật BVDLCN 91/2025'
       : 'Location access log under Privacy Law 91/2025';
+
+  // Vật tư tại điểm bán trong lượt viếng thăm (#24522 — API-VAT-TU-MOBILE-2026-10-30)
+  String get materialsTitle => isVietnamese ? 'Vật tư' : 'Materials';
+  String get materialsTaskTitle => isVietnamese ? 'Vật tư tại điểm bán' : 'Outlet materials';
+  String materialsMissingCount(int n) =>
+      isVietnamese ? 'Còn $n loại vật tư bắt buộc chưa kiểm' : '$n required material type(s) not checked';
+  String get materialsAllChecked => isVietnamese ? 'Đã kiểm đủ vật tư bắt buộc' : 'All required materials checked';
+  String get materialsTapToCheck => isVietnamese ? 'Kiểm / cập nhật vật tư' : 'Check / update materials';
+  String get materialsClosedExempt =>
+      isVietnamese ? 'Được miễn do điểm bán đóng cửa' : 'Exempt — outlet closed';
+  String get materialsAdd => isVietnamese ? '+ Thêm loại vật tư' : '+ Add material type';
+  String get materialsChooseType => isVietnamese ? 'Chọn loại vật tư' : 'Choose material type';
+  String get materialsNoAddable =>
+      isVietnamese ? 'Đã có đủ mọi loại vật tư trong danh mục.' : 'All catalog types are already listed.';
+  String get materialsEmpty =>
+      isVietnamese ? 'Điểm bán chưa khai vật tư nào.' : 'No materials recorded at this outlet.';
+  String get materialsNotDeclared => isVietnamese ? '— chưa khai —' : '— not declared —';
+  String get materialsNone => isVietnamese ? 'Không có' : 'None';
+  String get materialsRequired => isVietnamese ? 'Bắt buộc' : 'Required';
+  String get materialsChecked => isVietnamese ? 'Đã kiểm' : 'Checked';
+  String materialsQuantity(int n, String unit) =>
+      isVietnamese ? 'SL $n${unit.isNotEmpty ? ' $unit' : ''}' : 'Qty $n${unit.isNotEmpty ? ' $unit' : ''}';
+  String materialsLastCheck(String when, String? who) => isVietnamese
+      ? 'Kiểm $when${who != null && who.isNotEmpty ? ' · $who' : ''}'
+      : 'Checked $when${who != null && who.isNotEmpty ? ' · $who' : ''}';
+  String get materialsOfflineCache => isVietnamese
+      ? 'Đang ngoại tuyến — hiện bản lưu trên máy, thao tác sẽ tự gửi khi có mạng.'
+      : 'Offline — showing saved data; changes will be sent when online.';
+  String get materialsNoData => isVietnamese
+      ? 'Chưa tải được danh mục vật tư. Vui lòng kết nối mạng rồi thử lại.'
+      : 'Material catalog not loaded yet. Please connect and retry.';
+  String materialsTotal(int n) => isVietnamese ? 'Tổng: $n' : 'Total: $n';
+  String get materialsDetails => isVietnamese ? 'Chi tiết' : 'Details';
+  String get materialsPhotos => isVietnamese ? 'Ảnh vật tư' : 'Material photos';
+  String get materialsUnchanged => isVietnamese ? '✓ Không đổi' : '✓ Unchanged';
+  String get materialsSave => isVietnamese ? 'Lưu' : 'Save';
+  String get materialsRemove => isVietnamese ? 'Gỡ' : 'Remove';
+  String get materialsRemoveTitle => isVietnamese ? 'Gỡ / thu hồi vật tư' : 'Remove / withdraw material';
+  String get materialsRemoveReason => isVietnamese ? 'Lý do gỡ' : 'Reason';
+  String get materialsRemovePhotos => isVietnamese ? 'Ảnh xác nhận' : 'Proof photos';
+  String get materialsRemoveConfirm => isVietnamese ? 'Xác nhận gỡ' : 'Confirm removal';
+  String get materialsPhotoRequired => isVietnamese
+      ? 'Loại vật tư này cần chụp ít nhất một ảnh khi số lượng lớn hơn 0.'
+      : 'This material type needs at least one photo when quantity is above 0.';
+  String get materialsCheckForm =>
+      isVietnamese ? 'Vui lòng kiểm tra lại các ô bắt buộc.' : 'Please check the required fields.';
+  String get materialsSaved => isVietnamese ? 'Đã lưu vật tư.' : 'Materials saved.';
+  String get materialsQueued => isVietnamese
+      ? 'Đã lưu trên máy, sẽ tự gửi khi có mạng.'
+      : 'Saved on device; will be sent when online.';
+  String get materialsForbidden => isVietnamese
+      ? 'Tài khoản chưa được cấp quyền cập nhật vật tư.'
+      : 'Your account is not allowed to update materials.';
+  String materialsCheckoutBlocked(String names) =>
+      isVietnamese ? 'Chưa kiểm vật tư bắt buộc: $names' : 'Required materials not checked: $names';
 }
 

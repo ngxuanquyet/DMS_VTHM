@@ -47,7 +47,7 @@ class SyncEntityGroupHelper {
     final List<SyncQueueEntry> others = [];
 
     for (final e in rawEntries) {
-      if (e.entity == 'visit' || e.entity == 'visit_photo' || e.entity == 'photo') {
+      if (e.entity == 'visit' || e.entity == 'visit_photo' || e.entity == 'photo' || e.entity == 'visit_material') {
         String? visitKey = e.parentUuid;
         if (visitKey == null || visitKey.isEmpty) {
           if (e.entity == 'visit') {
@@ -90,6 +90,7 @@ class SyncEntityGroupHelper {
         orElse: () => list.first,
       );
       final photoCount = list.where((e) => e.entity == 'visit_photo' || e.entity == 'photo').length;
+      final materialCount = list.where((e) => e.entity == 'visit_material').length;
       final hasCheckout = list.any((e) => e.entity == 'visit' && e.op == 'checkout');
       final isSending = list.any((e) => e.state == 'sending');
 
@@ -107,6 +108,9 @@ class SyncEntityGroupHelper {
       }
       if (photoCount > 0) {
         subtitleParts.add('Kèm $photoCount ảnh');
+      }
+      if (materialCount > 0) {
+        subtitleParts.add('$materialCount thao tác vật tư');
       }
       subtitleParts.add(isSending ? 'Đang gửi' : 'Chờ gửi');
 
