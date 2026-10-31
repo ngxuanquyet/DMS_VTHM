@@ -635,6 +635,8 @@ class AppStrings {
   String materialsCount(int n, String unit) => unit.isNotEmpty ? '$n $unit' : '$n';
   String get materialsCheckedThisVisit => isVietnamese ? 'Đã kiểm lượt này' : 'Checked this visit';
   String get materialsPending => isVietnamese ? 'Chưa kiểm' : 'Not checked';
+  String get materialsExpand => isVietnamese ? 'Xem chi tiết' : 'Show details';
+  String get materialsCollapse => isVietnamese ? 'Thu gọn' : 'Collapse';
   String materialsMoreDetails(int n) => isVietnamese ? '+$n thông tin' : '+$n more';
   String get materialsYes => isVietnamese ? 'Có' : 'Yes';
   String get materialsNo => isVietnamese ? 'Không' : 'No';

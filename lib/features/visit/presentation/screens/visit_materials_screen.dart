@@ -313,6 +313,9 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
             ? MaterialCardStatus.required
             : MaterialCardStatus.pending;
     return MaterialCard(
+      // Giữ trạng thái mở/thu gọn theo loại khi danh sách sắp lại sau lần kiểm.
+      key: ValueKey(item.materialTypeId),
+      collapsible: true,
       strings: strings,
       // Loại trong danh mục mang `schema` chi tiết (nhãn ô); `items[].type` thì không.
       type: data.typeById(item.materialTypeId) ?? item.type,

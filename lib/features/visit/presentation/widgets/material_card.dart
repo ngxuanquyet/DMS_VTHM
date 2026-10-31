@@ -30,7 +30,8 @@ enum MaterialCardStatus {
 /// chi tiết của loại), dải ảnh (chạm xem to), chân thẻ người/ngày kiểm.
 ///
 /// [counts] null = chưa khai (thẻ rỗng); tổng 0 = "không có tại điểm" (thẻ mờ một dòng).
-class MaterialCard extends StatelessWidget {
+/// [collapsible] = thẻ mở ra ở dạng thu gọn (tên + trạng thái + tổng số), nút mũi tên xuống để xem đủ.
+class MaterialCard extends StatefulWidget {
   final AppStrings strings;
   final OutletMaterialType type;
   final List<MaterialCondition> conditions;
@@ -46,6 +47,9 @@ class MaterialCard extends StatelessWidget {
 
   /// Gộp chi tiết thành 1–2 dòng "Nhãn: giá trị · …" (màn tạo điểm bán).
   final bool compactDetails;
+
+  /// Thu gọn mặc định, nút mũi tên mở/đóng phần chi tiết (mục Vật tư của lượt viếng thăm).
+  final bool collapsible;
 
   static const int maxDetailRows = 3;
   static const int maxPhotoThumbs = 4;
@@ -63,10 +67,26 @@ class MaterialCard extends StatelessWidget {
     this.footer,
     this.action,
     this.compactDetails = false,
+    this.collapsible = false,
   });
 
   @override
+  State<MaterialCard> createState() => _MaterialCardState();
+}
+
+class _MaterialCardState extends State<MaterialCard> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final strings = widget.strings;
+    final type = widget.type;
+    final conditions = widget.conditions;
+    final counts = widget.counts;
+    final details = widget.details;
+    final photos = widget.photos;
+    final status = widget.status;
+    final footer = widget.footer;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
     final subColor = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
@@ -75,6 +95,8 @@ class MaterialCard extends StatelessWidget {
     final declared = counts != null;
     final notPresent = declared && total == 0;
     final isRequired = status == MaterialCardStatus.required;
+    final hasMore = (declared && !notPresent) || (footer != null && footer.isNotEmpty);
+    final collapsed = widget.collapsible && hasMore && !_expanded;
 
     final header = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,7 +110,20 @@ class MaterialCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        action ?? _statusChip(strings, notPresent),
+        widget.action ?? _statusChip(strings, status),
+        if (widget.collapsible && hasMore)
+          IconButton(
+            tooltip: _expanded ? strings.materialsCollapse : strings.materialsExpand,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
+            style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            icon: AnimatedRotation(
+              turns: _expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(Icons.keyboard_arrow_down_rounded, color: subColor),
+            ),
+            onPressed: () => setState(() => _expanded = !_expanded),
+          ),
       ],
     );
 
@@ -102,6 +137,15 @@ class MaterialCard extends StatelessWidget {
       children.add(Padding(
         padding: const EdgeInsets.only(top: 4, left: 28),
         child: Text(strings.materialsNotPresent, style: TextStyle(fontSize: 12, color: subColor)),
+      ));
+    } else if (collapsed) {
+      // Thu gọn: chỉ dòng tổng số lượng — thanh tình trạng, chi tiết, ảnh, người kiểm hiện khi bấm mũi tên.
+      children.add(Padding(
+        padding: const EdgeInsets.only(top: 4, left: 28),
+        child: Text(
+          strings.materialsCount(total, type.unit),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: textColor),
+        ),
       ));
     } else {
       children.addAll([
@@ -118,22 +162,26 @@ class MaterialCard extends StatelessWidget {
       final rows = materialDetailRows(type, details, strings);
       if (rows.isNotEmpty) {
         children.addAll([const SizedBox(height: 8), Divider(height: 1, color: subColor.withValues(alpha: 0.2))]);
-        children.add(compactDetails ? _compactDetails(rows, textColor, subColor) : _detailTable(rows, strings, textColor, subColor));
+        children.add(widget.compactDetails ? _compactDetails(rows, textColor, subColor) : _detailTable(rows, strings, textColor, subColor));
       }
     }
-    if (photos.isNotEmpty && !notPresent) {
+    if (!collapsed && photos.isNotEmpty && !notPresent) {
       children.addAll([const SizedBox(height: 8), _PhotoStrip(photos: photos, title: type.name)]);
     }
-    if (footer != null && footer!.isNotEmpty) {
+    if (!collapsed && footer != null && footer.isNotEmpty) {
       children.addAll([
         const SizedBox(height: 6),
-        Text(footer!, style: TextStyle(fontSize: 11, color: subColor)),
+        Text(footer, style: TextStyle(fontSize: 11, color: subColor)),
       ]);
     }
 
     final content = Padding(
       padding: const EdgeInsets.all(12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        alignment: Alignment.topCenter,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+      ),
     );
 
     return Container(
@@ -143,7 +191,7 @@ class MaterialCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
+          onTap: widget.onTap,
           child: CustomPaint(
             foregroundPainter: isRequired ? _DashedBorderPainter(color: AppColors.warning) : null,
             child: DecoratedBox(
@@ -161,7 +209,7 @@ class MaterialCard extends StatelessWidget {
     );
   }
 
-  Widget _statusChip(AppStrings strings, bool notPresent) {
+  Widget _statusChip(AppStrings strings, MaterialCardStatus status) {
     final (IconData? icon, String text, Color color) = switch (status) {
       MaterialCardStatus.required => (Icons.warning_amber_rounded, strings.materialsRequired, AppColors.warning),
       MaterialCardStatus.checked => (Icons.check_circle_rounded, strings.materialsCheckedThisVisit, AppColors.success),
@@ -180,7 +228,7 @@ class MaterialCard extends StatelessWidget {
   }
 
   Widget _detailTable(List<MapEntry<String, String>> rows, AppStrings strings, Color textColor, Color subColor) {
-    final shown = rows.take(maxDetailRows).toList();
+    final shown = rows.take(MaterialCard.maxDetailRows).toList();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -198,8 +246,8 @@ class MaterialCard extends StatelessWidget {
                 ),
               ]),
             ),
-          if (rows.length > maxDetailRows)
-            Text(strings.materialsMoreDetails(rows.length - maxDetailRows),
+          if (rows.length > MaterialCard.maxDetailRows)
+            Text(strings.materialsMoreDetails(rows.length - MaterialCard.maxDetailRows),
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
         ],
       ),
