@@ -902,6 +902,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                               },
                               onSubmit: _handleSubmit,
                               customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
+                              hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data, editing: c),
                             ),
                           ],
                         ),

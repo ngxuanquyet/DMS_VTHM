@@ -280,6 +280,10 @@ class DynamicFormField {
   /// Mã ô CHA mà ô này lọc theo (`depends_on[0].field_code` của schema — ô Xã → ô Tỉnh, #24072); `null` = không phụ thuộc.
   final String? dependsOn;
 
+  /// Điều kiện hiển thị (`show_if` của schema — cây `all`/`any`/lá `{field, op, value}`, cùng định dạng biểu mẫu thị
+  /// trường); `null` = luôn hiện (ô cứng, server/bản lưu máy cũ không có khoá).
+  final dynamic showIf;
+
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
@@ -317,6 +321,7 @@ class DynamicFormField {
     this.choiceMultiple,
     this.choiceDisplay,
     this.dependsOn,
+    this.showIf,
     this.section,
     this.badge,
     this.order = 0,
@@ -450,6 +455,7 @@ class DynamicFormField {
       dependsOn: json['depends_on'] is List && (json['depends_on'] as List).isNotEmpty && (json['depends_on'] as List).first is Map
           ? ((json['depends_on'] as List).first as Map)['field_code']?.toString()
           : null,
+      showIf: json['show_if'],
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -482,6 +488,7 @@ class DynamicFormField {
     bool? choiceMultiple,
     String? choiceDisplay,
     String? dependsOn,
+    dynamic showIf,
     String? section,
     String? badge,
     int? order,
@@ -511,6 +518,7 @@ class DynamicFormField {
       choiceMultiple: choiceMultiple ?? this.choiceMultiple,
       choiceDisplay: choiceDisplay ?? this.choiceDisplay,
       dependsOn: dependsOn ?? this.dependsOn,
+      showIf: showIf ?? this.showIf,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,

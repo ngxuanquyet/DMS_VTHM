@@ -51,6 +51,11 @@ class DynamicFormBuilder extends StatefulWidget {
   /// Kiểm RIÊNG theo MÃ (chạy thay cho phép kiểm "bắt buộc" mặc định của ô đó): trả câu lỗi hoặc `null`.
   final Map<String, String? Function(DynamicFormField field, dynamic value)>? customValidators;
 
+  /// Mã các ô đang ẨN theo điều kiện `show_if`, tính từ dữ liệu ĐANG nhập (gọi lại sau mỗi lần đổi giá trị). Ô ẩn: không
+  /// vẽ, không kiểm bắt buộc, không có trong [DynamicFormBuilderState.getFormData] / `onSubmit` (giá trị đã gõ vẫn giữ
+  /// trong form để hiện lại khi điều kiện đúng trở lại). `null` = không ô nào ẩn.
+  final Set<String> Function(Map<String, dynamic> formData)? hiddenFieldsOf;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -62,6 +67,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.keepFieldOrder = false,
     this.customFieldBuilders,
     this.customValidators,
+    this.hiddenFieldsOf,
   });
 
   @override
@@ -175,6 +181,16 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
+  /// Mã các ô đang ẩn theo `show_if` (xem [DynamicFormBuilder.hiddenFieldsOf]).
+  Set<String> get hiddenFieldCodes =>
+      widget.hiddenFieldsOf?.call(Map<String, dynamic>.unmodifiable(_formData)) ?? const <String>{};
+
+  /// Dữ liệu form BỎ các ô đang ẩn — thứ được gửi đi.
+  Map<String, dynamic> _visibleFormData() {
+    final hidden = hiddenFieldCodes;
+    return Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k));
+  }
+
   void updateFieldValue(String code, dynamic value) {
     setState(() {
       _formData[code] = value;
@@ -225,8 +241,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     bool isValid = true;
     final newErrors = <String, String?>{};
     String? firstInvalidCode;
+    final hidden = hiddenFieldCodes;
 
     for (final field in widget.fields) {
+      // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc).
+      if (hidden.contains(field.code)) continue;
       final value = _formData[field.code];
 
       // 0. Ô có phép kiểm riêng (màn gọi cung cấp) — thay cho kiểm "bắt buộc" mặc định.
@@ -351,13 +370,13 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
   /// Lấy toàn bộ dữ liệu form hiện tại
   Map<String, dynamic> getFormData() {
-    return Map<String, dynamic>.from(_formData);
+    return _visibleFormData();
   }
 
   Future<void> _handleSubmit() async {
     if (validate()) {
       if (widget.onSubmit != null) {
-        await widget.onSubmit!(Map<String, dynamic>.from(_formData));
+        await widget.onSubmit!(_visibleFormData());
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -409,9 +428,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Phân nhóm các trường theo Section (nếu có)
+    // Phân nhóm các trường theo Section (nếu có) — bỏ các ô đang ẩn theo `show_if`
+    final hidden = hiddenFieldCodes;
     final sections = <MapEntry<String, List<DynamicFormField>>>[];
     for (final field in widget.fields) {
+      if (hidden.contains(field.code)) continue;
       final sec = field.isCoordsField ? 'Vị trí trên bản đồ' : (field.section ?? 'Thông tin chung');
       final khoi = widget.keepFieldOrder
           ? (sections.isNotEmpty && sections.last.key == sec ? sections.last : null)

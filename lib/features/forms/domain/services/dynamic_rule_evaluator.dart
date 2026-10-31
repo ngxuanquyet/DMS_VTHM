@@ -199,6 +199,24 @@ class DynamicRuleEvaluator {
     required Map<String, dynamic> answers,
     Map<String, dynamic> customerContext = const {},
   }) {
+    return computeVisibilityOf<MarketFormBlockEntity>(
+      items: blocks,
+      showIfOf: (b) => b.showIf,
+      keysOf: (b) => [b.resolved.code, b.ref],
+      answers: answers,
+      customerContext: customerContext,
+    );
+  }
+
+  /// Bản tổng quát của [computeVisibility] cho mọi danh sách ô có `show_if` (biểu mẫu thị trường, form điểm bán…):
+  /// [keysOf] trả các mã nhận diện một ô (mã rỗng bị bỏ qua) — cùng luật ẩn theo TẦNG, cùng ngữ cảnh `@customer.*`.
+  static Map<String, bool> computeVisibilityOf<T>({
+    required List<T> items,
+    required dynamic Function(T item) showIfOf,
+    required List<String> Function(T item) keysOf,
+    required Map<String, dynamic> answers,
+    Map<String, dynamic> customerContext = const {},
+  }) {
     final out = <String, bool>{};
     final hidden = <String>{};
 
@@ -215,18 +233,14 @@ class DynamicRuleEvaluator {
       return answers[path];
     }
 
-    for (final b in blocks) {
-      final shown = evalRule(b.showIf, read);
-      final code = b.resolved.code;
-      final ref = b.ref;
+    for (final item in items) {
+      final shown = evalRule(showIfOf(item), read);
+      final keys = keysOf(item).where((k) => k.isNotEmpty).toSet();
 
-      if (code.isNotEmpty) out[code] = shown;
-      if (ref.isNotEmpty && ref != code) out[ref] = shown;
-
-      if (!shown) {
-        if (code.isNotEmpty) hidden.add(code);
-        if (ref.isNotEmpty) hidden.add(ref);
+      for (final k in keys) {
+        out[k] = shown;
       }
+      if (!shown) hidden.addAll(keys);
     }
 
     return out;

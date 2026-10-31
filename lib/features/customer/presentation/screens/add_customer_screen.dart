@@ -11,6 +11,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/geo_select_field_widget.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../data/repositories/customer_repository_impl.dart';
@@ -20,6 +21,7 @@ import '../viewmodels/customer_view_model.dart';
 import '../widgets/erp_links_form_field.dart';
 import '../widgets/outlet_create_materials_section.dart';
 import '../../../../core/localization/language_provider.dart';
+import '../../../forms/domain/services/dynamic_rule_evaluator.dart';
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart';
@@ -245,6 +247,35 @@ bool isCustomerPhotoKey(String key) {
   return k.contains('photo') || k.contains('image') || k.contains('anh_') || k.contains('hinh_');
 }
 
+
+/// Mã các ô ĐỘNG đang ẩn theo điều kiện `show_if` — dùng chung màn Thêm mới và Sửa (truyền vào
+/// `DynamicFormBuilder.hiddenFieldsOf`). Cùng bộ đánh giá + cùng luật ẩn theo TẦNG với biểu mẫu thị trường; biến ngữ cảnh
+/// `@customer.type_id|region_id|province_id` lấy từ ô cứng Loại / Khu vực / Tỉnh ĐANG nhập trên form, ô đó vắng (admin ẩn)
+/// thì lấy giá trị đang lưu của điểm bán [editing]. Ô cứng không bao giờ bị ẩn (server luôn gửi `show_if: null`).
+Set<String> customerHiddenFieldCodes(
+  List<DynamicFormField> fields,
+  Map<String, dynamic> formData, {
+  CustomerEntity? editing,
+}) {
+  if (!fields.any((f) => f.kind == 'dynamic' && f.showIf != null)) return const {};
+  final c = editing;
+  int? nguCanh(String code, dynamic dangLuu) =>
+      GeoSelectFieldWidget.idOf(formData.containsKey(code) ? formData[code] : dangLuu);
+  final vis = DynamicRuleEvaluator.computeVisibilityOf<DynamicFormField>(
+    items: fields,
+    showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
+    keysOf: (f) => [f.code],
+    answers: formData,
+    customerContext: {
+      '@customer': {
+        'type_id': nguCanh('customer_type_id', c?.customerTypeId),
+        'region_id': nguCanh('region_id', c?.regionId),
+        'province_id': nguCanh('province_id', c?.dynamicFields['province_id']),
+      },
+    },
+  );
+  return {for (final e in vis.entries) if (!e.value) e.key};
+}
 
 /// Dựng danh sách ô form điểm bán từ schema Cấu hình trường — DÙNG CHUNG màn Thêm mới và Sửa (chủ hệ thống 23/10/2026:
 /// form sửa = form tạo, không đắp thêm khoá dữ liệu như erp_linked, created_by_name… thành ô).
@@ -1381,6 +1412,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           onSubmit: _handleSubmit,
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                           customValidators: {'erp_links': erpLinksCreateValidator},
+                          hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data),
                         ),
                         if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
                           OutletCreateMaterialsSection(
