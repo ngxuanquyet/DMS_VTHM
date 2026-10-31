@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/widgets/app_fullscreen_image_viewer.dart';
 import '../../../forms/data/models/market_form_model.dart';
 import '../../domain/entities/visit_history_entity.dart';
@@ -779,12 +780,14 @@ class _VisitHistoryDetailSheetState
     // khuôn biểu mẫu lúc nộp), đọc bằng chính MarketFormSchemaModel của màn điền phiếu.
     final schemaFields = <String, String>{};
     final optionLabels = <String, Map<String, String>>{};
+    final formulaCodes = <String, FormulaConfig?>{};
     if (form.formSchemaSnapshot != null) {
       final schema = MarketFormSchemaModel.fromJson(form.formSchemaSnapshot!);
       for (final block in schema.blocks) {
         final r = block.resolved;
         if (r.code.isEmpty) continue;
         if (r.label.isNotEmpty) schemaFields[r.code] = r.label;
+        if (r.inputType.toLowerCase() == 'formula') formulaCodes[r.code] = r.toEntity().formula;
         final options = r.config is Map ? r.config['options'] : null;
         if (options is List) {
           optionLabels[r.code] = {
@@ -809,6 +812,9 @@ class _VisitHistoryDetailSheetState
       } else if (val is List) {
         displayValue = val.map((v) => opts[v.toString()] ?? v.toString()).join(', ');
       }
+      // Ô công thức: số server đã tính + lưu, định dạng theo cấu hình ô (hàng nghìn, tiền tệ, số lẻ).
+      final soCongThuc = formulaCodes.containsKey(code) ? FormulaEvaluator.toNum(val) : null;
+      if (soCongThuc != null) displayValue = FormulaEvaluator.formatWith(soCongThuc, formulaCodes[code]);
 
       // Kiểm tra xem có phải ảnh (trong answerPhotos) không
       final List<String> photoUrls = [];

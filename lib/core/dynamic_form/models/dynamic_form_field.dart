@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../formula_evaluator.dart';
 
 /// Các kiểu dữ liệu của trường form động do API trả về
 enum DynamicFormFieldType {
@@ -51,7 +52,11 @@ enum DynamicFormFieldType {
   geoProvince,
 
   /// Xã/phường (`ref_ward`) — lọc theo ô tỉnh ở [DynamicFormField.dependsOn], giá trị là ID
-  geoWard;
+  geoWard,
+
+  /// Ô CÔNG THỨC (`formula`) — chỉ đọc, app tự tính từ các ô khác theo [DynamicFormField.formula]; không gửi lên
+  /// (server tự tính lại và lưu)
+  formula;
 
   /// Chuyển đổi chuỗi type từ API (case-insensitive) sang enum
   static DynamicFormFieldType fromString(String? typeStr) {
@@ -161,6 +166,9 @@ enum DynamicFormFieldType {
 
       case 'ref_ward':
         return DynamicFormFieldType.geoWard;
+
+      case 'formula':
+        return DynamicFormFieldType.formula;
 
       default:
         return DynamicFormFieldType.text;
@@ -284,6 +292,10 @@ class DynamicFormField {
   /// trường); `null` = luôn hiện (ô cứng, server/bản lưu máy cũ không có khoá).
   final dynamic showIf;
 
+  /// Cấu hình ô công thức (khoá `formula` của schema: `{expr, format, decimals}`); `null` = không phải ô công thức
+  /// (ô khác / server hoặc bản lưu máy cũ không có khoá).
+  final FormulaConfig? formula;
+
   /// Tên nhóm / Section (để gom nhóm form)
   final String? section;
 
@@ -322,6 +334,7 @@ class DynamicFormField {
     this.choiceDisplay,
     this.dependsOn,
     this.showIf,
+    this.formula,
     this.section,
     this.badge,
     this.order = 0,
@@ -332,6 +345,8 @@ class DynamicFormField {
         json['input_type']?.toString() ??
         json['data_type']?.toString();
     var type = DynamicFormFieldType.fromString(typeStr);
+    final formula = FormulaConfig.fromMap(json['formula']);
+    if (formula != null) type = DynamicFormFieldType.formula;
 
     List<DynamicFormOption> opts = [];
     if (json['options'] is List) {
@@ -424,9 +439,9 @@ class DynamicFormField {
       type: type,
       placeholder: json['placeholder']?.toString() ?? json['hint']?.toString(),
       helperText: helperText,
-      isRequired: json['required'] == true ||
-          json['is_required'] == true ||
-          json['is_required'] == 1,
+      // Ô công thức không bao giờ bắt buộc (không có ô nhập).
+      isRequired: formula == null &&
+          (json['required'] == true || json['is_required'] == true || json['is_required'] == 1),
       isReadOnly: json['read_only'] == true ||
           json['is_readonly'] == true ||
           json['readonly'] == true,
@@ -456,6 +471,7 @@ class DynamicFormField {
           ? ((json['depends_on'] as List).first as Map)['field_code']?.toString()
           : null,
       showIf: json['show_if'],
+      formula: formula,
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
@@ -489,6 +505,7 @@ class DynamicFormField {
     String? choiceDisplay,
     String? dependsOn,
     dynamic showIf,
+    FormulaConfig? formula,
     String? section,
     String? badge,
     int? order,
@@ -519,6 +536,7 @@ class DynamicFormField {
       choiceDisplay: choiceDisplay ?? this.choiceDisplay,
       dependsOn: dependsOn ?? this.dependsOn,
       showIf: showIf ?? this.showIf,
+      formula: formula ?? this.formula,
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,

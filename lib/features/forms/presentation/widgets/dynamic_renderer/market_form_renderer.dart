@@ -16,6 +16,7 @@ import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../../core/widgets/geo_select_field_widget.dart';
 import '../../../../../core/dynamic_form/models/dynamic_form_field.dart';
+import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
@@ -84,6 +85,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
+
+  /// Kết quả các ô CÔNG THỨC (chưa định dạng), tính lại cùng lượt với ẩn/hiện — không nằm trong [_answers] nên không
+  /// gửi lên (server tự tính lại và lưu).
+  Map<String, num?> _formulaValues = {};
 
   TextEditingController _getController(String code, String initial) {
     if (!_textControllers.containsKey(code)) {
@@ -250,11 +255,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Tính toán lại trạng thái ẩn/hiện của tất cả các block theo quy tắc §3 & §7
   void _recomputeVisibility() {
+    final formulas = <String, num?>{};
     _visibilityMap = DynamicRuleEvaluator.computeVisibility(
       blocks: widget.blocks,
       answers: _answers,
       customerContext: widget.customerContext,
+      formulaValuesOut: formulas,
     );
+    _formulaValues = formulas;
   }
 
   /// Trả về bản sao các câu trả lời hiện tại
@@ -295,6 +303,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (block.isPresentation) continue;
       // Ô đang ẩn được MIỄN kiểm tra bắt buộc (§5)
       if (!_isBlockVisible(block)) continue;
+      // Ô công thức: chỉ đọc, không bắt buộc, không gửi (server tự tính)
+      if (_isFormulaBlock(block)) continue;
 
       final code = block.resolved.code;
       final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
@@ -444,9 +454,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       return null;
     }
 
-    // Lấy danh sách các mã trường đang hiển thị để loại bỏ ô ẩn khi nộp (§5, §9)
+    // Lấy danh sách các mã trường đang hiển thị để loại bỏ ô ẩn khi nộp (§5, §9) — ô công thức không gửi
     final visibleCodes = widget.blocks
-        .where((b) => !b.isPresentation && _isBlockVisible(b))
+        .where((b) => !b.isPresentation && !_isFormulaBlock(b) && _isBlockVisible(b))
         .map((b) => b.resolved.code)
         .toSet();
 
@@ -474,8 +484,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     }
     final hadError = _errors.remove(code) != null;
     final visibilityBefore = _visibilityMap;
+    final formulasBefore = _formulaValues;
     _recomputeVisibility();
-    if (hadError || !mapEquals(visibilityBefore, _visibilityMap)) {
+    if (hadError || !mapEquals(visibilityBefore, _visibilityMap) || !mapEquals(formulasBefore, _formulaValues)) {
       setState(() {});
     }
     widget.onChanged?.call(_answers);
@@ -518,6 +529,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   ) {
     final type = block.resolved.inputType.toLowerCase();
     final code = block.resolved.code.toLowerCase();
+
+    if (type == 'formula') return _buildFormulaField(block, isDark);
 
     // Tự động nhận diện trường Địa chỉ / Vị trí / GPS từ schema API (Bỏ fix cứng)
     if (type == 'location' ||
@@ -858,6 +871,26 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   ),
           ),
           onChanged: isLocked ? null : (val) => _updateTypedValue(code, val),
+        ),
+      ],
+    );
+  }
+
+  bool _isFormulaBlock(MarketFormBlockEntity block) => block.resolved.inputType.toLowerCase() == 'formula';
+
+  // ==========================================
+  // Ô CÔNG THỨC (FORMULA) — chỉ đọc, tự tính lại khi ô tham chiếu đổi
+  // ==========================================
+
+  Widget _buildFormulaField(MarketFormBlockEntity block, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(block, isDark),
+        const SizedBox(height: 8),
+        FormulaValueBox(
+          value: _formulaValues[block.resolved.code],
+          config: block.resolved.formula,
         ),
       ],
     );

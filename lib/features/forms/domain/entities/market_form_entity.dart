@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import '../../../../core/dynamic_form/formula_evaluator.dart';
+
 /// Entity cấu hình biểu mẫu thị trường
 class MarketFormConfigEntity {
   final int configId;
@@ -93,6 +97,21 @@ class MarketFormResolvedEntity {
 
   bool get isImage => inputType.toLowerCase() == 'image';
   bool get isLocation => inputType.toLowerCase() == 'location';
+
+  /// Ô CÔNG THỨC (`input_type = formula`): cấu hình `config.formula` / `config.format` / `config.decimals`; `null` = ô
+  /// khác hoặc thiếu biểu thức.
+  FormulaConfig? get formula {
+    if (inputType.toLowerCase() != 'formula') return null;
+    var cfg = config;
+    if (cfg is String && cfg.trim().startsWith('{')) {
+      try {
+        cfg = jsonDecode(cfg);
+      } catch (_) {
+        return null;
+      }
+    }
+    return FormulaConfig.fromMap(cfg, exprKey: 'formula');
+  }
 }
 
 /// Lựa chọn cho ô select, multiselect, radio, checkbox

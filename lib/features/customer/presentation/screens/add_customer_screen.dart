@@ -256,11 +256,31 @@ Set<String> customerHiddenFieldCodes(
   List<DynamicFormField> fields,
   Map<String, dynamic> formData, {
   CustomerEntity? editing,
+}) =>
+    customerFormRules(fields, formData, editing: editing).hidden;
+
+/// Kết quả các ô CÔNG THỨC của form điểm bán (truyền vào `DynamicFormBuilder.formulaValuesOf`) — tính cùng lượt với
+/// [customerHiddenFieldCodes] nên ô ẩn đọc ra rỗng và ô sau đọc được kết quả ô công thức đứng trước.
+Map<String, num?> customerFormulaValues(
+  List<DynamicFormField> fields,
+  Map<String, dynamic> formData, {
+  CustomerEntity? editing,
+}) =>
+    customerFormRules(fields, formData, editing: editing).formulas;
+
+/// Một lượt duyệt theo thứ tự ô: ẩn/hiện (`show_if`) + tính ô công thức — nguồn chung của hai hàm trên.
+({Set<String> hidden, Map<String, num?> formulas}) customerFormRules(
+  List<DynamicFormField> fields,
+  Map<String, dynamic> formData, {
+  CustomerEntity? editing,
 }) {
-  if (!fields.any((f) => f.kind == 'dynamic' && f.showIf != null)) return const {};
+  final coDieuKien = fields.any((f) => f.kind == 'dynamic' && f.showIf != null);
+  final coCongThuc = fields.any((f) => f.type == DynamicFormFieldType.formula && f.formula != null);
+  if (!coDieuKien && !coCongThuc) return (hidden: const <String>{}, formulas: const <String, num?>{});
   final c = editing;
   int? nguCanh(String code, dynamic dangLuu) =>
       GeoSelectFieldWidget.idOf(formData.containsKey(code) ? formData[code] : dangLuu);
+  final formulas = <String, num?>{};
   final vis = DynamicRuleEvaluator.computeVisibilityOf<DynamicFormField>(
     items: fields,
     showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
@@ -273,8 +293,10 @@ Set<String> customerHiddenFieldCodes(
         'province_id': nguCanh('province_id', c?.dynamicFields['province_id']),
       },
     },
+    formulaOf: (f) => f.type == DynamicFormFieldType.formula ? f.formula?.expr : null,
+    formulaValuesOut: formulas,
   );
-  return {for (final e in vis.entries) if (!e.value) e.key};
+  return (hidden: {for (final e in vis.entries) if (!e.value) e.key}, formulas: formulas);
 }
 
 /// Dựng danh sách ô form điểm bán từ schema Cấu hình trường — DÙNG CHUNG màn Thêm mới và Sửa (chủ hệ thống 23/10/2026:
@@ -492,7 +514,9 @@ List<DynamicFormField> buildCustomerFormFields(
   }
 
   // Cấu hình toàn bộ các trường ảnh ở màn nhập khách hàng: chỉ cho phép chụp từ camera, không cho chọn từ thư viện
+  // Ô công thức không bao giờ là ô ảnh (mã như `thanh_tien` chứa "anh_" vẫn là công thức).
   for (int i = 0; i < fields.length; i++) {
+    if (fields[i].type == DynamicFormFieldType.formula) continue;
     if (fields[i].type == DynamicFormFieldType.photo || isCustomerPhotoKey(fields[i].code)) {
       fields[i] = fields[i].copyWith(
         type: DynamicFormFieldType.photo,
@@ -1413,6 +1437,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                           customValidators: {'erp_links': erpLinksCreateValidator},
                           hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data),
+                          formulaValuesOf: (data) => customerFormulaValues(fields, data),
                         ),
                         if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
                           OutletCreateMaterialsSection(

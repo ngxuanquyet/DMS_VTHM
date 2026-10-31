@@ -3,7 +3,10 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_button.dart';
+import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
+import 'widgets/dynamic_form_field_wrapper.dart';
+import 'widgets/formula_field_widget.dart';
 import 'widgets/boolean_field_widget.dart';
 import 'widgets/datetime_field_widget.dart';
 import 'widgets/gps_coordinates_field_widget.dart';
@@ -56,6 +59,11 @@ class DynamicFormBuilder extends StatefulWidget {
   /// trong form để hiện lại khi điều kiện đúng trở lại). `null` = không ô nào ẩn.
   final Set<String> Function(Map<String, dynamic> formData)? hiddenFieldsOf;
 
+  /// Kết quả các ô CÔNG THỨC (mã ô → số chưa định dạng, `null` = rỗng) tính từ dữ liệu ĐANG nhập — màn gọi tính cùng
+  /// lượt với [hiddenFieldsOf] để giữ luật ẩn theo tầng (ô ẩn đọc ra rỗng). `null` = form tự tính theo thứ tự [fields],
+  /// không xét ẩn/hiện.
+  final Map<String, num?> Function(Map<String, dynamic> formData)? formulaValuesOf;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -68,6 +76,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.customFieldBuilders,
     this.customValidators,
     this.hiddenFieldsOf,
+    this.formulaValuesOf,
   });
 
   @override
@@ -185,10 +194,25 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   Set<String> get hiddenFieldCodes =>
       widget.hiddenFieldsOf?.call(Map<String, dynamic>.unmodifiable(_formData)) ?? const <String>{};
 
-  /// Dữ liệu form BỎ các ô đang ẩn — thứ được gửi đi.
+  /// Kết quả các ô công thức tính từ dữ liệu đang nhập (xem [DynamicFormBuilder.formulaValuesOf]).
+  Map<String, num?> get formulaValues {
+    final data = Map<String, dynamic>.unmodifiable(_formData);
+    final tinhRieng = widget.formulaValuesOf;
+    if (tinhRieng != null) return tinhRieng(data);
+    final out = <String, num?>{};
+    for (final f in widget.fields) {
+      final cfg = f.formula;
+      if (f.type != DynamicFormFieldType.formula || cfg == null) continue;
+      out[f.code] = FormulaEvaluator.evaluate(cfg.expr, (code) => out.containsKey(code) ? out[code] : data[code]);
+    }
+    return out;
+  }
+
+  /// Dữ liệu form BỎ các ô đang ẩn và ô công thức (server tự tính lại) — thứ được gửi đi.
   Map<String, dynamic> _visibleFormData() {
     final hidden = hiddenFieldCodes;
-    return Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k));
+    final congThuc = {for (final f in widget.fields) if (f.type == DynamicFormFieldType.formula) f.code};
+    return Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
   }
 
   void updateFieldValue(String code, dynamic value) {
@@ -244,8 +268,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final hidden = hiddenFieldCodes;
 
     for (final field in widget.fields) {
-      // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc).
-      if (hidden.contains(field.code)) continue;
+      // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc); ô công thức chỉ đọc, không kiểm.
+      if (hidden.contains(field.code) || field.type == DynamicFormFieldType.formula) continue;
       final value = _formData[field.code];
 
       // 0. Ô có phép kiểm riêng (màn gọi cung cấp) — thay cho kiểm "bắt buộc" mặc định.
@@ -430,6 +454,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
     // Phân nhóm các trường theo Section (nếu có) — bỏ các ô đang ẩn theo `show_if`
     final hidden = hiddenFieldCodes;
+    _formulaValuesCache = formulaValues;
     final sections = <MapEntry<String, List<DynamicFormField>>>[];
     for (final field in widget.fields) {
       if (hidden.contains(field.code)) continue;
@@ -703,6 +728,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return widgets;
   }
 
+  /// Kết quả ô công thức của lần dựng hiện tại (tính một lần mỗi `build`).
+  Map<String, num?> _formulaValuesCache = const {};
+
   Widget _buildFieldWidget(DynamicFormField field) {
     final value = _formData[field.code];
     final errorText = _errors[field.code];
@@ -943,6 +971,13 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           value: value,
           errorText: errorText,
           onChanged: (id) => _updateGeo(field, id),
+        );
+
+      case DynamicFormFieldType.formula:
+        // Chỉ đọc: số tự tính lại mỗi lần đổi giá trị ô khác (updateFieldValue ⇒ setState ⇒ build).
+        return DynamicFormFieldWrapper(
+          field: field,
+          child: FormulaValueBox(value: _formulaValuesCache[field.code], config: field.formula),
         );
     }
   }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -1641,11 +1642,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           );
         }
 
+        // Ô công thức: số server đã tính + lưu, định dạng như lúc nhập (hàng nghìn, tiền tệ, số lẻ).
+        final congThuc = col != null && col.isFormula ? FormulaEvaluator.toNum(e.value) : null;
         return Padding(
           padding: const EdgeInsets.only(bottom: 10.0),
           child: _buildInfoRow(
             label: label,
-            value: e.value.toString(),
+            value: congThuc != null ? FormulaEvaluator.formatWith(congThuc, col!.formula) : e.value.toString(),
             icon: Icons.fiber_manual_record_rounded,
             isDark: isDark,
           ),

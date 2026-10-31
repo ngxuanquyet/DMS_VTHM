@@ -1,3 +1,4 @@
+import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../domain/entities/market_form_entity.dart';
 
 /// Bộ đánh giá cây điều kiện hiển thị biểu mẫu động `show_if`
@@ -198,6 +199,7 @@ class DynamicRuleEvaluator {
     required List<MarketFormBlockEntity> blocks,
     required Map<String, dynamic> answers,
     Map<String, dynamic> customerContext = const {},
+    Map<String, num?>? formulaValuesOut,
   }) {
     return computeVisibilityOf<MarketFormBlockEntity>(
       items: blocks,
@@ -205,20 +207,30 @@ class DynamicRuleEvaluator {
       keysOf: (b) => [b.resolved.code, b.ref],
       answers: answers,
       customerContext: customerContext,
+      formulaOf: (b) => b.resolved.formula?.expr,
+      formulaValuesOut: formulaValuesOut,
     );
   }
 
   /// Bản tổng quát của [computeVisibility] cho mọi danh sách ô có `show_if` (biểu mẫu thị trường, form điểm bán…):
   /// [keysOf] trả các mã nhận diện một ô (mã rỗng bị bỏ qua) — cùng luật ẩn theo TẦNG, cùng ngữ cảnh `@customer.*`.
+  ///
+  /// Ô CÔNG THỨC ([formulaOf] trả biểu thức, `null` = ô thường): tính NGAY trong cùng lượt duyệt theo thứ tự, nên ô
+  /// đứng sau đọc được kết quả (số chưa định dạng) — cả trong biểu thức lẫn điều kiện `show_if`. Ô ẩn đọc ra rỗng với
+  /// mọi thứ đứng sau (cả công thức); ô công thức đang ẩn có kết quả rỗng. Kết quả ghi vào [formulaValuesOut] (theo
+  /// mọi khoá của ô).
   static Map<String, bool> computeVisibilityOf<T>({
     required List<T> items,
     required dynamic Function(T item) showIfOf,
     required List<String> Function(T item) keysOf,
     required Map<String, dynamic> answers,
     Map<String, dynamic> customerContext = const {},
+    String? Function(T item)? formulaOf,
+    Map<String, num?>? formulaValuesOut,
   }) {
     final out = <String, bool>{};
     final hidden = <String>{};
+    final computed = <String, num?>{};
 
     dynamic read(String path) {
       // 1. Biến ngữ cảnh @customer.*
@@ -229,7 +241,9 @@ class DynamicRuleEvaluator {
       if (hidden.contains(path)) {
         return null;
       }
-      // 3. Câu trả lời của người dùng
+      // 3. Kết quả ô công thức đã tính ở lượt này (ô công thức chưa tới lượt / ô thường ⇒ câu trả lời)
+      if (computed.containsKey(path)) return computed[path];
+      // 4. Câu trả lời của người dùng
       return answers[path];
     }
 
@@ -241,8 +255,17 @@ class DynamicRuleEvaluator {
         out[k] = shown;
       }
       if (!shown) hidden.addAll(keys);
+
+      final expr = formulaOf?.call(item);
+      if (expr != null) {
+        final v = shown ? FormulaEvaluator.evaluate(expr, read) : null;
+        for (final k in keys) {
+          computed[k] = v;
+        }
+      }
     }
 
+    formulaValuesOut?.addAll(computed);
     return out;
   }
 }

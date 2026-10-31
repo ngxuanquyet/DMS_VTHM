@@ -1,3 +1,4 @@
+import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 
 class CustomerDynamicColumn {
@@ -10,6 +11,10 @@ class CustomerDynamicColumn {
   final bool readOnly;
   final List<DynamicFormOption> options;
 
+  /// Định dạng ô CÔNG THỨC (`input_type = formula`): đọc khoá `formula` `{expr, format, decimals}` hoặc `config`
+  /// (`formula`/`format`/`decimals` — khoá `meta.dynamicColumns` của server); `null` = ô khác / thiếu cấu hình.
+  final FormulaConfig? formula;
+
   const CustomerDynamicColumn({
     required this.code,
     required this.label,
@@ -19,7 +24,10 @@ class CustomerDynamicColumn {
     this.required = false,
     this.readOnly = false,
     this.options = const [],
+    this.formula,
   });
+
+  bool get isFormula => inputType.toLowerCase() == 'formula';
 
   bool get isLocation =>
       inputType.toLowerCase() == 'location' ||
@@ -52,6 +60,7 @@ class CustomerDynamicColumn {
       required: json['required'] == true,
       readOnly: json['read_only'] == true,
       options: opts,
+      formula: FormulaConfig.fromMap(json['formula']) ?? FormulaConfig.fromMap(json['config'], exprKey: 'formula'),
     );
   }
 
@@ -65,6 +74,7 @@ class CustomerDynamicColumn {
       'required': required,
       'read_only': readOnly,
       'options': options.map((e) => {'label': e.label, 'value': e.value}).toList(),
+      if (formula != null) 'formula': formula!.toJson(),
     };
   }
 }

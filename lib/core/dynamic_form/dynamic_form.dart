@@ -1,7 +1,9 @@
 export 'dynamic_form_builder.dart';
+export 'formula_evaluator.dart';
 export 'models/dynamic_form_field.dart';
 export 'widgets/boolean_field_widget.dart';
 export 'widgets/datetime_field_widget.dart';
+export 'widgets/formula_field_widget.dart';
 export 'widgets/dynamic_form_field_wrapper.dart';
 export 'widgets/gps_coordinates_field_widget.dart';
 export 'widgets/gps_field_widget.dart';
