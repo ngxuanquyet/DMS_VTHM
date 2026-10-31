@@ -903,7 +903,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                               onSubmit: _handleSubmit,
                               customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                               hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data, editing: c),
-                              formulaValuesOf: (data) => customerFormulaValues(fields, data, editing: c),
+                              // Ô công thức đọc cả giá trị đang lưu của ô động không có trên form (như server).
+                              formulaBaseData: c.dynamicFields,
                             ),
                           ],
                         ),

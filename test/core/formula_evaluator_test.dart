@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/formula_evaluator.dart';
-import 'package:vthm_dms/features/forms/domain/services/dynamic_rule_evaluator.dart';
 
-/// Bộ tính ô CÔNG THỨC dùng chung (form điểm bán + biểu mẫu thị trường) — cú pháp khớp `FormulaEvaluator.php` /
-/// `dynamicFormula.ts`, nhưng ô tham chiếu RỖNG ⇒ kết quả RỖNG (hợp đồng 31/10/2026).
+/// Bộ tính ô CÔNG THỨC dùng chung (form điểm bán + biểu mẫu thị trường) — ngữ nghĩa chép từ server
+/// (`FormulaEvaluator.php` + `FormValidator::formulaValue/computeFormulas`).
 void main() {
-  num? tinh(String f, [Map<String, dynamic> v = const {}]) => FormulaEvaluator.evaluate(f, (c) => v[c]);
+  num? tinh(String? f, [Map<String, dynamic> v = const {}]) => FormulaEvaluator.evaluate(f, (c) => v[c]);
+  num? giaTri(FormulaConfig c, Map<String, dynamic> v) => FormulaEvaluator.value(c, (k) => v[k]);
 
   group('evaluate', () {
     test('ví dụ hợp đồng: so_luong 5 × gia_tri 6 = 30', () {
@@ -39,20 +39,29 @@ void main() {
       expect(tinh('min(5)'), 5);
     });
 
-    test('ô tham chiếu rỗng / không phải số ⇒ rỗng (không coi là 0)', () {
-      expect(tinh('a * b', {'a': 5}), isNull);
-      expect(tinh('a * b', {'a': 5, 'b': ''}), isNull);
-      expect(tinh('a * b', {'a': 5, 'b': '   '}), isNull);
-      expect(tinh('a + b', {'a': 5, 'b': 'abc'}), isNull);
-      expect(tinh('a + b', {'a': 5, 'b': true}), isNull);
-      expect(tinh('max(a, b)', {'a': 5}), isNull);
-      expect(tinh('a * 0', {'a': 0}), 0); // 0 KHÔNG phải rỗng
+    test('ô trống / không phải số đọc thành 0 (như server, khi không bật blank)', () {
+      expect(tinh('a * b', {'a': 5}), 0);
+      expect(tinh('a + b', {'a': 5, 'b': ''}), 5);
+      expect(tinh('a + b', {'a': 5, 'b': 'abc'}), 5);
     });
 
-    test('chia 0 / không hữu hạn ⇒ rỗng', () {
+    test('mục 3: chia 0 chỉ làm biểu thức con rỗng; min/max bỏ tham số rỗng; một vế rỗng ⇒ rỗng', () {
+      expect(tinh('max(doanh_thu / so_don, 0)', {'doanh_thu': 100, 'so_don': 0}), 0);
+      expect(tinh('min(a / 0, b / 0)', {'a': 1, 'b': 2}), isNull); // mọi tham số rỗng
+      expect(tinh('max(a / b, 7)', {'a': 10, 'b': 2}), 7);
       expect(tinh('a / b', {'a': 5, 'b': 0}), isNull);
-      expect(tinh('5 / (2 - 2)'), isNull);
-      expect(tinh('a * a', {'a': 1e200}), isNull);
+      expect(tinh('a / b + 1', {'a': 5, 'b': 0}), isNull);
+      expect(tinh('1 - a / b', {'a': 5, 'b': 0}), isNull);
+      expect(tinh('round(a / 0, 2)', {'a': 5}), isNull);
+    });
+
+    test('mục 5: không tràn int64 (tính bằng double như PHP sang float)', () {
+      // 9.000.000.000 × 9.000.000.000 = 8,1e19 > int64 max (9,22e18) — int Dart sẽ quay vòng ra số âm.
+      final v = tinh('a * b', {'a': 9000000000, 'b': 9000000000});
+      expect(v, isNotNull);
+      expect(v! > 0, isTrue);
+      expect(v, closeTo(8.1e19, 1e6));
+      expect(tinh('a + b', {'a': 9223372036854775807, 'b': 9223372036854775807})! > 0, isTrue);
     });
 
     test('cú pháp sai / hàm lạ / ký tự lạ ⇒ rỗng, không ném lỗi', () {
@@ -60,6 +69,74 @@ void main() {
           '2 ^ 3', 'a; b', 'round(2,', '* 2', null]) {
         expect(FormulaEvaluator.evaluate(f, (_) => 1), isNull, reason: 'công thức: $f');
       }
+    });
+
+    test('sum/count bảng lặp như server', () {
+      final v = {
+        'bang': [
+          {'sl': 2},
+          {'sl': '3'},
+          {'sl': null},
+        ],
+      };
+      expect(tinh('sum(bang.sl)', v), 5);
+      expect(tinh('count(bang)', v), 3);
+      expect(tinh('count(khong_co)', v), 0);
+    });
+  });
+
+  group('value (cấu hình ô)', () {
+    test('mục 4: blank = true ⇒ ô tham chiếu trống cho kết quả rỗng; false/vắng ⇒ coi là 0', () {
+      const rong = FormulaConfig(expr: 'a * b', blankIfMissing: true);
+      const khong = FormulaConfig(expr: 'a * b');
+      expect(giaTri(rong, {'a': 5}), isNull);
+      expect(giaTri(rong, {'a': 5, 'b': ''}), isNull);
+      expect(giaTri(rong, {'a': 5, 'b': true}), isNull);
+      expect(giaTri(rong, {'a': 5, 'b': '6'}), 30);
+      expect(giaTri(rong, {'a': 0, 'b': 6}), 0); // 0 KHÔNG phải trống
+      expect(giaTri(khong, {'a': 5}), 0);
+    });
+
+    test('decimals làm tròn kết quả; vắng decimals thì không làm tròn', () {
+      expect(giaTri(const FormulaConfig(expr: 'x / 3', decimals: 2), {'x': 10}), 3.33);
+      expect(giaTri(const FormulaConfig(expr: 'x / 3'), {'x': 10}), closeTo(3.3333333, 1e-6));
+    });
+
+    test('FormulaConfig đọc cờ blank từ hai dạng schema', () {
+      final dienBan = FormulaConfig.fromMap({'expr': 'a*b', 'format': 'currency', 'decimals': '2', 'blank': true})!;
+      expect([dienBan.expr, dienBan.format, dienBan.decimals, dienBan.blankIfMissing], ['a*b', 'currency', 2, true]);
+      final cu = FormulaConfig.fromMap({'expr': 'a'})!; // bản cũ: không blank, không decimals
+      expect([cu.blankIfMissing, cu.decimals], [false, null]);
+      final thiTruong = FormulaConfig.fromMap({'formula': 'a', 'decimals': 9, 'blank_if_missing': true},
+          exprKey: 'formula', blankKey: 'blank_if_missing')!;
+      expect([thiTruong.format, thiTruong.decimals, thiTruong.blankIfMissing], ['number', 4, true]);
+      expect(FormulaConfig.fromMap(null), isNull);
+      expect(FormulaConfig.fromMap({'expr': '  '}), isNull);
+    });
+  });
+
+  group('computeAll (như FormValidator::computeFormulas)', () {
+    test('mục 1: công thức sau đọc số ĐÃ làm tròn — A = x/3 (2 số lẻ), x = 10, B = A*3 ⇒ 9.99', () {
+      final r = FormulaEvaluator.computeAll({
+        'a': const FormulaConfig(expr: 'x / 3', decimals: 2),
+        'b': const FormulaConfig(expr: 'a * 3', decimals: 2),
+      }, {'x': 10});
+      expect(r['a'], 3.33);
+      expect(r['b'], closeTo(9.99, 1e-9));
+    });
+
+    test('công thức tham chiếu công thức khác — cả khi khai báo đứng SAU (lặp tới khi đứng yên)', () {
+      final r = FormulaEvaluator.computeAll({
+        'tong': const FormulaConfig(expr: 'thanh_tien + vat', decimals: 0),
+        'thanh_tien': const FormulaConfig(expr: 'sl * gia', decimals: 0),
+        'vat': const FormulaConfig(expr: 'thanh_tien * 0.1', decimals: 0),
+      }, {'sl': 5, 'gia': 60000});
+      expect(r, {'tong': 330000, 'thanh_tien': 300000, 'vat': 30000});
+    });
+
+    test('mục 2: tính trên TOÀN BỘ giá trị — không có khái niệm ẩn ở đây (ô ẩn vẫn mang giá trị)', () {
+      final r = FormulaEvaluator.computeAll({'x': const FormulaConfig(expr: 'an * 2', blankIfMissing: true)}, {'an': 4});
+      expect(r['x'], 8);
     });
   });
 
@@ -71,84 +148,19 @@ void main() {
       expect(FormulaEvaluator.format(2, decimals: 2), '2,00');
       expect(FormulaEvaluator.format(1234.5, decimals: 1), '1.234,5');
       expect(FormulaEvaluator.format(-1234567.891, decimals: 2), '-1.234.567,89');
-      expect(FormulaEvaluator.format(2.5), '3'); // nửa ra xa số 0
+      expect(FormulaEvaluator.format(2.5), '3');
       expect(FormulaEvaluator.format(-2.5), '-3');
-      expect(FormulaEvaluator.format(-0.4), '0'); // không hiện -0
+      expect(FormulaEvaluator.format(-0.4), '0');
       expect(FormulaEvaluator.format(null), '');
     });
 
     test('currency: như number + " đ"', () {
       expect(FormulaEvaluator.format(5 * 60000, format: 'currency'), '300.000 đ');
       expect(FormulaEvaluator.format(1500.25, format: 'currency', decimals: 1), '1.500,3 đ');
-    });
-
-    test('FormulaConfig đọc cấu hình phòng thủ', () {
-      final c = FormulaConfig.fromMap({'expr': 'a*b', 'format': 'currency', 'decimals': '2'})!;
-      expect([c.expr, c.format, c.decimals], ['a*b', 'currency', 2]);
-      final m = FormulaConfig.fromMap({'formula': 'a', 'decimals': 9}, exprKey: 'formula')!;
-      expect([m.format, m.decimals], ['number', 4]);
-      expect(FormulaConfig.fromMap(null), isNull);
-      expect(FormulaConfig.fromMap({'expr': '  '}), isNull);
+      expect(FormulaEvaluator.formatWith(300000, const FormulaConfig(expr: 'a', format: 'currency', decimals: 2)),
+          '300.000,00 đ');
       expect(FormulaEvaluator.formatWith(3.3333, null), '3,3333');
-      expect(FormulaEvaluator.formatWith(300000, c), '300.000,00 đ');
-    });
-  });
-
-  group('tính theo thứ tự cùng ẩn/hiện (computeVisibilityOf)', () {
-    // Ô: [mã, show_if, công thức]
-    List<(String, dynamic, String?)> o(List<(String, dynamic, String?)> x) => x;
-    Map<String, num?> chay(List<(String, dynamic, String?)> items, Map<String, dynamic> answers,
-        {Map<String, bool>? visOut}) {
-      final out = <String, num?>{};
-      final vis = DynamicRuleEvaluator.computeVisibilityOf<(String, dynamic, String?)>(
-        items: items,
-        showIfOf: (i) => i.$2,
-        keysOf: (i) => [i.$1],
-        answers: answers,
-        formulaOf: (i) => i.$3,
-        formulaValuesOut: out,
-      );
-      visOut?.addAll(vis);
-      return out;
-    }
-
-    test('ô công thức tham chiếu ô công thức đứng trước', () {
-      final items = o([
-        ('sl', null, null),
-        ('gia', null, null),
-        ('thanh_tien', null, 'sl * gia'),
-        ('vat', null, 'round(thanh_tien * 0.1)'),
-        ('tong', null, 'thanh_tien + vat'),
-      ]);
-      expect(chay(items, {'sl': 5, 'gia': 60000}), {'thanh_tien': 300000, 'vat': 30000, 'tong': 330000});
-      expect(chay(items, {'sl': 5}), {'thanh_tien': null, 'vat': null, 'tong': null});
-    });
-
-    test('ô sau dùng kết quả công thức trong show_if; ô ẩn đọc ra rỗng', () {
-      final items = o([
-        ('sl', null, null),
-        ('co_gia', null, null),
-        ('gia', {'field': 'co_gia', 'op': '=', 'value': 'co'}, null),
-        ('thanh_tien', null, 'sl * gia'),
-        ('ghi_chu_lon', {'field': 'thanh_tien', 'op': '>', 'value': 100}, null),
-      ]);
-      final vis = <String, bool>{};
-      expect(chay(items, {'sl': 5, 'co_gia': 'co', 'gia': 30}, visOut: vis)['thanh_tien'], 150);
-      expect(vis['ghi_chu_lon'], isTrue);
-      vis.clear();
-      // `gia` bị ẩn ⇒ đọc ra rỗng ⇒ thành tiền rỗng ⇒ ô sau ẩn
-      expect(chay(items, {'sl': 5, 'co_gia': 'khong', 'gia': 30}, visOut: vis)['thanh_tien'], isNull);
-      expect(vis['ghi_chu_lon'], isFalse);
-    });
-
-    test('ô công thức đang ẩn ⇒ rỗng với ô sau', () {
-      final items = o([
-        ('a', null, null),
-        ('x', {'field': 'a', 'op': '>', 'value': 0}, 'a * 2'),
-        ('y', null, 'x + 1'),
-      ]);
-      expect(chay(items, {'a': 3}), {'x': 6, 'y': 7});
-      expect(chay(items, {'a': -3}), {'x': null, 'y': null});
+      expect(FormulaEvaluator.formatWith(3.6, const FormulaConfig(expr: 'a')), '4'); // vắng decimals = 0 khi hiển thị
     });
   });
 }

@@ -252,35 +252,16 @@ bool isCustomerPhotoKey(String key) {
 /// `DynamicFormBuilder.hiddenFieldsOf`). Cùng bộ đánh giá + cùng luật ẩn theo TẦNG với biểu mẫu thị trường; biến ngữ cảnh
 /// `@customer.type_id|region_id|province_id` lấy từ ô cứng Loại / Khu vực / Tỉnh ĐANG nhập trên form, ô đó vắng (admin ẩn)
 /// thì lấy giá trị đang lưu của điểm bán [editing]. Ô cứng không bao giờ bị ẩn (server luôn gửi `show_if: null`).
+/// [formData] đã mang sẵn kết quả ô công thức (form tính trước) nên điều kiện so được với số đã tính.
 Set<String> customerHiddenFieldCodes(
   List<DynamicFormField> fields,
   Map<String, dynamic> formData, {
   CustomerEntity? editing,
-}) =>
-    customerFormRules(fields, formData, editing: editing).hidden;
-
-/// Kết quả các ô CÔNG THỨC của form điểm bán (truyền vào `DynamicFormBuilder.formulaValuesOf`) — tính cùng lượt với
-/// [customerHiddenFieldCodes] nên ô ẩn đọc ra rỗng và ô sau đọc được kết quả ô công thức đứng trước.
-Map<String, num?> customerFormulaValues(
-  List<DynamicFormField> fields,
-  Map<String, dynamic> formData, {
-  CustomerEntity? editing,
-}) =>
-    customerFormRules(fields, formData, editing: editing).formulas;
-
-/// Một lượt duyệt theo thứ tự ô: ẩn/hiện (`show_if`) + tính ô công thức — nguồn chung của hai hàm trên.
-({Set<String> hidden, Map<String, num?> formulas}) customerFormRules(
-  List<DynamicFormField> fields,
-  Map<String, dynamic> formData, {
-  CustomerEntity? editing,
 }) {
-  final coDieuKien = fields.any((f) => f.kind == 'dynamic' && f.showIf != null);
-  final coCongThuc = fields.any((f) => f.type == DynamicFormFieldType.formula && f.formula != null);
-  if (!coDieuKien && !coCongThuc) return (hidden: const <String>{}, formulas: const <String, num?>{});
+  if (!fields.any((f) => f.kind == 'dynamic' && f.showIf != null)) return const {};
   final c = editing;
   int? nguCanh(String code, dynamic dangLuu) =>
       GeoSelectFieldWidget.idOf(formData.containsKey(code) ? formData[code] : dangLuu);
-  final formulas = <String, num?>{};
   final vis = DynamicRuleEvaluator.computeVisibilityOf<DynamicFormField>(
     items: fields,
     showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
@@ -293,10 +274,8 @@ Map<String, num?> customerFormulaValues(
         'province_id': nguCanh('province_id', c?.dynamicFields['province_id']),
       },
     },
-    formulaOf: (f) => f.type == DynamicFormFieldType.formula ? f.formula?.expr : null,
-    formulaValuesOut: formulas,
   );
-  return (hidden: {for (final e in vis.entries) if (!e.value) e.key}, formulas: formulas);
+  return {for (final e in vis.entries) if (!e.value) e.key};
 }
 
 /// Dựng danh sách ô form điểm bán từ schema Cấu hình trường — DÙNG CHUNG màn Thêm mới và Sửa (chủ hệ thống 23/10/2026:
@@ -1437,7 +1416,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                           customValidators: {'erp_links': erpLinksCreateValidator},
                           hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data),
-                          formulaValuesOf: (data) => customerFormulaValues(fields, data),
                         ),
                         if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
                           OutletCreateMaterialsSection(

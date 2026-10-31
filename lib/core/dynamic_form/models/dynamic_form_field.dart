@@ -292,7 +292,7 @@ class DynamicFormField {
   /// trường); `null` = luôn hiện (ô cứng, server/bản lưu máy cũ không có khoá).
   final dynamic showIf;
 
-  /// Cấu hình ô công thức (khoá `formula` của schema: `{expr, format, decimals}`); `null` = không phải ô công thức
+  /// Cấu hình ô công thức (khoá `formula` của schema: `{expr, format, decimals, blank}`); `null` = không phải ô công thức
   /// (ô khác / server hoặc bản lưu máy cũ không có khoá).
   final FormulaConfig? formula;
 

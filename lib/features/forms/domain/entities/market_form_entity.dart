@@ -98,8 +98,8 @@ class MarketFormResolvedEntity {
   bool get isImage => inputType.toLowerCase() == 'image';
   bool get isLocation => inputType.toLowerCase() == 'location';
 
-  /// Ô CÔNG THỨC (`input_type = formula`): cấu hình `config.formula` / `config.format` / `config.decimals`; `null` = ô
-  /// khác hoặc thiếu biểu thức.
+  /// Ô CÔNG THỨC (`input_type = formula`): cấu hình `config.formula` / `format` / `decimals` / `blank_if_missing`;
+  /// `null` = ô khác hoặc thiếu biểu thức.
   FormulaConfig? get formula {
     if (inputType.toLowerCase() != 'formula') return null;
     var cfg = config;
@@ -110,7 +110,7 @@ class MarketFormResolvedEntity {
         return null;
       }
     }
-    return FormulaConfig.fromMap(cfg, exprKey: 'formula');
+    return FormulaConfig.fromMap(cfg, exprKey: 'formula', blankKey: 'blank_if_missing');
   }
 }
 

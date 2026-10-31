@@ -15,6 +15,7 @@ import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../../core/widgets/geo_select_field_widget.dart';
+import '../../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
@@ -86,8 +87,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
 
-  /// Kết quả các ô CÔNG THỨC (chưa định dạng), tính lại cùng lượt với ẩn/hiện — không nằm trong [_answers] nên không
-  /// gửi lên (server tự tính lại và lưu).
+  /// Kết quả các ô CÔNG THỨC (chưa định dạng, đã làm tròn theo `decimals`), tính trên TOÀN BỘ câu trả lời (kể cả ô ẩn)
+  /// như server — không nằm trong [_answers] nên không gửi lên (server tự tính lại và lưu).
   Map<String, num?> _formulaValues = {};
 
   TextEditingController _getController(String code, String initial) {
@@ -254,15 +255,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   /// Tính toán lại trạng thái ẩn/hiện của tất cả các block theo quy tắc §3 & §7
+  /// Ô công thức tính TRƯỚC trên toàn bộ câu trả lời; `show_if` đọc số đã tính (ô ẩn vẫn coi là rỗng khi so điều kiện).
   void _recomputeVisibility() {
-    final formulas = <String, num?>{};
+    _formulaValues = FormulaEvaluator.computeAll({
+      for (final b in widget.blocks)
+        if (b.resolved.formula != null && b.resolved.code.isNotEmpty) b.resolved.code: b.resolved.formula!,
+    }, _answers);
     _visibilityMap = DynamicRuleEvaluator.computeVisibility(
       blocks: widget.blocks,
-      answers: _answers,
+      answers: _formulaValues.isEmpty ? _answers : {..._answers, ..._formulaValues},
       customerContext: widget.customerContext,
-      formulaValuesOut: formulas,
     );
-    _formulaValues = formulas;
   }
 
   /// Trả về bản sao các câu trả lời hiện tại

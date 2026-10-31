@@ -59,10 +59,9 @@ class DynamicFormBuilder extends StatefulWidget {
   /// trong form để hiện lại khi điều kiện đúng trở lại). `null` = không ô nào ẩn.
   final Set<String> Function(Map<String, dynamic> formData)? hiddenFieldsOf;
 
-  /// Kết quả các ô CÔNG THỨC (mã ô → số chưa định dạng, `null` = rỗng) tính từ dữ liệu ĐANG nhập — màn gọi tính cùng
-  /// lượt với [hiddenFieldsOf] để giữ luật ẩn theo tầng (ô ẩn đọc ra rỗng). `null` = form tự tính theo thứ tự [fields],
-  /// không xét ẩn/hiện.
-  final Map<String, num?> Function(Map<String, dynamic> formData)? formulaValuesOf;
+  /// Giá trị NỀN cho ô công thức (màn sửa: giá trị đang lưu của điểm bán) — ô động không có trên form vẫn được công
+  /// thức đọc như server (đang lưu + phần gửi). Giá trị trên form đè lên nền.
+  final Map<String, dynamic> formulaBaseData;
 
   const DynamicFormBuilder({
     super.key,
@@ -76,7 +75,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.customFieldBuilders,
     this.customValidators,
     this.hiddenFieldsOf,
-    this.formulaValuesOf,
+    this.formulaBaseData = const {},
   });
 
   @override
@@ -190,22 +189,24 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
-  /// Mã các ô đang ẩn theo `show_if` (xem [DynamicFormBuilder.hiddenFieldsOf]).
-  Set<String> get hiddenFieldCodes =>
-      widget.hiddenFieldsOf?.call(Map<String, dynamic>.unmodifiable(_formData)) ?? const <String>{};
+  /// Mã các ô đang ẩn theo `show_if` (xem [DynamicFormBuilder.hiddenFieldsOf]) — điều kiện đọc được kết quả ô công thức.
+  Set<String> get hiddenFieldCodes => _hiddenWith(formulaValues);
 
-  /// Kết quả các ô công thức tính từ dữ liệu đang nhập (xem [DynamicFormBuilder.formulaValuesOf]).
+  Set<String> _hiddenWith(Map<String, num?> formulas) {
+    final f = widget.hiddenFieldsOf;
+    if (f == null) return const <String>{};
+    return f(Map<String, dynamic>.unmodifiable(formulas.isEmpty ? _formData : {..._formData, ...formulas}));
+  }
+
+  /// Kết quả các ô công thức (số đã làm tròn theo `decimals`, `null` = rỗng) — tính như server trên TOÀN BỘ giá trị:
+  /// nền [DynamicFormBuilder.formulaBaseData] + mọi ô trên form, KỂ CẢ ô đang ẩn.
   Map<String, num?> get formulaValues {
-    final data = Map<String, dynamic>.unmodifiable(_formData);
-    final tinhRieng = widget.formulaValuesOf;
-    if (tinhRieng != null) return tinhRieng(data);
-    final out = <String, num?>{};
-    for (final f in widget.fields) {
-      final cfg = f.formula;
-      if (f.type != DynamicFormFieldType.formula || cfg == null) continue;
-      out[f.code] = FormulaEvaluator.evaluate(cfg.expr, (code) => out.containsKey(code) ? out[code] : data[code]);
-    }
-    return out;
+    final configs = <String, FormulaConfig>{
+      for (final f in widget.fields)
+        if (f.type == DynamicFormFieldType.formula && f.formula != null) f.code: f.formula!,
+    };
+    if (configs.isEmpty) return const {};
+    return FormulaEvaluator.computeAll(configs, {...widget.formulaBaseData, ..._formData});
   }
 
   /// Dữ liệu form BỎ các ô đang ẩn và ô công thức (server tự tính lại) — thứ được gửi đi.
@@ -453,8 +454,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Phân nhóm các trường theo Section (nếu có) — bỏ các ô đang ẩn theo `show_if`
-    final hidden = hiddenFieldCodes;
     _formulaValuesCache = formulaValues;
+    final hidden = _hiddenWith(_formulaValuesCache);
     final sections = <MapEntry<String, List<DynamicFormField>>>[];
     for (final field in widget.fields) {
       if (hidden.contains(field.code)) continue;
