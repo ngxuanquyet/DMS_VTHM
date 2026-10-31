@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -335,6 +336,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
     final selectedResults = dayResultsMonth == DateFormat('yyyy-MM').format(_selectedDate)
         ? dayResults[DateFormat('yyyy-MM-dd').format(_selectedDate)]
         : null;
+    final isOnline = ref.watch(connectivityProvider).isOnline;
     final monthSummary = _monthSummary(dayResults, dayResultsMonth);
 
     return Column(
@@ -427,7 +429,7 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
         // Tổng vào muộn / ra sớm của tháng — số server đã tính trên bảng công; chưa tải được thì nói rõ, không hiện số 0
         ...[
           Text(
-            monthSummary ?? 'Chưa có kết quả công của tháng này',
+            monthSummary ?? (isOnline ? 'Chưa có kết quả công của tháng này' : 'Chưa có kết quả công tháng (Ngoại tuyến)'),
             style: AppTypography.bodySmall(
               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
             ).copyWith(fontWeight: FontWeight.w600),
@@ -498,8 +500,13 @@ class _AttendanceHistoryCardState extends ConsumerState<AttendanceHistoryCard> {
             decoration: BoxDecoration(
               color: isDark
                   ? AppColors.darkSurfaceContainerLowest.withValues(alpha: 0.5)
-                  : AppColors.surfaceVariant.withValues(alpha: 0.3),
+                  : AppColors.surfaceContainerLow.withValues(alpha: 0.5),
               borderRadius: AppRadius.roundedMd,
+              border: Border.all(
+                color: isDark
+                    ? AppColors.darkOutlineVariant.withValues(alpha: 0.3)
+                    : AppColors.surfaceVariant.withValues(alpha: 0.6),
+              ),
             ),
             child: Column(
               children: [
