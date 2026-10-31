@@ -15,8 +15,10 @@ import 'ref_customer_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../../core/widgets/geo_select_field_widget.dart';
+import '../../../../../core/dynamic_form/choice_other.dart';
 import '../../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../../core/dynamic_form/models/dynamic_form_field.dart';
+import '../../../../../core/dynamic_form/widgets/choice_other_input.dart';
 import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/utils/photo_watermark_helper.dart';
@@ -86,6 +88,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
+
+  /// Ô chọn đang chọn «Khác…» (xem [ChoiceOther]): mã ô → chuỗi đang gõ (đã trim, có thể rỗng). Trạng thái giao diện —
+  /// câu trả lời chỉ chứa chuỗi gõ tay thật.
+  final Map<String, String> _otherText = {};
 
   /// Kết quả các ô CÔNG THỨC (chưa định dạng, đã làm tròn theo `decimals`), tính trên TOÀN BỘ câu trả lời (kể cả ô ẩn)
   /// như server — không nằm trong [_answers] nên không gửi lên (server tự tính lại và lưu).
@@ -242,8 +248,72 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       _answers[code] = d is List ? d.map((e) => e.toString()).toList() : d.toString();
     }
 
+    // Ô cho nhập «Khác…»: câu trả lời (nháp / bản ghi cũ) có giá trị ngoài danh sách ⇒ chọn sẵn «Khác…».
+    for (final block in widget.blocks) {
+      final other = _allowsOther(block) ? _foreignOf(block) : null;
+      if (other != null) _otherText[block.resolved.code] = other;
+    }
+
     _recomputeVisibility();
   }
+
+  bool _isMultiChoice(MarketFormBlockEntity block) =>
+      const {'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
+
+  /// Ô chọn (select / radio / multiselect / checkbox) có bật «Cho phép nhập giá trị khác».
+  bool _allowsOther(MarketFormBlockEntity block) =>
+      block.resolved.allowOther &&
+      const {'select', 'radio', 'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
+
+  Iterable<String> _optionValues(MarketFormBlockEntity block) => block.resolved.options.map((o) => o.value);
+
+  /// Giá trị ngoài danh sách đang nằm trong câu trả lời của ô; `null` nếu không có.
+  String? _foreignOf(MarketFormBlockEntity block) {
+    final val = _answers[block.resolved.code];
+    return _isMultiChoice(block)
+        ? ChoiceOther.foreignMulti(val, _optionValues(block))
+        : ChoiceOther.foreignSingle(val, _optionValues(block));
+  }
+
+  /// Bật / tắt «Khác…». Bật: ô chọn một bỏ lựa chọn cũ (chờ gõ); tắt: ô chọn nhiều bỏ chuỗi gõ tay.
+  void _setOtherActive(MarketFormBlockEntity block, bool active) {
+    final code = block.resolved.code;
+    setState(() {
+      if (active) {
+        _otherText[code] = '';
+        if (!_isMultiChoice(block)) _answers.remove(code);
+      } else {
+        _otherText.remove(code);
+        if (_isMultiChoice(block)) {
+          final list = (_answers[code] as List?)?.map((e) => e.toString()) ?? const <String>[];
+          _answers[code] = ChoiceOther.composeMulti(list, _optionValues(block), null);
+        }
+      }
+      _errors.remove(code);
+      _recomputeVisibility();
+    });
+    widget.onChanged?.call(_answers);
+  }
+
+  /// Người dùng gõ giá trị «Khác» (đã trim) — ghi THẲNG làm giá trị ô (chọn nhiều: thêm vào sau các lựa chọn đã tích).
+  void _updateOtherText(MarketFormBlockEntity block, String text) {
+    final code = block.resolved.code;
+    _otherText[code] = text;
+    if (_isMultiChoice(block)) {
+      final list = (_answers[code] as List?)?.map((e) => e.toString()) ?? const <String>[];
+      _updateTypedValue(code, ChoiceOther.composeMulti(list, _optionValues(block), text));
+    } else {
+      _updateTypedValue(code, text.isEmpty ? null : text);
+    }
+  }
+
+  /// Ô gõ «Khác» hiện dưới ô chọn đang chọn «Khác…».
+  Widget _buildOtherInput(MarketFormBlockEntity block, bool isDark) => ChoiceOtherInput(
+        key: ValueKey('choice_other_${block.resolved.code}'),
+        initialText: _otherText[block.resolved.code],
+        onChanged: (t) => _updateOtherText(block, t),
+        decoration: _inputDecoration(hintText: 'Nhập giá trị khác...', isDark: isDark),
+      );
 
   @override
   void didUpdateWidget(covariant MarketFormRenderer oldWidget) {
@@ -341,7 +411,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         continue;
       }
 
-      final val = _answers[code];
+      var val = _answers[code];
 
       // Xử lý riêng cho ô vị trí (§2, §3, §4)
       if (block.isLocation) {
@@ -419,6 +489,25 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         }
 
         continue;
+      }
+
+      // Ô cho nhập «Khác…»: đã chọn «Khác…» mà chưa gõ (ô bắt buộc) / quá trần ⇒ lỗi; ô chọn nhiều giữ tối đa MỘT chuỗi
+      // gõ tay (server từ chối nhiều hơn).
+      if (_allowsOther(block)) {
+        final active = _otherText.containsKey(code);
+        final other = _otherText[code];
+        final loi = ChoiceOther.validate(active: active, required: block.required, other: other);
+        if (loi != null) {
+          newErrors[code] = loi;
+          continue;
+        }
+        if (val is List) {
+          val = _answers[code] = ChoiceOther.composeMulti(
+            val.map((e) => e.toString()),
+            _optionValues(block),
+            active ? other : null,
+          );
+        }
       }
 
       // 1. Kiểm tra bắt buộc (required) - 0, "0", false không phải rỗng (§2 Luật 1)
@@ -974,6 +1063,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final code = block.resolved.code;
     final current = _answers[code];
     final options = block.resolved.options;
+    final allowOther = _allowsOther(block);
+    final otherActive = allowOther && _otherText.containsKey(code);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,7 +1073,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 6),
         Material(
           color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
@@ -992,7 +1082,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             ),
           ),
           child: Column(
-            children: options.map((opt) {
+            children: [
+              ...options.map((o) => (value: o.value, label: o.label)),
+              if (allowOther) (value: ChoiceOther.key, label: ChoiceOther.label),
+            ].map((opt) {
               // ignore: deprecated_member_use
               return RadioListTile<String>(
                 title: Text(
@@ -1003,14 +1096,22 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 ),
                 value: opt.value,
                 // ignore: deprecated_member_use
-                groupValue: current?.toString(),
+                groupValue: otherActive ? ChoiceOther.key : current?.toString(),
                 activeColor: AppColors.primary,
                 // ignore: deprecated_member_use
-                onChanged: (val) => _updateValue(code, val),
+                onChanged: (val) {
+                  if (val == ChoiceOther.key) {
+                    _setOtherActive(block, true);
+                  } else {
+                    _otherText.remove(code);
+                    _updateValue(code, val);
+                  }
+                },
               );
             }).toList(),
           ),
         ),
+        if (otherActive) _buildOtherInput(block, isDark),
         if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
       ],
     );
@@ -1024,6 +1125,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final code = block.resolved.code;
     final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
     final options = block.resolved.options;
+    final allowOther = _allowsOther(block);
+    final otherActive = allowOther && _otherText.containsKey(code);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1032,7 +1135,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 6),
         Material(
           color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
@@ -1063,9 +1165,23 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   _updateValue(code, updated);
                 },
               );
-            }).toList(),
+            }).followedBy([
+              if (allowOther)
+                CheckboxListTile(
+                  title: Text(
+                    ChoiceOther.label,
+                    style: AppTypography.bodyMedium(
+                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+                    ),
+                  ),
+                  value: otherActive,
+                  activeColor: AppColors.primary,
+                  onChanged: (checked) => _setOtherActive(block, checked == true),
+                ),
+            ]).toList(),
           ),
         ),
+        if (otherActive) _buildOtherInput(block, isDark),
         if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
       ],
     );
@@ -1079,6 +1195,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final code = block.resolved.code;
     final current = _answers[code]?.toString();
     final options = block.resolved.options;
+    final allowOther = _allowsOther(block);
+    final otherActive = allowOther && _otherText.containsKey(code);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1086,13 +1204,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _buildLabel(block, isDark),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          initialValue: options.any((o) => o.value == current) ? current : null,
-          items: options
-              .map((o) => DropdownMenuItem(
-                    value: o.value,
-                    child: Text(o.label),
-                  ))
-              .toList(),
+          initialValue: otherActive ? ChoiceOther.key : (options.any((o) => o.value == current) ? current : null),
+          items: [
+            ...options.map((o) => DropdownMenuItem(
+                  value: o.value,
+                  child: Text(o.label),
+                )),
+            if (allowOther) const DropdownMenuItem(value: ChoiceOther.key, child: Text(ChoiceOther.label)),
+          ],
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
           ),
@@ -1103,8 +1222,16 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             isDark: isDark,
             errorText: _errors[code],
           ),
-          onChanged: (val) => _updateValue(code, val),
+          onChanged: (val) {
+            if (val == ChoiceOther.key) {
+              _setOtherActive(block, true);
+            } else {
+              _otherText.remove(code);
+              _updateValue(code, val);
+            }
+          },
         ),
+        if (otherActive) _buildOtherInput(block, isDark),
       ],
     );
   }
@@ -1117,6 +1244,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final code = block.resolved.code;
     final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
     final options = block.resolved.options;
+    final allowOther = _allowsOther(block);
+    final otherActive = allowOther && _otherText.containsKey(code);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1151,8 +1280,26 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 _updateValue(code, updated);
               },
             );
-          }).toList(),
+          }).followedBy([
+            if (allowOther)
+              FilterChip(
+                label: const Text(ChoiceOther.label),
+                selected: otherActive,
+                selectedColor: isDark
+                    ? AppColors.primary.withValues(alpha: 0.3)
+                    : AppColors.primaryContainer.withValues(alpha: 0.3),
+                checkmarkColor: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                labelStyle: TextStyle(
+                  color: otherActive
+                      ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
+                      : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                  fontWeight: otherActive ? FontWeight.w600 : FontWeight.normal,
+                ),
+                onSelected: (selected) => _setOtherActive(block, selected),
+              ),
+          ]).toList(),
         ),
+        if (otherActive) _buildOtherInput(block, isDark),
         if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
       ],
     );

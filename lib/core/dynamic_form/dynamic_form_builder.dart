@@ -3,6 +3,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_button.dart';
+import 'choice_other.dart';
 import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
 import 'widgets/dynamic_form_field_wrapper.dart';
@@ -88,6 +89,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   final Map<String, FocusNode> _fieldFocusNodes = {};
   final Map<String, GlobalKey> _fieldKeys = {};
 
+  /// Ô chọn đang chọn «Khác…» (xem [ChoiceOther]): mã ô → chuỗi đang gõ (đã trim, có thể rỗng). Trạng thái giao diện —
+  /// [_formData] chỉ chứa giá trị THẬT (chuỗi gõ tay đặt thẳng làm giá trị).
+  final Map<String, String> _otherText = {};
+
   /// Địa chỉ bản đồ vừa tự điền vào `address` — lấy lại vị trí thì được thay, còn người dùng đã sửa tay thì giữ.
   String? _autoAddress;
 
@@ -159,10 +164,49 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       }
     }
 
+    // Ô cho nhập «Khác…»: giá trị (nháp / bản ghi cũ) ngoài danh sách ⇒ chọn sẵn «Khác…» với chuỗi đó. Dựng lại giữ
+    // nguyên trạng thái đang có (kể cả «Khác…» vừa chọn mà chưa gõ).
+    if (!preserveExisting) _otherText.clear();
+    for (final field in widget.fields) {
+      if (!_allowsOther(field) || _otherText.containsKey(field.code)) continue;
+      final optVals = field.options.map((o) => o.value);
+      final v = _formData[field.code];
+      final other = field.type == DynamicFormFieldType.multipleChoice
+          ? ChoiceOther.foreignMulti(v, optVals)
+          : ChoiceOther.foreignSingle(v, optVals);
+      if (other != null) _otherText[field.code] = other;
+    }
+
     // `address` không có ô riêng (admin ẩn) vẫn được ô Vị trí ghi vào — giữ qua mỗi lần dựng lại, không thì mất địa chỉ.
     if (!widget.fields.any((f) => f.code == 'address')) {
       final addr = existingData['address'] ?? widget.initialData['address'];
       if (addr != null) _formData['address'] = addr;
+    }
+  }
+
+  bool _allowsOther(DynamicFormField field) =>
+      field.allowOther &&
+      (field.type == DynamicFormFieldType.singleChoice || field.type == DynamicFormFieldType.multipleChoice);
+
+  /// «Khác…» của ô chọn: `''` = vừa chọn (ô chọn một bỏ lựa chọn cũ, chờ gõ), chuỗi = đang gõ (ghi THẲNG làm giá trị;
+  /// ô chọn nhiều: thêm sau các lựa chọn đã tích), `null` = bỏ «Khác…» (ô chọn nhiều bỏ chuỗi gõ tay; ô chọn một do
+  /// lựa chọn mới ghi đè).
+  void _updateOther(DynamicFormField field, String? text) {
+    setState(() {
+      if (text == null) {
+        _otherText.remove(field.code);
+      } else {
+        _otherText[field.code] = text;
+      }
+    });
+    if (field.type == DynamicFormFieldType.multipleChoice) {
+      final current = _formData[field.code];
+      updateFieldValue(
+        field.code,
+        ChoiceOther.composeMulti<dynamic>(current is List ? current : const [], field.options.map((o) => o.value), text),
+      );
+    } else if (text != null) {
+      updateFieldValue(field.code, text.isEmpty ? null : text);
     }
   }
 
@@ -283,6 +327,22 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           firstInvalidCode ??= field.code;
         }
         continue;
+      }
+
+      // Ô cho nhập «Khác…»: đã chọn «Khác…» mà chưa gõ (ô bắt buộc) / quá trần ⇒ lỗi; ô chọn nhiều giữ tối đa MỘT
+      // chuỗi gõ tay (server từ chối nhiều hơn).
+      if (_allowsOther(field)) {
+        final other = _otherText[field.code];
+        final loi = ChoiceOther.validate(active: other != null, required: field.isRequired, other: other);
+        if (loi != null) {
+          newErrors[field.code] = loi;
+          isValid = false;
+          firstInvalidCode ??= field.code;
+          continue;
+        }
+        if (value is List) {
+          _formData[field.code] = ChoiceOther.composeMulti<dynamic>(value, field.options.map((o) => o.value), other);
+        }
       }
 
       // 1. Kiểm tra bắt buộc nhập (Required check)
@@ -777,6 +837,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           errorText: errorText,
           focusNode: focusNode,
           onChanged: (val) => updateFieldValue(field.code, val),
+          otherText: _otherText[field.code],
+          onOtherChanged: _allowsOther(field) ? (t) => _updateOther(field, t) : null,
         );
 
       case DynamicFormFieldType.multipleChoice:
@@ -786,6 +848,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           selectedValues: selectedList,
           errorText: errorText,
           onChanged: (val) => updateFieldValue(field.code, val),
+          otherText: _otherText[field.code],
+          onOtherChanged: _allowsOther(field) ? (t) => _updateOther(field, t) : null,
         );
 
       case DynamicFormFieldType.date:

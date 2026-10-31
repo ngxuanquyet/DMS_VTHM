@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../choice_other.dart';
 import '../formula_evaluator.dart';
 
 /// Các kiểu dữ liệu của trường form động do API trả về
@@ -285,6 +286,10 @@ class DynamicFormField {
   /// xuống; `null` = theo mặc định của widget.
   final String? choiceDisplay;
 
+  /// Ô chọn có danh sách gõ tay cho nhập «Khác…» (khoá phẳng `allow_other` của schema điểm bán, hoặc
+  /// `config.allow_other`) — xem [ChoiceOther].
+  final bool allowOther;
+
   /// Mã ô CHA mà ô này lọc theo (`depends_on[0].field_code` của schema — ô Xã → ô Tỉnh, #24072); `null` = không phụ thuộc.
   final String? dependsOn;
 
@@ -332,6 +337,7 @@ class DynamicFormField {
     this.erpPartnerMultiple = false,
     this.choiceMultiple,
     this.choiceDisplay,
+    this.allowOther = false,
     this.dependsOn,
     this.showIf,
     this.formula,
@@ -467,6 +473,7 @@ class DynamicFormField {
           ? (json['choice'] as Map)['multiple'] as bool
           : null,
       choiceDisplay: json['choice'] is Map ? (json['choice'] as Map)['display']?.toString() : null,
+      allowOther: ChoiceOther.enabledIn(json),
       dependsOn: json['depends_on'] is List && (json['depends_on'] as List).isNotEmpty && (json['depends_on'] as List).first is Map
           ? ((json['depends_on'] as List).first as Map)['field_code']?.toString()
           : null,
@@ -503,6 +510,7 @@ class DynamicFormField {
     bool? erpPartnerMultiple,
     bool? choiceMultiple,
     String? choiceDisplay,
+    bool? allowOther,
     String? dependsOn,
     dynamic showIf,
     FormulaConfig? formula,
@@ -534,6 +542,7 @@ class DynamicFormField {
       erpPartnerMultiple: erpPartnerMultiple ?? this.erpPartnerMultiple,
       choiceMultiple: choiceMultiple ?? this.choiceMultiple,
       choiceDisplay: choiceDisplay ?? this.choiceDisplay,
+      allowOther: allowOther ?? this.allowOther,
       dependsOn: dependsOn ?? this.dependsOn,
       showIf: showIf ?? this.showIf,
       formula: formula ?? this.formula,

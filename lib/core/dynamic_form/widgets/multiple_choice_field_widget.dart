@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../choice_other.dart';
 import '../models/dynamic_form_field.dart';
+import 'choice_other_input.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
@@ -11,13 +13,43 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
   final ValueChanged<List<dynamic>> onChanged;
   final String? errorText;
 
+  /// «Khác…» (ô bật [DynamicFormField.allowOther], xem [ChoiceOther]): chuỗi đang gõ khi đang tích «Khác…» (có thể
+  /// rỗng), `null` = không tích. Màn chứa giữ trạng thái này và tự ghép chuỗi gõ vào [selectedValues] (giá trị THẬT).
+  final String? otherText;
+
+  /// Tích «Khác…» (`''`), gõ (chuỗi đã trim) hoặc bỏ tích (`null`); `null` = ô không có «Khác…».
+  final ValueChanged<String?>? onOtherChanged;
+
   const DynamicMultipleChoiceFieldWidget({
     super.key,
     required this.field,
     required this.selectedValues,
     required this.onChanged,
     this.errorText,
+    this.otherText,
+    this.onOtherChanged,
   });
+
+  bool get _showOther => field.allowOther && onOtherChanged != null;
+  bool get _otherActive => _showOther && otherText != null;
+
+  /// Ghép ô gõ «Khác» dưới ô chọn khi đang tích «Khác…».
+  Widget _withOther(Widget child) {
+    if (!_otherActive) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        child,
+        ChoiceOtherInput(
+          key: ValueKey('choice_other_${field.code}'),
+          initialText: otherText,
+          enabled: !field.isReadOnly,
+          onChanged: onOtherChanged!,
+        ),
+      ],
+    );
+  }
 
   void _toggleOption(dynamic optValue) {
     if (field.isReadOnly) return;
@@ -40,6 +72,7 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) {
         final chon = List<dynamic>.from(selectedValues);
+        var khac = _otherActive;
         return StatefulBuilder(
           builder: (ctx, setSheet) => SafeArea(
             child: ConstrainedBox(
@@ -63,6 +96,7 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
                           onPressed: () {
                             Navigator.pop(ctx);
                             onChanged(chon);
+                            if (khac != _otherActive) onOtherChanged!(khac ? '' : null);
                           },
                           child: const Text('Xong'),
                         ),
@@ -80,7 +114,15 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
                           controlAffinity: ListTileControlAffinity.leading,
                           onChanged: (_) => setSheet(() => daChon ? chon.remove(opt.value) : chon.add(opt.value)),
                         );
-                      }).toList(),
+                      }).followedBy([
+                        if (_showOther)
+                          CheckboxListTile(
+                            value: khac,
+                            title: const Text(ChoiceOther.label),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            onChanged: (_) => setSheet(() => khac = !khac),
+                          ),
+                      ]).toList(),
                     ),
                   ),
                 ],
@@ -99,10 +141,11 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
 
     if (field.choiceDisplay == 'dropdown') {
       final nhan = options.where((o) => selectedValues.contains(o.value)).map((o) => o.label).toList();
+      if (_otherActive) nhan.add(otherText!.isEmpty ? ChoiceOther.label : otherText!);
       return DynamicFormFieldWrapper(
         field: field,
         errorText: errorText,
-        child: InkWell(
+        child: _withOther(InkWell(
           onTap: field.isReadOnly ? null : () => _showPicker(context),
           borderRadius: AppRadius.roundedMd,
           child: Container(
@@ -138,20 +181,26 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
               ],
             ),
           ),
-        ),
+        )),
       );
     }
 
     return DynamicFormFieldWrapper(
       field: field,
       errorText: errorText,
-      child: Wrap(
+      child: _withOther(Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: options.map((opt) {
-          final isSelected = selectedValues.contains(opt.value);
+        children: [
+          ...options,
+          if (_showOther) const DynamicFormOption(label: ChoiceOther.label, value: ChoiceOther.key),
+        ].map((opt) {
+          final laKhac = opt.value == ChoiceOther.key;
+          final isSelected = laKhac ? _otherActive : selectedValues.contains(opt.value);
           return InkWell(
-            onTap: field.isReadOnly ? null : () => _toggleOption(opt.value),
+            onTap: field.isReadOnly
+                ? null
+                : () => laKhac ? onOtherChanged!(_otherActive ? null : '') : _toggleOption(opt.value),
             borderRadius: AppRadius.roundedMd,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
@@ -194,7 +243,7 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
             ),
           );
         }).toList(),
-      ),
+      )),
     );
   }
 }

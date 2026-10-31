@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../../core/dynamic_form/choice_other.dart';
 import '../../../../core/dynamic_form/formula_evaluator.dart';
 
 /// Entity cấu hình biểu mẫu thị trường
@@ -102,6 +103,15 @@ class MarketFormResolvedEntity {
   /// `null` = ô khác hoặc thiếu biểu thức.
   FormulaConfig? get formula {
     if (inputType.toLowerCase() != 'formula') return null;
+    return FormulaConfig.fromMap(_configMap, exprKey: 'formula', blankKey: 'blank_if_missing');
+  }
+
+  /// Ô chọn (select / radio / multiselect / checkbox có lựa chọn) cho nhập «Khác…» (`config.allow_other`) — xem
+  /// [ChoiceOther].
+  bool get allowOther => options.isNotEmpty && ChoiceOther.enabledIn({'config': _configMap});
+
+  /// `config` dạng Map (server có thể gửi chuỗi JSON); `null` nếu không đọc được.
+  Map? get _configMap {
     var cfg = config;
     if (cfg is String && cfg.trim().startsWith('{')) {
       try {
@@ -110,7 +120,7 @@ class MarketFormResolvedEntity {
         return null;
       }
     }
-    return FormulaConfig.fromMap(cfg, exprKey: 'formula', blankKey: 'blank_if_missing');
+    return cfg is Map ? cfg : null;
   }
 }
 

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../choice_other.dart';
 import '../models/dynamic_form_field.dart';
+import 'choice_other_input.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicSingleChoiceFieldWidget extends StatelessWidget {
@@ -12,6 +14,13 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
   final String? errorText;
   final FocusNode? focusNode;
 
+  /// «Khác…» (ô bật [DynamicFormField.allowOther], xem [ChoiceOther]): chuỗi đang gõ khi đang chọn «Khác…» (có thể
+  /// rỗng), `null` = không chọn. Màn chứa giữ trạng thái này; [value] luôn là giá trị THẬT.
+  final String? otherText;
+
+  /// Bật «Khác…» (`''`), gõ (chuỗi đã trim) hoặc bỏ «Khác…» (`null`); `null` = ô không có «Khác…».
+  final ValueChanged<String?>? onOtherChanged;
+
   const DynamicSingleChoiceFieldWidget({
     super.key,
     required this.field,
@@ -19,7 +28,40 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     required this.onChanged,
     this.errorText,
     this.focusNode,
+    this.otherText,
+    this.onOtherChanged,
   });
+
+  bool get _showOther => field.allowOther && onOtherChanged != null;
+  bool get _otherActive => _showOther && otherText != null;
+
+  /// Chọn một mục — [ChoiceOther.key] là mục «Khác…» (chỉ bật ô gõ, không ghi giá trị giả).
+  void _select(dynamic val) {
+    if (val == ChoiceOther.key) {
+      if (!_otherActive) onOtherChanged!('');
+      return;
+    }
+    if (_otherActive) onOtherChanged!(null);
+    onChanged(val);
+  }
+
+  /// Ghép ô gõ «Khác» dưới ô chọn khi đang chọn «Khác…».
+  Widget _withOther(Widget child) {
+    if (!_otherActive) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        child,
+        ChoiceOtherInput(
+          key: ValueKey('choice_other_${field.code}'),
+          initialText: otherText,
+          enabled: !field.isReadOnly,
+          onChanged: onOtherChanged!,
+        ),
+      ],
+    );
+  }
 
   void _showSearchablePicker(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -30,10 +72,11 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
       builder: (ctx) {
         return _SearchableOptionPickerSheet(
           field: field,
-          selectedValue: value,
+          selectedValue: _otherActive ? ChoiceOther.key : value,
+          showOther: _showOther,
           onSelected: (selectedVal) {
             Navigator.pop(ctx);
-            onChanged(selectedVal);
+            _select(selectedVal);
           },
           isDark: isDark,
         );
@@ -47,12 +90,16 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     final options = field.options;
 
     // Lấy label của item đang chọn (nếu có)
-    final selectedOption = options.cast<DynamicFormOption?>().firstWhere(
-          (o) => (o?.value == value || o?.value.toString() == value?.toString()) &&
-              value != null &&
-              value.toString().trim().isNotEmpty,
-          orElse: () => null,
-        );
+    final selectedOption = _otherActive
+        ? null
+        : options.cast<DynamicFormOption?>().firstWhere(
+            (o) => (o?.value == value || o?.value.toString() == value?.toString()) &&
+                value != null &&
+                value.toString().trim().isNotEmpty,
+            orElse: () => null,
+          );
+    final otherOption =
+        _showOther ? const DynamicFormOption(label: ChoiceOther.label, value: ChoiceOther.key) : null;
 
     // 🔴 Hiển thị dạng Dropdown nếu là trường tuyến bán hàng (route_ids/route_id) hoặc được cấu hình dropdown/badge Danh sách chọn
     final isDropdown = field.code == 'route_ids' ||
@@ -70,9 +117,9 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
       return DynamicFormFieldWrapper(
         field: field,
         errorText: errorText,
-        child: DropdownButtonFormField<dynamic>(
+        child: _withOther(DropdownButtonFormField<dynamic>(
           focusNode: focusNode,
-          initialValue: selectedOption?.value,
+          initialValue: _otherActive ? ChoiceOther.key : selectedOption?.value,
           isDense: true,
           isExpanded: true,
           icon: Icon(
@@ -132,7 +179,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
               color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
             ),
           ),
-          items: options.map((opt) {
+          items: [...options, ?otherOption].map((opt) {
             return DropdownMenuItem<dynamic>(
               value: opt.value,
               child: Row(
@@ -154,8 +201,8 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
               ),
             );
           }).toList(),
-          onChanged: field.isReadOnly ? null : (val) => onChanged(val),
-        ),
+          onChanged: field.isReadOnly ? null : (val) => _select(val),
+        )),
       );
     }
 
@@ -165,7 +212,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
       return DynamicFormFieldWrapper(
         field: field,
         errorText: errorText,
-        child: InkWell(
+        child: _withOther(InkWell(
           onTap: field.isReadOnly ? null : () => _showSearchablePicker(context),
           borderRadius: AppRadius.roundedMd,
           child: Container(
@@ -194,6 +241,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
                 Expanded(
                   child: Text(
                     selectedOption?.label ??
+                        (_otherActive ? ChoiceOther.label : null) ??
                         field.placeholder ??
                         'Chọn ${field.label.toLowerCase()}',
                     style: AppTypography.bodyMedium(
@@ -207,9 +255,12 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (selectedOption != null && !field.isReadOnly)
+                if ((selectedOption != null || _otherActive) && !field.isReadOnly)
                   GestureDetector(
-                    onTap: () => onChanged(null),
+                    onTap: () {
+                      if (_otherActive) onOtherChanged!(null);
+                      onChanged(null);
+                    },
                     child: Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: Icon(
@@ -227,7 +278,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
               ],
             ),
           ),
-        ),
+        )),
       );
     }
 
@@ -235,13 +286,15 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     return DynamicFormFieldWrapper(
       field: field,
       errorText: errorText,
-      child: Wrap(
+      child: _withOther(Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: options.map((opt) {
-          final isSelected = opt.value == value || opt.value.toString() == value?.toString();
+        children: [...options, ?otherOption].map((opt) {
+          final isSelected = opt.value == ChoiceOther.key
+              ? _otherActive
+              : !_otherActive && (opt.value == value || opt.value.toString() == value?.toString());
           return InkWell(
-            onTap: field.isReadOnly ? null : () => onChanged(opt.value),
+            onTap: field.isReadOnly ? null : () => _select(opt.value),
             borderRadius: AppRadius.roundedMd,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
@@ -285,7 +338,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
             ),
           );
         }).toList(),
-      ),
+      )),
     );
   }
 }
@@ -296,11 +349,15 @@ class _SearchableOptionPickerSheet extends StatefulWidget {
   final ValueChanged<dynamic> onSelected;
   final bool isDark;
 
+  /// Thêm mục «Khác…» ở cuối danh sách (luôn hiện, không lọc theo ô tìm).
+  final bool showOther;
+
   const _SearchableOptionPickerSheet({
     required this.field,
     required this.selectedValue,
     required this.onSelected,
     required this.isDark,
+    this.showOther = false,
   });
 
   @override
@@ -326,6 +383,7 @@ class _SearchableOptionPickerSheetState extends State<_SearchableOptionPickerShe
       if (_query.trim().isEmpty) return true;
       return o.label.toLowerCase().contains(_query.trim().toLowerCase());
     }).toList();
+    if (widget.showOther) filtered.add(const DynamicFormOption(label: ChoiceOther.label, value: ChoiceOther.key));
 
     return Container(
       constraints: BoxConstraints(
