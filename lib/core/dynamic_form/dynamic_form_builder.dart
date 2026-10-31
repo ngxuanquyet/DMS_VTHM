@@ -203,7 +203,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       final current = _formData[field.code];
       updateFieldValue(
         field.code,
-        ChoiceOther.composeMulti<dynamic>(current is List ? current : const [], field.options.map((o) => o.value), text),
+        ChoiceOther.composeMulti<dynamic>(
+          current is List ? current : const [],
+          field.options.map((o) => o.value),
+          text,
+          optionLabels: field.options.map((o) => o.label),
+        ),
       );
     } else if (text != null) {
       updateFieldValue(field.code, text.isEmpty ? null : text);
@@ -341,7 +346,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           continue;
         }
         if (value is List) {
-          _formData[field.code] = ChoiceOther.composeMulti<dynamic>(value, field.options.map((o) => o.value), other);
+          _formData[field.code] = ChoiceOther.composeMulti<dynamic>(
+            value,
+            field.options.map((o) => o.value),
+            other,
+            optionLabels: field.options.map((o) => o.label),
+          );
         }
       }
 

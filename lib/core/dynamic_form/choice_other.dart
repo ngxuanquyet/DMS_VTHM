@@ -56,10 +56,20 @@ class ChoiceOther {
 
   /// Ghép giá trị ô chọn nhiều: các lựa chọn THUỘC danh sách đang tích (giữ thứ tự) + chuỗi gõ tay (đã trim, bỏ nếu
   /// trống). Mọi phần tử lạ khác bị bỏ — server chỉ nhận một giá trị ngoài danh sách.
-  static List<T> composeMulti<T>(Iterable<T> values, Iterable<dynamic> optionValues, String? other) {
+  ///
+  /// 🔴 Chữ gõ TRÙNG một lựa chọn (value hoặc nhãn [optionLabels], so chính xác) KHÔNG đưa vào giá trị — muốn chọn thì
+  /// người dùng tự tích. Không thì gõ dần "Siêu thị mini" đi qua "Siêu thị" sẽ phát ra lựa chọn "Siêu thị", lượt sau
+  /// coi là đã tích ⇒ lưu cả hai (cùng luật với SPA).
+  static List<T> composeMulti<T>(
+    Iterable<T> values,
+    Iterable<dynamic> optionValues,
+    String? other, {
+    Iterable<String> optionLabels = const [],
+  }) {
     final out = values.where((v) => _inOptions(v, optionValues)).toList();
     final text = other?.trim() ?? '';
-    if (text.isNotEmpty && !out.any((v) => v.toString() == text)) out.add(text as T);
+    final trungLuaChon = optionValues.any((o) => o.toString() == text) || optionLabels.contains(text);
+    if (text.isNotEmpty && !trungLuaChon) out.add(text as T);
     return out;
   }
 

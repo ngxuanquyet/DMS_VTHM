@@ -266,6 +266,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       const {'select', 'radio', 'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
 
   Iterable<String> _optionValues(MarketFormBlockEntity block) => block.resolved.options.map((o) => o.value);
+  Iterable<String> _optionLabels(MarketFormBlockEntity block) => block.resolved.options.map((o) => o.label);
 
   /// Giá trị ngoài danh sách đang nằm trong câu trả lời của ô; `null` nếu không có.
   String? _foreignOf(MarketFormBlockEntity block) {
@@ -301,7 +302,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     _otherText[code] = text;
     if (_isMultiChoice(block)) {
       final list = (_answers[code] as List?)?.map((e) => e.toString()) ?? const <String>[];
-      _updateTypedValue(code, ChoiceOther.composeMulti(list, _optionValues(block), text));
+      _updateTypedValue(
+        code,
+        ChoiceOther.composeMulti(list, _optionValues(block), text, optionLabels: _optionLabels(block)),
+      );
     } else {
       _updateTypedValue(code, text.isEmpty ? null : text);
     }
@@ -506,6 +510,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             val.map((e) => e.toString()),
             _optionValues(block),
             active ? other : null,
+            optionLabels: _optionLabels(block),
           );
         }
       }

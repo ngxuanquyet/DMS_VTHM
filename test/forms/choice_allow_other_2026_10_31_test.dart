@@ -30,6 +30,10 @@ void main() {
       expect(ChoiceOther.composeMulti(['B', 'Lạ', 'A', 'Lạ 2'], opts, '  Mới '), ['B', 'A', 'Mới']);
       expect(ChoiceOther.composeMulti(['B', 'Lạ'], opts, null), ['B']);
       expect(ChoiceOther.composeMulti(['B'], opts, ''), ['B']);
+      // Chữ gõ trùng một lựa chọn (value hoặc nhãn, so chính xác) KHÔNG vào giá trị — muốn chọn thì tự tích.
+      expect(ChoiceOther.composeMulti(['B'], opts, 'A'), ['B']);
+      expect(ChoiceOther.composeMulti(['B'], opts, 'Nhãn A', optionLabels: ['Nhãn A', 'Nhãn B']), ['B']);
+      expect(ChoiceOther.composeMulti(['B'], opts, 'a'), ['B', 'a']);
     });
 
     test('kiểm khi lưu: bắt buộc mà trống ⇒ lỗi; không bắt buộc mà trống ⇒ hợp lệ; quá 255 ⇒ lỗi', () {
@@ -148,6 +152,22 @@ void main() {
       });
     });
 
+    testWidgets('chọn nhiều: gõ dần qua đúng một lựa chọn ("Siêu thị" → "Siêu thị mini") ⇒ KHÔNG tự tích lựa chọn đó',
+        (tester) async {
+      final changes = <Map<String, dynamic>>[];
+      final key = await dung(tester, [o('m', 'multiselect', opts: ['Siêu thị', 'Tạp hoá'])], changes: changes);
+      await tester.tap(find.widgetWithText(FilterChip, ChoiceOther.label));
+      await tester.pumpAndSettle();
+      for (final t in ['Siêu', 'Siêu thị', 'Siêu thị ', 'Siêu thị mini']) {
+        await tester.enterText(find.byType(TextField).last, t);
+        await tester.pump();
+      }
+      expect(changes.any((a) => (a['m'] as List?)?.contains('Siêu thị') == true), isFalse);
+      expect(key.currentState!.validateAndGetAnswers(), {
+        'm': ['Siêu thị mini'],
+      });
+    });
+
     testWidgets('chọn «Khác…» để trống: bắt buộc ⇒ lỗi; không bắt buộc ⇒ coi như không chọn', (tester) async {
       final key = await dung(tester, [o('r', 'select', required: true), o('c', 'checkbox')]);
 
@@ -235,6 +255,27 @@ void main() {
       final d = key.currentState!.getFormData();
       expect(d['mw_a'], 'Giá trị cũ');
       expect(d['mw_b'], ['Có', 'Hàng lạ']);
+    });
+
+    testWidgets('chọn nhiều: gõ dần qua đúng một lựa chọn ("Có" → "Có hàng") ⇒ KHÔNG tự tích lựa chọn đó',
+        (tester) async {
+      final key = await dung(tester, build([o('mw_b', 'multiselect')]));
+      await tester.tap(find.text(ChoiceOther.label));
+      await tester.pumpAndSettle();
+      final seen = <dynamic>[];
+      for (final t in ['C', 'Có', 'Có ', 'Có hàng']) {
+        await tester.enterText(find.byType(TextField).last, t);
+        await tester.pump();
+        seen.add(List.of(key.currentState!.getFormData()['mw_b'] as List));
+      }
+      expect(seen, [
+        ['C'],
+        <dynamic>[],
+        <dynamic>[],
+        ['Có hàng'],
+      ]);
+      expect(key.currentState!.validate(focusFirstError: false), isTrue);
+      expect(key.currentState!.getFormData()['mw_b'], ['Có hàng']);
     });
 
     testWidgets('chọn «Khác…» rồi gõ ⇒ giá trị THẬT đã trim; bắt buộc mà trống ⇒ lỗi', (tester) async {
