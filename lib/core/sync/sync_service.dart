@@ -688,12 +688,25 @@ class SyncService {
     if (payload['customer_id'] != null) {
       customerId = int.tryParse(payload['customer_id'].toString());
     }
-    if ((customerId == null || customerId <= 0) && entry.parentUuid != null) {
-      final parentCustomer = await _db.getEntryByClientUuid(entry.parentUuid!);
-      if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
-        payload['customer_id'] = parentCustomer.serverId;
+    if (customerId == null || customerId <= 0) {
+      if (entry.parentUuid != null) {
+        final parentCustomer = await _db.getEntryByClientUuid(entry.parentUuid!);
+        if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
+          payload['customer_id'] = parentCustomer.serverId;
+        } else {
+          // Dự phòng kiểm tra bảng LocalCustomers nếu hàng đợi đồng bộ đã được dọn
+          final localCust = await (_db.select(_db.localCustomers)
+                ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!))
+                ..limit(1))
+              .getSingleOrNull();
+          if (localCust != null && localCust.id != null && localCust.id! > 0) {
+            payload['customer_id'] = localCust.id;
+          } else {
+            _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của điểm bán cha cho lượt viếng thăm');
+          }
+        }
       } else {
-        _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của điểm bán cha cho lượt viếng thăm');
+        throw const AppException('Lượt viếng thăm thiếu mã điểm bán hợp lệ để mở lượt', 422);
       }
     }
 

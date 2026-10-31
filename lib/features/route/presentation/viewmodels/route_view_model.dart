@@ -1961,11 +1961,36 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             final offlinePayload = request.toJson();
             offlinePayload['is_offline_sync'] = true;
 
+            // Nếu điểm bán tạo offline (customerId <= 0), gắn parentUuid theo clientUuid của điểm bán
+            String? customerClientUuid;
+            if (customerId <= 0) {
+              if (state.customer is CustomerEntity) {
+                customerClientUuid = (state.customer as CustomerEntity).clientUuid;
+              } else if (state.customer is Map) {
+                customerClientUuid = (state.customer as Map)['client_uuid']?.toString();
+              }
+              if (customerClientUuid == null) {
+                try {
+                  final dealerId = state.checkinData?.dealer.id;
+                  if (dealerId != null && dealerId.isNotEmpty) {
+                    final localCust = await (db.select(db.localCustomers)
+                          ..where((tbl) => tbl.code.equals(dealerId))
+                          ..limit(1))
+                        .getSingleOrNull();
+                    customerClientUuid = localCust?.clientUuid;
+                  }
+                } catch (_) {}
+              }
+            }
+
             await db.enqueue(
               SyncQueueEntriesCompanion(
                 entity: const drift.Value('visit'),
                 op: const drift.Value('create'),
                 clientUuid: drift.Value(_sessionClientUuid),
+                parentUuid: customerClientUuid != null
+                    ? drift.Value(customerClientUuid)
+                    : const drift.Value.absent(),
                 payload: drift.Value(jsonEncode(offlinePayload)),
                 state: const drift.Value('pending'),
                 createdAt: drift.Value(nowMs),
@@ -2211,12 +2236,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     // Nếu phiên ngoại tuyến (visitId < 0) -> Đẩy vào SyncQueueEntries ngay
     if (state.visitId < 0) {
-      await _enqueueVisitPhotoToDb(
+      final queueId = await _enqueueVisitPhotoToDb(
         file: persistentFile,
         photoType: apiPhotoType,
         lat: lat,
         lng: lng,
       );
+      if (queueId != null) {
+        final idx = state.photos.indexWhere((p) => p.id == tempId);
+        if (idx >= 0) {
+          final updated = List<VisitPhotoEntity>.from(state.photos);
+          updated[idx] = updated[idx].copyWith(id: -queueId);
+          state = state.copyWith(photos: updated);
+        }
+      }
       _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
       return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
@@ -2242,12 +2275,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       return (true, null);
     } catch (e) {
       if (_isNetworkError(e)) {
-        await _enqueueVisitPhotoToDb(
+        final queueId = await _enqueueVisitPhotoToDb(
           file: persistentFile,
           photoType: apiPhotoType,
           lat: lat,
           lng: lng,
         );
+        if (queueId != null) {
+          final idx = state.photos.indexWhere((p) => p.id == tempId);
+          if (idx >= 0) {
+            final updated = List<VisitPhotoEntity>.from(state.photos);
+            updated[idx] = updated[idx].copyWith(id: -queueId);
+            state = state.copyWith(photos: updated);
+          }
+        }
         return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
       }
 
@@ -2278,23 +2319,31 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         );
       }
 
-      await _enqueueVisitPhotoToDb(
+      final queueId = await _enqueueVisitPhotoToDb(
         file: persistentFile,
         photoType: apiPhotoType,
         lat: lat,
         lng: lng,
       );
+      if (queueId != null) {
+        final idx = state.photos.indexWhere((p) => p.id == tempId);
+        if (idx >= 0) {
+          final updated = List<VisitPhotoEntity>.from(state.photos);
+          updated[idx] = updated[idx].copyWith(id: -queueId);
+          state = state.copyWith(photos: updated);
+        }
+      }
       return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
   }
 
-  Future<void> _enqueueVisitPhotoToDb({
+  Future<int?> _enqueueVisitPhotoToDb({
     required File file,
     required String photoType,
     double? lat,
     double? lng,
   }) async {
-    if (ref == null) return;
+    if (ref == null) return null;
     try {
       final db = ref!.read(appDatabaseProvider);
       final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -2307,7 +2356,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         'is_offline_sync': true,
       };
 
-      await db.enqueue(
+      return await db.enqueue(
         SyncQueueEntriesCompanion(
           entity: const drift.Value('visit_photo'),
           op: const drift.Value('upload'),
@@ -2324,6 +2373,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       );
     } catch (e) {
       debugPrint('[RouteViewModel] Lỗi enqueue ảnh: $e');
+      return null;
     }
   }
 
@@ -2340,14 +2390,17 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           if (file.existsSync()) await file.delete();
         } catch (_) {}
       }
-      // Ảnh nạp lại từ hàng đợi ([_restoreQueuedPhotos], id = -id dòng hàng đợi): bỏ cả dòng hàng đợi, không thì mở lại app
-      // ảnh quay về / vẫn bị tải lên.
+      // Ảnh nạp lại từ hàng đợi ([_restoreQueuedPhotos], id = -id dòng hàng đợi) hoặc vừa chụp offline: bỏ cả dòng hàng đợi,
+      // không thì mở lại app ảnh quay về / lúc có mạng bị lỗi 410 mất file.
       if (photoId < 0 && ref != null) {
         try {
           final db = ref!.read(appDatabaseProvider);
           await (db.delete(db.syncQueueEntries)
                 ..where((t) =>
-                    t.id.equals(-photoId) &
+                    (t.id.equals(-photoId) |
+                        (photo?.localPath != null && photo!.localPath!.isNotEmpty
+                            ? t.localPath.equals(photo.localPath!)
+                            : const drift.Constant(false))) &
                     t.entity.equals('visit_photo') &
                     t.parentUuid.equals(_sessionClientUuid) &
                     t.state.equals('pending')))

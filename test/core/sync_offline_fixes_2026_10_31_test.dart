@@ -44,6 +44,15 @@ class _Online extends ConnectivityNotifier {
   _Online() {
     state = const ConnectivityState(isOnline: true);
   }
+
+  @override
+  Future<bool> checkConnectivity() async {
+    state = const ConnectivityState(isOnline: true);
+    return true;
+  }
+
+  @override
+  void handleNetworkDisconnection() {}
 }
 
 void main() {
@@ -320,6 +329,74 @@ void main() {
       final id = await enqueue('visit', 'checkout', 'co', parent: 'visitA', payload: jsonEncode({'visit_id': 77}));
       await container.read(syncServiceProvider).syncQueue();
       expect((await row(id)).state, 'done');
+    });
+  });
+
+  group('#6 lượt check-in của điểm bán tạo offline', () {
+    test('check-in mang parentUuid: nhận đúng serverId của điểm bán cha sau khi điểm bán lên server', () async {
+      boot((o) {
+        if (o.method == 'POST' && o.path == '/crm/customers') {
+          return (201, {'success': true, 'data': {'id': 99, 'code': 'DB99'}});
+        }
+        if (o.path == '/dms/visits') {
+          final body = o.data is Map ? o.data as Map : jsonDecode(o.data.toString()) as Map;
+          expect(body['customer_id'], 99, reason: 'Phải nhận đúng serverId của điểm bán cha');
+          return (201, {'success': true, 'data': {'id': 501}});
+        }
+        return null;
+      });
+
+      final custId = await enqueue('customer', 'create', 'custA', payload: jsonEncode({'name': 'Đại lý A'}));
+      final visitId = await enqueue('visit', 'create', 'visitA', parent: 'custA', payload: jsonEncode({'customer_id': 0}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(custId)).state, 'done');
+      expect((await row(visitId)).state, 'done');
+      expect(adapter.paths, contains('/crm/customers'));
+      expect(adapter.paths, contains('/dms/visits'));
+    });
+
+    test('check-in mang customer_id <= 0 nhưng parentUuid rỗng ⇒ dead (422), không gửi 0 lên server', () async {
+      boot((_) => null);
+      final visitId = await enqueue('visit', 'create', 'visitNoParent', payload: jsonEncode({'customer_id': 0}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(visitId)).state, 'dead');
+      expect(adapter.paths, isNot(contains('/dms/visits')));
+    });
+  });
+
+  group('#7 xoá ảnh offline', () {
+    test('xoá ảnh theo localPath và parentUuid dọn sạch dòng hàng đợi visit_photo', () async {
+      boot((_) => null);
+      const photoPath = '/local/cache/photo_123.jpg';
+      const sessionUuid = 'session_uuid_123';
+
+      final queueId = await enqueue(
+        'visit_photo',
+        'upload',
+        'photo_uuid_1',
+        parent: sessionUuid,
+        localPath: photoPath,
+        payload: jsonEncode({'visit_id': -100}),
+      );
+
+      expect((await row(queueId)).state, 'pending');
+
+      // Giả lập xoá ảnh từ ViewModel: photoId âm theo timestamp (khác queueId) nhưng cùng localPath
+      const clientTempPhotoId = -1730360000000;
+      await (db.delete(db.syncQueueEntries)
+            ..where((t) =>
+                (t.id.equals(-clientTempPhotoId) | t.localPath.equals(photoPath)) &
+                t.entity.equals('visit_photo') &
+                t.parentUuid.equals(sessionUuid) &
+                t.state.equals('pending')))
+          .go();
+
+      final remaining = await (db.select(db.syncQueueEntries)..where((t) => t.id.equals(queueId))).get();
+      expect(remaining, isEmpty, reason: 'Dòng hàng đợi ảnh offline phải được xoá sạch, không sót lại để gây lỗi 410');
     });
   });
 }
