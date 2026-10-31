@@ -76,6 +76,12 @@ class SyncResult {
 
 enum _SyncItemStatus { success, dead, retryable }
 
+/// Mục con chưa gửi được vì lượt cha chưa có serverId — chờ cha, KHÔNG tính là một lần gửi hỏng (không đếm vào chuỗi lỗi
+/// thả check-out, [SyncService.releasesCheckout]).
+class _ParentPendingException extends AppException {
+  const _ParentPendingException(super.message);
+}
+
 /// Tiến trình đồng bộ ngoại tuyến (§3, §4, §8 SPEC-DONG-BO-OFFLINE-2026-09-15.md)
 class SyncService {
   final AppDatabase _db;
@@ -102,7 +108,7 @@ class SyncService {
     final hopeless = entry.parentUuid != null &&
         (parent == null || (parent.state == 'dead' && parent.entity != 'customer'));
     if (hopeless) throw AppException('$message — mục cha không còn hoặc không thể đồng bộ', 410);
-    throw AppException(message);
+    throw _ParentPendingException(message);
   }
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _pollingTimer;
@@ -262,9 +268,9 @@ class SyncService {
           break;
         }
 
-        // Check-out nhường thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
-        if (await _db.isCheckoutHeldByMaterials(entry)) {
-          debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn thao tác vật tư của lượt chưa gửi.');
+        // Check-out nhường ảnh / phiếu / thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
+        if (await _db.isCheckoutHeld(entry, released: releasesCheckout)) {
+          debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn ảnh/phiếu/vật tư của lượt chưa gửi.');
           // Tính là "chưa xong" — kết quả/thông báo đồng bộ không được báo thành công khi lượt còn chưa check-out.
           retryableCount++;
           continue;
@@ -349,6 +355,12 @@ class SyncService {
     }
   }
 
+  /// Ảnh / phiếu của lượt gửi hỏng lặp quá trần thì thôi giữ check-out — mục vẫn thử lại. Bộ đếm nằm trong payload (không
+  /// bị "Đồng bộ ngay" đặt lại như `attempts`); chờ lượt cha không tính; chuỗi đã nguội (lần hỏng cuối quá lâu) không tính.
+  static bool releasesCheckout(SyncQueueEntry child) =>
+      child.entity != 'visit_material' &&
+      serverFailureChainExhausted(child.payload, nowMs: DateTime.now().millisecondsSinceEpoch);
+
   /// Xử lý một mục trong hàng đợi
   Future<_SyncItemStatus> _processEntry(
     SyncQueueEntry entry,
@@ -381,8 +393,8 @@ class SyncService {
       } else if (entry.entity == 'attendance_photo' && entry.op == 'upload') {
         await _syncAttendancePhoto(entry);
       } else {
-        // Các loại entity khác nếu có
-        await _db.markDone(entry.id);
+        // Loại mục bản app này không biết gửi: báo lỗi (dead, thấy ở "Lỗi đồng bộ"), KHÔNG đánh dấu "đã gửi" rồi mất.
+        throw AppException('Bản app này không gửi được loại dữ liệu ${entry.entity}/${entry.op}.', 422);
       }
       return _SyncItemStatus.success;
     } on DioException catch (dioErr) {
@@ -710,18 +722,19 @@ class SyncService {
 
     await _db.markDone(entry.id, serverId: serverId);
 
-    // Cập nhật serverId cho lượt viếng thăm trong cache cục bộ
+    // Cập nhật serverId cho lượt viếng thăm trong cache cục bộ — CHỈ theo clientUuid: khớp thêm "id < 0" là gán mã
+    // của lượt A cho lượt offline B đang mở (nhiều lượt offline cùng chờ mạng), ảnh/check-out của B đổ vào A.
     if (serverId != null) {
       try {
         final visitRepo = _ref.read(visitRepositoryProvider);
         final all = await visitRepo.getAllLocalVisits();
-        final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid || v.id < 0);
+        final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid);
         if (idx >= 0) {
           final updated = all[idx].copyWith(id: serverId);
           await visitRepo.saveLocalVisit(updated);
         }
         final active = await visitRepo.getActiveVisit();
-        if (active != null && (active.clientUuid == entry.clientUuid || active.id < 0)) {
+        if (active != null && active.clientUuid == entry.clientUuid) {
           final updatedActive = active.copyWith(id: serverId);
           await visitRepo.saveActiveVisit(updatedActive);
 
@@ -769,16 +782,11 @@ class SyncService {
       _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha');
     }
 
+    // Mất tệp ảnh ⇒ báo lỗi (dead, hiện ở "Lỗi đồng bộ"), KHÔNG đánh dấu "đã gửi" — lượt sẽ thiếu ảnh mà không ai biết.
     final localPath = entry.localPath;
-    if (localPath == null || localPath.isEmpty) {
-      await _db.markDone(entry.id);
-      return;
-    }
-
-    final file = File(localPath);
-    if (!await file.exists()) {
-      await _db.markDone(entry.id);
-      return;
+    final file = (localPath == null || localPath.isEmpty) ? null : File(localPath);
+    if (file == null || !await file.exists()) {
+      throw const AppException('Tệp ảnh viếng thăm không còn trên máy, không gửi được.', 410);
     }
 
     final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
@@ -798,7 +806,7 @@ class SyncService {
 
     await _db.markDone(entry.id);
 
-    if (localPath.contains('offline_visit_photos')) {
+    if (file.path.contains('offline_visit_photos')) {
       try {
         if (await file.exists()) await file.delete();
       } catch (err) {
@@ -989,23 +997,20 @@ class SyncService {
     }
   }
 
-  /// Tải ảnh biểu mẫu thị trường lên /dms/form-photos (§2)
-  Future<String?> _uploadFormPhoto(File file) async {
-    try {
-      final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
-      final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
+  /// Tải một ảnh lên [path] (kho ảnh tạm của biểu mẫu / khai báo vị trí), trả token. KHÔNG nuốt lỗi: lỗi mạng/5xx ném
+  /// ra để cả mục thử lại — nuốt thì phiếu đi lên thiếu ảnh (hoặc mang đường dẫn trên máy ⇒ 422 ⇒ mất phiếu).
+  Future<String> _uploadTempPhoto(String path, File file) async {
+    final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
+    final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
 
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
-      });
-      final res = await _apiClient.postMultipart('/dms/form-photos', formData: formData);
-      if (res is Map && res['data'] is Map && res['data']['token'] != null) {
-        return res['data']['token'].toString();
-      }
-    } catch (e) {
-      debugPrint('[SyncService] Lỗi khi upload ảnh biểu mẫu: $e');
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
+    });
+    final res = await _apiClient.postMultipart(path, formData: formData);
+    if (res is Map && res['data'] is Map && res['data']['token'] != null) {
+      return res['data']['token'].toString();
     }
-    return null;
+    throw const AppException('Phản hồi tải ảnh không hợp lệ từ máy chủ.', 502);
   }
 
   /// Đồng bộ phiếu biểu mẫu thị trường (survey / collect) lên server
@@ -1052,12 +1057,11 @@ class SyncService {
           final newTokens = <String>[];
           for (final p in paths) {
             final file = File(p.toString());
-            if (await file.exists()) {
-              final token = await _uploadFormPhoto(file);
-              if (token != null && token.isNotEmpty) {
-                newTokens.add(token);
-              }
+            // Mất tệp ⇒ báo lỗi (dead), không nộp phiếu thiếu ảnh mà không ai biết.
+            if (!await file.exists()) {
+              throw const AppException('Ảnh của phiếu không còn trên máy, không gửi được.', 410);
             }
+            newTokens.add(await _uploadTempPhoto('/dms/form-photos', file));
           }
           if (newTokens.isNotEmpty) {
             answers[fieldCode] = newTokens;
@@ -1087,6 +1091,8 @@ class SyncService {
     // Payload gửi lên server loại bỏ các khoá nội bộ
     final sendPayload = Map<String, dynamic>.from(payload);
     sendPayload.remove('_local_photo_paths');
+    // Bộ đếm lỗi máy chủ của hàng đợi ([recordVisitMaterialFailure]) là khoá nội bộ.
+    sendPayload.removeWhere((k, _) => k.startsWith('_server_failure'));
 
     dynamic response;
     try {
@@ -1131,25 +1137,6 @@ class SyncService {
     debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId, Duplicate: $isDuplicate');
   }
 
-  /// Tải ảnh khai báo vị trí lên /dms/position-photos
-  Future<String?> _uploadPositionPhoto(File file) async {
-    try {
-      final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
-      final fileName = ImageUploadHelper.getValidFileName(preparedFile.path);
-
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(preparedFile.path, filename: fileName),
-      });
-      final res = await _apiClient.postMultipart('/dms/position-photos', formData: formData);
-      if (res is Map && res['data'] is Map && res['data']['token'] != null) {
-        return res['data']['token'].toString();
-      }
-    } catch (e) {
-      debugPrint('[SyncService] Lỗi khi upload ảnh khai báo vị trí: $e');
-    }
-    return null;
-  }
-
   /// Đồng bộ bản ghi khai báo vị trí lên máy chủ (§4 & §5)
   Future<void> _syncPositionDeclaration(SyncQueueEntry entry) async {
     final rawSource = jsonDecode(entry.payload) as Map<String, dynamic>;
@@ -1172,11 +1159,13 @@ class SyncService {
         final path = p.toString().trim();
         if (path.isNotEmpty) {
           final file = File(path);
-          if (await file.exists()) {
-            final token = await _uploadPositionPhoto(file);
-            if (token != null && !resolvedTokens.contains(token)) {
-              resolvedTokens.add(token);
-            }
+          // Mất tệp ⇒ báo lỗi (dead), không gửi khai báo thiếu ảnh mà không ai biết — cùng luật ảnh phiếu/viếng thăm.
+          if (!await file.exists()) {
+            throw const AppException('Ảnh khai báo vị trí không còn trên máy, không gửi được.', 410);
+          }
+          final token = await _uploadTempPhoto('/dms/position-photos', file);
+          if (!resolvedTokens.contains(token)) {
+            resolvedTokens.add(token);
           }
         }
       }
@@ -1294,8 +1283,9 @@ class SyncService {
           punchId = parent.serverId;
         }
       }
-      // Dự phòng: Tìm lượt attendance_punch gần nhất đã sync thành công
-      if (punchId == null || punchId <= 0) {
+      // Dự phòng CHỈ cho dòng cũ không ghi lượt cha: lấy lượt chấm gần nhất đã đồng bộ. Có cha mà cha chưa lên
+      // server (đang chờ thử lại) thì CHỜ cha — lấy "lượt gần nhất" lúc đó là gắn ảnh ra ca vào lượt vào ca.
+      if ((punchId == null || punchId <= 0) && entry.parentUuid == null) {
         final lastPunch = await _db.findLastSyncedPunchEntry();
         if (lastPunch != null && lastPunch.serverId != null && lastPunch.serverId! > 0) {
           punchId = lastPunch.serverId;
@@ -1309,15 +1299,9 @@ class SyncService {
     }
 
     final localPath = entry.localPath ?? payload['local_path']?.toString();
-    if (localPath == null) {
-      await _db.markDead(entry.id, 'Tệp ảnh không tồn tại');
-      return;
-    }
-
-    final file = File(localPath);
-    if (!await file.exists()) {
-      await _db.markDead(entry.id, 'Tệp ảnh cục bộ không tồn tại: $localPath');
-      return;
+    final file = localPath == null ? null : File(localPath);
+    if (file == null || !await file.exists()) {
+      throw const AppException('Tệp ảnh chấm công không còn trên máy, không gửi được.', 410);
     }
 
     final preparedFile = await ImageUploadHelper.prepareImageForUpload(file);
@@ -1371,7 +1355,8 @@ class SyncService {
     AppException appErr,
     List<SyncDeadError> currentDeadErrors,
   ) async {
-    return await _handleErrorByStatus(entry, appErr.statusCode, appErr.message, currentDeadErrors);
+    return await _handleErrorByStatus(entry, appErr.statusCode, appErr.message, currentDeadErrors,
+        parentPending: appErr is _ParentPendingException);
   }
 
   /// Xử lý lỗi chung (ngoại lệ mạng hoặc không xác định)
@@ -1386,13 +1371,15 @@ class SyncService {
     SyncQueueEntry entry,
     int? statusCode,
     String errorMsg,
-    List<SyncDeadError> currentDeadErrors,
-  ) async {
+    List<SyncDeadError> currentDeadErrors, {
+    bool parentPending = false,
+  }) async {
     // 1. §9: Nếu nhận 422 "đã check-out rồi" hoặc "đã đóng" -> Coi là THÀNH CÔNG để dọn hàng đợi
-    // Không áp cho vật tư: câu lỗi vật tư ("Lượt viếng thăm này đã check-out.", lỗi ô chi tiết mang nhãn tự do…) mà
-    // lỡ chứa cụm này thì thao tác bị nuốt thành "đã gửi".
+    // CHỈ cho check-out / huỷ lượt (đóng lượt hai lần là cùng kết quả). Mục khác (điểm bán, phiếu, ảnh, vật tư…) mà câu
+    // lỗi lỡ chứa cụm này ("Tuyến đã đóng", nhãn tự do…) thì bị nuốt thành "đã gửi" — mất dữ liệu không báo.
     if (statusCode == 422 &&
-        entry.entity != 'visit_material' &&
+        entry.entity == 'visit' &&
+        (entry.op == 'checkout' || entry.op == 'cancel') &&
         (errorMsg.contains('đã check-out rồi') || errorMsg.contains('đã đóng'))) {
       debugPrint('[SyncService] Mục #${entry.id} nhận 422 (đã check-out rồi) -> Coi là thành công (§9).');
       await _db.markDone(entry.id);
@@ -1411,16 +1398,21 @@ class SyncService {
     // -> LỖI HỎNG VĨNH VIỄN (Permanent Client Error)
     // -> KHÔNG RETRY, chuyển sang 'dead', báo cho người dùng biết
     // Lối thoát cho thao tác vật tư: lỗi máy chủ (5xx / trả sai) lặp lại tới trần thì bỏ cuộc (dead) — nếu không,
-    // check-out của lượt bị giữ mãi sau nó ([AppDatabase.isCheckoutHeldByMaterials]) và lượt treo trên server.
+    // check-out của lượt bị giữ mãi sau nó ([AppDatabase.isCheckoutHeld]) và lượt treo trên server.
+    // Ảnh / phiếu của lượt cũng ghi chuỗi lỗi (chỉ để thôi giữ check-out — [releasesCheckout]), không bỏ cuộc. Với
+    // chúng MỌI lần gửi hỏng đều đếm (5xx, quá giờ, lỗi nén ảnh/tệp…) — chỉ "đang chờ lượt cha" không đếm; vật tư giữ luật
+    // cũ (chỉ lỗi máy chủ đếm, lỗi mạng cắt chuỗi).
     var giveUp = false;
-    if (entry.entity == 'visit_material' && (statusCode == null || statusCode >= 500)) {
+    if (AppDatabase.checkoutGatedEntities.contains(entry.entity) &&
+        !parentPending &&
+        (statusCode == null || statusCode >= 500)) {
       final (payload, stop) = recordVisitMaterialFailure(
         entry.payload,
-        serverError: statusCode != null,
+        serverError: statusCode != null || entry.entity != 'visit_material',
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       if (payload != entry.payload) await _db.updatePayload(entry.id, payload);
-      if (stop) {
+      if (stop && entry.entity == 'visit_material') {
         giveUp = true;
         errorMsg = 'Máy chủ lỗi ${visitMaterialServerFailures(payload)} lần liên tiếp trong hơn '
             '${visitMaterialGiveUpAfter.inMinutes} phút khi lưu vật tư — đã dừng gửi: $errorMsg';

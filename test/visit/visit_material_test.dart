@@ -505,10 +505,10 @@ void main() {
 
       final due = await db.getPendingQueueEntries();
       expect(due.map((e) => e.entity), ['visit'], reason: 'lịch thử lại cho check-out vượt lên — chính là lỗi cũ');
-      expect(await db.isCheckoutHeldByMaterials(due.single), isTrue);
+      expect(await db.isCheckoutHeld(due.single), isTrue);
 
       await db.markDone(matId);
-      expect(await db.isCheckoutHeldByMaterials(due.single), isFalse);
+      expect(await db.isCheckoutHeld(due.single), isFalse);
     });
 
     test('mục vật tư bị từ chối (dead) không giữ check-out mãi; vật tư lượt khác không liên quan', () async {
@@ -516,9 +516,9 @@ void main() {
       await enqueue('visit_material', 'save', 'm2', 'visitB');
       await enqueue('visit', 'checkout', 'c1', 'visitA');
       final checkout = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit');
-      expect(await db.isCheckoutHeldByMaterials(checkout), isTrue);
+      expect(await db.isCheckoutHeld(checkout), isTrue);
       await db.markDead(matId, 'Lượt viếng thăm này đã check-out.');
-      expect(await db.isCheckoutHeldByMaterials(checkout), isFalse);
+      expect(await db.isCheckoutHeld(checkout), isFalse);
       expect(await db.hasOpenVisitMaterials('visitB'), isTrue);
     });
 
@@ -526,7 +526,7 @@ void main() {
       await enqueue('visit_material', 'save', 'm1', 'visitA');
       await enqueue('visit_photo', 'upload', 'p1', 'visitA');
       final photo = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit_photo');
-      expect(await db.isCheckoutHeldByMaterials(photo), isFalse);
+      expect(await db.isCheckoutHeld(photo), isFalse);
     });
   });
 
@@ -841,7 +841,7 @@ void main() {
         bootId: 'b',
       ));
       final checkout = (await db.getPendingQueueEntries()).firstWhere((e) => e.entity == 'visit');
-      expect(await db.isCheckoutHeldByMaterials(checkout), isTrue);
+      expect(await db.isCheckoutHeld(checkout), isTrue);
 
       final (bumped, _) = recordVisitMaterialFailure('{"visit_id":5,"op":{}}', serverError: true, nowMs: t0);
       await db.updatePayload(matId, bumped);
@@ -849,7 +849,7 @@ void main() {
       expect(visitMaterialServerFailures(mat.payload), 1);
 
       await db.markDead(matId, 'Máy chủ lỗi 10 lần liên tiếp');
-      expect(await db.isCheckoutHeldByMaterials(checkout), isFalse);
+      expect(await db.isCheckoutHeld(checkout), isFalse);
       expect(await db.getDeadVisitMaterialUuids(), {'m1'});
     });
   });

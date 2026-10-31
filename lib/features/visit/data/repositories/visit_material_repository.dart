@@ -35,7 +35,7 @@ const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_c
 
 /// Lối thoát cho thao tác vật tư lỗi máy chủ (5xx / phản hồi sai — mất mạng KHÔNG tính) trong hàng đợi: bỏ cuộc (dead)
 /// chỉ khi ĐỦ [visitMaterialMaxServerFailures] lần lỗi liên tiếp VÀ chuỗi lỗi đã kéo dài ≥ [visitMaterialGiveUpAfter].
-/// Check-out của lượt phải chờ thao tác vật tư ([AppDatabase.isCheckoutHeldByMaterials]); không có lối thoát thì lỗi tất
+/// Check-out của lượt phải chờ thao tác vật tư ([AppDatabase.isCheckoutHeld]); không có lối thoát thì lỗi tất
 /// định giữ check-out mãi ⇒ lượt treo trên server, check-in lượt sau và đăng xuất bị chặn. Cần CẢ HAI điều kiện vì
 /// "Đồng bộ ngay" / kéo làm mới / đẩy trước check-out bỏ qua lịch thử lại: chỉ đếm số lần thì vài phút API 502 lúc
 /// triển khai + NV kéo làm mới 10 lần là thao tác chết oan. 30 phút đủ qua một lần máy chủ khởi động lại / triển khai,
@@ -91,9 +91,23 @@ int visitMaterialServerFailures(String payload) {
   p['_server_failures'] = failures;
   p['_server_failure_first_ms'] = first;
   p['_server_failure_last_ms'] = nowMs;
-  final giveUp =
-      failures >= visitMaterialMaxServerFailures && nowMs - first >= visitMaterialGiveUpAfter.inMilliseconds;
-  return (jsonEncode(p), giveUp);
+  final out = jsonEncode(p);
+  return (out, serverFailureChainExhausted(out));
+}
+
+/// Chuỗi lỗi máy chủ ghi trong payload (bằng [recordVisitMaterialFailure]) đã tới trần bỏ cuộc chưa: ĐỦ
+/// [visitMaterialMaxServerFailures] lần VÀ kéo dài ≥ [visitMaterialGiveUpAfter]. Dùng chung cho thao tác vật tư (bỏ cuộc ⇒
+/// dead) và ảnh/phiếu của lượt (thôi giữ check-out, mục vẫn thử lại). Có [nowMs]: lần hỏng cuối cách quá
+/// [visitMaterialFailureChainGap] thì chuỗi đã đứt (máy ngoại tuyến lâu, chưa thử lại) ⇒ không tính — cùng luật ghi chuỗi.
+bool serverFailureChainExhausted(String payload, {int? nowMs}) {
+  final p = _payloadMap(payload);
+  if (p == null) return false;
+  final failures = p['_server_failures'] is num ? (p['_server_failures'] as num).toInt() : 0;
+  final first = p['_server_failure_first_ms'];
+  final last = p['_server_failure_last_ms'];
+  if (first is! num || last is! num) return false;
+  if (nowMs != null && nowMs - last > visitMaterialFailureChainGap.inMilliseconds) return false;
+  return failures >= visitMaterialMaxServerFailures && last - first >= visitMaterialGiveUpAfter.inMilliseconds;
 }
 
 /// Gỡ thao tác [clientUuid] khỏi `ops` của bản cache điểm bán; trả null nếu không có gì đổi.

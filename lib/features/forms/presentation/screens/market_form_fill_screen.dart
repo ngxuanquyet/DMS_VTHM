@@ -27,6 +27,10 @@ class MarketFormFillArgs {
   final Map<String, dynamic>? customerContext;
   final bool? lockCustomer;
 
+  /// clientUuid của lượt viếng thăm (phiếu khảo sát) — thành `parentUuid` của mục hàng đợi: tra mã server khi lượt
+  /// còn offline, và để check-out offline của lượt chờ phiếu gửi xong (server đếm phiếu bắt buộc ở cổng check-out).
+  final String? visitClientUuid;
+
   const MarketFormFillArgs({
     required this.config,
     required this.kind,
@@ -38,6 +42,7 @@ class MarketFormFillArgs {
     this.initialAnswers,
     this.customerContext,
     this.lockCustomer,
+    this.visitClientUuid,
   });
 
   /// Kiểm tra xem có cần cố định (khoá) trường khách hàng không
@@ -276,6 +281,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
         submitLng: lng,
         submitAddress: address,
         localPhotoPaths: localPhotos,
+        parentUuid: widget.args.kind == 'survey' ? widget.args.visitClientUuid : null,
       );
 
       final isOnline = ref.read(connectivityProvider).isOnline;

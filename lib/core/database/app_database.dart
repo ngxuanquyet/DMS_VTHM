@@ -498,11 +498,22 @@ class AppDatabase extends _$AppDatabase {
     return rows.map((r) => r.clientUuid).toSet();
   }
 
-  /// Mục check-out phải nhường cho thao tác vật tư chưa gửi của CÙNG lượt (thứ tự FIFO + lịch thử lại có thể cho
-  /// check-out vượt lên ⇒ 422 cổng ④ ⇒ dead, lượt treo).
-  Future<bool> isCheckoutHeldByMaterials(SyncQueueEntry entry) async {
+  /// Loại mục con mà server đếm ở cổng check-out (VisitCheckoutGuard): ảnh ③, phiếu khảo sát ②, vật tư ④.
+  static const checkoutGatedEntities = ['visit_photo', 'form_submission', 'visit_material'];
+
+  /// Mục check-out phải nhường cho ảnh / phiếu / thao tác vật tư chưa gửi của CÙNG lượt (thứ tự FIFO + lịch thử lại có
+  /// thể cho check-out vượt lên ⇒ 422 thiếu ảnh/phiếu/vật tư ⇒ dead, lượt treo). Mục con đã dead không giữ; mục con
+  /// [released] trả true cũng thôi giữ (SyncService: ảnh/phiếu bị máy chủ lỗi lặp quá trần — chống giữ mãi, chặn đăng xuất).
+  Future<bool> isCheckoutHeld(SyncQueueEntry entry, {bool Function(SyncQueueEntry child)? released}) async {
     if (entry.entity != 'visit' || entry.op != 'checkout' || entry.parentUuid == null) return false;
-    return hasOpenVisitMaterials(entry.parentUuid!);
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.isIn(checkoutGatedEntities) &
+              tbl.parentUuid.equals(entry.parentUuid!) &
+              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+        .get();
+    return rows.any((c) => released == null || !released(c));
   }
 
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
@@ -749,9 +760,21 @@ class AppDatabase extends _$AppDatabase {
 
   /// Xoá các mục pending/sending của lượt viếng thăm (create, upload ảnh, checkout)
   Future<int> deletePendingVisitQueue(String clientUuid) async {
+    // Lượt ĐÃ lên server (không còn dòng tạo chờ gửi): giữ phiếu khảo sát người dùng đã nộp (con theo parentUuid) — vẫn
+    // gửi; server từ chối thì hiện ở "Lỗi đồng bộ" thay vì mất im lặng cùng ảnh. Lượt CHƯA lên server: không có gì để
+    // phiếu gắn vào ⇒ xoá cùng lượt.
+    final visitNeverSent = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              tbl.clientUuid.equals(clientUuid) &
+              tbl.entity.equals('visit') &
+              tbl.op.equals('create') &
+              (tbl.state.equals('pending') | tbl.state.equals('sending')))
+          ..limit(1))
+        .getSingleOrNull();
     final rows = await (select(syncQueueEntries)
           ..where((tbl) =>
               (tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)) &
+              (visitNeverSent != null ? const Constant(true) : tbl.entity.equals('form_submission').not()) &
               (tbl.state.equals('pending') | tbl.state.equals('sending'))))
         .get();
     if (rows.isEmpty) return 0;
