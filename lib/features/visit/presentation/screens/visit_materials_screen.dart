@@ -14,6 +14,7 @@ import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../data/models/visit_material_model.dart';
 import '../../data/repositories/visit_material_repository.dart';
 import '../widgets/material_card.dart';
+import '../widgets/material_type_picker_sheet.dart';
 import 'material_edit_screen.dart';
 
 /// Mục "Vật tư" của lượt viếng thăm đang mở (#24522): vật tư tại điểm bán theo LOẠI + SỐ LƯỢNG chia theo tình trạng,
@@ -122,36 +123,7 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
       AppSnackBar.showWarningOn(ScaffoldMessenger.of(context), strings.materialsNoAddable);
       return;
     }
-    final picked = await showModalBottomSheet<OutletMaterialType>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(strings.materialsChooseType, style: AppTypography.titleMedium()),
-              ),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: addable
-                      .map((t) => ListTile(
-                            title: Text(t.name),
-                            subtitle: t.unit.isNotEmpty ? Text(t.unit) : null,
-                            onTap: () => Navigator.of(ctx).pop(t),
-                          ))
-                      .toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final picked = await showMaterialTypePicker(context, types: addable, strings: strings);
     if (picked != null && mounted) await _openEdit(picked, null);
   }
 

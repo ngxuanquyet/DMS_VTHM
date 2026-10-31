@@ -9,6 +9,7 @@ import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/presentation/screens/material_edit_screen.dart';
 import '../../../visit/presentation/widgets/material_card.dart';
+import '../../../visit/presentation/widgets/material_type_picker_sheet.dart';
 
 /// Bước "Vật tư tại điểm" của form TẠO điểm bán (#24526): loại bắt buộc (⚠️, dòng trống khi chưa khai) + loại đã khai +
 /// "+ Thêm loại vật tư". Bấm dòng ⇒ dùng LẠI [MaterialEditScreen] của lượt viếng thăm (số lượng theo tình trạng, chi tiết
@@ -54,34 +55,8 @@ class OutletCreateMaterialsSection extends ConsumerWidget {
     );
   }
 
-  Future<void> _pickType(BuildContext context, List<OutletMaterialType> addable, String title) async {
-    final picked = await showModalBottomSheet<OutletMaterialType>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(padding: const EdgeInsets.all(16), child: Text(title, style: AppTypography.titleMedium())),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: addable
-                      .map((t) => ListTile(
-                            title: Text(t.name),
-                            subtitle: t.unit.isNotEmpty ? Text(t.unit) : null,
-                            onTap: () => Navigator.of(ctx).pop(t),
-                          ))
-                      .toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _pickType(BuildContext context, List<OutletMaterialType> addable, AppStrings strings) async {
+    final picked = await showMaterialTypePicker(context, types: addable, strings: strings);
     if (picked != null && context.mounted) await _edit(context, picked);
   }
 
@@ -127,7 +102,7 @@ class OutletCreateMaterialsSection extends ConsumerWidget {
           ...declaredOptional.map((t) => _row(context, strings, t, isRequired: false)),
           if (addable.isNotEmpty)
             OutlinedButton(
-              onPressed: () => _pickType(context, addable, strings.materialsChooseType),
+              onPressed: () => _pickType(context, addable, strings),
               style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
               child: Text(strings.materialsAdd),
             ),

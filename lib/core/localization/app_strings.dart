@@ -622,6 +622,10 @@ class AppStrings {
       isVietnamese ? 'Được miễn do điểm bán đóng cửa' : 'Exempt — outlet closed';
   String get materialsAdd => isVietnamese ? '+ Thêm loại vật tư' : '+ Add material type';
   String get materialsChooseType => isVietnamese ? 'Chọn loại vật tư' : 'Choose material type';
+  String materialsTypesAvailable(int n) => isVietnamese ? '$n loại có thể thêm' : '$n type(s) available';
+  String get materialsSearchType => isVietnamese ? 'Tìm loại vật tư…' : 'Search material type…';
+  String get materialsNoTypeMatch => isVietnamese ? 'Không có loại vật tư phù hợp.' : 'No matching material type.';
+  String materialsUnitLabel(String unit) => isVietnamese ? 'Đơn vị: $unit' : 'Unit: $unit';
   String get materialsNoAddable =>
       isVietnamese ? 'Đã có đủ mọi loại vật tư trong danh mục.' : 'All catalog types are already listed.';
   String get materialsEmpty =>
