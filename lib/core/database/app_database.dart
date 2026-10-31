@@ -709,6 +709,17 @@ class AppDatabase extends _$AppDatabase {
 
   /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue
   Future<void> deletePendingCustomer(String clientUuid) async {
+    // 1. Tìm các lượt viếng thăm của điểm bán này (liên kết qua parentUuid hoặc customer_client_uuid trong payload)
+    final allVisits = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              tbl.entity.equals('visit') &
+              (tbl.parentUuid.equals(clientUuid) | tbl.payload.like('%"$clientUuid"%'))))
+        .get();
+
+    for (final v in allVisits) {
+      await deletePendingVisitQueue(v.clientUuid);
+    }
+
     final rows = await (select(syncQueueEntries)
           ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
         .get();

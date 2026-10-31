@@ -1961,7 +1961,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             final offlinePayload = request.toJson();
             offlinePayload['is_offline_sync'] = true;
 
-            // Nếu điểm bán tạo offline (customerId <= 0), gắn parentUuid theo clientUuid của điểm bán
+            // Nếu điểm bán tạo offline (customerId <= 0), gắn customer_client_uuid vào payload
             String? customerClientUuid;
             if (customerId <= 0) {
               if (state.customer is CustomerEntity) {
@@ -1983,14 +1983,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
               }
             }
 
+            if (customerClientUuid != null) {
+              offlinePayload['customer_client_uuid'] = customerClientUuid;
+            }
+
             await db.enqueue(
               SyncQueueEntriesCompanion(
                 entity: const drift.Value('visit'),
                 op: const drift.Value('create'),
                 clientUuid: drift.Value(_sessionClientUuid),
-                parentUuid: customerClientUuid != null
-                    ? drift.Value(customerClientUuid)
-                    : const drift.Value.absent(),
+                parentUuid: const drift.Value.absent(),
                 payload: drift.Value(jsonEncode(offlinePayload)),
                 state: const drift.Value('pending'),
                 createdAt: drift.Value(nowMs),
@@ -2264,6 +2266,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         lng: lng,
       );
 
+      // Nếu trong lúc chờ upload, người dùng đã bấm xoá ảnh (ảnh không còn trong state hoặc file đã xoá)
+      if (!state.photos.any((p) => p.id == tempId) || !persistentFile.existsSync()) {
+        try {
+          await deleteVisitPhotoUseCase(visitId: state.visitId, photoId: photo.id);
+        } catch (_) {}
+        return (true, 'Ảnh đã bị xoá.');
+      }
+
       final idx = state.photos.indexWhere((p) => p.id == tempId);
       if (idx >= 0) {
         final syncedPhotos = List<VisitPhotoEntity>.from(state.photos);
@@ -2274,6 +2284,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
       return (true, null);
     } catch (e) {
+      // 🔴 Nếu người dùng đã xoá ảnh trong lúc chờ tải lên ⇒ không đưa vào hàng đợi offline
+      if (!state.photos.any((p) => p.id == tempId) || !persistentFile.existsSync()) {
+        return (false, 'Ảnh đã bị xoá.');
+      }
+
       if (_isNetworkError(e)) {
         final queueId = await _enqueueVisitPhotoToDb(
           file: persistentFile,

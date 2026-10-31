@@ -48,7 +48,7 @@ class SyncEntityGroupHelper {
 
     for (final e in rawEntries) {
       if (e.entity == 'visit' || e.entity == 'visit_photo' || e.entity == 'photo' || e.entity == 'visit_material') {
-        String? visitKey = e.parentUuid;
+        String? visitKey = (e.entity == 'visit' && e.op == 'create') ? e.clientUuid : e.parentUuid;
         if (visitKey == null || visitKey.isEmpty) {
           if (e.entity == 'visit') {
             visitKey = e.clientUuid;

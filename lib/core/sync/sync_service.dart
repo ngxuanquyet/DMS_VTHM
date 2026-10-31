@@ -104,8 +104,9 @@ class SyncService {
   ///   customer_local_data_source), nên con của điểm bán bị từ chối vẫn phải chờ.
   /// Không ghi parentUuid (ảnh chấm công chờ "lượt chấm gần nhất", dòng cũ) hay cha done mà thiếu serverId (409) KHÔNG
   /// tính là hết hy vọng — giữ như cũ (thử lại); 409 cần lấy lại id từ máy chủ (#24401).
-  Never _throwParentUnresolved(SyncQueueEntry entry, SyncQueueEntry? parent, String message) {
-    final hopeless = entry.parentUuid != null &&
+  Never _throwParentUnresolved(SyncQueueEntry entry, SyncQueueEntry? parent, String message, {String? parentUuid}) {
+    final effectiveParentUuid = parentUuid ?? entry.parentUuid;
+    final hopeless = effectiveParentUuid != null &&
         (parent == null || (parent.state == 'dead' && parent.entity != 'customer'));
     if (hopeless) throw AppException('$message — mục cha không còn hoặc không thể đồng bộ', 410);
     throw _ParentPendingException(message);
@@ -683,26 +684,27 @@ class SyncService {
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
 
-    // Nếu customer_id là ID âm hoặc chưa có, tìm theo parentUuid (§5.3)
+    // Nếu customer_id là ID âm hoặc chưa có, tìm theo customer_client_uuid hoặc parentUuid (§5.3)
     int? customerId;
     if (payload['customer_id'] != null) {
       customerId = int.tryParse(payload['customer_id'].toString());
     }
+    final customerUuid = payload['customer_client_uuid']?.toString() ?? entry.parentUuid;
     if (customerId == null || customerId <= 0) {
-      if (entry.parentUuid != null) {
-        final parentCustomer = await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (customerUuid != null && customerUuid.isNotEmpty) {
+        final parentCustomer = await _db.getEntryByClientUuid(customerUuid);
         if (parentCustomer != null && parentCustomer.serverId != null && parentCustomer.serverId! > 0) {
           payload['customer_id'] = parentCustomer.serverId;
         } else {
           // Dự phòng kiểm tra bảng LocalCustomers nếu hàng đợi đồng bộ đã được dọn
           final localCust = await (_db.select(_db.localCustomers)
-                ..where((tbl) => tbl.clientUuid.equals(entry.parentUuid!))
+                ..where((tbl) => tbl.clientUuid.equals(customerUuid))
                 ..limit(1))
               .getSingleOrNull();
           if (localCust != null && localCust.id != null && localCust.id! > 0) {
             payload['customer_id'] = localCust.id;
           } else {
-            _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của điểm bán cha cho lượt viếng thăm');
+            _throwParentUnresolved(entry, parentCustomer, 'Chưa có serverId của điểm bán cha cho lượt viếng thăm', parentUuid: customerUuid);
           }
         }
       } else {

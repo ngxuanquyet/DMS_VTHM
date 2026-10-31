@@ -16,6 +16,10 @@ import 'package:vthm_dms/core/utils/system_clock.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_material_repository.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_repository_impl.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
+import 'package:vthm_dms/core/sync/sync_entity_group.dart';
+import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
+import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
+import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model.dart';
 
 /// Rà soát luồng offline 31/10/2026 — mỗi nhóm tái hiện một lỗi đã vá trong SyncService / AppDatabase.
 
@@ -333,7 +337,7 @@ void main() {
   });
 
   group('#6 lượt check-in của điểm bán tạo offline', () {
-    test('check-in mang parentUuid: nhận đúng serverId của điểm bán cha sau khi điểm bán lên server', () async {
+    test('check-in mang customer_client_uuid: nhận đúng serverId của điểm bán cha sau khi điểm bán lên server', () async {
       boot((o) {
         if (o.method == 'POST' && o.path == '/crm/customers') {
           return (201, {'success': true, 'data': {'id': 99, 'code': 'DB99'}});
@@ -347,7 +351,7 @@ void main() {
       });
 
       final custId = await enqueue('customer', 'create', 'custA', payload: jsonEncode({'name': 'Đại lý A'}));
-      final visitId = await enqueue('visit', 'create', 'visitA', parent: 'custA', payload: jsonEncode({'customer_id': 0}));
+      final visitId = await enqueue('visit', 'create', 'visitA', payload: jsonEncode({'customer_id': 0, 'customer_client_uuid': 'custA'}));
 
       await container.read(syncServiceProvider).syncQueue();
 
@@ -357,7 +361,7 @@ void main() {
       expect(adapter.paths, contains('/dms/visits'));
     });
 
-    test('check-in mang customer_id <= 0 nhưng parentUuid rỗng ⇒ dead (422), không gửi 0 lên server', () async {
+    test('check-in mang customer_id <= 0 nhưng thiếu cả parentUuid và customer_client_uuid ⇒ dead (422), không gửi 0 lên server', () async {
       boot((_) => null);
       final visitId = await enqueue('visit', 'create', 'visitNoParent', payload: jsonEncode({'customer_id': 0}));
 
@@ -366,37 +370,215 @@ void main() {
       expect((await row(visitId)).state, 'dead');
       expect(adapter.paths, isNot(contains('/dms/visits')));
     });
-  });
 
-  group('#7 xoá ảnh offline', () {
-    test('xoá ảnh theo localPath và parentUuid dọn sạch dòng hàng đợi visit_photo', () async {
-      boot((_) => null);
-      const photoPath = '/local/cache/photo_123.jpg';
-      const sessionUuid = 'session_uuid_123';
+    test('performCheckin ghi customer_client_uuid vào payload khi customerId <= 0', () async {
+      boot((o) => throw DioException.connectionError(requestOptions: o, reason: 'Mất kết nối mạng'));
+      final vm = container.read(checkInViewModelProvider.notifier);
 
-      final queueId = await enqueue(
-        'visit_photo',
-        'upload',
-        'photo_uuid_1',
-        parent: sessionUuid,
-        localPath: photoPath,
-        payload: jsonEncode({'visit_id': -100}),
+      const customer = CustomerEntity(
+        id: 0,
+        code: 'PENDING_ABC',
+        name: 'Đại lý Offline Mới',
+        clientUuid: 'cust_offline_uuid_888',
+        type: 'Đại lý',
+        route: 'Tuyến 1',
+        address: 'Hà Nội',
+        contactPerson: 'Nguyễn Văn A',
+        phone: '0901234567',
+        status: 'active',
+        approvalStatus: 'pending',
+        syncStatus: 'pending',
       );
 
-      expect((await row(queueId)).state, 'pending');
+      const dealer = DealerEntity(
+        id: '0',
+        order: '01',
+        name: 'Đại lý Offline Mới',
+        address: 'Hà Nội',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        customer: customer,
+      );
 
-      // Giả lập xoá ảnh từ ViewModel: photoId âm theo timestamp (khác queueId) nhưng cùng localPath
-      const clientTempPhotoId = -1730360000000;
-      await (db.delete(db.syncQueueEntries)
-            ..where((t) =>
-                (t.id.equals(-clientTempPhotoId) | t.localPath.equals(photoPath)) &
-                t.entity.equals('visit_photo') &
-                t.parentUuid.equals(sessionUuid) &
-                t.state.equals('pending')))
-          .go();
+      vm.initCheckinWithDealer(dealer);
+      final error = await vm.performCheckin(customerId: 0);
 
-      final remaining = await (db.select(db.syncQueueEntries)..where((t) => t.id.equals(queueId))).get();
-      expect(remaining, isEmpty, reason: 'Dòng hàng đợi ảnh offline phải được xoá sạch, không sót lại để gây lỗi 410');
+      expect(error, isNull);
+      final entries = await db.getAllPendingQueueEntries();
+      final visitEntry = entries.firstWhere((e) => e.entity == 'visit' && e.op == 'create');
+
+      final payload = jsonDecode(visitEntry.payload) as Map<String, dynamic>;
+      expect(payload['customer_client_uuid'], 'cust_offline_uuid_888');
+      expect(visitEntry.parentUuid, isNull, reason: 'parentUuid của visit/create để rỗng để gom nhóm theo clientUuid của lượt');
+    });
+
+    test('deletePendingCustomer dọn sạch cả lượt viếng thăm và các mục con (ảnh, check-out)', () async {
+      boot((_) => null);
+      const custUuid = 'cust_delete_tree_uuid';
+      const visitUuid = 'visit_session_tree_uuid';
+
+      await enqueue('customer', 'create', custUuid, payload: jsonEncode({'name': 'Đại lý chuẩn bị xoá'}));
+      await enqueue('visit', 'create', visitUuid, payload: jsonEncode({'customer_id': 0, 'customer_client_uuid': custUuid}));
+      await enqueue('visit_photo', 'upload', 'p1', parent: visitUuid, payload: jsonEncode({'visit_id': -1}));
+      await enqueue('visit', 'checkout', 'co1', parent: visitUuid, payload: jsonEncode({'visit_id': -1}));
+
+      final before = await db.getAllPendingQueueEntries();
+      expect(before.length, 4);
+
+      await db.deletePendingCustomer(custUuid);
+
+      final after = await db.getAllPendingQueueEntries();
+      expect(after, isEmpty, reason: 'Tất cả các mục con (visit, photo, checkout) phải được dọn sạch, không để lại mồ côi');
+    });
+
+    test('SyncEntityGroupHelper không tách đôi lượt viếng thăm của điểm bán offline', () async {
+      boot((_) => null);
+      const custUuid = 'cust_group_uuid';
+      const visitUuid = 'visit_group_uuid';
+
+      final eVisit = SyncQueueEntry(
+        id: 1,
+        entity: 'visit',
+        op: 'create',
+        clientUuid: visitUuid,
+        parentUuid: null,
+        payload: jsonEncode({'customer_id': 0, 'customer_client_uuid': custUuid, 'dealer_name': 'Tạp hoá Lan Rừng'}),
+        state: 'pending',
+        attempts: 0,
+        createdAt: 1000,
+        createdElapsed: 1000,
+        bootId: 'b1',
+      );
+
+      final ePhoto = SyncQueueEntry(
+        id: 2,
+        entity: 'visit_photo',
+        op: 'upload',
+        clientUuid: 'photo_1',
+        parentUuid: visitUuid,
+        payload: jsonEncode({'visit_id': -1}),
+        state: 'pending',
+        attempts: 0,
+        createdAt: 2000,
+        createdElapsed: 2000,
+        bootId: 'b1',
+      );
+
+      final eCheckout = SyncQueueEntry(
+        id: 3,
+        entity: 'visit',
+        op: 'checkout',
+        clientUuid: 'co_1',
+        parentUuid: visitUuid,
+        payload: jsonEncode({'visit_id': -1}),
+        state: 'pending',
+        attempts: 0,
+        createdAt: 3000,
+        createdElapsed: 3000,
+        bootId: 'b1',
+      );
+
+      final groups = SyncEntityGroupHelper.groupEntries([eVisit, ePhoto, eCheckout]);
+      expect(groups.length, 1, reason: 'Tất cả các mục của lượt viếng thăm phải được gom vào cùng 1 nhóm duy nhất');
+      expect(groups.first.title, contains('Tạp hoá Lan Rừng'));
+      expect(groups.first.subtitle, contains('Đã check-out'));
+      expect(groups.first.subtitle, contains('Kèm 1 ảnh'));
+    });
+  });
+
+  group('#7 xoá ảnh offline và huỷ ảnh khi đang tải', () {
+    test('vm.deletePhoto dọn sạch ảnh offline trong state và bảng sync_queue_entries', () async {
+      boot((o) => throw DioException.connectionError(requestOptions: o, reason: 'Mất kết nối mạng'));
+      final vm = container.read(checkInViewModelProvider.notifier);
+
+      const dealer = DealerEntity(
+        id: '101',
+        order: '01',
+        name: 'Đại lý 101',
+        address: 'Hà Nội',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 101);
+
+      final dir = await Directory.systemTemp.createTemp('photo_del_test');
+      final f = File('${dir.path}/test_del.jpg')..writeAsBytesSync(List.filled(20, 5));
+
+      final res = await vm.uploadPhoto(
+        f,
+        photoType: 'store_front',
+        lat: 21.0,
+        lng: 105.0,
+      );
+      expect(res.$1, isTrue);
+
+      final photosBefore = vm.state.photos;
+      expect(photosBefore, hasLength(1));
+      final photo = photosBefore.first;
+
+      final queueEntriesBefore = await db.getAllPendingQueueEntries();
+      final photoQueue = queueEntriesBefore.where((e) => e.entity == 'visit_photo').toList();
+      expect(photoQueue, hasLength(1));
+
+      // Xoá ảnh qua ViewModel
+      final delRes = await vm.deletePhoto(photo.id);
+      expect(delRes.$1, isTrue);
+      expect(vm.state.photos, isEmpty);
+
+      final queueEntriesAfter = await db.getAllPendingQueueEntries();
+      expect(queueEntriesAfter.where((e) => e.entity == 'visit_photo'), isEmpty,
+          reason: 'deletePhoto phải xoá sạch dòng hàng đợi visit_photo');
+    });
+
+    test('phiên online: ảnh bị xoá trước khi upload thất bại ⇒ không đưa vào hàng đợi offline', () async {
+      // Giả lập online: checkin thành công
+      boot((o) {
+        if (o.path == '/dms/visits') {
+          return (201, {'success': true, 'data': {'id': 701}});
+        }
+        if (o.path == '/dms/visits/701/photos') {
+          // Upload ảnh bị lỗi mạng
+          throw DioException.connectionError(requestOptions: o, reason: 'Timeout');
+        }
+        return null;
+      });
+
+      final vm = container.read(checkInViewModelProvider.notifier);
+      const dealer = DealerEntity(
+        id: '202',
+        order: '01',
+        name: 'Đại lý 202',
+        address: 'Hà Nội',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+      );
+
+      vm.initCheckinWithDealer(dealer);
+      await vm.performCheckin(customerId: 202);
+      expect(vm.state.visitId, 701);
+
+      final dir = await Directory.systemTemp.createTemp('in_flight_test');
+      final f = File('${dir.path}/inflight.jpg')..writeAsBytesSync(List.filled(20, 5));
+
+      // Xoá tệp trước khi upload hoàn thành để giả lập người dùng xoá ảnh giữa chừng
+      f.deleteSync();
+
+      final res = await vm.uploadPhoto(
+        f,
+        photoType: 'store_front',
+        lat: 21.0,
+        lng: 105.0,
+      );
+      expect(res.$1, isFalse);
+
+      final queueEntries = await db.getAllPendingQueueEntries();
+      expect(queueEntries.where((e) => e.entity == 'visit_photo'), isEmpty,
+          reason: 'Ảnh đã bị xoá tệp không được đưa vào hàng đợi offline, tránh lỗi 410');
     });
   });
 }
