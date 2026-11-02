@@ -1222,10 +1222,12 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
     final targetCustomerId = dealer.customer is CustomerEntity
         ? (dealer.customer as CustomerEntity).id
         : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+    // Điểm bán tạo ngoại tuyến (id 0) nhận diện bằng client_uuid — so id 0 = 0 là gộp mọi điểm chưa đồng bộ.
+    final targetCustomerUuid = customerClientUuidOf(dealer.customer);
 
     if (activeVisit != null &&
         targetCustomerId != null &&
-        activeVisit.customerId == targetCustomerId) {
+        activeVisit.isAtCustomer(targetCustomerId, targetCustomerUuid)) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
           : dealer.copyWith(
@@ -1264,7 +1266,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
 
     if (activeVisit != null &&
         targetCustomerId != null &&
-        activeVisit.customerId != targetCustomerId) {
+        !activeVisit.isAtCustomer(targetCustomerId, targetCustomerUuid)) {
       final activeDealerName = activeVisit.customerName.isNotEmpty
           ? activeVisit.customerName
           : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');

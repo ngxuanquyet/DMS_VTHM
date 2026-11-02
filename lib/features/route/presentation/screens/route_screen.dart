@@ -1070,7 +1070,10 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dealer = dealers
         ?.where(
-          (d) => d.id == visit.customerId.toString() || d.visit?.id == visit.id,
+          (d) =>
+              d.visit?.id == visit.id ||
+              (d.visit?.clientUuid != null && d.visit!.clientUuid == visit.clientUuid) ||
+              (int.tryParse(d.id) != null && visit.isAtCustomer(int.parse(d.id), customerClientUuidOf(d.customer))),
         )
         .firstOrNull;
     final customerName = visit.customerName.isNotEmpty

@@ -116,6 +116,31 @@ String _formatTimeHHmm(DateTime? dt) {
   return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }
 
+/// Khoá điểm bán của một lượt cho bảng tra lượt theo điểm bán: `id:<id>` khi có id server, `uuid:<client_uuid>` cho
+/// điểm bán tạo ngoại tuyến (id 0); null = không nhận diện được điểm bán.
+String? _visitCustomerKey(VisitEntity v) {
+  if (v.customerId > 0) return 'id:${v.customerId}';
+  final u = v.customerClientUuid;
+  return (u != null && u.isNotEmpty) ? 'uuid:$u' : null;
+}
+
+/// `client_uuid` của điểm bán từ đối tượng điểm bán trong state/dealer ([CustomerEntity] hoặc Map thô); rỗng ⇒ null.
+String? customerClientUuidOf(dynamic customer) {
+  final u = customer is CustomerEntity
+      ? customer.clientUuid
+      : (customer is Map ? customer['client_uuid']?.toString() : null);
+  return (u == null || u.isEmpty) ? null : u;
+}
+
+/// Hai lượt cùng điểm bán ⇒ lượt hiển thị: lượt đang mở trước; cả hai đã xong ⇒ lượt mới nhất (giờ ghé gần nhất).
+VisitEntity _preferVisit(VisitEntity existing, VisitEntity v) {
+  if (existing.isOpen) return existing;
+  if (v.isOpen) return v;
+  final newer = v.id > existing.id ||
+      (v.checkinAt != null && existing.checkinAt != null && v.checkinAt!.isAfter(existing.checkinAt!));
+  return newer ? v : existing;
+}
+
 class RouteViewModel extends StateNotifier<RouteState> {
   final CustomerRepository customerRepository;
   final GetRouteDetailUseCase getRouteDetailUseCase;
@@ -494,7 +519,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
               .where(
                 (v) =>
                     (v.id == saved.id && v.id > 0) ||
-                    v.customerId == saved.customerId,
+                    saved.isAtCustomer(v.customerId, v.customerClientUuid),
               )
               .firstOrNull;
           if (matchingServerVisit != null && !matchingServerVisit.isOpen) {
@@ -803,36 +828,26 @@ class RouteViewModel extends StateNotifier<RouteState> {
       filtered = [for (final e in withDist) e.$1];
     }
 
-    // Map today's visits by customer_id (§2.3)
-    final Map<int, VisitEntity> visitMap = {};
-    final Set<int> cancelledCustomerIds = {};
+    // Map today's visits by điểm bán (§2.3). Khoá = id server, hoặc `client_uuid` của điểm bán tạo ngoại tuyến (id 0 —
+    // khoá theo id là MỌI điểm bán chưa đồng bộ dùng chung một lượt, #24698 vòng 2). Lượt không nhận diện được điểm bán
+    // (id 0, không uuid) không gắn vào điểm nào.
+    final Map<String, VisitEntity> visitMap = {};
+    final Set<String> cancelledCustomerKeys = {};
 
     for (final v in state.todayVisits) {
+      final key = _visitCustomerKey(v);
+      if (key == null) continue;
       if (v.isCancelled) {
-        cancelledCustomerIds.add(v.customerId);
+        cancelledCustomerKeys.add(key);
         continue; // Lượt đã huỷ tuyệt đối không tính là đã viếng thăm (§3 HUY-LUOT-VIENG-THAM)
       }
-      final existing = visitMap[v.customerId];
-      if (existing == null) {
-        visitMap[v.customerId] = v;
-      } else if (!existing.isOpen && v.isOpen) {
-        // Ưu tiên lượt đang mở
-        visitMap[v.customerId] = v;
-      } else if (!existing.isOpen && !v.isOpen) {
-        // Cả hai đều đã hoàn thành -> Chọn lượt mới nhất để hiển thị giờ ghé gần nhất
-        if (v.id > existing.id ||
-            (v.checkinAt != null &&
-                existing.checkinAt != null &&
-                v.checkinAt!.isAfter(existing.checkinAt!))) {
-          visitMap[v.customerId] = v;
-        }
-      }
+      final existing = visitMap[key];
+      visitMap[key] = existing == null ? v : _preferVisit(existing, v);
     }
     // Bổ sung activeVisit vào visitMap nếu chưa có và không bị huỷ (rất quan trọng khi offline)
-    if (state.activeVisit != null &&
-        state.activeVisit!.isOpen &&
-        !state.activeVisit!.isCancelled) {
-      visitMap[state.activeVisit!.customerId] = state.activeVisit!;
+    final activeKey = state.activeVisit == null ? null : _visitCustomerKey(state.activeVisit!);
+    if (activeKey != null && state.activeVisit!.isOpen && !state.activeVisit!.isCancelled) {
+      visitMap[activeKey] = state.activeVisit!;
     }
 
     // Build DealerEntities
@@ -840,7 +855,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
 
     for (int i = 0; i < filtered.length; i++) {
       final c = filtered[i];
-      final visit = visitMap[c.id];
+      // Điểm bán vừa đồng bộ (đã có id) mà lượt ngoại tuyến của nó còn mang uuid ⇒ tra cả hai khoá, chọn theo CÙNG luật
+      // (lượt đang mở trước, rồi lượt mới nhất) — không thì lượt "Tạo điểm bán" đã đóng che lượt ngoại tuyến đang mở.
+      final byId = c.id > 0 ? visitMap['id:${c.id}'] : null;
+      final byUuid = (c.clientUuid?.isNotEmpty ?? false) ? visitMap['uuid:${c.clientUuid}'] : null;
+      final visit = (byId == null || byUuid == null) ? (byId ?? byUuid) : _preferVisit(byId, byUuid);
 
       DealerVisitStatus visitStatus;
       String statusLabel;
@@ -870,7 +889,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
           }
         }
       } else if (c.visitStatus == CustomerVisitStatus.visited &&
-          !cancelledCustomerIds.contains(c.id)) {
+          !(c.id > 0 && cancelledCustomerKeys.contains('id:${c.id}'))) {
         visitStatus = DealerVisitStatus.completed;
         statusLabel = 'Đã ghé';
         visitedTime = '08:30 - 08:45';
@@ -1521,21 +1540,28 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     );
 
     // Nếu đang có một lượt viếng thăm khác đang mở, không được ghi đè phiên bằng điểm bán mới
+    final newCUuid = customerClientUuidOf(dealer.customer);
     if (state.visitId != 0 &&
         state.visitEntity != null &&
         state.visitEntity!.isOpen) {
-      final currentCId = state.visitEntity!.customerId;
-      if (newCId != null && currentCId > 0 && currentCId != newCId) {
+      final current = state.visitEntity!;
+      final currentCId = current.customerId;
+      // Cùng điểm bán: so id, hoặc `client_uuid` khi một bên là điểm bán tạo ngoại tuyến (id 0 không nói lên điều gì);
+      // dealer mang CHÍNH lượt đang mở (nút "Vào lượt đang mở") cũng là cùng.
+      final sameOutlet = (newCId != null && current.isAtCustomer(newCId, newCUuid)) ||
+          (dealer.visit?.clientUuid != null && dealer.visit!.clientUuid == current.clientUuid);
+      if (newCId != null && !sameOutlet) {
         debugPrint(
           '[CheckInViewModel] Bỏ qua initCheckinWithDealer: Đang có lượt mở id=${state.visitId} tại customer=$currentCId',
         );
         return;
       }
       // Nếu là cùng điểm bán đang có phiên mở: Giữ nguyên phiên viếng thăm đang mở, không reset state về 0
-      if (newCId != null && (currentCId == newCId || currentCId <= 0)) {
-        if (currentCId <= 0) {
+      if (sameOutlet) {
+        if (currentCId <= 0 && newCId != null && newCId > 0) {
+          // Điểm bán ngoại tuyến vừa có id server ⇒ lượt nhận id đó.
           state = state.copyWith(
-            visitEntity: state.visitEntity!.copyWith(customerId: newCId),
+            visitEntity: current.copyWith(customerId: newCId),
           );
         }
         if (state.checkinData == null) {
@@ -1563,7 +1589,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final routeActive = ref!.read(routeViewModelProvider).activeVisit;
         if (routeActive != null &&
             routeActive.isOpen &&
-            routeActive.customerId == newCId) {
+            routeActive.isAtCustomer(newCId, newCUuid)) {
           existingVisit = routeActive;
         }
       } catch (_) {}
@@ -1653,12 +1679,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }
 
   /// Phục hồi phiên viếng thăm đang mở từ SharedPreferences (hữu ích khi mở app lại offline hoặc vào lại điểm bán)
-  Future<bool> restoreActiveVisitIfAvailable([int? forCustomerId]) async {
+  /// [forCustomerId] + [forCustomerClientUuid]: chỉ khôi phục lượt ở ĐÚNG điểm bán đó ([VisitEntity.isAtCustomer]).
+  Future<bool> restoreActiveVisitIfAvailable([int? forCustomerId, String? forCustomerClientUuid]) async {
     if (state.visitId != 0 &&
         state.visitEntity != null &&
         state.visitEntity!.isOpen) {
       if (forCustomerId == null ||
-          state.visitEntity!.customerId == forCustomerId) {
+          state.visitEntity!.isAtCustomer(forCustomerId, forCustomerClientUuid)) {
         if (state.checkinData == null && state.visitEntity != null) {
           final v = state.visitEntity!;
           final reconstructed = DealerCheckinDataEntity(
@@ -1690,7 +1717,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     try {
       final saved = await visitRepository.getActiveVisit();
       if (saved != null && saved.isOpen) {
-        if (forCustomerId != null && saved.customerId != forCustomerId) {
+        if (forCustomerId != null && !saved.isAtCustomer(forCustomerId, forCustomerClientUuid)) {
           return false;
         }
         final localTime = saved.checkinAt != null
@@ -1897,12 +1924,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     bool? isMockLocation,
     String? note,
   }) async {
+    final customerClientUuid = customerClientUuidOf(state.customer);
     // Chặn cả online và offline nếu đang có một lượt viếng thăm khác chưa đóng (§3 Luật 3)
     if (state.visitId != 0 &&
         state.visitEntity != null &&
         state.visitEntity!.isOpen) {
-      final currentCId = state.visitEntity!.customerId;
-      if (currentCId != customerId) {
+      if (!state.visitEntity!.isAtCustomer(customerId, customerClientUuid)) {
         return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
       }
       debugPrint(
@@ -1913,13 +1940,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     try {
       final savedActive = await visitRepository.getActiveVisit();
       if (savedActive != null && savedActive.isOpen) {
-        if (savedActive.customerId != customerId) {
+        if (!savedActive.isAtCustomer(customerId, customerClientUuid)) {
           return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
         }
         debugPrint(
           '[CheckInViewModel] Phục hồi phiên mở lưu trữ id=${savedActive.id} cho customer=$customerId -> Bỏ qua checkin mới',
         );
-        await restoreActiveVisitIfAvailable(customerId);
+        await restoreActiveVisitIfAvailable(customerId, customerClientUuid);
         return null;
       }
     } catch (_) {}
@@ -1990,6 +2017,23 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     );
 
     try {
+      // Điểm bán tạo ngoại tuyến chưa có id server: server không mở lượt cho id 0 ⇒ đi hàng đợi (đứng sau dòng tạo điểm
+      // bán, đồng bộ sẽ thay bằng id thật).
+      if (customerId <= 0) {
+        // Không nhận diện được điểm bán (không id, không client_uuid trong state lẫn bảng điểm bán trên máy) ⇒ báo ngay:
+        // lượt xếp hàng không có khoá điểm bán sẽ bị bỏ khi đọc lại và server từ chối (thiếu mã điểm bán) — mất im lặng.
+        if ((customerClientUuid?.isEmpty ?? true) && await _resolveOfflineCustomerUuid() == null) {
+          return 'Không xác định được điểm bán (chưa đồng bộ). Hãy đồng bộ điểm bán rồi check-in lại.';
+        }
+        throw const NetworkException('Điểm bán chưa đồng bộ — lượt viếng thăm lưu ngoại tuyến.');
+      }
+      // Lượt trước còn lệnh chờ gửi (check-in/check-out/huỷ làm lúc mất mạng): mở lượt mới trực tuyến trước là lệnh của
+      // lượt trước bị từ chối "còn lượt mở" rồi chết, mất trọn lượt (#24698 vòng 2) ⇒ đẩy chúng trước; chưa đẩy xong thì
+      // lượt mới đi hàng đợi, đứng sau lượt trước.
+      if (ref != null && ref!.read(connectivityProvider).isOnline &&
+          !await ref!.read(syncServiceProvider).flushVisitLifecycle()) {
+        throw const NetworkException('Lượt trước còn chờ gửi — lượt này lưu ngoại tuyến, gửi sau lượt trước.');
+      }
       var visit = await checkinUseCase(request);
       if (visit.customerId <= 0) {
         visit = visit.copyWith(customerId: customerId);
@@ -2052,7 +2096,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     } catch (e) {
       if (_isNetworkError(e)) {
         // TẠO PHIÊN VIẾNG THĂM NGOẠI TUYẾN
-        final offlineVisit = _createOfflineVisit(
+        var offlineVisit = _createOfflineVisit(
           customerId: customerId,
           lat: lat,
           lng: lng,
@@ -2062,6 +2106,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           note: note,
           mobileRules: mobileRules,
         );
+        if (customerId <= 0 && (customerClientUuid?.isNotEmpty ?? false)) {
+          offlineVisit = offlineVisit.copyWith(customerClientUuid: customerClientUuid);
+        }
 
         if (ref != null) {
           try {
@@ -2074,29 +2121,15 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             if (_mayHaveReachedServer(e)) offlinePayload[visitMaybeOnServerKey] = true;
 
             // Nếu điểm bán tạo offline (customerId <= 0), gắn customer_client_uuid vào payload
-            String? customerClientUuid;
+            String? offlineCustomerUuid;
             if (customerId <= 0) {
-              if (state.customer is CustomerEntity) {
-                customerClientUuid = (state.customer as CustomerEntity).clientUuid;
-              } else if (state.customer is Map) {
-                customerClientUuid = (state.customer as Map)['client_uuid']?.toString();
-              }
-              if (customerClientUuid == null) {
-                try {
-                  final dealerId = state.checkinData?.dealer.id;
-                  if (dealerId != null && dealerId.isNotEmpty) {
-                    final localCust = await (db.select(db.localCustomers)
-                          ..where((tbl) => tbl.code.equals(dealerId))
-                          ..limit(1))
-                        .getSingleOrNull();
-                    customerClientUuid = localCust?.clientUuid;
-                  }
-                } catch (_) {}
-              }
+              offlineCustomerUuid = customerClientUuid ?? await _resolveOfflineCustomerUuid();
             }
 
-            if (customerClientUuid != null) {
-              offlinePayload['customer_client_uuid'] = customerClientUuid;
+            if (offlineCustomerUuid != null) {
+              offlinePayload['customer_client_uuid'] = offlineCustomerUuid;
+              // Lượt mang khoá điểm bán ⇒ tuyến/khôi phục/chặn check-in nhận đúng điểm bán (không gộp các điểm id 0).
+              offlineVisit = offlineVisit.copyWith(customerClientUuid: offlineCustomerUuid);
             }
 
             await db.enqueue(
@@ -2169,6 +2202,26 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           .replaceAll('AppException: ', '');
       state = state.copyWith(errorMessage: msg);
       return msg;
+    }
+  }
+
+  /// `client_uuid` của điểm bán tạo ngoại tuyến đang check-in khi state không mang nó: tra bảng điểm bán trên máy theo
+  /// mã của dealer.
+  Future<String?> _resolveOfflineCustomerUuid() async {
+    if (ref == null) return null;
+    try {
+      // Mã điểm bán (dealer tuyến mang id = "0" cho điểm chưa đồng bộ ⇒ ưu tiên mã của CustomerEntity).
+      final code = state.customer is CustomerEntity ? (state.customer as CustomerEntity).code : state.checkinData?.dealer.id;
+      if (code == null || code.isEmpty || code == '0') return null;
+      final db = ref!.read(appDatabaseProvider);
+      final localCust = await (db.select(db.localCustomers)
+            ..where((tbl) => tbl.code.equals(code) & tbl.id.isNull())
+            ..limit(1))
+          .getSingleOrNull();
+      final u = localCust?.clientUuid;
+      return (u == null || u.isEmpty) ? null : u;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -2661,7 +2714,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }
 
   /// Cập nhật server ID khi tiến trình đồng bộ ngầm đưa lượt viếng thăm ngoại tuyến lên server thành công
-  void syncServerVisitId(int serverId, {String? clientUuid}) {
+  /// [customerId]: id server của điểm bán tạo ngoại tuyến vừa tra được (lượt đang mang customerId 0).
+  void syncServerVisitId(int serverId, {String? clientUuid, int? customerId}) {
     if (state.visitId < 0 &&
         (clientUuid == null ||
             _sessionClientUuid == clientUuid ||
@@ -2669,7 +2723,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       debugPrint(
         '[CheckInViewModel] Đồng bộ serverId=$serverId cho phiên offline (trước đó visitId=${state.visitId})',
       );
-      final updatedVisit = state.visitEntity?.copyWith(id: serverId);
+      final current = state.visitEntity;
+      final updatedVisit = current?.copyWith(
+        id: serverId,
+        customerId: current.customerId <= 0 && (customerId ?? 0) > 0 ? customerId : null,
+      );
       state = state.copyWith(
         visitId: serverId,
         visitEntity: updatedVisit,
@@ -2863,16 +2921,17 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
     }
 
-    // 2b. Thao tác vật tư của lượt PHẢI lên server trước check-out (#24522: server từ chối thao tác sau giờ ra, cổng ④
-    // đòi chúng). Còn mục chưa gửi được ⇒ check-out đi hàng đợi, nơi nó đứng chờ sau thao tác vật tư của lượt.
+    // 2b. Ảnh / phiếu / thao tác vật tư của lượt còn trong hàng đợi PHẢI lên server trước check-out (server đếm chúng ở
+    // cổng check-out; từ chối thao tác vật tư sau giờ ra — #24522, #24698 vòng 2). Còn mục chưa gửi được ⇒ check-out đi
+    // hàng đợi, nơi nó đứng chờ sau các mục con của lượt ([AppDatabase.isCheckoutHeld]).
     if (state.visitId > 0 && ref != null) {
       try {
         if (ref!.read(connectivityProvider).isOnline &&
-            !await ref!.read(syncServiceProvider).flushVisitMaterials(_sessionClientUuid)) {
+            !await ref!.read(syncServiceProvider).flushVisitCheckoutChildren(_sessionClientUuid)) {
           return await _checkoutOffline(request: request, lat: lat, lng: lng);
         }
       } catch (err) {
-        debugPrint('[CheckInViewModel] Đẩy thao tác vật tư trước check-out lỗi: $err');
+        debugPrint('[CheckInViewModel] Đẩy ảnh/phiếu/vật tư trước check-out lỗi: $err');
       }
     }
 

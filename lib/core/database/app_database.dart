@@ -478,20 +478,6 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
-  /// Lượt [visitClientUuid] còn thao tác vật tư CHƯA lên server (pending — kể cả đang chờ thử lại — hoặc sending).
-  /// Server chỉ nhận thao tác vật tư trước giờ check-out và cổng ④ đòi chúng ⇒ check-out của lượt phải đứng chờ.
-  Future<bool> hasOpenVisitMaterials(String visitClientUuid) async {
-    final row = await (select(syncQueueEntries)
-          ..where((tbl) =>
-              isMine(tbl) &
-              tbl.entity.equals('visit_material') &
-              tbl.parentUuid.equals(visitClientUuid) &
-              (tbl.state.equals('pending') | tbl.state.equals('sending')))
-          ..limit(1))
-        .getSingleOrNull();
-    return row != null;
-  }
-
   /// clientUuid các thao tác vật tư server đã từ chối (dead) — mọi lượt; để cache không tính chúng là "đã kiểm".
   Future<Set<String>> getDeadVisitMaterialUuids() => _visitMaterialUuidsInStates(const ['dead']);
 
@@ -505,6 +491,108 @@ class AppDatabase extends _$AppDatabase {
           ..where((tbl) => isMine(tbl) & tbl.entity.equals('visit_material') & tbl.state.isIn(states)))
         .get();
     return rows.map((r) => r.clientUuid).toSet();
+  }
+
+  /// Còn lệnh lượt viếng thăm (check-in / check-out / huỷ) CHƯA lên server (pending/sending) mà CÒN ĐI TIẾP được. Check-in
+  /// trực tuyến phải chờ chúng (#24698 vòng 2): lượt trước chưa đóng trên server ⇒ lượt mới mở trước khiến lệnh của lượt
+  /// trước bị từ chối "còn lượt mở" rồi chết. Bỏ qua chuỗi lượt kẹt vĩnh viễn ([_stuckVisitUuids]).
+  Future<bool> hasOpenVisitLifecycleEntries() async {
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) & tbl.entity.equals('visit') & (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+        .get();
+    if (rows.isEmpty) return false;
+    final stuck = await _stuckVisitUuids();
+    return rows.any((r) => !stuck.contains(_visitUuidOf(r)));
+  }
+
+  /// clientUuid lượt mà một dòng lệnh lượt thuộc về: dòng tạo = chính nó, check-out / huỷ = lượt cha.
+  static String? _visitUuidOf(SyncQueueEntry r) => r.op == 'create' ? r.clientUuid : r.parentUuid;
+
+  /// Lượt (clientUuid) KẸT VĨNH VIỄN: dòng tạo lượt ở điểm bán tạo ngoại tuyến mà dòng TẠO điểm bán đó đã bị server từ
+  /// chối (dead) — lượt không bao giờ lên được. Hai cổng chờ (check-in trực tuyến [hasOpenVisitLifecycleEntries], dòng tạo
+  /// lượt trong hàng đợi [isVisitCreateHeld]) bỏ qua chúng — không thì một điểm bán bị từ chối chặn mọi lượt về sau.
+  /// Chỉ xét dòng `create` dead của điểm bán: lệnh SỬA bị từ chối (cùng clientUuid) không làm điểm bán mất id server.
+  Future<Set<String>> _stuckVisitUuids() async {
+    final deadCustomers = (await (select(syncQueueEntries)
+              ..where((tbl) =>
+                  isMine(tbl) & tbl.entity.equals('customer') & tbl.op.equals('create') & tbl.state.equals('dead')))
+            .get())
+        .map((r) => r.clientUuid)
+        .toSet();
+    if (deadCustomers.isEmpty) return const {};
+    final creates = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('visit') &
+              tbl.op.equals('create') &
+              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+        .get();
+    return {
+      for (final r in creates)
+        if (deadCustomers.contains(_offlineCustomerUuidOfVisitCreate(r))) r.clientUuid,
+    };
+  }
+
+  /// Mục `pending` ĐÃ TỚI LƯỢT THỬ (qua lịch thử lại) của các lượt viếng thăm (lệnh lượt + ảnh / phiếu / vật tư — mục
+  /// con check-out chờ), theo thứ tự nhập. Tôn trọng lịch thử lại: đẩy ngay trước MỌI check-in trực tuyến, bỏ lịch là dội
+  /// máy chủ đang lỗi + nút check-in quay tới trần chờ; mục chưa tới lượt ⇒ check-in mới đi hàng đợi (an toàn).
+  /// Kèm dòng TẠO điểm bán ngoại tuyến mà dòng tạo lượt còn chờ đứng sau (không có id server thì lượt không lên được).
+  /// Dòng tạo điểm bán cha được đưa vào bất kể lịch thử lại — đứng sau nó là dòng tạo lượt đã tới lượt.
+  Future<List<SyncQueueEntry>> getPendingVisitLifecycleEntries() async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              (tbl.entity.equals('visit') | tbl.entity.isIn(checkoutGatedEntities)) &
+              tbl.state.equals('pending') &
+              (tbl.nextAttemptAt.isNull() | tbl.nextAttemptAt.isSmallerOrEqualValue(nowMs))))
+        .get();
+    final parents = {
+      for (final r in rows.where((r) => r.entity == 'visit' && r.op == 'create')) ?_offlineCustomerUuidOfVisitCreate(r),
+    };
+    final customers = parents.isEmpty
+        ? const <SyncQueueEntry>[]
+        : await (select(syncQueueEntries)
+              ..where((tbl) =>
+                  isMine(tbl) &
+                  tbl.entity.equals('customer') &
+                  tbl.op.equals('create') &
+                  tbl.state.equals('pending') &
+                  tbl.clientUuid.isIn(parents)))
+            .get();
+    return [...rows, ...customers]..sort((a, b) => a.id.compareTo(b.id));
+  }
+
+  /// `client_uuid` điểm bán (tạo ngoại tuyến) mà một dòng tạo lượt đứng sau: `customer_client_uuid` trong payload, hoặc
+  /// `parentUuid` (bản cũ).
+  static String? _offlineCustomerUuidOfVisitCreate(SyncQueueEntry r) {
+    try {
+      final p = jsonDecode(r.payload);
+      if (p is Map && p['customer_client_uuid'] != null) return p['customer_client_uuid'].toString();
+    } catch (_) {}
+    return r.parentUuid;
+  }
+
+  /// Mục con chặn check-out (ảnh / phiếu / vật tư — [checkoutGatedEntities]) của lượt [visitClientUuid] còn CHƯA lên
+  /// server (pending/sending). Check-out trực tuyến phải đẩy chúng trước (#24698 vòng 2): gửi check-out trước thì server
+  /// trả 422 thiếu ảnh/phiếu, còn bản chờ tới sau thành dead.
+  Future<List<SyncQueueEntry>> getOpenCheckoutChildren(String visitClientUuid) =>
+      _checkoutChildrenInStates(visitClientUuid, const ['pending', 'sending']);
+
+  /// Mục con chặn check-out của lượt [visitClientUuid] đang `pending`, theo thứ tự nhập.
+  Future<List<SyncQueueEntry>> getPendingCheckoutChildren(String visitClientUuid) =>
+      _checkoutChildrenInStates(visitClientUuid, const ['pending']);
+
+  Future<List<SyncQueueEntry>> _checkoutChildrenInStates(String visitClientUuid, List<String> states) {
+    return (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.isIn(checkoutGatedEntities) &
+              tbl.parentUuid.equals(visitClientUuid) &
+              tbl.state.isIn(states))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
+        .get();
   }
 
   /// Loại mục con mà server đếm ở cổng check-out (VisitCheckoutGuard): ảnh ③, phiếu khảo sát ②, vật tư ④.
@@ -531,17 +619,19 @@ class AppDatabase extends _$AppDatabase {
   /// lần khởi động sau.
   Future<bool> isVisitCreateHeld(SyncQueueEntry entry) async {
     if (entry.entity != 'visit' || entry.op != 'create') return false;
-    final row = await (select(syncQueueEntries)
+    final rows = await (select(syncQueueEntries)
           ..where((tbl) =>
               isMine(tbl) &
               tbl.id.isSmallerThanValue(entry.id) &
               tbl.entity.equals('visit') &
               (tbl.op.equals('checkout') | tbl.op.equals('cancel')) &
               tbl.parentUuid.equals(entry.clientUuid).not() &
-              tbl.state.equals('pending'))
-          ..limit(1))
-        .getSingleOrNull();
-    return row != null;
+              tbl.state.equals('pending')))
+        .get();
+    if (rows.isEmpty) return false;
+    // Lệnh của lượt kẹt vĩnh viễn (điểm bán ngoại tuyến bị từ chối) không giữ — cùng luật cổng check-in trực tuyến.
+    final stuck = await _stuckVisitUuids();
+    return rows.any((r) => !stuck.contains(r.parentUuid));
   }
 
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)

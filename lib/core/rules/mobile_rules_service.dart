@@ -59,6 +59,7 @@ class MobileRulesNotifier extends StateNotifier<MobileRules> with WidgetsBinding
   Future<void> _init() async {
     // 1. Tải trước từ cache để có ngay quy tắc phục vụ offline hoặc khởi động tức thì
     await _loadFromCache();
+    if (!mounted) return;
     // 2. Tự động đồng bộ ngay từ server để lấy dữ liệu mới nhất nếu có mạng
     await fetchRules();
   }
@@ -67,6 +68,9 @@ class MobileRulesNotifier extends StateNotifier<MobileRules> with WidgetsBinding
   Future<MobileRules> _loadFromCache() async {
     try {
       final cached = await getCachedRules();
+      // Đọc cache là bất đồng bộ: provider có thể đã bị huỷ trong lúc chờ (đổi phiên / container test) — ghi state lúc đó
+      // ném lỗi "after dispose".
+      if (!mounted) return cached ?? const MobileRules();
       if (cached != null) {
         state = cached;
         debugPrint('[MobileRules] Đã nạp quy tắc từ cache: minDuration=${state.visit.minDurationMinutes}, defaultRadiusM=${state.visit.defaultRadiusM}');
@@ -74,7 +78,7 @@ class MobileRulesNotifier extends StateNotifier<MobileRules> with WidgetsBinding
     } catch (e) {
       debugPrint('[MobileRules] Lỗi đọc cache quy tắc: $e');
     }
-    return state;
+    return mounted ? state : const MobileRules();
   }
 
   /// Gọi GET /dms/mobile-rules để đọc cấu hình mới nhất từ server (§1)
@@ -89,6 +93,7 @@ class MobileRulesNotifier extends StateNotifier<MobileRules> with WidgetsBinding
         if (rawData is Map) {
           final data = Map<String, dynamic>.from(rawData);
           final rules = MobileRules.fromJson(data);
+          if (!mounted) return rules;
           state = rules;
 
           // Lưu bản sao trong máy (§1.3)
@@ -108,6 +113,6 @@ class MobileRulesNotifier extends StateNotifier<MobileRules> with WidgetsBinding
     } finally {
       _isFetching = false;
     }
-    return state;
+    return mounted ? state : const MobileRules();
   }
 }

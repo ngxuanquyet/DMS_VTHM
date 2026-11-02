@@ -499,6 +499,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     if (_customer.id > 0)
                       OutletMaterialsDetailCard(
                         customerId: _customer.id,
+                        customerClientUuid: _customer.clientUuid,
                         customerName: _customer.name,
                         refreshToken: _materialsRefreshToken,
                         sectionBuilder: (content) => Padding(

@@ -253,9 +253,15 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 ? int.tryParse((widget.dealer!.customer as Map)['id']?.toString() ?? '')
                 : int.tryParse(widget.dealer!.id.replaceAll(RegExp(r'[^\d]'), ''))))
         : null;
+    final targetCustomerUuid = widget.dealer == null ? null : customerClientUuidOf(widget.dealer!.customer);
+    // Dealer mang CHÍNH lượt đang mở (nút "Vào lượt đang mở" — có thể là dealer dựng tạm không có điểm bán) ⇒ cùng lượt.
+    bool isTargetOf(VisitEntity v) =>
+        targetCustomerId == null ||
+        v.isAtCustomer(targetCustomerId, targetCustomerUuid) ||
+        (widget.dealer?.visit?.clientUuid != null && widget.dealer!.visit!.clientUuid == v.clientUuid);
 
     if (activeVisit != null) {
-      if (targetCustomerId != null && targetCustomerId != activeVisit.customerId) {
+      if (!isTargetOf(activeVisit)) {
         final activeName = activeVisit.customerName.isNotEmpty
             ? activeVisit.customerName
             : (currentState.checkinData?.dealer.name ?? 'Điểm bán khác');
@@ -281,7 +287,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
       // ⚠️ Khi quay lại đúng điểm bán đang có phiên mở dở dang:
       // Tự động phục hồi phiên và tuyệt đối KHÔNG gọi check-in mới để tránh duplicate
-      if (targetCustomerId == null || targetCustomerId == activeVisit.customerId) {
+      if (isTargetOf(activeVisit)) {
         final dealerToInit = widget.dealer != null
             ? (widget.dealer!.visit != null
                 ? widget.dealer!
@@ -297,7 +303,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 visit: activeVisit,
               );
         vm.initCheckinWithDealer(dealerToInit);
-        await vm.restoreActiveVisitIfAvailable(activeVisit.customerId);
+        await vm.restoreActiveVisitIfAvailable(activeVisit.customerId, activeVisit.customerClientUuid);
 
         final cs = ref.read(checkInViewModelProvider);
         if (_noteController.text.isEmpty && cs.visitNote.isNotEmpty) {
@@ -347,12 +353,16 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     try {
       final savedActive = await ref.read(visitRepositoryProvider).getActiveVisit();
       if (savedActive != null && savedActive.isOpen) {
-        if (savedActive.customerId != customerId) {
+        if (!savedActive.isAtCustomer(
+            customerId, customerClientUuidOf(state.customer) ?? customerClientUuidOf(widget.dealer?.customer))) {
           _showCheckinErrorDialog('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.');
           return;
         } else {
           // Trùng customerId: Đang có lượt mở cho điểm bán này, phục hồi phiên thay vì check-in mới
-          await ref.read(checkInViewModelProvider.notifier).restoreActiveVisitIfAvailable(customerId);
+          await ref
+              .read(checkInViewModelProvider.notifier)
+              .restoreActiveVisitIfAvailable(
+                  customerId, customerClientUuidOf(state.customer) ?? customerClientUuidOf(widget.dealer?.customer));
           return;
         }
       }

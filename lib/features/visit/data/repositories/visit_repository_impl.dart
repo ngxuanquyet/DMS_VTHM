@@ -198,7 +198,9 @@ class VisitRepositoryImpl implements VisitRepository {
       final raw = prefs.getString(_activeVisitKey);
       if (raw != null && raw.isNotEmpty) {
         final entity = VisitEntity.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-        if (entity.id <= 0 && entity.customerId <= 0) {
+        // Bản lưu hỏng (không id lượt, không điểm bán). Lượt ngoại tuyến ở điểm bán tạo ngoại tuyến nhận diện điểm bán qua
+        // `customer_client_uuid` — GIỮ (xoá là mất lượt đang làm dở, #24698 vòng 2).
+        if (entity.id <= 0 && entity.customerId <= 0 && (entity.customerClientUuid?.isEmpty ?? true)) {
           await prefs.remove(_activeVisitKey);
           return null;
         }

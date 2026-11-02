@@ -200,7 +200,8 @@ class ActiveVisitBlockingDialog extends ConsumerWidget {
                 final cId = d.customer is CustomerEntity
                     ? (d.customer as CustomerEntity).id
                     : int.tryParse(d.id.replaceAll(RegExp(r'[^\d]'), ''));
-                if (cId == activeVisit.customerId) {
+                // Điểm bán tạo ngoại tuyến (id 0) nhận diện bằng client_uuid — so id là chọn nhầm điểm id 0 đầu tiên.
+                if (cId != null && activeVisit.isAtCustomer(cId, customerClientUuidOf(d.customer))) {
                   targetDealer = d;
                   break;
                 }

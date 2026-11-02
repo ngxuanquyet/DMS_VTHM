@@ -159,9 +159,11 @@ class RouteDealerTimeline extends ConsumerWidget {
     final targetCustomerId = dealer.customer is CustomerEntity
         ? (dealer.customer as CustomerEntity).id
         : int.tryParse(dealer.id.replaceAll(RegExp(r'[^\d]'), ''));
+    // Điểm bán tạo ngoại tuyến (id 0) nhận diện bằng client_uuid — so id 0 = 0 là gộp mọi điểm chưa đồng bộ.
+    final targetCustomerUuid = customerClientUuidOf(dealer.customer);
 
     // Nếu chính là điểm bán đang có phiên viếng thăm mở -> Vào tiếp tục ngay (§3 Luật 3)
-    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId == targetCustomerId) {
+    if (activeVisit != null && targetCustomerId != null && activeVisit.isAtCustomer(targetCustomerId, targetCustomerUuid)) {
       final dealerWithVisit = dealer.visit != null
           ? dealer
           : dealer.copyWith(visit: activeVisit, status: DealerVisitStatus.inProgress);
@@ -191,7 +193,7 @@ class RouteDealerTimeline extends ConsumerWidget {
     }
 
     // Chặn mở lượt mới nếu ĐANG CÓ một lượt viếng thăm tại điểm bán khác chưa đóng (§3 Luật 3)
-    if (activeVisit != null && targetCustomerId != null && activeVisit.customerId != targetCustomerId) {
+    if (activeVisit != null && targetCustomerId != null && !activeVisit.isAtCustomer(targetCustomerId, targetCustomerUuid)) {
       final activeDealerName = activeVisit.customerName.isNotEmpty
           ? activeVisit.customerName
           : (checkInState.checkinData?.dealer.name ?? 'Điểm bán khác');

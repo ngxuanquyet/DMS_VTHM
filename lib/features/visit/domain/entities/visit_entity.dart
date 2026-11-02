@@ -38,6 +38,10 @@ class VisitEntity {
   final double? checkoutLng;
   final String? clientUuid;
 
+  /// `client_uuid` của điểm bán TẠO NGOẠI TUYẾN chưa có id server (khi đó [customerId] = 0) — khoá nhận diện điểm bán
+  /// của lượt (#24698 vòng 2): mọi điểm bán chưa đồng bộ đều id 0, so theo id là gộp lượt điểm A sang điểm B.
+  final String? customerClientUuid;
+
   /// Quãng đường đi ĐẾN điểm bán của lượt đó (tính bằng mét).
   /// 0 = thiếu mốc · null = chưa tính · số = đã tính (§4.4 SPEC-2026-10-08)
   final num? travelM;
@@ -103,6 +107,7 @@ class VisitEntity {
     this.checkoutLat,
     this.checkoutLng,
     this.clientUuid,
+    this.customerClientUuid,
     this.travelM,
     this.distanceToCustomerM,
     this.isWithinGeofence,
@@ -119,6 +124,18 @@ class VisitEntity {
   });
 
   bool get isCustomerApproved => customerApprovalStatus == 'approved';
+
+  /// Lượt này ở điểm bán ([customerId], [customerClientUuid]) không. Hai bên đều có id server ⇒ so id; còn lại (một bên
+  /// là điểm bán tạo ngoại tuyến, id 0) ⇒ so `client_uuid` của điểm bán; thiếu uuid ⇒ KHÔNG coi là cùng (id 0 = 0
+  /// không nói lên điều gì). Ngoại lệ: lượt CŨ (bản app trước, ghi customerId 0 không uuid) giữ cách so cũ "id 0 = id 0"
+  /// — không thì lượt đó không vào lại / check-out được.
+  bool isAtCustomer(int customerId, [String? customerClientUuid]) {
+    if (this.customerId > 0 && customerId > 0) return this.customerId == customerId;
+    final mine = this.customerClientUuid;
+    if (this.customerId <= 0 && (mine == null || mine.isEmpty)) return customerId <= 0;
+    if (mine == null || mine.isEmpty || customerClientUuid == null || customerClientUuid.isEmpty) return false;
+    return mine == customerClientUuid;
+  }
 
   /// Lượt "Tạo điểm bán" (server tự ghi, đã đóng) — không có thao tác check-out/huỷ.
   bool get isNewOutlet => visitKind == kVisitKindNewOutlet;
@@ -309,6 +326,7 @@ class VisitEntity {
           ? double.tryParse(json['checkout_lng'].toString())
           : null,
       clientUuid: json['client_uuid']?.toString(),
+      customerClientUuid: json['customer_client_uuid']?.toString(),
       travelM: json['travel_m'] is num
           ? (json['travel_m'] as num)
           : (json['travel_m'] != null ? num.tryParse(json['travel_m'].toString()) : null),
@@ -351,6 +369,7 @@ class VisitEntity {
         'checkout_lat': checkoutLat,
         'checkout_lng': checkoutLng,
         'client_uuid': clientUuid,
+        'customer_client_uuid': customerClientUuid,
         'travel_m': travelM,
         'distance_to_customer_m': distanceToCustomerM,
         'is_within_geofence': isWithinGeofence,
@@ -393,6 +412,7 @@ class VisitEntity {
     double? checkoutLat,
     double? checkoutLng,
     String? clientUuid,
+    String? customerClientUuid,
     num? travelM,
     double? distanceToCustomerM,
     bool? isWithinGeofence,
@@ -434,6 +454,7 @@ class VisitEntity {
       checkoutLat: checkoutLat ?? this.checkoutLat,
       checkoutLng: checkoutLng ?? this.checkoutLng,
       clientUuid: clientUuid ?? this.clientUuid,
+      customerClientUuid: customerClientUuid ?? this.customerClientUuid,
       travelM: travelM ?? this.travelM,
       distanceToCustomerM: distanceToCustomerM ?? this.distanceToCustomerM,
       isWithinGeofence: isWithinGeofence ?? this.isWithinGeofence,

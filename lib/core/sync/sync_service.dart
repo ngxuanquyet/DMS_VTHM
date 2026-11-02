@@ -24,6 +24,7 @@ import '../../features/route/presentation/viewmodels/route_view_model.dart';
 import '../../features/travel/presentation/viewmodels/travel_view_model.dart';
 import '../../features/visit/data/repositories/visit_repository_impl.dart';
 import '../../features/visit/data/models/visit_material_model.dart';
+import '../../features/visit/domain/entities/visit_entity.dart';
 import '../../features/visit/data/repositories/visit_material_repository.dart';
 import '../../features/forms/presentation/viewmodels/forms_view_model.dart';
 import '../../features/auth/presentation/viewmodels/auth_view_model.dart';
@@ -224,30 +225,61 @@ class SyncService {
     }
   }
 
-  /// Đẩy CHỈ các thao tác vật tư của lượt [visitClientUuid] lên server TRƯỚC check-out trực tuyến (server từ chối thao
-  /// tác sau giờ ra). Không reset lịch thử lại / không xử lý phần còn lại của hàng đợi. Lượt gửi đang chạy thì CHỜ nó
-  /// xong. Có trần [timeout] để nút check-out không quay mãi. Trả `false` nếu vẫn còn mục chưa gửi được.
-  Future<bool> flushVisitMaterials(
+  /// Đẩy CHỈ các mục con chặn check-out (ảnh / phiếu / thao tác vật tư) của lượt [visitClientUuid] lên server TRƯỚC
+  /// check-out trực tuyến: server từ chối thao tác vật tư sau giờ ra, đếm ảnh/phiếu ở cổng check-out (#24522, #24698
+  /// vòng 2). Không reset lịch thử lại / không xử lý phần còn lại của hàng đợi. Lượt gửi đang chạy thì CHỜ nó xong. Có
+  /// trần [timeout] để nút check-out không quay mãi. Trả `false` nếu vẫn còn mục chưa gửi được.
+  Future<bool> flushVisitCheckoutChildren(
     String visitClientUuid, {
     Duration timeout = visitMaterialFlushTimeout,
   }) async {
     try {
-      return await _flushVisitMaterials(visitClientUuid).timeout(timeout);
+      return await _flushVisitCheckoutChildren(visitClientUuid).timeout(timeout);
     } on TimeoutException {
-      debugPrint('[SyncService] Hết ${timeout.inSeconds}s chờ đẩy vật tư của lượt $visitClientUuid.');
+      debugPrint('[SyncService] Hết ${timeout.inSeconds}s chờ đẩy ảnh/phiếu/vật tư của lượt $visitClientUuid.');
       return false;
     }
   }
 
-  Future<bool> _flushVisitMaterials(String visitClientUuid) async {
+  Future<bool> _flushVisitCheckoutChildren(String visitClientUuid) async {
     await waitUntilIdle();
-    if (!await _db.hasOpenVisitMaterials(visitClientUuid)) return true;
-    await RefreshOutcome.untracked(() => _syncQueue(force: false, onlyVisitMaterialsOf: visitClientUuid));
+    if (!await _hasBlockingCheckoutChildren(visitClientUuid)) return true;
+    await RefreshOutcome.untracked(() => _syncQueue(force: false, onlyCheckoutChildrenOf: visitClientUuid));
     await waitUntilIdle();
-    return !await _db.hasOpenVisitMaterials(visitClientUuid);
+    return !await _hasBlockingCheckoutChildren(visitClientUuid);
   }
 
-  Future<SyncResult> _syncQueue({required bool force, String? onlyVisitMaterialsOf}) async {
+  /// Còn mục con chưa gửi mà VẪN giữ check-out (cùng luật hàng đợi: mục đã hỏng quá trần thì thôi giữ — [releasesCheckout]).
+  Future<bool> _hasBlockingCheckoutChildren(String visitClientUuid) async =>
+      (await _db.getOpenCheckoutChildren(visitClientUuid)).any((c) => !releasesCheckout(c));
+
+  /// Đẩy lệnh của các lượt viếng thăm còn chờ (check-in / check-out / huỷ + ảnh / phiếu / vật tư của chúng) TRƯỚC
+  /// check-in trực tuyến lượt mới (#24698 vòng 2). Cùng cách [flushVisitCheckoutChildren]. Trả `false` nếu còn lệnh lượt
+  /// chưa lên server ⇒ check-in mới phải đi hàng đợi (đứng sau lượt trước — [AppDatabase.isVisitCreateHeld]).
+  Future<bool> flushVisitLifecycle({Duration timeout = visitMaterialFlushTimeout}) async {
+    // Đường nhanh: không còn lệnh lượt nào ⇒ check-in KHÔNG phải chờ lượt đồng bộ đang chạy (ảnh, điểm bán…).
+    if (!await _db.hasOpenVisitLifecycleEntries()) return true;
+    try {
+      return await _flushVisitLifecycle().timeout(timeout);
+    } on TimeoutException {
+      debugPrint('[SyncService] Hết ${timeout.inSeconds}s chờ đẩy lệnh lượt viếng thăm còn chờ.');
+      return false;
+    }
+  }
+
+  Future<bool> _flushVisitLifecycle() async {
+    await waitUntilIdle();
+    if (!await _db.hasOpenVisitLifecycleEntries()) return true;
+    await RefreshOutcome.untracked(() => _syncQueue(force: false, onlyVisitLifecycle: true));
+    await waitUntilIdle();
+    return !await _db.hasOpenVisitLifecycleEntries();
+  }
+
+  Future<SyncResult> _syncQueue({
+    required bool force,
+    String? onlyCheckoutChildrenOf,
+    bool onlyVisitLifecycle = false,
+  }) async {
     if (_isSyncing) {
       debugPrint('[SyncService] syncQueue đang chạy, bỏ qua lời gọi trùng lặp.');
       return const SyncResult();
@@ -278,10 +310,12 @@ class SyncService {
 
       // Lấy danh sách pending theo FIFO, tối đa 50 mục (§3.3 Luật 6)
       // Không bao giờ lấy các mục 'dead' (lỗi 4xx vĩnh viễn không retry)
-      // Chế độ đẩy vật tư của MỘT lượt (trước check-out trực tuyến): chỉ mục pending của lượt đó, bỏ qua lịch thử lại
-      // của riêng chúng (người dùng đang chờ ở nút check-out), không đụng mục khác.
-      final entries = onlyVisitMaterialsOf != null
-          ? (await _db.getVisitMaterialEntries(onlyVisitMaterialsOf)).where((e) => e.state == 'pending').toList()
+      // Chế độ đẩy mục con chặn check-out của MỘT lượt (trước check-out trực tuyến): chỉ mục pending của lượt đó, bỏ qua
+      // lịch thử lại của riêng chúng (người dùng đang chờ ở nút check-out), không đụng mục khác.
+      final entries = onlyCheckoutChildrenOf != null
+          ? await _db.getPendingCheckoutChildren(onlyCheckoutChildrenOf)
+          : onlyVisitLifecycle
+              ? await _db.getPendingVisitLifecycleEntries()
           : await _db.getPendingQueueEntries(limit: 50, force: force);
       if (entries.isEmpty) {
         // Hàng đợi rỗng ⇒ KHÔNG tải lại gì: lượt định kỳ 60s / đổi mạng / màn gọi đồng bộ mà ép tải lại toàn bộ điểm
@@ -367,7 +401,8 @@ class SyncService {
         } catch (_) {}
       }
 
-      if (retryableCount > 0) {
+      // Lượt đẩy có chủ đích (trước check-in / check-out) không báo "còn mục chờ" — chạy mỗi lần bấm.
+      if (retryableCount > 0 && onlyCheckoutChildrenOf == null && !onlyVisitLifecycle) {
         try {
           final remainingEntries = await _db.getPendingQueueEntries(limit: 50);
           final grouped = SyncEntityGroupHelper.groupEntries(remainingEntries);
@@ -407,7 +442,11 @@ class SyncService {
       }));
       // Chỉ làm mới khi CÓ mục vừa đẩy lên thành công (dữ liệu server vừa đổi: điểm bán mới có id, lượt viếng thăm…).
       // Các lượt tải đủ danh sách chạy cùng lúc đi chung một lượt (CustomerRepositoryImpl._sharedFullFetch).
-      if (successCount > 0 && _ref.read(connectivityProvider).isOnline) {
+      // Lượt đẩy CÓ CHỦ ĐÍCH ngay trước check-in / check-out trực tuyến KHÔNG tải lại: tải tuyến chạy song song với lệnh
+      // check-in là đối soát chụp danh sách cũ ⇒ coi lượt vừa mở là "đã huỷ trên server" rồi huỷ nó (#24698 vòng 2).
+      // Lượt định kỳ kế tiếp / màn gọi sau thao tác lo phần làm mới.
+      final targeted = onlyCheckoutChildrenOf != null || onlyVisitLifecycle;
+      if (successCount > 0 && !targeted && _ref.read(connectivityProvider).isOnline) {
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         } catch (_) {}
@@ -906,18 +945,24 @@ class SyncService {
 
     // Cập nhật serverId cho lượt viếng thăm trong cache cục bộ — CHỈ theo clientUuid: khớp thêm "id < 0" là gán mã
     // của lượt A cho lượt offline B đang mở (nhiều lượt offline cùng chờ mạng), ảnh/check-out của B đổ vào A.
+    // Lượt ở điểm bán tạo ngoại tuyến (customerId 0) nhận luôn id server của điểm bán vừa tra được (#24698 vòng 2).
+    final resolvedCustomerId = int.tryParse(payload['customer_id']?.toString() ?? '') ?? 0;
+    VisitEntity withServerIds(VisitEntity v) => v.copyWith(
+          id: serverId,
+          customerId: v.customerId <= 0 && resolvedCustomerId > 0 ? resolvedCustomerId : null,
+        );
     if (serverId != null) {
       try {
         final visitRepo = _ref.read(visitRepositoryProvider);
         final all = await visitRepo.getAllLocalVisits();
         final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid);
         if (idx >= 0) {
-          final updated = all[idx].copyWith(id: serverId);
+          final updated = withServerIds(all[idx]);
           await visitRepo.saveLocalVisit(updated);
         }
         final active = await visitRepo.getActiveVisit();
         if (active != null && active.clientUuid == entry.clientUuid) {
-          final updatedActive = active.copyWith(id: serverId);
+          final updatedActive = withServerIds(active);
           await visitRepo.saveActiveVisit(updatedActive);
 
           try {
@@ -926,7 +971,7 @@ class SyncService {
           try {
             _ref
                 .read(checkInViewModelProvider.notifier)
-                .syncServerVisitId(serverId, clientUuid: entry.clientUuid);
+                .syncServerVisitId(serverId, clientUuid: entry.clientUuid, customerId: resolvedCustomerId);
           } catch (_) {}
           try {
             // §1.3 SPEC-2026-10-18: Tải lại biểu mẫu khảo sát ngay khi đồng bộ xong check-in ngoại tuyến
@@ -1135,7 +1180,7 @@ class SyncService {
       // Cập nhật trạng thái đã huỷ trong cache cục bộ
       try {
         final visitRepo = _ref.read(visitRepositoryProvider);
-        await visitRepo.clearActiveVisit();
+        await _clearActiveVisitIf(visitId, entry.parentUuid);
         final all = await visitRepo.getAllLocalVisits();
         final idx = all.indexWhere((v) =>
             v.id == visitId || (entry.parentUuid != null && v.clientUuid == entry.parentUuid));
@@ -1175,8 +1220,7 @@ class SyncService {
           raw.contains('already closed')) {
         await _db.markDone(entry.id);
         try {
-          final visitRepo = _ref.read(visitRepositoryProvider);
-          await visitRepo.clearActiveVisit();
+          await _clearActiveVisitIf(visitId, entry.parentUuid);
         } catch (_) {}
         try {
           _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
@@ -1185,6 +1229,17 @@ class SyncService {
         return;
       }
       rethrow;
+    }
+  }
+
+  /// Bỏ bản lưu "lượt đang mở" CHỈ khi nó là lượt vừa huỷ ([visitId] / [visitClientUuid]). Lệnh huỷ lượt A thường tới
+  /// server SAU khi nhân viên đã check-in lượt B — xoá vô điều kiện là mất lượt B trên máy (#24698 vòng 2).
+  Future<void> _clearActiveVisitIf(int visitId, String? visitClientUuid) async {
+    final visitRepo = _ref.read(visitRepositoryProvider);
+    final active = await visitRepo.getActiveVisit();
+    if (active == null) return;
+    if (active.id == visitId || (visitClientUuid != null && active.clientUuid == visitClientUuid)) {
+      await visitRepo.clearActiveVisit();
     }
   }
 

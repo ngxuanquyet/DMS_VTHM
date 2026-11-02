@@ -22,6 +22,9 @@ import 'outlet_material_history_sheet.dart';
 /// Tài khoản không có quyền xem (403) ⇒ ẩn hẳn mục — kể cả khung: màn cha bọc nội dung qua [sectionBuilder].
 class OutletMaterialsDetailCard extends ConsumerStatefulWidget {
   final int customerId;
+
+  /// `client_uuid` của điểm bán — nhận lượt ngoại tuyến tạo khi điểm bán chưa có id ([VisitEntity.isAtCustomer]).
+  final String? customerClientUuid;
   final String customerName;
 
   /// Bọc nội dung vào khung mục của màn cha (tiêu đề + viền + khoảng cách); không gọi khi bị ẩn.
@@ -33,6 +36,7 @@ class OutletMaterialsDetailCard extends ConsumerStatefulWidget {
   const OutletMaterialsDetailCard({
     super.key,
     required this.customerId,
+    this.customerClientUuid,
     required this.customerName,
     required this.sectionBuilder,
     this.refreshToken = 0,
@@ -79,7 +83,7 @@ class _OutletMaterialsDetailCardState extends ConsumerState<OutletMaterialsDetai
     try {
       // Bản lưu lượt đang mở trên máy (KHÔNG qua findOpenVisit: nó dựng RouteViewModel ⇒ kéo tuyến từ mạng chỉ để đọc).
       final saved = await ref.read(visitRepositoryProvider).getActiveVisit();
-      openHere = saved != null && saved.isOpen && saved.customerId == widget.customerId;
+      openHere = saved != null && saved.isOpen && saved.isAtCustomer(widget.customerId, widget.customerClientUuid);
     } catch (_) {}
     if (!mounted || seq != _loadSeq) return;
     setState(() {
@@ -112,7 +116,7 @@ class _OutletMaterialsDetailCardState extends ConsumerState<OutletMaterialsDetai
     final subColor = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
     final visit = ref.watch(checkInViewModelProvider.select((s) => s.visitEntity));
     // Màn Vật tư của lượt đọc lượt/phiên từ checkInViewModel ⇒ chỉ mở khi CHÍNH lượt đó đang nạp, đúng điểm bán này.
-    final canEdit = visit != null && visit.isOpen && visit.customerId == widget.customerId;
+    final canEdit = visit != null && visit.isOpen && visit.isAtCustomer(widget.customerId, widget.customerClientUuid);
 
     final children = <Widget>[];
     if (_loading && res == null) {

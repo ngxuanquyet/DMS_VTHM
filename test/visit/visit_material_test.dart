@@ -519,7 +519,7 @@ void main() {
       expect(await db.isCheckoutHeld(checkout), isTrue);
       await db.markDead(matId, 'Lượt viếng thăm này đã check-out.');
       expect(await db.isCheckoutHeld(checkout), isFalse);
-      expect(await db.hasOpenVisitMaterials('visitB'), isTrue);
+      expect(await db.getOpenCheckoutChildren('visitB'), isNotEmpty);
     });
 
     test('mục không phải check-out không bao giờ bị giữ', () async {
