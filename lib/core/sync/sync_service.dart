@@ -1706,7 +1706,8 @@ class SyncService {
     // Check-in bị từ chối vì còn lượt trước chưa check-out (DMS_VISIT_STILL_OPEN): CHỜ — lượt trước được check-out /
     // huỷ là gửi được; coi là lỗi vĩnh viễn thì lượt mới (cùng ảnh, phiếu, check-out của nó) bị bỏ trắng.
     var stillOpen = errorCode == openVisitErrorCode && entry.entity == 'visit' && entry.op == 'create';
-    if (stillOpen) {
+    // Lượt trước có check-out / huỷ bị từ chối hẳn ⇒ chờ nhân viên đóng lại nó (hoặc cron đầu ngày), KHÔNG đếm vào trần.
+    if (stillOpen && !await _db.hasDeadVisitCloseBefore(entry)) {
       Map<String, dynamic> p = {};
       try {
         p = jsonDecode(entry.payload) as Map<String, dynamic>;

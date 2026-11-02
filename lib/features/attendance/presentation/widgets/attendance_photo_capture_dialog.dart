@@ -168,6 +168,7 @@ class _AttendancePhotoCaptureDialogState
         photoType: photoType,
         lat: punch!.lat,
         lng: punch!.lng,
+        punchClientUuid: punch!.clientUuid,
       );
 
       if (mounted) {

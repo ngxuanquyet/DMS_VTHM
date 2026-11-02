@@ -484,6 +484,75 @@ void main() {
       expect(jsonDecode(r.payload)[openVisitCountKey], 2);
     });
 
+    test('nhóm 2 vòng 2: check-out lượt A bị từ chối (dead) cùng ngày ⇒ check-in B CHỜ, không đếm vào trần', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'còn lượt'})
+          : null);
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead', payload: '{"visit_id":901}');
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({'customer_id': 10, openVisitCountKey: openVisitMaxAttempts - 1}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final r = await row(createB);
+      expect(r.state, 'pending', reason: 'lỗi cũ: tới trần ⇒ B dead dù A chỉ chờ nhân viên đóng lại');
+      expect(jsonDecode(r.payload)[openVisitCountKey], openVisitMaxAttempts - 1);
+    });
+
+    test('nhóm 2 vòng 2: miễn trần CHỈ khi lượt A đã lên server và chưa được đóng lại', () async {
+      boot((o) => null);
+      // A chưa từng lên server (dòng tạo dead) ⇒ không phải A chặn B.
+      await enqueue('visit', 'create', 'visitA', state: 'dead', payload: '{"customer_id":9}');
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead');
+      final b = await row(await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}'));
+      expect(await db.hasDeadVisitCloseBefore(b, nowMs: b.createdAt), isFalse);
+
+      // A đã lên server, check-out lần đầu dead ⇒ miễn; đóng lại bằng lệnh check-out khác thành công ⇒ hết miễn.
+      await db.delete(db.syncQueueEntries).go();
+      await enqueue('visit', 'create', 'visitA', state: 'done', serverId: 901, payload: '{"customer_id":9}');
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead');
+      final b2 = await row(await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}'));
+      expect(await db.hasDeadVisitCloseBefore(b2, nowMs: b2.createdAt), isTrue);
+      await enqueue('visit', 'checkout', 'coA2', parent: 'visitA', state: 'done');
+      expect(await db.hasDeadVisitCloseBefore(b2, nowMs: b2.createdAt), isFalse);
+    });
+
+    test('nhóm 2 vòng 2: lượt A check-in HÔM QUA, check-out hôm nay bị từ chối ⇒ không miễn (cron đã đánh dấu A)', () async {
+      boot((o) => null);
+      final yesterday = DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch;
+      final createA = await enqueue('visit', 'create', 'visitA', state: 'done', serverId: 901, payload: '{"customer_id":9}');
+      await (db.update(db.syncQueueEntries)..where((t) => t.id.equals(createA)))
+          .write(SyncQueueEntriesCompanion(createdAt: Value(yesterday)));
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead');
+      final b = await row(await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}'));
+      expect(await db.hasDeadVisitCloseBefore(b, nowMs: b.createdAt), isFalse);
+    });
+
+    test('nhóm 2 vòng 2: miễn trần hết khi đã sang ngày khác', () async {
+      boot((o) => null);
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead');
+      final b = await row(await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}'));
+      expect(await db.hasDeadVisitCloseBefore(b, nowMs: b.createdAt), isTrue);
+      final tomorrow = DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch;
+      expect(await db.hasDeadVisitCloseBefore(b, nowMs: tomorrow), isFalse);
+    });
+
+    test('nhóm 2 vòng 2: check-out dead của NGÀY KHÁC không miễn trần', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'còn lượt'})
+          : null);
+      final coA = await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead');
+      final yesterday = DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch;
+      await (db.update(db.syncQueueEntries)..where((t) => t.id.equals(coA)))
+          .write(SyncQueueEntriesCompanion(createdAt: Value(yesterday)));
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({'customer_id': 10, openVisitCountKey: openVisitMaxAttempts - 1}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(createB)).state, 'dead');
+    });
+
     test('422 khác của check-in vẫn là lỗi vĩnh viễn', () async {
       boot((o) => o.path == '/dms/visits' ? (422, {'success': false, 'message': 'Ngoài vùng điểm bán'}) : null);
       final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');

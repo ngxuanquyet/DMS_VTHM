@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../data/repositories/attendance_repository_impl.dart';
 import '../../domain/entities/attendance_entity.dart';
@@ -463,19 +464,39 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     }
   }
 
-  /// Tải ảnh camera bổ sung cho lượt chấm (§4) - Chạy nền và cập nhật UI ngay lập tức
+  /// `client_uuid` của lượt chấm [punchId] trong màn (lượt mới nhất hoặc lịch sử); `null` khi không thấy.
+  String? _clientUuidOfPunch(int punchId) {
+    final latest = state.latestPunch;
+    if (latest != null && latest.id == punchId) return latest.clientUuid;
+    for (final p in state.history) {
+      if (p.id == punchId) return p.clientUuid;
+    }
+    return null;
+  }
+
+  /// Tải ảnh camera bổ sung cho lượt chấm (§4). [punchClientUuid]: `client_uuid` của chính lượt đó (nơi gọi đang cầm
+  /// lượt) — thiếu thì dò trong lượt mới nhất / lịch sử đang nạp. - Chạy nền và cập nhật UI ngay lập tức
   Future<AttendancePunchPhotoEntity?> uploadPunchPhoto({
     required int punchId,
     required File file,
     required String photoType,
     double? lat,
     double? lng,
+    String? punchClientUuid,
   }) async {
     state = state.copyWith(isUploadingPhoto: true, errorMessage: null);
 
     try {
       AttendancePunchPhotoEntity photo;
       if (attendanceRepository != null) {
+        // Lượt cha = CHÍNH lượt được bổ sung ảnh (có thể là lượt cũ trong lịch sử), không phải lượt mới nhất: lượt chấm
+        // ngoại tuyến (id âm) được dò id máy chủ qua lượt cha ⇒ lấy lượt mới nhất là gắn ảnh vào nhầm lượt (#24698).
+        // Lượt đọc từ máy chủ thiếu `client_uuid` mang chuỗi rỗng ⇒ coi như không có.
+        String? nonEmpty(String? v) => (v == null || v.isEmpty) ? null : v;
+        final parentUuid = nonEmpty(punchClientUuid) ?? nonEmpty(_clientUuidOfPunch(punchId));
+        if (parentUuid == null && punchId <= 0) {
+          throw const AppException('Không tìm thấy lượt chấm công cần bổ sung ảnh. Vui lòng tải lại màn hình.');
+        }
         photo = await attendanceRepository!.enqueuePunchPhoto(
           punchId: punchId,
           file: file,
@@ -483,7 +504,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
           takenAt: DateTime.now(),
           lat: lat,
           lng: lng,
-          parentUuid: state.latestPunch?.clientUuid,
+          parentUuid: parentUuid,
         );
         syncService?.syncQueue();
       } else {
@@ -553,7 +574,8 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       debugPrint('[AttendanceViewModel] Lỗi upload ảnh chấm công: $e');
       state = state.copyWith(
         isUploadingPhoto: false,
-        errorMessage: e.toString().replaceAll('AppException: ', ''),
+        // toString() của AppException kèm "(code: …, error_code: …)" — người dùng chỉ cần câu báo.
+        errorMessage: e is AppException ? e.message : e.toString(),
       );
       return null;
     }

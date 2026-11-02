@@ -628,19 +628,69 @@ class AppDatabase extends _$AppDatabase {
   /// lần khởi động sau.
   Future<bool> isVisitCreateHeld(SyncQueueEntry entry) async {
     if (entry.entity != 'visit' || entry.op != 'create') return false;
-    final rows = await (select(syncQueueEntries)
+    final rows = await _otherVisitClosesBefore(entry, 'pending');
+    if (rows.isEmpty) return false;
+    // Lệnh của lượt kẹt vĩnh viễn (điểm bán ngoại tuyến bị từ chối) không giữ — cùng luật cổng check-in trực tuyến.
+    final stuck = await _stuckVisitUuids();
+    return rows.any((r) => !stuck.contains(r.parentUuid));
+  }
+
+  /// Lệnh check-out / huỷ ở trạng thái [state] của lượt KHÁC, nhập trước dòng tạo lượt [entry]; [createdFromMs]: chỉ dòng
+  /// tạo từ mốc đó trở đi.
+  Future<List<SyncQueueEntry>> _otherVisitClosesBefore(SyncQueueEntry entry, String state, {int? createdFromMs}) {
+    return (select(syncQueueEntries)
           ..where((tbl) =>
               isMine(tbl) &
               tbl.id.isSmallerThanValue(entry.id) &
               tbl.entity.equals('visit') &
               (tbl.op.equals('checkout') | tbl.op.equals('cancel')) &
               tbl.parentUuid.equals(entry.clientUuid).not() &
-              tbl.state.equals('pending')))
+              tbl.state.equals(state) &
+              (createdFromMs == null ? const Constant(true) : tbl.createdAt.isBiggerOrEqualValue(createdFromMs))))
         .get();
-    if (rows.isEmpty) return false;
-    // Lệnh của lượt kẹt vĩnh viễn (điểm bán ngoại tuyến bị từ chối) không giữ — cùng luật cổng check-in trực tuyến.
-    final stuck = await _stuckVisitUuids();
-    return rows.any((r) => !stuck.contains(r.parentUuid));
+  }
+
+  /// Có check-out / huỷ của lượt KHÁC (nhập trước dòng tạo lượt [entry]) bị server từ chối (dead) mà lượt đó ĐÃ lên server,
+  /// check-in CÙNG NGÀY với [entry] và chưa được đóng lại bằng một lệnh check-out / huỷ khác trong hàng đợi — tức lượt đó
+  /// còn mở trên server, [entry] nhận DMS_VISIT_STILL_OPEN cho tới khi nhân viên đóng lại nó (màn tuyến đưa nó lên làm lượt
+  /// đang mở) hoặc cron đầu ngày đánh dấu "Chưa check-out". Khi đó dòng tạo CHỜ, không đếm vào trần — đếm thì một
+  /// check-out hỏng kéo chết mọi lượt sau trong ngày (#24698 vòng 2).
+  /// Chỉ miễn trong CHÍNH ngày đó ([nowMs]): qua ngày thì cron đã đánh dấu lượt kia, còn STILL_OPEN là do lượt khác ⇒ đếm
+  /// trần như thường (chặn trên thời gian miễn, kể cả khi lượt kia đã được đóng trực tuyến mà dòng dead còn nằm lại).
+  /// Ngày so theo giờ máy (máy ở VN ⇒ trùng ngày server); lượt check-in trực tuyến không có dòng tạo ⇒ lấy ngày của lệnh đóng.
+  Future<bool> hasDeadVisitCloseBefore(SyncQueueEntry entry, {int? nowMs}) async {
+    if (entry.entity != 'visit' || entry.op != 'create') return false;
+    DateTime dayOf(int ms) {
+      final d = DateTime.fromMillisecondsSinceEpoch(ms);
+      return DateTime(d.year, d.month, d.day);
+    }
+
+    final day = dayOf(entry.createdAt);
+    if (dayOf(nowMs ?? DateTime.now().millisecondsSinceEpoch) != day) return false;
+    // Lệnh đóng đứng sau check-in của lượt đó ⇒ lượt check-in trong ngày [day] có lệnh đóng tạo từ đầu ngày [day].
+    final closes = await _otherVisitClosesBefore(entry, 'dead', createdFromMs: day.millisecondsSinceEpoch);
+    for (final r in closes) {
+      final visitUuid = r.parentUuid;
+      if (visitUuid == null) continue;
+      final create = await (select(syncQueueEntries)
+            ..where((t) => isMine(t) & t.entity.equals('visit') & t.op.equals('create') & t.clientUuid.equals(visitUuid))
+            ..limit(1))
+          .getSingleOrNull();
+      // Dòng tạo chưa lên server (chờ / chết / kẹt) ⇒ lượt không mở trên server, không phải nó chặn [entry].
+      if (create != null && create.state != 'done') continue;
+      if (dayOf(create?.createdAt ?? r.createdAt) != day) continue;
+      final reclosed = await (select(syncQueueEntries)
+            ..where((t) =>
+                isMine(t) &
+                t.entity.equals('visit') &
+                (t.op.equals('checkout') | t.op.equals('cancel')) &
+                t.parentUuid.equals(visitUuid) &
+                t.state.equals('done'))
+            ..limit(1))
+          .getSingleOrNull();
+      if (reclosed == null) return true;
+    }
+    return false;
   }
 
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
