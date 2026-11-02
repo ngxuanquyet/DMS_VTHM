@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/dynamic_form_builder.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
@@ -48,7 +49,9 @@ void main() {
     },
   ];
 
-  Widget khung(DynamicFormBuilder form) => MaterialApp(home: Scaffold(body: SingleChildScrollView(child: form)));
+  // ProviderScope: ô Vị trí (AppMapLocationCard) đọc trạng thái mạng qua Riverpod — app thật luôn có scope ở gốc.
+  Widget khung(DynamicFormBuilder form) =>
+      ProviderScope(child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: form))));
 
   test('schema đọc khoá formula (cả cờ blank); server cũ / bản lưu máy không có khoá ⇒ không có ô công thức', () {
     final f = build(schema(dong));

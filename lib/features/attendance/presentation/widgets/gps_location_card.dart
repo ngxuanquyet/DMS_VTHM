@@ -7,6 +7,7 @@ import '../../../../core/location/location_provider.dart';
 import '../../../../core/map/goong_map_view.dart';
 import '../../../../core/map/goong_models.dart';
 import '../../../../core/map/goong_providers.dart';
+import '../../../../core/map/offline_gps_placeholder.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -70,14 +71,21 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
       accuracyBadge = 'GPS: Chưa cấp quyền';
       badgeColor = AppColors.error;
     } else if (livePoint != null) {
+      // Chưa tra được địa chỉ (đang tra / mất mạng / Goong không trả) ⇒ hiện toạ độ thật, không hiện địa danh bịa.
       displayAddress = (liveAddress != null && liveAddress.isNotEmpty)
           ? liveAddress
           : (widget.location.address.isNotEmpty && widget.location.address != 'Vị trí hiện tại'
               ? widget.location.address
-              : (!isOnline
-                  ? 'Toạ độ: ${livePoint.lat.toStringAsFixed(5)}, ${livePoint.lng.toStringAsFixed(5)}'
-                  : 'Vĩnh Yên, Vĩnh Phúc'));
-      accuracyBadge = isOnline ? 'GPS: ±8m' : 'GPS: Ngoại tuyến';
+              : 'Toạ độ: ${OfflineGpsPlaceholder.formatCoords(livePoint.lat, livePoint.lng)}');
+      // Sai số THẬT do máy báo — chỉ khi đúng là của toạ độ đang hiện (bộ đệm có thể đã sang lần định vị khác).
+      final accuracy = (cached != null &&
+              (cached.latitude - livePoint.lat).abs() < 1e-6 &&
+              (cached.longitude - livePoint.lng).abs() < 1e-6)
+          ? cached.accuracy
+          : null;
+      accuracyBadge = !isOnline
+          ? 'GPS: Ngoại tuyến'
+          : (accuracy != null && accuracy > 0 ? 'GPS: ±${accuracy.round()}m' : 'GPS: Đã định vị');
       badgeColor = AppColors.primary;
     } else {
       displayAddress = widget.location.address.isNotEmpty
@@ -232,7 +240,12 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
 
     if (livePoint != null) {
       if (!isOnline) {
-        return _buildOfflineMapPlaceholder(context, ref, livePoint, isDark);
+        return OfflineGpsPlaceholder(
+          lat: livePoint.lat,
+          lng: livePoint.lng,
+          note: 'Bản đồ tạm ẩn khi không có kết nối mạng.\nTọa độ GPS thực tế vẫn được ghi nhận để chấm công.',
+          onRefresh: () => ref.invalidate(currentPointProvider),
+        );
       }
       return GoongMapView(
         key: const ValueKey('attendance_goong_map'),
@@ -258,124 +271,6 @@ class _GpsLocationCardState extends ConsumerState<GpsLocationCard> {
           Text(
             'Đang lấy toạ độ GPS chính xác...',
             style: TextStyle(fontSize: 13, color: AppColors.outline),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOfflineMapPlaceholder(
-    BuildContext context,
-    WidgetRef ref,
-    GoongLatLng livePoint,
-    bool isDark,
-  ) {
-    return Container(
-      width: double.infinity,
-      height: 220,
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.darkSurfaceContainerLowest
-            : AppColors.surfaceContainerLow,
-        borderRadius: AppRadius.roundedMd,
-      ),
-      child: Stack(
-        children: [
-          // Vòng radar định vị tượng trưng tín hiệu GPS vệ tinh
-          Center(
-            child: Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: (isDark ? Colors.white : AppColors.primary).withValues(alpha: 0.08),
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-          Center(
-            child: Container(
-              width: 85,
-              height: 85,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: (isDark ? Colors.white : AppColors.primary).withValues(alpha: 0.12),
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-          // Nội dung thông báo chế độ ngoại tuyến
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.location_on_rounded,
-                      color: AppColors.primary,
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Định vị GPS ngoại tuyến',
-                    style: AppTypography.titleMedium(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ).copyWith(fontWeight: FontWeight.w700, fontSize: 14),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${livePoint.lat.toStringAsFixed(5)}, ${livePoint.lng.toStringAsFixed(5)}',
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 12),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Bản đồ tạm ẩn khi không có kết nối mạng.\nTọa độ GPS thực tế vẫn được ghi nhận để chấm công.',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                    ).copyWith(fontSize: 11.5, height: 1.3),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Nút lấy lại toạ độ GPS
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: Material(
-              color: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-              elevation: 2,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () {
-                  ref.invalidate(currentPointProvider);
-                },
-                child: const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.my_location,
-                    size: 20,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            ),
           ),
         ],
       ),

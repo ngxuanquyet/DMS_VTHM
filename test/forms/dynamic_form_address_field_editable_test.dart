@@ -19,20 +19,23 @@ void main() {
         ),
       ];
 
+      // ProviderScope: ô Vị trí đọc trạng thái mạng qua Riverpod — app thật luôn có scope ở gốc.
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: DynamicFormBuilder(
-                key: formKey,
-                fields: fields,
-                initialData: const {
-                  'address': {
-                    'address': 'Số 15 Lê Lợi, TP Huế',
-                    'lat': null,
-                    'lng': null,
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: DynamicFormBuilder(
+                  key: formKey,
+                  fields: fields,
+                  initialData: const {
+                    'address': {
+                      'address': 'Số 15 Lê Lợi, TP Huế',
+                      'lat': null,
+                      'lng': null,
+                    },
                   },
-                },
+                ),
               ),
             ),
           ),

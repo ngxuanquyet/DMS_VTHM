@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../theme/app_colors.dart';
@@ -9,12 +10,17 @@ import '../services/location_service.dart';
 import 'goong_api_service.dart';
 import 'goong_config.dart';
 import 'goong_map_view.dart';
+import 'offline_gps_placeholder.dart';
+import '../network/connectivity_provider.dart';
 
 /// Card Bản đồ chuẩn chung dùng trên toàn bộ ứng dụng:
 /// - Màn hình tạo mới / sửa khách hàng
 /// - Màn hình biểu mẫu động (Dynamic Form)
 /// - Màn hình chấm công / Check-in đi tuyến
-class AppMapLocationCard extends StatefulWidget {
+///
+/// Mất mạng: cùng luật màn Chấm công — ẩn bản đồ, hiện toạ độ GPS + nút lấy lại ([OfflineGpsPlaceholder]); KHÔNG tra
+/// địa chỉ từ toạ độ (Goong cần mạng) ⇒ địa chỉ để trống cho người dùng tự gõ, không ghi chuỗi toạ độ vào địa chỉ.
+class AppMapLocationCard extends ConsumerStatefulWidget {
   /// Tiêu đề thẻ (mặc định: 'Vị trí điểm bán trên bản đồ')
   final String title;
 
@@ -96,10 +102,10 @@ class AppMapLocationCard extends StatefulWidget {
   });
 
   @override
-  State<AppMapLocationCard> createState() => _AppMapLocationCardState();
+  ConsumerState<AppMapLocationCard> createState() => _AppMapLocationCardState();
 }
 
-class _AppMapLocationCardState extends State<AppMapLocationCard> {
+class _AppMapLocationCardState extends ConsumerState<AppMapLocationCard> {
   bool _isLocating = false;
   String? _resolvedAddress;
   bool _isLoadingAddress = false;
@@ -132,6 +138,8 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
   }
 
   Future<void> _fetchAddress(double lat, double lng) async {
+    // Mất mạng: không tra địa chỉ (Goong cần mạng) — để trống cho người dùng tự gõ.
+    if (!ref.read(connectivityProvider).isOnline) return;
     setState(() => _isLoadingAddress = true);
     try {
       final place = await GoongApiService().reverseGeocode(lat, lng);
@@ -149,6 +157,14 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
         setState(() => _isLoadingAddress = false);
       }
     }
+  }
+
+  /// Địa chỉ báo kèm toạ độ MỚI — xét mạng NGAY lúc báo (sau các lần chờ GPS). Mất mạng: địa chỉ của toạ độ cũ không
+  /// còn đúng mà không tra lại được ⇒ bỏ, trả '' (khác null "không đổi") để ô địa chỉ tự điền trước đó được xoá.
+  String? _addressForNewPoint() {
+    if (ref.read(connectivityProvider).isOnline) return _resolvedAddress;
+    _resolvedAddress = null;
+    return '';
   }
 
   Future<void> _getCurrentLocation() async {
@@ -192,11 +208,12 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
       if (lastKnown != null && mounted) {
         final lat = double.parse(lastKnown.latitude.toStringAsFixed(6));
         final lng = double.parse(lastKnown.longitude.toStringAsFixed(6));
-        widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        final addressForCallback = _addressForNewPoint();
+        widget.onLocationChanged?.call(lat, lng, addressForCallback);
         widget.onCoordinatesDetailsChanged?.call(
           lat,
           lng,
-          _resolvedAddress,
+          addressForCallback,
           lastKnown.accuracy,
           lastKnown.isMocked,
         );
@@ -217,11 +234,12 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
         final lat = double.parse(position.latitude.toStringAsFixed(6));
         final lng = double.parse(position.longitude.toStringAsFixed(6));
 
-        widget.onLocationChanged?.call(lat, lng, _resolvedAddress);
+        final addressForCallback = _addressForNewPoint();
+        widget.onLocationChanged?.call(lat, lng, addressForCallback);
         widget.onCoordinatesDetailsChanged?.call(
           lat,
           lng,
-          _resolvedAddress,
+          addressForCallback,
           position.accuracy,
           position.isMocked,
         );
@@ -270,6 +288,14 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final hasCoords = widget.lat != null && widget.lng != null;
+    final isOnline = ref.watch(connectivityProvider).isOnline;
+    // Có mạng lại mà toạ độ (lấy lúc mất mạng) chưa có địa chỉ ⇒ tra ngay, như lúc lấy vị trí khi có mạng.
+    ref.listen<bool>(connectivityProvider.select((c) => c.isOnline), (prev, next) {
+      if (prev == false && next && widget.lat != null && widget.lng != null &&
+          (_resolvedAddress == null || _resolvedAddress!.isEmpty)) {
+        _fetchAddress(widget.lat!.toDouble(), widget.lng!.toDouble());
+      }
+    });
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14.0),
@@ -370,6 +396,21 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
               children: [
                 // Interactive Map View
                 if (hasCoords) ...[
+                  // Mất mạng: cùng luật màn Chấm công — ẩn bản đồ, hiện toạ độ GPS + nút lấy lại.
+                  if (!isOnline)
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      child: OfflineGpsPlaceholder(
+                        lat: widget.lat!.toDouble(),
+                        lng: widget.lng!.toDouble(),
+                        height: widget.mapHeight,
+                        borderRadius: BorderRadius.zero,
+                        readOnly: widget.isReadOnly,
+                        busy: _isLocating,
+                        onRefresh: widget.isReadOnly ? null : _getCurrentLocation,
+                      ),
+                    )
+                  else
                   Stack(
                     alignment: Alignment.center,
                     children: [
@@ -457,14 +498,19 @@ class _AppMapLocationCardState extends State<AppMapLocationCard> {
                               Text(
                                 _isLoadingAddress
                                     ? 'Đang nhận diện địa chỉ vị trí...'
-                                    : (_resolvedAddress ?? 'Vị trí đã được xác thực trên bản đồ'),
+                                    : (_resolvedAddress ??
+                                        (isOnline
+                                            ? 'Vị trí đã được xác thực trên bản đồ'
+                                            : 'Toạ độ: ${OfflineGpsPlaceholder.formatCoords(widget.lat!.toDouble(), widget.lng!.toDouble())}')),
                                 style: AppTypography.bodySmall(
                                   color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                                 ).copyWith(fontWeight: FontWeight.w600, height: 1.3),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí',
+                                isOnline
+                                    ? 'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí'
+                                    : OfflineGpsPlaceholder.addressHint,
                                 style: AppTypography.bodySmall(
                                   color: isDark
                                       ? AppColors.darkOnSurfaceVariant

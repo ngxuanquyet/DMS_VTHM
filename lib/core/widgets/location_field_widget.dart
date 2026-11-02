@@ -10,6 +10,8 @@ import '../map/goong_config.dart';
 import '../map/goong_map_view.dart';
 import '../map/goong_models.dart';
 import '../map/goong_providers.dart';
+import '../map/offline_gps_placeholder.dart';
+import '../network/connectivity_provider.dart';
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
@@ -55,6 +57,10 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
   bool _isLocating = false;
   String? _locationError;
   String? _resolvedAddress;
+
+  /// Địa chỉ do CHÍNH widget tự điền (tra từ toạ độ / chọn gợi ý) — khác địa chỉ người dùng gõ hay đã lưu từ trước.
+  /// Lấy toạ độ mới lúc mất mạng chỉ bỏ loại này (nó thuộc về toạ độ cũ).
+  String? _autoFilledAddress;
 
   bool get _effectiveShowBorderContainer =>
       widget.showBorderContainer ?? widget.showAddressInput;
@@ -191,8 +197,19 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
       return;
     }
 
+    // Mất mạng: không gợi ý địa chỉ (Goong cần mạng) — người dùng gõ tay.
+    if (!ref.read(connectivityProvider).isOnline) {
+      if (_suggestions.isNotEmpty || _isSearchingSuggestions) {
+        setState(() {
+          _suggestions = [];
+          _isSearchingSuggestions = false;
+        });
+      }
+      return;
+    }
+
     _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
-      if (!mounted) return;
+      if (!mounted || !ref.read(connectivityProvider).isOnline) return;
       setState(() {
         _isSearchingSuggestions = true;
       });
@@ -239,6 +256,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         final pLng = double.parse(place.location!.lng.toStringAsFixed(7));
         setState(() {
           _resolvedAddress = finalAddr;
+          _autoFilledAddress = finalAddr;
         });
         _notifyChange(
           address: finalAddr,
@@ -250,6 +268,12 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
   }
 
   Future<void> _reverseGeocodeAndUpdate(double lat, double lng) async {
+    // Mất mạng: không tra địa chỉ (Goong cần mạng) — cùng luật màn Chấm công; ô địa chỉ để người dùng tự gõ.
+    if (!ref.read(connectivityProvider).isOnline) {
+      // Địa chỉ tra của toạ độ cũ không còn đúng (ô địa chỉ tự điền đã được bỏ ở [_offlineAddressForNewPoint]).
+      if (_resolvedAddress != null && mounted) setState(() => _resolvedAddress = null);
+      return;
+    }
     setState(() => _isLoadingAddress = true);
     try {
       final goongService = ref.read(goongApiServiceProvider);
@@ -260,6 +284,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
           _resolvedAddress = addr;
           if (_addressController.text.trim().isEmpty) {
             _addressController.text = addr;
+            _autoFilledAddress = addr;
           }
           _isLoadingAddress = false;
         });
@@ -312,6 +337,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         final isMock = lastKnown.isMocked;
 
         _notifyChange(
+          address: _offlineAddressForNewPoint(),
           lat: lat,
           lng: lng,
           accuracy: accuracy,
@@ -337,6 +363,7 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         final isMock = position.isMocked;
 
         _notifyChange(
+          address: _offlineAddressForNewPoint(),
           lat: lat,
           lng: lng,
           accuracy: accuracy,
@@ -358,6 +385,18 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
         });
       }
     }
+  }
+
+  /// Toạ độ MỚI lấy lúc mất mạng: địa chỉ widget tự điền cho toạ độ cũ không còn đúng mà cũng không tra lại được ⇒ bỏ,
+  /// trả '' để gửi cùng toạ độ mới (CÙNG một lần báo — kèm sai số/cờ giả lập của chính lần định vị này). Địa chỉ người
+  /// dùng gõ / đã lưu thì giữ (trả null = không đổi).
+  String? _offlineAddressForNewPoint() {
+    if (ref.read(connectivityProvider).isOnline) return null;
+    final auto = _autoFilledAddress;
+    if (auto == null || _addressController.text != auto) return null;
+    _addressController.clear();
+    _autoFilledAddress = null;
+    return '';
   }
 
   void _clearCoordinates() {
@@ -425,6 +464,15 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     final hasCoords = _hasCoords;
     final lat = _lat;
     final lng = _lng;
+    final isOnline = ref.watch(connectivityProvider).isOnline;
+    // Có mạng lại mà toạ độ (lấy lúc mất mạng) chưa có địa chỉ ⇒ tra ngay (chỉ điền khi ô địa chỉ còn trống).
+    ref.listen<bool>(connectivityProvider.select((c) => c.isOnline), (prev, next) {
+      if (!next && _suggestions.isNotEmpty) setState(() => _suggestions = []);
+      if (prev == false && next && widget.showAddressInput && _lat != null && _lng != null &&
+          (_resolvedAddress == null || _resolvedAddress!.isEmpty)) {
+        _reverseGeocodeAndUpdate(_lat!, _lng!);
+      }
+    });
 
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,7 +620,8 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                   ],
                 ),
               ),
-            if (_suggestions.isNotEmpty)
+            // Gợi ý lấy lúc còn mạng thì ẩn khi mất mạng — chọn nó cần tra chi tiết (Goong) mới có toạ độ.
+            if (_suggestions.isNotEmpty && isOnline)
               Container(
                 margin: const EdgeInsets.only(top: 4, bottom: 8),
                 decoration: BoxDecoration(
@@ -720,6 +769,21 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Mất mạng: cùng luật màn Chấm công — ẩn bản đồ, hiện toạ độ GPS + nút lấy lại.
+                if (!isOnline)
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    child: OfflineGpsPlaceholder(
+                      lat: lat,
+                      lng: lng,
+                      height: 230,
+                      borderRadius: BorderRadius.zero,
+                      readOnly: widget.isReadOnly,
+                      busy: _isLocating,
+                      onRefresh: widget.isReadOnly ? null : _fetchFreshLocation,
+                    ),
+                  )
+                else
                 Stack(
                   alignment: Alignment.center,
                   children: [
@@ -842,7 +906,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                                           _resolvedAddress != _addressController.text
                                       ? _resolvedAddress!
                                       : (hasCoords
-                                          ? 'Vị trí đã được xác thực trên bản đồ'
+                                          ? (isOnline
+                                              ? 'Vị trí đã được xác thực trên bản đồ'
+                                              : 'Toạ độ: ${OfflineGpsPlaceholder.formatCoords(lat!, lng!)}')
                                           : 'Chưa xác định toạ độ trên bản đồ')),
                               style: AppTypography.bodySmall(
                                 color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
@@ -850,7 +916,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí',
+                              isOnline
+                                  ? 'Bạn có thể vuốt, kéo, phóng to / thu nhỏ bản đồ để kiểm tra vị trí'
+                                  : OfflineGpsPlaceholder.addressHint,
                               style: AppTypography.bodySmall(
                                 color: isDark
                                     ? AppColors.darkOnSurfaceVariant

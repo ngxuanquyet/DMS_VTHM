@@ -218,8 +218,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   /// Điền địa chỉ tra từ vị trí bản đồ vào `address` khi ô đang trống hoặc vẫn là địa chỉ tự điền lần trước (lấy lại vị
   /// trí thì địa chỉ đi theo); người dùng đã gõ / sửa thì giữ nguyên.
   void _fillAddressFromMap(String? newAddress) {
-    if (newAddress == null || newAddress.trim().isEmpty) return;
+    if (newAddress == null) return;
     final current = _formData['address']?.toString().trim() ?? '';
+    // '' = bản đồ lấy toạ độ MỚI lúc mất mạng (không tra được địa chỉ): bỏ địa chỉ TỰ ĐIỀN của toạ độ cũ — địa chỉ người
+    // dùng tự gõ thì giữ.
+    if (newAddress.trim().isEmpty) {
+      if (_autoAddress != null && current == _autoAddress) {
+        _autoAddress = null;
+        updateFieldValue('address', '');
+      }
+      return;
+    }
     if (current.isEmpty || current == _autoAddress) {
       _autoAddress = newAddress.trim();
       updateFieldValue('address', _autoAddress);

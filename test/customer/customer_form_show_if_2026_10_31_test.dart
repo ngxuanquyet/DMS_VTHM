@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/dynamic_form_builder.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
@@ -125,7 +126,8 @@ void main() {
   testWidgets('form: ô ẩn không vẽ, miễn bắt buộc, không có trong dữ liệu gửi; đổi giá trị ⇒ hiện lại ngay', (tester) async {
     final f = build(schema(dong));
     final key = GlobalKey<DynamicFormBuilderState>();
-    await tester.pumpWidget(MaterialApp(
+    // ProviderScope: ô Vị trí đọc trạng thái mạng qua Riverpod — app thật luôn có scope ở gốc.
+    await tester.pumpWidget(ProviderScope(child: MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
           child: DynamicFormBuilder(
@@ -137,7 +139,7 @@ void main() {
           ),
         ),
       ),
-    ));
+    )));
     await tester.pumpAndSettle();
 
     bool hienNhan(String nhan) => find

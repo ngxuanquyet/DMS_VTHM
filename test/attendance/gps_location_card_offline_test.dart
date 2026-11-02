@@ -96,8 +96,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 1. Badge online
-    expect(find.text('GPS: ±8m'), findsOneWidget);
+    // 1. Badge online — không còn con số cố định "±8m"; chưa có sai số máy báo thì "Đã định vị".
+    expect(find.text('GPS: ±8m'), findsNothing);
+    expect(find.text('GPS: Đã định vị'), findsOneWidget);
+    // Chưa tra được địa chỉ ⇒ hiện toạ độ, không hiện địa danh bịa "Vĩnh Yên, Vĩnh Phúc".
+    expect(find.text('Vĩnh Yên, Vĩnh Phúc'), findsNothing);
+    expect(find.textContaining('Toạ độ: 21.02851, 105.85421'), findsOneWidget);
 
     // 2. Không hiện thông báo ngoại tuyến
     expect(find.text('Định vị GPS ngoại tuyến'), findsNothing);
