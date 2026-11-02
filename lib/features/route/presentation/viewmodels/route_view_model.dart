@@ -2000,7 +2000,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
                 payload: drift.Value(jsonEncode(offlinePayload)),
                 state: const drift.Value('pending'),
                 createdAt: drift.Value(nowMs),
-                createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
+                // Mốc LÚC BẤM check-in — lần gửi trực tuyến vừa hỏng có thể đã chờ quá giờ ~30s.
+                createdElapsed: drift.Value(SystemClock.monotonicMsAt(DateTime.tryParse(request.clientTime ?? ''))),
                 bootId: drift.Value(SystemClock.bootId),
                 attempts: const drift.Value(0),
               ),
@@ -2896,7 +2897,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             payload: drift.Value(jsonEncode(checkoutPayload)),
             state: const drift.Value('pending'),
             createdAt: drift.Value(nowMs),
-            createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
+            // Mốc LÚC BẤM check-out — lần gửi trực tuyến vừa hỏng có thể đã chờ quá giờ ~30s.
+            createdElapsed: drift.Value(SystemClock.monotonicMsAt(DateTime.tryParse(request.clientTime ?? ''))),
             bootId: drift.Value(SystemClock.bootId),
             attempts: const drift.Value(0),
           ),

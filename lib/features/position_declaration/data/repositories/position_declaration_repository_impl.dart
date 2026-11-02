@@ -252,7 +252,9 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
         clientUuid: declaration.clientUuid,
         payload: jsonEncode(payloadMap),
         createdAt: declaration.createdAtMs > 0 ? declaration.createdAtMs : nowMs,
-        createdElapsed: SystemClock.nowMonotonicMs,
+        // Mốc LÚC BẤM — tải ảnh + lần gửi trực tuyến vừa hỏng có thể đã chờ khá lâu.
+        createdElapsed: SystemClock.monotonicMsAt(
+            declaration.createdAtMs > 0 ? DateTime.fromMillisecondsSinceEpoch(declaration.createdAtMs) : null),
         bootId: SystemClock.bootId,
       ),
     );

@@ -186,7 +186,8 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           clientUuid: finalUuid,
           payload: jsonEncode(requestModel.toJson()),
           createdAt: nowMs,
-          createdElapsed: SystemClock.nowMonotonicMs,
+          // Mốc LÚC BẤM — lần gửi trực tuyến vừa hỏng có thể đã chờ quá giờ ~30s.
+          createdElapsed: SystemClock.monotonicMsAt(now),
           bootId: SystemClock.bootId,
         ),
       );

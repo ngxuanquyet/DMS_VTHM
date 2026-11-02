@@ -253,6 +253,9 @@ class SyncService {
         await _db.recoverOrphanedSendingEntries(resetPendingBackoff: true);
       }
 
+      // Neo lại đồng hồ máy trước khi tính `queued_seconds`: máy có thể đã ngủ từ lần neo trước.
+      await SystemClock.refresh();
+
       // Kiểm tra kết nối mạng
       final isOnline = _ref.read(connectivityProvider).isOnline;
       if (!isOnline && !force) {
@@ -1399,6 +1402,16 @@ class SyncService {
   /// Đồng bộ lượt chấm công lên máy chủ (§3 API-CHAM-CONG-MOBILE-2026-10-05.md)
   Future<void> _syncAttendancePunch(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    // Giờ công = giờ server lúc nhận − khoảng nằm chờ (#24618, chủ hệ thống chốt 02/11/2026): gửi khoảng chờ đo bằng
+    // đồng hồ máy (cùng cách check-in). Máy đã khởi động lại ⇒ null ⇒ KHÔNG gửi (server ghi giờ nhận, không đoán).
+    payload['is_offline_sync'] = '1';
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    if (queuedSec != null) {
+      payload['queued_seconds'] = queuedSec;
+    }
     final res = await _apiClient.post(
       '/attendance/mobile/punch',
       data: payload,

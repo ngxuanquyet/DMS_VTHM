@@ -399,6 +399,18 @@ void main() {
     });
   });
 
+  test('#24618 lượt chấm công từ hàng đợi gửi kèm is_offline_sync + queued_seconds', () async {
+    boot((o) => o.path == '/attendance/mobile/punch' ? (201, {'success': true, 'data': {'id': 5}}) : null);
+    await enqueue('attendance_punch', 'create', '11111111-1111-4111-8111-111111111111',
+        payload: '{"client_uuid":"11111111-1111-4111-8111-111111111111","lat":"1","lng":"1"}');
+
+    await container.read(syncServiceProvider).syncQueue();
+
+    final sent = adapter.calls.singleWhere((c) => c.path == '/attendance/mobile/punch').data as Map;
+    expect(sent['is_offline_sync'], '1');
+    expect(sent['queued_seconds'], isA<int>());
+  });
+
   group('#1 AuthInterceptor chỉ xoá phiên khi máy chủ TỪ CHỐI phiên làm mới', () {
     late _Adapter main;
 

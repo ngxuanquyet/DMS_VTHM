@@ -229,7 +229,8 @@ class FormsRepositoryImpl implements FormsRepository {
         payload: Value(jsonEncode(offlinePayload)),
         state: const Value('pending'),
         createdAt: Value(nowMs),
-        createdElapsed: Value(SystemClock.nowMonotonicMs),
+        // Mốc LÚC NỘP — lần gửi trực tuyến vừa hỏng có thể đã chờ quá giờ ~30s.
+        createdElapsed: Value(SystemClock.monotonicMsAt(DateTime.tryParse(submission.clientTime))),
         bootId: Value(SystemClock.bootId),
         attempts: const Value(0),
       ),

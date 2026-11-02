@@ -11,10 +11,14 @@ import 'core/services/error_tracker_service.dart';
 import 'core/services/fcm_push_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/account_key.dart';
+import 'core/utils/system_clock.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Đồng hồ hàng đợi ngoại tuyến theo đồng hồ MÁY (#24618) — TRƯỚC mọi thứ có thể ghi vào hàng đợi.
+  await SystemClock.init();
 
   // Khởi tạo dịch vụ theo dõi lỗi và nhật ký hệ thống
   await ErrorTrackerService.instance.initialize();
