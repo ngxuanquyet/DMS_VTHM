@@ -806,6 +806,10 @@ class AppDatabase extends _$AppDatabase {
             ..limit(1))
           .getSingleOrNull();
       if (create?.state == 'sending') return null;
+      // Dòng tạo 'pending' nhưng ĐÃ TỪNG gửi đi (lần trước hỏng giữa chừng / lượt trực tuyến quá giờ rồi rơi về hàng đợi):
+      // server có thể đã mở lượt ⇒ coi như đang gửi, để nơi gọi xếp lệnh huỷ chờ check-in có mã rồi huỷ. Xoá thì lượt treo
+      // trên server mà app không còn gì để gỡ (#24698 lỗi 6).
+      if (create != null && create.state == 'pending' && visitCreateMaybeOnServer(create.payload)) return null;
       if (create?.state == 'dead') {
         // Check-in bị server TỪ CHỐI: lượt không hề có trên server ⇒ xoá trọn (cả dòng tạo dead, phiếu, mục con đã dead)
         // — để lại thì phiếu của lượt đã huỷ nổi lên "Lỗi đồng bộ" (cha dead = hết hy vọng ⇒ 410).
@@ -887,6 +891,20 @@ void collectFilePaths(Object? node, List<String> out) {
     for (final v in node) {
       collectFilePaths(v, out);
     }
+  }
+}
+
+/// Khoá NỘI BỘ trong payload dòng tạo lượt viếng thăm: lượt này có thể ĐÃ tới server (đã gửi ít nhất một lần, hoặc lượt
+/// gửi trực tuyến quá giờ). Không dùng `attempts` — "Đồng bộ ngay" đặt lại nó. Bỏ khỏi payload trước khi gửi.
+const String visitMaybeOnServerKey = '_maybe_on_server';
+
+/// Dòng tạo lượt có dấu [visitMaybeOnServerKey] không.
+bool visitCreateMaybeOnServer(String payload) {
+  try {
+    final map = jsonDecode(payload);
+    return map is Map && map[visitMaybeOnServerKey] == true;
+  } catch (_) {
+    return false;
   }
 }
 

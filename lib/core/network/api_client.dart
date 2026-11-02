@@ -395,10 +395,14 @@ class ApiClient {
         error.error is SocketException ||
         error.error is HttpException) {
       connectivityNotifier?.handleNetworkDisconnection();
-      return NetworkException(
-        'Không có kết nối mạng. Vui lòng kiểm tra lại.',
-        errorId,
-      );
+      // Chưa kết nối được (quá giờ kết nối; lỗi mở socket) ⇒ chắc chắn chưa tới server. `connectionError` mang
+      // HttpException (dio: "Connection closed before full header was received" — đã gửi trọn request) và các ca quá giờ
+      // gửi/nhận thì server có thể đã nhận.
+      final neverConnected = error.type == DioExceptionType.connectionTimeout ||
+          (error.type == DioExceptionType.connectionError && error.error is! HttpException);
+      return neverConnected
+          ? NetworkException('Không có kết nối mạng. Vui lòng kiểm tra lại.', errorId)
+          : NetworkException.maybeSent('Không có kết nối mạng. Vui lòng kiểm tra lại.', errorId);
     }
     if (error.response != null) {
       final statusCode = error.response?.statusCode;

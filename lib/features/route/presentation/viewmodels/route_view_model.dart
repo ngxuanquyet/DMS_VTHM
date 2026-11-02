@@ -1132,6 +1132,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           photos: [...saved.photos.where((p) => !have.contains(p.id)), ...state.photos],
           submittedSurveyConfigIds: {...state.submittedSurveyConfigIds, ...saved.submittedConfigIds},
         );
+        // Lượt ngoại tuyến: cổng biểu mẫu dựng từ phiếu đã nộp — biểu mẫu có thể đã nạp xong TRƯỚC phần này ⇒ tính lại.
+        if (forVisitId < 0 && state.requirements != null) {
+          _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
+        }
       }
     } catch (_) {}
     if (token != _restoreToken) return; // lần khôi phục khác đã thay chỗ
@@ -1199,9 +1203,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final currentSec = (isClosed || isNewPendingStore)
         ? 0
         : (currentReq?.secondsRemaining ?? rules.visit.minDurationMinutes * 60);
+    // Lượt tạo NGOẠI TUYẾN (id âm) chưa có danh sách của server ⇒ tự dựng từ biểu mẫu khảo sát đã lưu trong máy.
     final missingForms = isClosed
         ? <MissingFormEntity>[]
-        : (currentReq?.missingForms ?? <MissingFormEntity>[]);
+        : (state.visitId < 0 ? _offlineMissingForms() : (currentReq?.missingForms ?? <MissingFormEntity>[]));
 
     // Giữ danh sách cả khi đóng cửa (chỉ không tính vào satisfied) — đổi lại "mở cửa" lúc ngoại tuyến không mất cổng ④.
     final missingMaterials = currentReq?.missingMaterials ?? <MissingMaterialEntity>[];
@@ -1403,8 +1408,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         customerId: customerId,
       );
       state = state.copyWith(surveyForms: forms);
+      // Biểu mẫu về SAU khi check-in ngoại tuyến (hoặc khi mở lại lượt ngoại tuyến) ⇒ dựng lại cổng biểu mẫu bắt buộc.
+      if (state.visitId < 0 && state.requirements != null) {
+        _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
+      }
     } catch (_) {}
   }
+
+  /// Cổng ② cho lượt NGOẠI TUYẾN: biểu mẫu khảo sát BẮT BUỘC (bản lưu trong máy của điểm bán — server đã lọc theo người,
+  /// điểm bán và "lần đầu / từ lần hai" lúc tải) chưa nộp ở lượt này. Trước đây gửi rỗng ⇒ app cho check-out, server từ
+  /// chối 422 vì thiếu phiếu ⇒ lượt treo (#24698 lỗi 3). Bản lưu có thể cũ — server vẫn là cổng cuối.
+  List<MissingFormEntity> _offlineMissingForms() => state.unsubmittedRequiredSurveys
+      .map((f) => MissingFormEntity(formId: f.formId, name: f.name))
+      .toList();
 
   /// clientUuid của phiên lượt — cha của các mục hàng đợi đi kèm lượt (ảnh, vật tư, check-out).
   String get sessionClientUuid => _sessionClientUuid;
@@ -1439,14 +1455,16 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     );
   }
 
-  void markSurveySubmitted(int configId) {
+  /// [formId]: `missing_forms` của server mang MÃ BIỂU MẪU (`form_id`), không phải mã cấu hình — so nhầm mã cấu hình thì
+  /// nộp xong phiếu mà cổng ② vẫn báo thiếu.
+  void markSurveySubmitted(int configId, int formId) {
     final updated = Set<int>.from(state.submittedSurveyConfigIds)
       ..add(configId);
 
     var updatedReq = state.requirements;
     if (updatedReq != null) {
       final remainingForms = updatedReq.missingForms
-          .where((f) => f.formId != configId)
+          .where((f) => f.formId != formId)
           .toList();
       final isTimeOk =
           updatedReq.secondsRemaining <= 0 || state.visitResult == 'closed';
@@ -1761,6 +1779,22 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         str.contains('handshakeexception');
   }
 
+  /// Lỗi mạng của một lượt gửi trực tuyến mà request CÓ THỂ đã tới server (quá giờ chờ phản hồi, kết nối đứt giữa chừng).
+  /// Chỉ lỗi chắc chắn chưa ra khỏi máy (chưa kết nối được — [NetworkException.mayHaveReachedServer] false, không phân
+  /// giải được tên miền, bị từ chối kết nối, không có đường mạng) mới trả false. KHÔNG xét trạng thái mạng: ApiClient tự
+  /// chuyển sang "mất mạng" ngay khi một lời gọi hỏng, kể cả ca quá giờ chờ phản hồi.
+  bool _mayHaveReachedServer(Object e) {
+    if (e is NetworkException) return e.mayHaveReachedServer;
+    final str = e.toString().toLowerCase();
+    const neverSent = [
+      'failed host lookup',
+      'connection refused',
+      'network is unreachable',
+      'no internet',
+    ];
+    return !neverSent.any(str.contains);
+  }
+
   VisitEntity _createOfflineVisit({
     required int customerId,
     double? lat,
@@ -1798,12 +1832,17 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         (state.customer as CustomerEntity).isPendingApproval;
     final effectiveMinDuration = isNewPendingStore ? 0 : minDurationMinutes;
 
+    final missingForms = isClosed ? <MissingFormEntity>[] : _offlineMissingForms();
+
     List<String> blockers = [];
     if (!isClosed) {
       if (effectiveMinDuration > 0) {
         blockers.add(
           'Bạn cần ở lại thêm $effectiveMinDuration phút nữa mới check-out được.',
         );
+      }
+      if (missingForms.isNotEmpty) {
+        blockers.add('Bạn cần hoàn thành ${missingForms.length} biểu mẫu bắt buộc.');
       }
       if (photosMissing > 0) {
         blockers.add('Bạn cần chụp thêm $photosMissing ảnh nữa.');
@@ -1838,10 +1877,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       customerApprovalStatus: customerApprovalStatus,
       customerApprovalNote: customerApprovalNote,
       requirements: VisitRequirementsEntity(
-        satisfied: photosMissing <= 0 && effectiveMinDuration <= 0,
+        satisfied: photosMissing <= 0 && effectiveMinDuration <= 0 && missingForms.isEmpty,
         secondsRemaining: effectiveMinDuration * 60,
         photosMissing: photosMissing,
-        missingForms: const [],
+        missingForms: missingForms,
         blockers: blockers,
       ),
     );
@@ -2030,6 +2069,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             final nowMs = DateTime.now().millisecondsSinceEpoch;
             final offlinePayload = request.toJson();
             offlinePayload['is_offline_sync'] = true;
+            // Lượt gửi trực tuyến vừa hỏng mà có thể đã tới server (quá giờ, đứt giữa chừng) ⇒ huỷ lượt sau này không được
+            // xoá thẳng dòng tạo (#24698 lỗi 6).
+            if (_mayHaveReachedServer(e)) offlinePayload[visitMaybeOnServerKey] = true;
 
             // Nếu điểm bán tạo offline (customerId <= 0), gắn customer_client_uuid vào payload
             String? customerClientUuid;

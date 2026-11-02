@@ -300,7 +300,7 @@ void main() {
       final (ok, _) = await checkInVm.uploadPhoto(img, photoType: 'display');
       expect(ok, isTrue);
       expect(p.basename(container.read(checkInViewModelProvider).photos.single.localPath!), startsWith('wm_'));
-      checkInVm.markSurveySubmitted(7);
+      checkInVm.markSurveySubmitted(7, 70);
       expect(container.read(checkInViewModelProvider).photos.single.id, 501);
       final openVisit = container.read(checkInViewModelProvider).visitEntity;
       await Future<void>.delayed(const Duration(milliseconds: 50)); // lần ghi máy xong

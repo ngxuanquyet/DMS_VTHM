@@ -1326,7 +1326,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                             ),
                           );
                           if (result == true) {
-                            vm.markSurveySubmitted(item.configId);
+                            vm.markSurveySubmitted(item.configId, item.formId);
                           }
                         },
                       );

@@ -663,8 +663,17 @@ class CustomerLocalDataSource {
       // Sinh nhật là ô GỐC (không phải ô động trong `data`) — #24698 lỗi 11.
       if (changes['birthday'] != null) queuePayload['birthday'] = changes['birthday'];
       if (address.isNotEmpty) queuePayload['address'] = address;
-      if (lat != null) queuePayload['lat'] = lat;
-      if (lng != null) queuePayload['lng'] = lng;
+      // Màn sửa gửi toạ độ dạng `coords` ({lat, lng, accuracy, mock}) và bộ dựng payload ƯU TIÊN `coords` hơn lat/lng ⇒
+      // phải thay chính `coords`; chỉ ghi lat/lng thì lúc đồng bộ vẫn gửi toạ độ cũ của lần tạo (#24698 lỗi 10).
+      if (changes.containsKey('coords')) {
+        queuePayload['coords'] = changes['coords'];
+        queuePayload.remove('lat');
+        queuePayload.remove('lng');
+      } else {
+        if (lat != null) queuePayload['lat'] = lat;
+        if (lng != null) queuePayload['lng'] = lng;
+        if (changes.containsKey('lat') || changes.containsKey('lng')) queuePayload.remove('coords');
+      }
       if (changes['data'] is Map) {
         final existingData = queuePayload['data'] is Map ? (queuePayload['data'] as Map) : {};
         queuePayload['data'] = {...existingData, ...(changes['data'] as Map)};

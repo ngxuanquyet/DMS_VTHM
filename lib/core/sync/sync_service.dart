@@ -829,10 +829,17 @@ class SyncService {
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
   }
 
+  /// Giờ máy LÚC BẤM (ms) của check-in/check-out — `client_time` trong payload; thiếu thì lúc xếp hàng. Lúc xếp hàng có thể
+  /// muộn ~30s (dòng được xếp SAU lượt gửi trực tuyến vừa hỏng), nên ưu tiên `client_time`.
+  static int _tapWallMs(Map<String, dynamic> payload, SyncQueueEntry entry) =>
+      DateTime.tryParse(payload['client_time']?.toString() ?? '')?.millisecondsSinceEpoch ?? entry.createdAt;
+
   /// Đồng bộ Check-in viếng thăm lên server (§3 & §9)
   Future<void> _syncCreateVisit(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    final markedMaybeOnServer = payload[visitMaybeOnServerKey] == true;
     payload.remove(openVisitCountKey);
+    payload.remove(visitMaybeOnServerKey);
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
 
@@ -868,11 +875,19 @@ class SyncService {
     final queuedSec = SystemClock.calculateQueuedSeconds(
       createdElapsedMs: entry.createdElapsed,
       entryBootId: entry.bootId,
+      wallFallbackCreatedAtMs: _tapWallMs(payload, entry), // máy khởi động lại ⇒ theo giờ máy (#24698 lỗi 4)
     );
     if (queuedSec != null) {
       payload['queued_seconds'] = queuedSec;
     }
     payload['client_boot_id'] = entry.bootId;
+
+    // Đánh dấu "có thể đã tới server" NGAY TRƯỚC khi gửi (sau mọi bước có thể dừng mà chưa gửi, vd chờ điểm bán cha): hỏng
+    // giữa chừng (quá giờ, mất phản hồi) thì huỷ lượt không được xoá thẳng dòng này nữa (#24698 lỗi 6).
+    if (!markedMaybeOnServer) {
+      final stored = jsonDecode(entry.payload) as Map<String, dynamic>;
+      await _db.updatePayload(entry.id, jsonEncode({...stored, visitMaybeOnServerKey: true}));
+    }
 
     final response = await _apiClient.post(
       '/dms/visits',
@@ -1054,6 +1069,7 @@ class SyncService {
     final queuedSec = SystemClock.calculateQueuedSeconds(
       createdElapsedMs: entry.createdElapsed,
       entryBootId: entry.bootId,
+      wallFallbackCreatedAtMs: _tapWallMs(payload, entry), // máy khởi động lại ⇒ theo giờ máy (#24698 lỗi 4)
     );
     if (queuedSec != null) {
       payload['queued_seconds'] = queuedSec;

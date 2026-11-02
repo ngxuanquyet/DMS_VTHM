@@ -99,11 +99,21 @@ class SystemClock {
   /// - Nếu cùng bootId: trả về (nowMonotonicMs - createdElapsedMs) quy ra giây.
   ///
   /// Nơi gửi nên `await` [refresh] trước (SyncService làm ở đầu mỗi lượt) để khoảng máy ngủ được tính.
+  ///
+  /// [wallFallbackCreatedAtMs]: CHỈ check-in/check-out viếng thăm truyền (giờ máy lúc bấm, ms). Khác lần khởi động thì
+  /// tính theo GIỜ MÁY thay vì gửi rỗng — rỗng làm server ghi giờ vào/ra = lúc nhận, check-out đi sát check-in nên kẹt
+  /// cổng "5 phút" và lượt treo (#24698 lỗi 4). Chủ hệ thống chốt 02/11/2026: dùng giờ máy, KHÔNG gắn cờ; server vẫn
+  /// kẹp trần theo lần cuối máy online. Chấm công / khai báo vị trí KHÔNG truyền (giữ rỗng như cũ).
   static int? calculateQueuedSeconds({
     required int createdElapsedMs,
     required String entryBootId,
+    int? wallFallbackCreatedAtMs,
   }) {
     if (entryBootId != _bootId) {
+      if (wallFallbackCreatedAtMs != null) {
+        final wallMs = DateTime.now().millisecondsSinceEpoch - wallFallbackCreatedAtMs;
+        return wallMs < 0 ? 0 : wallMs ~/ 1000;
+      }
       // Máy đã khởi động lại giữa chừng (§9.1 luật ②) -> gửi rỗng
       return null;
     }

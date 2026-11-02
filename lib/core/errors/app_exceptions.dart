@@ -60,10 +60,19 @@ class DmsAppForbiddenException extends AppException {
 }
 
 class NetworkException extends AppException {
+  /// Request CÓ THỂ đã tới server (đã gửi xong mà quá giờ chờ phản hồi / đứt giữa chừng) — khác lỗi chưa kết nối được.
+  /// Nơi ghi (check-in) cần biết để không coi bản ghi là "chắc chắn chưa có trên server" (#24698 lỗi 6).
+  final bool mayHaveReachedServer;
+
   const NetworkException([
     String message = 'Không có kết nối mạng. Vui lòng kiểm tra lại.',
     String? errorId,
-  ]) : super(message, null, null, errorId);
+  ])  : mayHaveReachedServer = false,
+        super(message, null, null, errorId);
+
+  const NetworkException.maybeSent(String message, [String? errorId])
+      : mayHaveReachedServer = true,
+        super(message, null, null, errorId);
 }
 
 class ServerException extends AppException {
