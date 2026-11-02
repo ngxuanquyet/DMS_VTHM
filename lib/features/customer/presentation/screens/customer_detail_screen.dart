@@ -177,6 +177,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       final success = await ref
           .read(customerViewModelProvider.notifier)
           .deletePendingCustomer(_customer.clientUuid!);
+      if (!success && mounted) {
+        // Dòng tạo đang / đã gửi lên máy chủ — xoá lúc này là điểm bán "sống lại" ở lần tải sau (#24698).
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Điểm bán đang hoặc đã gửi lên máy chủ — không xoá được trên máy. Tải lại danh sách sau ít phút.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

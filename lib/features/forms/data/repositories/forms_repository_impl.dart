@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/utils/account_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/market_form_entity.dart';
 import '../../domain/repositories/forms_repository.dart';
@@ -207,9 +209,22 @@ class FormsRepositoryImpl implements FormsRepository {
         }
       }
 
+      // Máy chủ TỪ CHỐI phiếu (4xx khác 408/429 — thiếu ô bắt buộc, lượt đã đóng, đã nộp…) ⇒ báo ngay để người dùng sửa.
+      // Xếp hàng thì app báo "đã lưu, sẽ gửi sau" rồi phiếu chết ở hàng đợi — nhân viên tưởng đã nộp (#24698). Ca ảnh bị
+      // dọn rác (đã thử tải lại ở trên) vẫn xếp hàng: lần đồng bộ tải lại ảnh từ máy.
+      if (!errStr.contains('không tìm thấy ảnh') && isPermanentRejection(e)) rethrow;
       debugPrint('[FormsRepository] Nộp trực tiếp thất bại, chuyển vào hàng đợi offline: $e');
       return _saveToSyncQueue(submission);
     }
+  }
+
+  /// Chép ảnh của phiếu vào `offline_form_photos` TRƯỚC khi xếp hàng ([OfflinePhotoStore.persist], #24698).
+  static Future<Map<String, List<String>>?> _persistFormPhotos(Map<String, List<String>>? paths, String uuid) async {
+    if (paths == null || paths.isEmpty) return null;
+    return {
+      for (final e in paths.entries)
+        e.key: await OfflinePhotoStore.persist(e.value, dirName: 'offline_form_photos', prefix: '${uuid}_${e.key}'),
+    };
   }
 
   Future<MarketFormSubmitResult> _saveToSyncQueue(
@@ -218,6 +233,8 @@ class FormsRepositoryImpl implements FormsRepository {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     // §5: Đảm bảo lưu cả đường dẫn ảnh cục bộ _local_photo_paths vào hàng đợi offline
     final offlinePayload = submission.toJson(includeInternal: true);
+    final persisted = await _persistFormPhotos(submission.localPhotoPaths, submission.clientUuid);
+    if (persisted != null) offlinePayload['_local_photo_paths'] = persisted;
     offlinePayload['is_offline_sync'] = true;
 
     await _db.enqueue(

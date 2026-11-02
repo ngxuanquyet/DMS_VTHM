@@ -31,7 +31,12 @@ class LocalHistoryRetention {
   /// Ảnh tạm (ảnh chụp gốc, bản gắn watermark `wm_*`, bản nén) không ai xoá: quá hạn này và không còn mục hàng đợi
   /// nào trỏ tới thì dọn — khớp hạn giữ mục đã gửi (AppDatabase.doneRetention).
   static const photoKeep = AppDatabase.doneRetention;
-  static const _offlinePhotoDirs = ['offline_visit_photos', 'offline_customer_photos', 'attendance_photos'];
+  static const _offlinePhotoDirs = [
+    'offline_visit_photos',
+    'offline_customer_photos',
+    'attendance_photos',
+    'offline_form_photos',
+  ];
   static const _imageExts = {'.jpg', '.jpeg', '.png', '.heic', '.webp'};
 
   /// Ghi mốc lưu cache biểu mẫu [cacheKey] (gọi khi tải biểu mẫu từ máy chủ thành công).

@@ -4,8 +4,6 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,9 +12,9 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
-import '../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../../../core/utils/account_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/attendance_entity.dart';
 import '../../domain/repositories/attendance_repository.dart';
@@ -164,8 +162,13 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       } on ServerException catch (serverErr) {
         // 🔴 QUY TẮC §3.1: Nếu server trả về 422 (ngoài vùng, chưa khai địa điểm, chưa có mã nhân viên)
         // hoặc 4xx luật: TUYỆT ĐỐI KHÔNG đưa vào hàng đợi gửi lại! Ném lỗi ra để hiện nguyên văn cho người dùng.
-        debugPrint('[AttendanceRepo] Server từ chối chấm công (${serverErr.statusCode}): ${serverErr.message}');
-        rethrow;
+        // Lỗi TẠM (5xx, 408, 429, không mã — lỗi kết nối/TLS) thì vào hàng đợi như mất mạng: server khử trùng theo
+        // client_uuid nên gửi lại an toàn; báo lỗi là người dùng không chấm lại thì mất lượt chấm (#24698).
+        if (isPermanentRejection(serverErr)) {
+          debugPrint('[AttendanceRepo] Server từ chối chấm công (${serverErr.statusCode}): ${serverErr.message}');
+          rethrow;
+        }
+        debugPrint('[AttendanceRepo] Server lỗi tạm khi chấm công (${serverErr.statusCode}) -> Đưa vào hàng đợi ngoại tuyến');
       } catch (e) {
         // Lỗi mạng hoặc server sập 5xx -> Đưa vào hàng đợi ngoại tuyến
         debugPrint('[AttendanceRepo] Lỗi mạng khi chấm công -> Đưa vào hàng đợi ngoại tuyến: $e');
@@ -180,7 +183,13 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
 
     // 🔴 Xử lý ngoại tuyến: Lưu vào bảng SyncQueueEntries (§3.2 & §8)
     final nowMs = now.millisecondsSinceEpoch;
-    if (database != null) {
+    // Bấm lại cùng lượt (cùng client_uuid — lần trước lưu ảnh lỗi) ⇒ dòng hàng đợi đã có, không xếp thêm.
+    final queued = database == null ? null : await database!.getEntryByClientUuid(finalUuid);
+    if (queued?.state == 'dead') {
+      // Lượt này máy chủ đã từ chối hẳn (vd ngoài vùng) — không trả "đã chấm" lạc quan.
+      throw AppException(queued!.lastError ?? 'Lượt chấm công này đã bị máy chủ từ chối.', 422);
+    }
+    if (database != null && queued == null) {
       await database!.enqueue(
         SyncQueueEntriesCompanion.insert(
           entity: 'attendance_punch',
@@ -242,9 +251,13 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         await _attachPhotoToLocalPunch(historyKey, punchId, photoEntity);
         return photoEntity;
       } on ServerException catch (serverErr) {
-        // Lỗi 4xx (ảnh quá trần, định dạng sai, không tìm thấy lượt): ném lỗi
-        debugPrint('[AttendanceRepo] Server từ chối tải ảnh: ${serverErr.message}');
-        rethrow;
+        // Lỗi 4xx từ chối hẳn (ảnh quá trần, định dạng sai, không tìm thấy lượt): ném lỗi. Lỗi tạm (5xx, 408, 429, phiên
+        // đăng nhập) ⇒ hàng đợi như mất mạng — báo lỗi thì người dùng rời màn là lượt chấm thiếu ảnh (#24698).
+        if (isPermanentRejection(serverErr)) {
+          debugPrint('[AttendanceRepo] Server từ chối tải ảnh: ${serverErr.message}');
+          rethrow;
+        }
+        debugPrint('[AttendanceRepo] Server lỗi tạm khi tải ảnh (${serverErr.statusCode}) -> Đưa vào hàng đợi ngoại tuyến');
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi mạng khi tải ảnh -> Đưa vào hàng đợi ngoại tuyến: $e');
       }
@@ -316,21 +329,14 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     final photoUuid = const Uuid().v4();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-    // Lưu ảnh vào thư mục attendance_photos cố định
-    String localSavedPath = file.path;
-    try {
-      final appDocDir = await getApplicationDocumentsDirectory();
-      final attDir = Directory(p.join(appDocDir.path, 'attendance_photos'));
-      if (!await attDir.exists()) {
-        await attDir.create(recursive: true);
-      }
-      final persistentFile = await file.copy(
-        p.join(attDir.path, PhotoWatermarkHelper.keepMarkerName(file, 'att_${photoType}_${nowMs}_$photoUuid.jpg')),
-      );
-      localSavedPath = persistentFile.path;
-    } catch (e) {
-      debugPrint('[AttendanceRepo] Không thể copy ảnh vào thư mục riêng: $e');
-    }
+    // Lưu ảnh vào thư mục attendance_photos cố định. Không chép được (thường là bộ nhớ đầy) ⇒ vẫn xếp hàng đường dẫn gốc:
+    // lượt chấm ĐÃ ghi, báo lỗi ở đây thì người dùng rời màn là lượt lên không ảnh; tệp gốc thường còn tới lúc có mạng.
+    final localSavedPath = (await OfflinePhotoStore.persist(
+      [file.path],
+      dirName: 'attendance_photos',
+      prefix: 'att_${photoType}_$photoUuid',
+    ))
+        .first;
 
     // Chép ảnh là I/O bất đồng bộ — tài khoản đổi trong lúc đó thì không gửi ảnh của người cũ dưới tên người mới.
     if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {

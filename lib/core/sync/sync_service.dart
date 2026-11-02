@@ -14,6 +14,7 @@ import '../network/connectivity_provider.dart';
 import '../network/refresh_outcome.dart';
 import '../services/app_notification_service.dart';
 import '../utils/image_upload_helper.dart';
+import '../utils/offline_photo_store.dart';
 import '../utils/system_clock.dart';
 import 'sync_entity_group.dart';
 import '../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
@@ -616,6 +617,17 @@ class SyncService {
     return _appDirsCache = dirs;
   }
 
+  /// Tệp ảnh của mục hàng đợi còn trên máy không: đường dẫn đã lưu, hoặc — iOS đổi UUID thư mục app sau cập nhật/khôi phục —
+  /// dựng lại theo thư mục Documents hiện tại. null = mất thật (#24698: trước đây chỉ ảnh điểm bán dựng lại, ảnh viếng
+  /// thăm / phiếu / chấm công thành "mất tệp" dù tệp vẫn còn).
+  static Future<File?> _existingLocalFile(String? path) async {
+    if (path == null || path.isEmpty) return null;
+    final clean = OfflinePhotoStore.toFilePath(path);
+    final file = File(clean);
+    if (await file.exists()) return file;
+    return _rebaseToCurrentDocuments(clean);
+  }
+
   /// Đường dẫn cũ `…/Documents/<phần sau>` dựng lại theo thư mục Documents HIỆN TẠI (null nếu không áp dụng / không có).
   static Future<File?> _rebaseToCurrentDocuments(String path) async {
     const marker = '/Documents/';
@@ -1010,9 +1022,8 @@ class SyncService {
     }
 
     // Mất tệp ảnh ⇒ báo lỗi (dead, hiện ở "Lỗi đồng bộ"), KHÔNG đánh dấu "đã gửi" — lượt sẽ thiếu ảnh mà không ai biết.
-    final localPath = entry.localPath;
-    final file = (localPath == null || localPath.isEmpty) ? null : File(localPath);
-    if (file == null || !await file.exists()) {
+    final file = await _existingLocalFile(entry.localPath);
+    if (file == null) {
       throw const AppException('Tệp ảnh viếng thăm không còn trên máy, không gửi được.', 410);
     }
 
@@ -1302,9 +1313,9 @@ class SyncService {
         if (paths is List) {
           final newTokens = <String>[];
           for (final p in paths) {
-            final file = File(p.toString());
+            final file = await _existingLocalFile(p.toString());
             // Mất tệp ⇒ báo lỗi (dead), không nộp phiếu thiếu ảnh mà không ai biết.
-            if (!await file.exists()) {
+            if (file == null) {
               throw const AppException('Ảnh của phiếu không còn trên máy, không gửi được.', 410);
             }
             newTokens.add(await _uploadTempPhoto('/dms/form-photos', file));
@@ -1554,9 +1565,8 @@ class SyncService {
       _throwParentUnresolved(entry, parent, 'Lượt chấm công chưa được đồng bộ lên máy chủ');
     }
 
-    final localPath = entry.localPath ?? payload['local_path']?.toString();
-    final file = localPath == null ? null : File(localPath);
-    if (file == null || !await file.exists()) {
+    final file = await _existingLocalFile(entry.localPath ?? payload['local_path']?.toString());
+    if (file == null) {
       throw const AppException('Tệp ảnh chấm công không còn trên máy, không gửi được.', 410);
     }
 

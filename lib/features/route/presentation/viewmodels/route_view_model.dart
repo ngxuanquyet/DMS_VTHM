@@ -2500,6 +2500,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         );
       }
 
+      // Máy chủ TỪ CHỐI ảnh (4xx khác 408/429 — quá số ảnh, lượt đã check-out…) ⇒ gỡ ảnh lạc quan, nạp lại điều kiện
+      // check-out từ server và báo câu lỗi. Xếp hàng thì cổng ảnh trên máy báo đủ trong khi ảnh sẽ chết ở hàng đợi (#24698).
+      if (isPermanentRejection(e)) {
+        state = state.copyWith(photos: state.photos.where((ph) => ph.id != tempId).toList());
+        if (persistentFile.path != file.path) {
+          try {
+            await persistentFile.delete();
+          } catch (_) {}
+        }
+        await refreshRequirements();
+        return (false, e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', ''));
+      }
+
       final queueId = await _enqueueVisitPhotoToDb(
         file: persistentFile,
         photoType: apiPhotoType,

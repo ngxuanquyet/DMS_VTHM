@@ -419,6 +419,15 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         changes['birthday'] = newBirthday;
       }
 
+      // Địa chỉ giao hàng — ô GỐC như sinh nhật (trong `fixedKeys` nên không vào `data`); trước đây không được gửi ở
+      // đâu ⇒ sửa ô này mất im lặng (#24698). Cho phép xoá trắng.
+      if (formData.containsKey('delivery_address')) {
+        final newDelivery = formData['delivery_address']?.toString().trim() ?? '';
+        if (newDelivery != (c.dynamicFields['delivery_address']?.toString() ?? '')) {
+          changes['delivery_address'] = newDelivery;
+        }
+      }
+
       // Địa chỉ
       final newAddress = formData['address']?.toString().trim();
       if (newAddress != null && newAddress.isNotEmpty && newAddress != c.address) {

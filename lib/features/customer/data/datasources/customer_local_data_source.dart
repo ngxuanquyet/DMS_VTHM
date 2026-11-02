@@ -1,13 +1,10 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart';
-import '../../../../core/utils/photo_watermark_helper.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../../core/services/geo_catalog_service.dart';
@@ -134,39 +131,7 @@ class CustomerLocalDataSource {
     }
 
     // Sao chép các tệp ảnh offline vào bộ lưu trữ vĩnh viễn của app để tránh bị OS xóa cache
-    final List<String> permanentPhotoPaths = [];
-    try {
-      final docDir = await getApplicationDocumentsDirectory();
-      final offlinePhotosDir = Directory(p.join(docDir.path, 'offline_customer_photos'));
-      if (!await offlinePhotosDir.exists()) {
-        await offlinePhotosDir.create(recursive: true);
-      }
-
-      for (int i = 0; i < localPhotoPaths.length; i++) {
-        final rawPath = localPhotoPaths[i];
-        String cleanPath = rawPath;
-        if (cleanPath.startsWith('file://')) {
-          try {
-            cleanPath = Uri.parse(cleanPath).toFilePath();
-          } catch (_) {
-            cleanPath = cleanPath.replaceFirst('file://', '');
-          }
-        }
-        final srcFile = File(cleanPath);
-        if (await srcFile.exists()) {
-          final ext = p.extension(cleanPath).isNotEmpty ? p.extension(cleanPath) : '.jpg';
-          final destPath =
-              p.join(offlinePhotosDir.path, PhotoWatermarkHelper.keepMarkerName(srcFile, '${clientUuid}_photo_$i$ext'));
-          final copiedFile = await srcFile.copy(destPath);
-          permanentPhotoPaths.add(copiedFile.path);
-        } else {
-          permanentPhotoPaths.add(rawPath);
-        }
-      }
-    } catch (e) {
-      debugPrint('[CustomerLocalDataSource] Không thể copy ảnh vào thư mục offline: $e');
-      permanentPhotoPaths.addAll(localPhotoPaths);
-    }
+    final permanentPhotoPaths = await persistOfflinePhotos(localPhotoPaths, '${clientUuid}_photo');
 
     final List<String> allPhotos = [...existingTokens, ...permanentPhotoPaths];
 
@@ -465,15 +430,21 @@ class CustomerLocalDataSource {
   }
 
   /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy hàng đợi sync
-  Future<void> deletePendingCustomer(String clientUuid) async {
-    await _db.deletePendingCustomer(clientUuid);
+  /// `false` = điểm bán có thể đã lên server, không xoá ([AppDatabase.deletePendingCustomer]).
+  Future<bool> deletePendingCustomer(String clientUuid) async {
+    return _db.deletePendingCustomer(clientUuid);
   }
+
+  /// Chép ảnh điểm bán chờ gửi vào `offline_customer_photos` ([OfflinePhotoStore.persist]); [prefix] theo client_uuid.
+  Future<List<String>> persistOfflinePhotos(List<String> paths, String prefix) =>
+      OfflinePhotoStore.persist(paths, dirName: 'offline_customer_photos', prefix: prefix);
 
   /// Cập nhật thông tin điểm bán offline/lỗi và làm mới hàng đợi đồng bộ
   Future<CustomerEntity> updateCustomerOffline(
     String clientUuid,
-    Map<String, dynamic> changes,
+    Map<String, dynamic> changesIn,
   ) async {
+    var changes = changesIn;
     final existingRows = await (_db.select(_db.localCustomers)
           ..where((tbl) => tbl.clientUuid.equals(clientUuid)))
         .get();
@@ -483,6 +454,14 @@ class CustomerLocalDataSource {
     }
 
     final existing = existingRows.first;
+    // Ảnh mới của lần sửa ngoại tuyến (đường dẫn trên máy) ⇒ chép vào thư mục lưu lâu dài TRƯỚC khi xếp hàng (#24698).
+    if (changes['photo_tokens'] is List) {
+      changes = {
+        ...changes,
+        'photo_tokens': await persistOfflinePhotos(
+            (changes['photo_tokens'] as List).map((e) => e.toString()).toList(), '${clientUuid}_edit'),
+      };
+    }
     Map<String, dynamic> dynFields = {};
     try {
       if (existing.dynamicFieldsJson.isNotEmpty) {
@@ -563,6 +542,7 @@ class CustomerLocalDataSource {
 
     // Sinh nhật (ô gốc) lưu kèm dynamicFields như tỉnh/xã để màn sửa nạp lại đúng giá trị vừa sửa (#24698 lỗi 11).
     if (changes['birthday'] != null) dynFields['birthday'] = changes['birthday'];
+    if (changes.containsKey('delivery_address')) dynFields['delivery_address'] = changes['delivery_address'];
 
     if (changes['photo_tokens'] is List) {
       final photos = (changes['photo_tokens'] as List).map((e) => e.toString()).toList();
@@ -662,6 +642,7 @@ class CustomerLocalDataSource {
       if (email != null) queuePayload['email'] = email;
       // Sinh nhật là ô GỐC (không phải ô động trong `data`) — #24698 lỗi 11.
       if (changes['birthday'] != null) queuePayload['birthday'] = changes['birthday'];
+      if (changes.containsKey('delivery_address')) queuePayload['delivery_address'] = changes['delivery_address'];
       if (address.isNotEmpty) queuePayload['address'] = address;
       // Màn sửa gửi toạ độ dạng `coords` ({lat, lng, accuracy, mock}) và bộ dựng payload ƯU TIÊN `coords` hơn lat/lng ⇒
       // phải thay chính `coords`; chỉ ghi lat/lng thì lúc đồng bộ vẫn gửi toạ độ cũ của lần tạo (#24698 lỗi 10).
@@ -966,6 +947,14 @@ class CustomerLocalDataSource {
     required Map<String, dynamic> changes,
     required int nowMs,
   }) async {
+    // Ảnh mới của lần sửa (điểm bán đã lên server, sửa lúc mất mạng) ⇒ chép vào thư mục lưu lâu dài (#24698).
+    if (changes['photo_tokens'] is List) {
+      changes = {
+        ...changes,
+        'photo_tokens': await persistOfflinePhotos(
+            (changes['photo_tokens'] as List).map((e) => e.toString()).toList(), '${clientUuid}_edit'),
+      };
+    }
     // Kiểm tra xem đã có mục update pending cho khách hàng này trong queue chưa — CỦA CHÍNH người đang đăng nhập (#24400):
     // gộp vào dòng của người khác là gửi bản sửa của mình dưới tên họ.
     final existingEntries = await (_db.select(_db.syncQueueEntries)
@@ -988,6 +977,10 @@ class CustomerLocalDataSource {
         oldPayload = jsonDecode(entry.payload) as Map<String, dynamic>;
       } catch (_) {}
       final merged = {...oldPayload, ...changes};
+      // `data` (ô động) chỉ mang các ô ĐÃ ĐỔI của từng lần sửa ⇒ gộp theo ô, không để lần sau đè mất ô của lần trước.
+      if (oldPayload['data'] is Map && changes['data'] is Map) {
+        merged['data'] = {...oldPayload['data'] as Map, ...changes['data'] as Map};
+      }
       // `erp_link_changes` (#24331) là DANH SÁCH đề xuất — gộp theo mã khách (lần sửa sau thắng), không để lần sau đè mất lần trước.
       if (oldPayload['erp_link_changes'] is List && changes['erp_link_changes'] is List) {
         final theoMa = <String, dynamic>{};

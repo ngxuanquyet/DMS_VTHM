@@ -201,6 +201,15 @@ class AppDatabase extends _$AppDatabase {
         .write(SyncQueueEntriesCompanion(payload: Value(payload)));
   }
 
+  /// Dòng TẠO điểm bán [clientUuid] trong hàng đợi (mọi trạng thái), null nếu không có.
+  Future<SyncQueueEntry?> findCustomerCreateRow(String clientUuid) {
+    return (select(syncQueueEntries)
+          ..where((tbl) => tbl.entity.equals('customer') & tbl.op.equals('create') & tbl.clientUuid.equals(clientUuid))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   /// Đánh dấu mục đang gửi — CHỈ khi dòng còn chờ gửi (pending, hoặc sending mồ côi lúc cưỡng chế). Trả false khi dòng
   /// đã bị xoá / đổi trạng thái sau lúc lô nạp vào RAM (vd người dùng huỷ lượt chưa gửi) ⇒ nơi gọi KHÔNG được gửi nó.
   Future<bool> markSending(int id) async {
@@ -829,27 +838,46 @@ class AppDatabase extends _$AppDatabase {
     return (delete(localCustomers)..where((tbl) => tbl.id.equals(id))).go();
   }
 
-  /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue
-  Future<void> deletePendingCustomer(String clientUuid) async {
-    // 1. Tìm các lượt viếng thăm của điểm bán này (liên kết qua parentUuid hoặc customer_client_uuid trong payload)
-    final allVisits = await (select(syncQueueEntries)
-          ..where((tbl) =>
-              tbl.entity.equals('visit') &
-              (tbl.parentUuid.equals(clientUuid) | tbl.payload.like('%"$clientUuid"%'))))
-        .get();
+  /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue. Trả `false` (không
+  /// xoá gì) khi điểm bán đã / đang lên server: dòng tạo đang gửi / đã gửi, hoặc bản trong máy đã có id server — xoá lúc
+  /// đó thì server vẫn tạo điểm bán (kèm lượt "Tạo điểm bán") mà máy quên, điểm bán "sống lại" ở lần tải sau (#24698).
+  /// Kiểm và xoá trong CÙNG transaction để lô đồng bộ không giành dòng tạo giữa chừng.
+  Future<bool> deletePendingCustomer(String clientUuid) async {
+    final rows = await transaction(() async {
+      final create = await findCustomerCreateRow(clientUuid);
+      // Đang gửi / đã gửi ⇒ từ chối. (Còn khe: lần gửi trước quá giờ mà server đã ghi, dòng quay về pending — chấp nhận,
+      // hiếm; đánh dấu bền cho ca đó kéo theo quá nhiều nhánh phụ, xem #24698 vòng 2.)
+      if (create != null && (create.state == 'sending' || create.state == 'done')) {
+        return null;
+      }
+      final local = await (select(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).get();
+      if (local.any((r) => (r.id ?? 0) > 0)) return null;
 
-    for (final v in allVisits) {
-      await deletePendingVisitQueue(v.clientUuid);
-    }
+      // 1. Tìm các lượt viếng thăm của điểm bán này (liên kết qua parentUuid hoặc customer_client_uuid trong payload)
+      final allVisits = await (select(syncQueueEntries)
+            ..where((tbl) =>
+                tbl.entity.equals('visit') &
+                (tbl.parentUuid.equals(clientUuid) | tbl.payload.like('%"$clientUuid"%'))))
+          .get();
 
-    final rows = await (select(syncQueueEntries)
-          ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
-        .get();
-    await (delete(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).go();
-    await (delete(syncQueueEntries)
-          ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
-        .go();
+      // Xoá dòng trong transaction, TỆP ảnh xoá sau khi commit (rollback giữa chừng không được để dòng quay lại mà ảnh mất).
+      final visitRows = <SyncQueueEntry>[];
+      for (final v in allVisits) {
+        visitRows.addAll(await _deleteRows(await _pendingVisitRows(v.clientUuid)));
+      }
+
+      final rows = await (select(syncQueueEntries)
+            ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+          .get();
+      await (delete(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).go();
+      await (delete(syncQueueEntries)
+            ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+          .go();
+      return [...visitRows, ...rows];
+    });
+    if (rows == null) return false;
     await _deleteRowFiles(rows, [clientUuid]);
+    return true;
   }
 
   /// Tìm entry visit trong sync_queue theo clientUuid

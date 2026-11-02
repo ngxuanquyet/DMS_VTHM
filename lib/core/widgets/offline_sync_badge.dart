@@ -320,7 +320,8 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                       onPressed: () async {
                         final db = ref.read(appDatabaseProvider);
                         for (final e in deadEntries) {
-                          if (e.entity == 'customer') {
+                          // CHỈ dòng TẠO lỗi mới bỏ cả điểm bán chờ; lệnh SỬA lỗi thì chỉ bỏ chính lệnh đó (bên dưới).
+                          if (e.entity == 'customer' && e.op == 'create') {
                             await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(e.clientUuid);
                           }
                         }
@@ -650,7 +651,8 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
           constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           visualDensity: VisualDensity.compact,
           onPressed: () async {
-            if (entry.entity == 'customer') {
+            // CHỈ dòng TẠO lỗi mới bỏ cả điểm bán chờ; lệnh SỬA lỗi thì chỉ bỏ chính lệnh đó.
+            if (entry.entity == 'customer' && entry.op == 'create') {
               await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(entry.clientUuid);
             }
             await ref.read(appDatabaseProvider).deleteEntry(entry.id);

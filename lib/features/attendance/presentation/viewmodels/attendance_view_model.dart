@@ -68,6 +68,19 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   final AttendanceRepository? attendanceRepository;
   final SyncService? syncService;
 
+  /// Lượt chấm ĐÃ ghi (trực tuyến hoặc hàng đợi) mà bước lưu ảnh sau đó lỗi ⇒ bấm "Gửi" lại trong [_retryPunchWindow] dùng
+  /// LẠI `client_uuid` này: server khử trùng theo nó, sinh uuid mới là ghi thêm một lượt chấm (#24698).
+  String? _retryPunchUuid;
+  DateTime? _retryPunchAt;
+
+  /// Ảnh (theo loại front/back) của [_retryPunchUuid] đã xếp hàng xong, kèm đường dẫn tệp đã gửi — bấm lại với CÙNG tệp
+  /// thì không xếp lại (ảnh trùng); chụp lại tệp khác thì xếp ảnh mới.
+  final Map<String, (String, AttendancePunchPhotoEntity)> _retryQueuedPhotos = {};
+
+  /// Khoảng còn coi là "bấm lại cùng lượt" — quá khoảng này là lượt chấm MỚI (không được trả lượt cũ dưới dạng trùng).
+  /// Trần kỹ thuật của luồng thử lại trên máy, không phải tham số nghiệp vụ.
+  static const Duration _retryPunchWindow = Duration(minutes: 2);
+
   AttendanceViewModel({
     required this.getConfigUseCase,
     required this.punchUseCase,
@@ -324,7 +337,14 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       onProgress?.call(0.20, 'Đang ghi nhận lượt chấm công...');
 
       // 1. Gửi lượt chấm công lên server (§3) hoặc lưu offline nếu mất mạng
-      final clickUuid = const Uuid().v4();
+      final retryAt = _retryPunchAt;
+      final clickUuid = (_retryPunchUuid != null &&
+              retryAt != null &&
+              DateTime.now().difference(retryAt) < _retryPunchWindow)
+          ? _retryPunchUuid!
+          : const Uuid().v4();
+      if (clickUuid != _retryPunchUuid) _retryQueuedPhotos.clear();
+      _retryPunchUuid = null;
       final punchResult = await punchUseCase(
         lat: position.latitude,
         lng: position.longitude,
@@ -333,35 +353,47 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         clientUuid: clickUuid,
       );
 
+      // Từ đây lượt chấm đã có (server hoặc hàng đợi): lỗi ở bước sau mà người dùng bấm lại ⇒ cùng lượt.
+      _retryPunchUuid = clickUuid;
+      _retryPunchAt = DateTime.now();
+
       final List<AttendancePunchPhotoEntity> attachedPhotos = [];
 
       // 2. Chuyển ảnh vào hàng đợi nền và gắn ngay vào bản ghi chấm công cục bộ
       if (frontPhoto != null && attendanceRepository != null) {
         onProgress?.call(0.50, 'Đang lưu ảnh chân dung...');
-        final frontEntity = await attendanceRepository!.enqueuePunchPhoto(
-          punchId: punchResult.id,
-          file: frontPhoto,
-          photoType: 'front',
-          lat: position.latitude,
-          lng: position.longitude,
-          parentUuid: punchResult.clientUuid,
-        );
+        final frontCached = _retryQueuedPhotos['front'];
+        final frontEntity = (frontCached != null && frontCached.$1 == frontPhoto.path ? frontCached.$2 : null) ??
+            await attendanceRepository!.enqueuePunchPhoto(
+              punchId: punchResult.id,
+              file: frontPhoto,
+              photoType: 'front',
+              lat: position.latitude,
+              lng: position.longitude,
+              parentUuid: punchResult.clientUuid,
+            );
+        _retryQueuedPhotos['front'] = (frontPhoto.path, frontEntity);
         attachedPhotos.add(frontEntity);
       }
 
       if (backPhoto != null && attendanceRepository != null) {
         onProgress?.call(0.80, 'Đang lưu ảnh khung cảnh...');
-        final backEntity = await attendanceRepository!.enqueuePunchPhoto(
-          punchId: punchResult.id,
-          file: backPhoto,
-          photoType: 'back',
-          lat: position.latitude,
-          lng: position.longitude,
-          parentUuid: punchResult.clientUuid,
-        );
+        final backCached = _retryQueuedPhotos['back'];
+        final backEntity = (backCached != null && backCached.$1 == backPhoto.path ? backCached.$2 : null) ??
+            await attendanceRepository!.enqueuePunchPhoto(
+              punchId: punchResult.id,
+              file: backPhoto,
+              photoType: 'back',
+              lat: position.latitude,
+              lng: position.longitude,
+              parentUuid: punchResult.clientUuid,
+            );
+        _retryQueuedPhotos['back'] = (backPhoto.path, backEntity);
         attachedPhotos.add(backEntity);
       }
 
+      _retryPunchUuid = null;
+      _retryQueuedPhotos.clear();
       // Kích hoạt tiến trình đồng bộ ảnh chạy nền
       syncService?.syncQueue();
 

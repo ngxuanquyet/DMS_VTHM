@@ -98,3 +98,14 @@ class CacheException extends AppException {
   ]) : super(message, null, null, errorId);
 }
 
+
+/// Máy chủ TỪ CHỐI HẲN yêu cầu (gửi lại y nguyên vẫn sai): 4xx, TRỪ lỗi của phiên đăng nhập (401, 403
+/// `DMS_APP_FORBIDDEN` — đăng nhập lại là gửi được), 408 / 429 (tạm) và 409 (đã có trên server). Cùng luật phân loại của
+/// hàng đợi đồng bộ (SyncService) — đường gửi trực tuyến dùng để quyết định "báo lỗi ngay" hay "xếp hàng gửi sau".
+bool isPermanentRejection(Object e) {
+  if (e is! AppException) return false;
+  final c = e.statusCode;
+  if (c == null || c < 400 || c >= 500) return false;
+  if (c == 401 || c == 408 || c == 409 || c == 429) return false;
+  return e.code != 'DMS_APP_FORBIDDEN';
+}

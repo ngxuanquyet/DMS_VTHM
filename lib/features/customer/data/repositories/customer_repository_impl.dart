@@ -495,6 +495,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
     }
 
     final current = _cachedCustomers[index];
+    final effectiveUuid = clientUuid ?? current.clientUuid ?? 'server_$id';
+    // Ảnh mới ⇒ chép vào thư mục lưu lâu dài TRƯỚC khi ghi bản trong máy và hàng đợi — hai nơi trỏ CÙNG một tệp bền
+    // (thư mục tạm của camera bị dọn thì ảnh ở chi tiết điểm bán vỡ, #24698).
+    if (changes['photo_tokens'] is List) {
+      changes = {
+        ...changes,
+        'photo_tokens': await _localDataSource.persistOfflinePhotos(
+            (changes['photo_tokens'] as List).map((e) => e.toString()).toList(), '${effectiveUuid}_edit'),
+      };
+    }
     final updated = _applyChangesToCustomer(current, changes);
     _cachedCustomers[index] = updated;
 
@@ -503,7 +513,6 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     // 2. Đẩy vào hàng đợi sync_queue
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final effectiveUuid = clientUuid ?? current.clientUuid ?? 'server_$id';
 
     await _localDataSource.enqueueCustomerUpdate(
       serverId: id,
@@ -522,6 +531,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
     }
     // Sinh nhật là ô gốc nhưng giữ trong dynamicFields để màn sửa nạp lại (#24698 lỗi 11).
     if (changes['birthday'] != null) newDynamicFields['birthday'] = changes['birthday'];
+    if (changes.containsKey('delivery_address')) newDynamicFields['delivery_address'] = changes['delivery_address'];
 
     // Tỉnh/xã theo danh mục (#24072): ghi id MỚI vào bản nhớ (cả RAM lẫn SQLite qua cacheRemoteCustomers) và gỡ cờ "suy từ
     // địa chỉ cũ" — để nguyên id cũ + cờ cũ thì lần sửa sau gửi lại cặp CŨ và đè mất lựa chọn vừa lưu (review 23/10).
@@ -665,16 +675,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
         }
       } catch (e) {
         debugPrint('[CustomerRepositoryImpl] Lỗi khi tạo online ($e)');
-        // 🔴 Theo spec 30/09 §7: Lỗi 4xx (400 <= statusCode < 500, trừ 408/429) là hỏng vĩnh viễn (validate thất bại).
-        // TUYỆT ĐỐI không fallback sang ghi offline để tránh tạo rác và làm tắc hàng đợi SyncQueue!
-        if (e is AppException &&
-            e.statusCode != null &&
-            e.statusCode! >= 400 &&
-            e.statusCode! < 500 &&
-            e.statusCode != 408 &&
-            e.statusCode != 429) {
-          rethrow;
-        }
+        // 🔴 Theo spec 30/09 §7: Lỗi 4xx từ chối hẳn (validate thất bại) — TUYỆT ĐỐI không fallback sang ghi offline để
+        // tránh tạo rác và làm tắc hàng đợi SyncQueue! Cùng luật phân loại với hàng đợi ([isPermanentRejection]).
+        if (isPermanentRejection(e)) rethrow;
       }
     }
 
@@ -700,6 +703,26 @@ class CustomerRepositoryImpl implements CustomerRepository {
     return (await ref.read(formsApiServiceProvider).uploadPhoto(file)).token;
   }
 
+  /// Tải MỘT ảnh điểm bán lúc tạo trực tuyến, trả token. Lỗi tạm (mạng / 5xx / 408 / 429 / phản hồi thiếu token) ⇒ ném
+  /// [NetworkException] để createCustomer rơi về đường hàng đợi (chép ảnh vào thư mục lưu lâu dài, đồng bộ tải lại).
+  /// Trước đây lỗi bị nuốt ⇒ điểm bán được tạo KHÔNG ảnh mà không báo gì (#24698). Lỗi 4xx khác ném nguyên để báo người dùng.
+  Future<String> _uploadPhotoOrQueue(String path) async {
+    Map<String, dynamic> res;
+    try {
+      res = await _apiService.uploadCustomerPhoto(path);
+    } on AppException catch (e) {
+      if (isPermanentRejection(e)) rethrow;
+      throw const NetworkException('Tải ảnh điểm bán lỗi — lưu ngoại tuyến, gửi lại khi có mạng.');
+    } catch (_) {
+      throw const NetworkException('Tải ảnh điểm bán lỗi — lưu ngoại tuyến, gửi lại khi có mạng.');
+    }
+    final token = res['token']?.toString().trim();
+    if (token == null || token.isEmpty) {
+      throw const NetworkException('Tải ảnh điểm bán không nhận được mã ảnh — lưu ngoại tuyến.');
+    }
+    return token;
+  }
+
   Future<Map<String, dynamic>> _prepareCleanCustomerPayload(Map<String, dynamic> data) async {
     // 1. Tải ảnh lên server để lấy token nếu đang là đường dẫn cục bộ
     final resolvedTokens = <String>[];
@@ -711,12 +734,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
           resolvedTokens.add(itemStr);
         } else {
-          try {
-            final uploadRes = await _apiService.uploadCustomerPhoto(itemStr);
-            if (uploadRes['token'] != null) {
-              resolvedTokens.add(uploadRes['token'].toString().trim());
-            }
-          } catch (_) {}
+          resolvedTokens.add(await _uploadPhotoOrQueue(itemStr));
         }
       }
     } else if (rawTokens != null) {
@@ -725,12 +743,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
           resolvedTokens.add(itemStr);
         } else {
-          try {
-            final uploadRes = await _apiService.uploadCustomerPhoto(itemStr);
-            if (uploadRes['token'] != null) {
-              resolvedTokens.add(uploadRes['token'].toString().trim());
-            }
-          } catch (_) {}
+          resolvedTokens.add(await _uploadPhotoOrQueue(itemStr));
         }
       }
     }
@@ -977,7 +990,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
   @override
   Future<bool> deletePendingCustomer(String clientUuid) async {
-    await _localDataSource.deletePendingCustomer(clientUuid);
+    if (!await _localDataSource.deletePendingCustomer(clientUuid)) return false;
     _cachedCustomers.removeWhere((c) => c.clientUuid == clientUuid);
     return true;
   }
