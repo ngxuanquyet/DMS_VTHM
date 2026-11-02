@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../../core/router/app_router.dart' show rootNavigatorKey;
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
@@ -255,6 +257,21 @@ class AuthViewModel extends StateNotifier<AuthState> {
       user: null,
     );
     return true;
+  }
+
+  /// Đăng xuất CƯỠNG BỨC khi lô đồng bộ thấy phiên đã chết (401 sau khi làm mới thất bại / bị thu quyền app) — GIỮ
+  /// nguyên hàng đợi (không `requireCleared`): đúng người đăng nhập lại là gửi tiếp. Đưa về màn đăng nhập kèm câu báo.
+  Future<void> forceLogoutSessionRejected() async {
+    if (state.status != AuthStatus.authenticated) return;
+    await logout();
+    state = state.copyWith(
+      status: AuthStatus.error,
+      errorMessage: 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để gửi tiếp dữ liệu đang chờ đồng bộ.',
+    );
+    // Router không tự chuyển theo trạng thái đăng nhập (chỉ màn Hồ sơ / Splash tự `go('/login')`) ⇒ tự đưa về màn đăng
+    // nhập — màn đó hiện câu báo ở trên.
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx != null && ctx.mounted) GoRouter.of(ctx).go('/login');
   }
 
   /// ViewModel giữ state suốt vòng đời app mang dữ liệu của người đăng nhập trước — lời chào, chấm công, hồ sơ,

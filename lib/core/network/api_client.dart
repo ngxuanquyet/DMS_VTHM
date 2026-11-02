@@ -73,7 +73,21 @@ class ServerTimeInterceptor extends Interceptor {
 class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;
 
-  AuthInterceptor(this.dio);
+  /// Dio gọi `/auth/refresh` — mặc định dựng mới mỗi lần; test truyền bản có adapter giả.
+  final Dio Function() _refreshDio;
+
+  AuthInterceptor(this.dio, {Dio Function()? refreshDio}) : _refreshDio = refreshDio ?? _defaultRefreshDio;
+
+  static Dio _defaultRefreshDio() => Dio(
+        BaseOptions(
+          baseUrl: AppConstants.baseUrl,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            AppConstants.headerClientKey: AppConstants.headerClientValue,
+          },
+        ),
+      );
 
   @override
   void onRequest(
@@ -109,56 +123,35 @@ class AuthInterceptor extends QueuedInterceptor {
       final refreshToken = prefs.getString(AppConstants.keyRefreshToken);
 
       if (refreshToken != null && refreshToken.isNotEmpty) {
+        final refreshDio = _refreshDio();
+        final Response<dynamic> refreshRes;
         try {
-          final refreshDio = Dio(
-            BaseOptions(
-              baseUrl: AppConstants.baseUrl,
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                AppConstants.headerClientKey: AppConstants.headerClientValue,
-              },
-            ),
-          );
-
-          final refreshRes = await refreshDio.post(
+          refreshRes = await refreshDio.post(
             '/auth/refresh',
             data: {'refresh_token': refreshToken},
           );
-
-          if (refreshRes.statusCode == 200 &&
-              refreshRes.data is Map &&
-              refreshRes.data['success'] == true) {
-            final data = refreshRes.data['data'] as Map<String, dynamic>;
-            final newAccessToken = data['access_token'] as String?;
-            final newRefreshToken = data['refresh_token'] as String?;
-
-            if (newAccessToken != null) {
-              await prefs.setString(AppConstants.keyAccessToken, newAccessToken);
-              await prefs.setString(AppConstants.keyAuthToken, newAccessToken);
-            }
-            if (newRefreshToken != null) {
-              await prefs.setString(AppConstants.keyRefreshToken, newRefreshToken);
-            }
-
-            // Retry original request with new token
-            final opts = err.requestOptions;
-            if (newAccessToken != null) {
-              opts.headers['Authorization'] = 'Bearer $newAccessToken';
-            }
-            final cloneReq = await dio.fetch(opts);
-            return handler.resolve(cloneReq);
-          }
         } on DioException catch (refreshErr) {
+          final refreshStatus = refreshErr.response?.statusCode;
+          // Mất mạng / quá giờ / quá tải / máy chủ lỗi lúc xin phiên mới ⇒ phiên CHƯA chắc đã hết: GIỮ phiên, trả lỗi
+          // tạm cho nơi gọi để hàng đợi thử lại. Bản cũ xoá phiên ở MỌI lỗi ⇒ sóng chập là bị đăng xuất, cả lô 401.
+          if (refreshStatus == null || refreshStatus >= 500 || refreshStatus == 408 || refreshStatus == 429) {
+            return handler.reject(
+              DioException(
+                requestOptions: err.requestOptions,
+                response: refreshErr.response,
+                type: refreshErr.type,
+                error: refreshErr.error,
+                message: refreshErr.message,
+              ),
+            );
+          }
+
           final resData = refreshErr.response?.data;
           final errCode = resData is Map ? resData['code']?.toString() : null;
-          final isDmsForbidden = refreshErr.response?.statusCode == 403 || errCode == 'DMS_APP_FORBIDDEN';
+          final isDmsForbidden = refreshStatus == 403 || errCode == 'DMS_APP_FORBIDDEN';
 
-          // Token refresh failed -> Clear session
-          await prefs.remove(AppConstants.keyAccessToken);
-          await prefs.remove(AppConstants.keyAuthToken);
-          await prefs.remove(AppConstants.keyRefreshToken);
-          await prefs.remove(AppConstants.keyUserData);
+          // Máy chủ TỪ CHỐI phiên làm mới (4xx) -> Clear session
+          await _clearSession(prefs);
 
           if (isDmsForbidden) {
             final msg = (resData is Map ? resData['message']?.toString() : null) ??
@@ -172,17 +165,54 @@ class AuthInterceptor extends QueuedInterceptor {
               ),
             );
           }
+          return handler.next(err);
         } catch (_) {
-          // Token refresh failed -> Clear session
-          await prefs.remove(AppConstants.keyAccessToken);
-          await prefs.remove(AppConstants.keyAuthToken);
-          await prefs.remove(AppConstants.keyRefreshToken);
-          await prefs.remove(AppConstants.keyUserData);
+          // Lỗi không phải HTTP (không dựng được yêu cầu) — giữ phiên, trả lỗi gốc.
+          return handler.next(err);
+        }
+
+        if (refreshRes.statusCode == 200 && refreshRes.data is Map && refreshRes.data['success'] == true) {
+          final data = refreshRes.data['data'];
+          final newAccessToken = data is Map ? data['access_token']?.toString() : null;
+          final newRefreshToken = data is Map ? data['refresh_token']?.toString() : null;
+
+          if (newAccessToken != null) {
+            await prefs.setString(AppConstants.keyAccessToken, newAccessToken);
+            await prefs.setString(AppConstants.keyAuthToken, newAccessToken);
+          }
+          if (newRefreshToken != null) {
+            await prefs.setString(AppConstants.keyRefreshToken, newRefreshToken);
+          }
+
+          // Retry original request with new token. Lỗi của LẦN GỬI LẠI (422 nghiệp vụ, 5xx, mất mạng) là lỗi của
+          // chính yêu cầu đó — trả nguyên cho nơi gọi, KHÔNG phải lý do xoá phiên vừa làm mới xong.
+          final opts = err.requestOptions;
+          if (newAccessToken != null) {
+            opts.headers['Authorization'] = 'Bearer $newAccessToken';
+          }
+          // Gửi lại qua Dio KHÔNG mang interceptor này: lỗi của lần gửi lại đi vào `onError` của QueuedInterceptor — xếp
+          // hàng sau chính lượt đang chờ ở đây ⇒ treo vĩnh viễn (lô đồng bộ kẹt `_isSyncing`, nút bấm quay mãi).
+          final retryDio = Dio(dio.options)..httpClientAdapter = dio.httpClientAdapter;
+          retryDio.interceptors.addAll(dio.interceptors.where((i) => i is! AuthInterceptor));
+          try {
+            final cloneReq = await retryDio.fetch(opts);
+            return handler.resolve(cloneReq);
+          } on DioException catch (retryErr) {
+            return handler.reject(retryErr);
+          }
         }
       }
     }
 
     handler.next(err);
+  }
+
+  /// Xoá phiên đăng nhập đã lưu — CHỈ khi máy chủ từ chối phiên làm mới.
+  static Future<void> _clearSession(SharedPreferences prefs) async {
+    await prefs.remove(AppConstants.keyAccessToken);
+    await prefs.remove(AppConstants.keyAuthToken);
+    await prefs.remove(AppConstants.keyRefreshToken);
+    await prefs.remove(AppConstants.keyUserData);
   }
 }
 

@@ -605,13 +605,28 @@ class CustomerLocalDataSource {
 
     // 3. Cập nhật payload trong hàng đợi sync_queue và hồi phục trạng thái từ dead/error về pending
     final queueEntries = await (_db.select(_db.syncQueueEntries)
-          ..where((tbl) => _db.isMine(tbl) & tbl.clientUuid.equals(clientUuid) & tbl.entity.equals('customer')))
+          ..where((tbl) =>
+              _db.isMine(tbl) &
+              tbl.clientUuid.equals(clientUuid) &
+              tbl.entity.equals('customer') &
+              tbl.op.equals('create'))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
         .get();
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-    if (queueEntries.isNotEmpty) {
-      final entry = queueEntries.first;
+    final createEntry = queueEntries.firstOrNull;
+    if (createEntry != null && (createEntry.state == 'sending' || createEntry.state == 'done')) {
+      // Dòng tạo ĐANG gửi / ĐÃ gửi: gộp vào nó là mất phần sửa — đang gửi thì lúc xong `markDone` đè trạng thái, đã gửi
+      // thì gửi lại cùng client_uuid server trả bản cũ. Xếp một lệnh SỬA riêng, chạy sau dòng tạo (lấy mã server của nó).
+      await enqueueCustomerUpdate(
+        serverId: createEntry.serverId ?? 0,
+        clientUuid: clientUuid,
+        changes: changes,
+        nowMs: nowMs,
+      );
+    } else if (createEntry != null) {
+      final entry = createEntry;
       Map<String, dynamic> queuePayload = {};
       try {
         queuePayload = jsonDecode(entry.payload) as Map<String, dynamic>;
@@ -647,10 +662,16 @@ class CustomerLocalDataSource {
         final existingData = queuePayload['data'] is Map ? (queuePayload['data'] as Map) : {};
         queuePayload['data'] = {...existingData, ...(changes['data'] as Map)};
       }
-      if (changes['photo_tokens'] is List) {
-        queuePayload['photo_tokens'] = changes['photo_tokens'];
-      } else if (changes['photos'] is List) {
-        queuePayload['photo_tokens'] = changes['photos'];
+      final newPhotos = changes['photo_tokens'] is List
+          ? changes['photo_tokens']
+          : (changes['photos'] is List ? changes['photos'] : null);
+      if (newPhotos != null) {
+        // Màn sửa gửi TRỌN danh sách ảnh hiện có ⇒ nó là nguồn duy nhất. Bỏ các khoá ảnh cũ (SyncService gom ảnh từ tất
+        // cả): để lại đường dẫn ảnh đã mất trong `local_photo_paths` thì dòng tạo bị từ chối lại mãi dù người dùng đã sửa.
+        for (final k in const ['local_photo_paths', 'localPhotoPaths', 'photo', 'photos', 'photo_token', 'photo_file_id']) {
+          queuePayload.remove(k);
+        }
+        queuePayload['photo_tokens'] = newPhotos;
       }
       if (changes.containsKey('route')) queuePayload['route'] = route;
       if (changes.containsKey('routes')) queuePayload['routes'] = changes['routes'];
@@ -665,6 +686,30 @@ class CustomerLocalDataSource {
           lastError: const Value(null),
         ),
       );
+
+      // Lệnh SỬA xếp từ lần sửa trước (lúc dòng tạo đang gửi) chạy SAU dòng tạo — không phủ phần sửa mới này lên nó thì
+      // nó đè giá trị CŨ lên điểm bán vừa tạo bằng giá trị mới.
+      final pendingUpdate = await (_db.select(_db.syncQueueEntries)
+            ..where((tbl) =>
+                _db.isMine(tbl) &
+                tbl.entity.equals('customer') &
+                tbl.op.equals('update') &
+                tbl.clientUuid.equals(clientUuid) &
+                tbl.state.equals('pending'))
+            ..limit(1))
+          .getSingleOrNull();
+      if (pendingUpdate != null) {
+        await enqueueCustomerUpdate(
+          serverId: pendingUpdate.serverId ?? 0,
+          clientUuid: clientUuid,
+          changes: changes,
+          nowMs: nowMs,
+        );
+      }
+    } else if ((existing.id ?? 0) > 0) {
+      // Điểm bán ĐÃ lên server mà dòng tạo đã được dọn (quá hạn giữ): tạo lại dòng TẠO cùng client_uuid thì server trả
+      // bản cũ, phần sửa mất ⇒ xếp lệnh SỬA theo mã server.
+      await enqueueCustomerUpdate(serverId: existing.id!, clientUuid: clientUuid, changes: changes, nowMs: nowMs);
     } else {
       // Nếu chưa có trong sync_queue, tạo mục mới
       final queuePayload = {
@@ -900,8 +945,12 @@ class CustomerLocalDataSource {
               _db.isMine(tbl) &
               tbl.entity.equals('customer') &
               tbl.op.equals('update') &
-              (tbl.serverId.equals(serverId) | tbl.clientUuid.equals(clientUuid)) &
-              (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+              // serverId 0 = "chưa có mã" (lệnh sửa xếp lúc dòng tạo đang gửi) — KHÔNG khớp theo nó, kẻo gộp phần sửa
+              // điểm bán B vào lệnh sửa của điểm bán A.
+              ((serverId > 0 ? tbl.serverId.equals(serverId) : const Constant(false)) |
+                  tbl.clientUuid.equals(clientUuid)) &
+              // CHỈ gộp vào dòng còn chờ: dòng ĐANG gửi mà gộp thêm thì lúc gửi xong `markDone` đè — phần gộp mất.
+              tbl.state.equals('pending')))
         .get();
 
     if (existingEntries.isNotEmpty) {

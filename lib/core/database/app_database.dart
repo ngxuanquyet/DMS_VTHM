@@ -201,9 +201,11 @@ class AppDatabase extends _$AppDatabase {
         .write(SyncQueueEntriesCompanion(payload: Value(payload)));
   }
 
-  /// Đánh dấu mục đang gửi
+  /// Đánh dấu mục đang gửi — CHỈ khi dòng còn chờ gửi (pending, hoặc sending mồ côi lúc cưỡng chế). Trả false khi dòng
+  /// đã bị xoá / đổi trạng thái sau lúc lô nạp vào RAM (vd người dùng huỷ lượt chưa gửi) ⇒ nơi gọi KHÔNG được gửi nó.
   Future<bool> markSending(int id) async {
-    final updated = await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id)))
+    final updated = await (update(syncQueueEntries)
+          ..where((tbl) => tbl.id.equals(id) & (tbl.state.equals('pending') | tbl.state.equals('sending'))))
         .write(const SyncQueueEntriesCompanion(state: Value('sending')));
     return updated > 0;
   }
@@ -769,29 +771,75 @@ class AppDatabase extends _$AppDatabase {
     return entries.isNotEmpty ? entries.first : null;
   }
 
+  /// Huỷ lượt CHƯA lên server: xoá dòng tạo + mục con chờ gửi ([deletePendingVisitQueue]) — trong một transaction,
+  /// và TỪ CHỐI (trả false, không xoá gì) khi dòng tạo đang được gửi: xoá lúc đó thì check-in vẫn lên server và lượt
+  /// treo mãi. Cùng với [markSending] có điều kiện, hai phía không giẫm nhau: xoá trước ⇒ lô bỏ qua; gửi trước ⇒ ở đây
+  /// thấy 'sending' ⇒ nơi gọi xếp lệnh huỷ chờ check-in.
+  Future<bool> deleteUnsentVisit(String clientUuid) async {
+    final deleted = await transaction<List<SyncQueueEntry>?>(() async {
+      final create = await (select(syncQueueEntries)
+            ..where((tbl) => tbl.clientUuid.equals(clientUuid) & tbl.entity.equals('visit') & tbl.op.equals('create'))
+            ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)])
+            ..limit(1))
+          .getSingleOrNull();
+      if (create?.state == 'sending') return null;
+      if (create?.state == 'dead') {
+        // Check-in bị server TỪ CHỐI: lượt không hề có trên server ⇒ xoá trọn (cả dòng tạo dead, phiếu, mục con đã dead)
+        // — để lại thì phiếu của lượt đã huỷ nổi lên "Lỗi đồng bộ" (cha dead = hết hy vọng ⇒ 410).
+        final rows = await (select(syncQueueEntries)
+              ..where((tbl) => tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)))
+            .get();
+        rows.removeWhere((r) => r.state == 'done');
+        return _deleteRows(rows);
+      }
+      return _deleteRows(await _pendingVisitRows(clientUuid));
+    });
+    if (deleted == null) return false;
+    // Xoá tệp SAU khi transaction xong — không giữ khoá DB (lô đồng bộ chờ) trong lúc chạm đĩa.
+    await _deleteRowFiles(deleted, const []);
+    return true;
+  }
+
   /// Xoá các mục pending/sending của lượt viếng thăm (create, upload ảnh, checkout)
-  Future<int> deletePendingVisitQueue(String clientUuid) async {
+  ///
+  /// [keepVisitCreate]: GIỮ dòng tạo lượt (đang gửi dở, chưa biết đã lên server chưa) — lệnh huỷ xếp sau sẽ chờ nó có
+  /// mã server rồi huỷ. Khi đó coi như lượt đã lên server: phiếu đã nộp cũng giữ.
+  Future<int> deletePendingVisitQueue(String clientUuid, {bool keepVisitCreate = false}) async {
+    final rows = await _deleteRows(await _pendingVisitRows(clientUuid, keepVisitCreate: keepVisitCreate));
+    await _deleteRowFiles(rows, const []);
+    return rows.length;
+  }
+
+  /// Dòng chờ gửi (pending/sending) của lượt [clientUuid] mà [deletePendingVisitQueue] xoá.
+  Future<List<SyncQueueEntry>> _pendingVisitRows(String clientUuid, {bool keepVisitCreate = false}) async {
     // Lượt ĐÃ lên server (không còn dòng tạo chờ gửi): giữ phiếu khảo sát người dùng đã nộp (con theo parentUuid) — vẫn
     // gửi; server từ chối thì hiện ở "Lỗi đồng bộ" thay vì mất im lặng cùng ảnh. Lượt CHƯA lên server: không có gì để
     // phiếu gắn vào ⇒ xoá cùng lượt.
-    final visitNeverSent = await (select(syncQueueEntries)
-          ..where((tbl) =>
-              tbl.clientUuid.equals(clientUuid) &
-              tbl.entity.equals('visit') &
-              tbl.op.equals('create') &
-              (tbl.state.equals('pending') | tbl.state.equals('sending')))
-          ..limit(1))
-        .getSingleOrNull();
-    final rows = await (select(syncQueueEntries)
+    final visitNeverSent = keepVisitCreate
+        ? null
+        : await (select(syncQueueEntries)
+              ..where((tbl) =>
+                  tbl.clientUuid.equals(clientUuid) &
+                  tbl.entity.equals('visit') &
+                  tbl.op.equals('create') &
+                  (tbl.state.equals('pending') | tbl.state.equals('sending')))
+              ..limit(1))
+            .getSingleOrNull();
+    return (select(syncQueueEntries)
           ..where((tbl) =>
               (tbl.clientUuid.equals(clientUuid) | tbl.parentUuid.equals(clientUuid)) &
               (visitNeverSent != null ? const Constant(true) : tbl.entity.equals('form_submission').not()) &
+              (keepVisitCreate
+                  ? (tbl.entity.equals('visit') & tbl.op.equals('create')).not()
+                  : const Constant(true)) &
               (tbl.state.equals('pending') | tbl.state.equals('sending'))))
         .get();
-    if (rows.isEmpty) return 0;
-    final n = await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
-    await _deleteRowFiles(rows, const []);
-    return n;
+  }
+
+  /// Xoá các dòng [rows] khỏi hàng đợi (KHÔNG xoá tệp — nơi gọi xoá sau, ngoài transaction); trả lại chính danh sách đó.
+  Future<List<SyncQueueEntry>> _deleteRows(List<SyncQueueEntry> rows) async {
+    if (rows.isNotEmpty) await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
+    return rows;
   }
 }
 

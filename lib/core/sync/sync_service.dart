@@ -26,6 +26,11 @@ import '../../features/visit/data/repositories/visit_repository_impl.dart';
 import '../../features/visit/data/models/visit_material_model.dart';
 import '../../features/visit/data/repositories/visit_material_repository.dart';
 import '../../features/forms/presentation/viewmodels/forms_view_model.dart';
+import '../../features/auth/presentation/viewmodels/auth_view_model.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/app_constants.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -36,6 +41,10 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   });
   return service;
 });
+
+/// Mục bị chặn vì phiên đăng nhập (401 / thu quyền app) chờ bao lâu mới thử lại — đăng nhập lại thì "Đồng bộ ngay"
+/// hoặc lượt đổi mạng gửi ngay, không phải chờ hết khoảng này.
+const Duration authBlockedRetryDelay = Duration(minutes: 1);
 
 class SyncDeadError {
   final int entryId;
@@ -74,7 +83,9 @@ class SyncResult {
   bool get isSuccess => totalEntries > 0 && deadErrors.isEmpty && retryableCount == 0;
 }
 
-enum _SyncItemStatus { success, dead, retryable }
+/// [authBlocked]: máy chủ không nhận phiên đăng nhập (401 / chưa được cấp quyền app DMS) — lỗi của PHIÊN, không phải
+/// của mục: mục giữ nguyên chờ gửi và cả lô dừng (các mục sau cũng sẽ nhận đúng lỗi đó).
+enum _SyncItemStatus { success, dead, retryable, authBlocked, skipped }
 
 /// Mục con chưa gửi được vì lượt cha chưa có serverId — chờ cha, KHÔNG tính là một lần gửi hỏng (không đếm vào chuỗi lỗi
 /// thả check-out, [SyncService.releasesCheckout]).
@@ -89,6 +100,19 @@ class SyncService {
   final Ref _ref;
 
   bool _isSyncing = false;
+
+  /// Mục vừa bị chặn vì phiên là do bị thu quyền app (DMS_APP_FORBIDDEN), không phải 401.
+  bool _lastAuthBlockForbidden = false;
+
+  /// Phiên đã bị xoá khỏi máy (AuthInterceptor xoá khi máy chủ từ chối làm mới) — không còn refresh token.
+  static Future<bool> _sessionCleared() async {
+    try {
+      final token = (await SharedPreferences.getInstance()).getString(AppConstants.keyRefreshToken);
+      return token == null || token.isEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Hoàn tất khi lượt gửi ĐANG chạy xong (null khi rảnh) — để nơi gọi CHỜ thay vì nhận kết quả rỗng của lời gọi trùng.
   Completer<void>? _runDone;
@@ -254,6 +278,8 @@ class SyncService {
       debugPrint('[SyncService] Bắt đầu đồng bộ ${entries.length} mục trong hàng đợi (force: $force)...');
 
       final List<SyncQueueEntry> succeededEntries = [];
+      var sessionRejected = false;
+      var forbidden = false;
 
       for (final entry in entries) {
         // Kiểm tra lại kết nối trước mỗi mục (trừ khi force)
@@ -278,6 +304,7 @@ class SyncService {
         }
 
         final status = await _processEntry(entry, currentDeadErrors);
+        if (status == _SyncItemStatus.authBlocked) forbidden = _lastAuthBlockForbidden;
         if (status == _SyncItemStatus.success) {
           successCount++;
           succeededEntries.add(entry);
@@ -285,6 +312,24 @@ class SyncService {
           // currentDeadErrors already populated
         } else if (status == _SyncItemStatus.retryable) {
           retryableCount++;
+        } else if (status == _SyncItemStatus.authBlocked) {
+          retryableCount++;
+          debugPrint('[SyncService] Phiên đăng nhập không còn hiệu lực, dừng lô — các mục giữ nguyên chờ đăng nhập lại.');
+          sessionRejected = true;
+          break;
+        }
+      }
+
+      // Phiên chết thật (làm mới bị từ chối / không có refresh token / bị thu quyền app): đăng xuất CƯỠNG BỨC — giữ
+      // nguyên hàng đợi, đúng người đăng nhập lại là gửi tiếp. Không làm thì người dùng kẹt: mục chờ gửi chặn nút đăng
+      // xuất, mà gửi thì mãi 401.
+      // CHỈ khi phiên đã bị xoá thật (làm mới bị từ chối ⇒ không còn refresh token) hoặc bị thu quyền app — 401 của
+      // lần gửi lại sau khi làm mới THÀNH CÔNG thì phiên vẫn sống: chỉ dừng lô, đăng xuất là thu hồi oan token mới.
+      if (sessionRejected && (forbidden || await _sessionCleared())) {
+        try {
+          await _ref.read(authViewModelProvider.notifier).forceLogoutSessionRejected();
+        } catch (e) {
+          debugPrint('[SyncService] Không đăng xuất cưỡng bức được: $e');
         }
       }
 
@@ -367,8 +412,8 @@ class SyncService {
     SyncQueueEntry entry,
     List<SyncDeadError> currentDeadErrors,
   ) async {
-    // Đánh dấu sang 'sending'
-    await _db.markSending(entry.id);
+    // Đánh dấu sang 'sending' — dòng đã bị xoá / đổi trạng thái sau lúc nạp lô (huỷ lượt chưa gửi…) thì KHÔNG gửi.
+    if (!await _db.markSending(entry.id)) return _SyncItemStatus.skipped;
 
     try {
       if (entry.entity == 'customer' && entry.op == 'create') {
@@ -428,9 +473,21 @@ class SyncService {
       }
     }
 
-    final file = File(cleanPath);
+    var file = File(cleanPath);
     if (!await file.exists()) {
-      debugPrint('[SyncService] Tệp ảnh không tồn tại: $cleanPath');
+      // iOS đổi UUID thư mục app sau cập nhật/khôi phục: tệp vẫn còn, chỉ đường dẫn tuyệt đối lưu từ trước đã cũ ⇒ dựng
+      // lại theo thư mục Documents hiện tại trước khi kết luận là mất.
+      final rebased = await _rebaseToCurrentDocuments(cleanPath);
+      if (rebased != null) file = rebased;
+    }
+    if (!await file.exists()) {
+      // Đường dẫn tệp trong máy mà tệp đã mất ⇒ báo lỗi (dead, hiện ở "Lỗi đồng bộ") — bỏ qua là điểm bán lên server
+      // thiếu ảnh mà không ai biết (cùng luật ảnh viếng thăm / phiếu / khai báo vị trí). Chuỗi KHÔNG phải đường dẫn
+      // (giá trị ô chọn trong `data`, URL) thì trả null để nơi gọi giữ nguyên.
+      if (trimmed.startsWith('file://') || await _isAppLocalPath(cleanPath)) {
+        throw const AppException('Ảnh điểm bán không còn trên máy, không gửi được.', 410);
+      }
+      debugPrint('[SyncService] Không phải tệp ảnh trong máy, bỏ qua: $cleanPath');
       return null;
     }
 
@@ -454,7 +511,58 @@ class SyncService {
       }
       token ??= res['token']?.toString() ?? res['file_token']?.toString() ?? res['photo_token']?.toString();
     }
+    // Đã tải lên mà không đọc được token ⇒ lỗi máy chủ (thử lại), không lặng lẽ gửi điểm bán thiếu ảnh.
+    if (token == null || token.isEmpty) {
+      throw const AppException('Phản hồi tải ảnh điểm bán không hợp lệ từ máy chủ.', 502);
+    }
     return token;
+  }
+
+  /// Dấu đường dẫn tệp của app trên máy — nhận cả đường dẫn CŨ: iOS đổi UUID thư mục app sau cập nhật/khôi phục, nên
+  /// đường dẫn lưu trong hàng đợi từ trước không còn nằm trong thư mục hiện tại; Android có cả bộ nhớ ngoài của app.
+  static const _appPathMarkers = [
+    '/Containers/Data/Application/',
+    '/data/user/',
+    '/data/data/',
+    '/Android/data/',
+    '/offline_customer_photos/',
+  ];
+
+  /// [path] là tệp ảnh app tự chụp/chép (vùng lưu riêng của app, hiện tại hoặc theo dấu đường dẫn) — KHÔNG phải chuỗi
+  /// khác tình cờ bắt đầu bằng '/' (đường dẫn trên máy chủ kiểu `/media/...`, giá trị ô chọn).
+  static Future<bool> _isAppLocalPath(String path) async {
+    if (!path.startsWith('/')) return false;
+    if (_appPathMarkers.any(path.contains)) return true;
+    return (await _appDirs()).any((d) => p.isWithin(d, path));
+  }
+
+  /// Thư mục tài liệu / hỗ trợ / tạm của app — tra một lần (mỗi lần tra là một lời gọi kênh nền tảng).
+  static List<String>? _appDirsCache;
+
+  static Future<List<String>> _appDirs() async {
+    final cached = _appDirsCache;
+    if (cached != null) return cached;
+    final dirs = <String>[];
+    for (final dir in [getApplicationDocumentsDirectory, getApplicationSupportDirectory, getTemporaryDirectory]) {
+      try {
+        dirs.add((await dir()).path);
+      } catch (_) {}
+    }
+    return _appDirsCache = dirs;
+  }
+
+  /// Đường dẫn cũ `…/Documents/<phần sau>` dựng lại theo thư mục Documents HIỆN TẠI (null nếu không áp dụng / không có).
+  static Future<File?> _rebaseToCurrentDocuments(String path) async {
+    const marker = '/Documents/';
+    final i = path.indexOf(marker);
+    if (i < 0) return null;
+    try {
+      final docs = (await getApplicationDocumentsDirectory()).path;
+      final candidate = File(p.join(docs, path.substring(i + marker.length)));
+      return candidate.path != path && await candidate.exists() ? candidate : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Đồng bộ tạo mới khách hàng lên server theo hợp đồng 30/09/2026
@@ -651,10 +759,27 @@ class SyncService {
       }
     }
 
+    SyncQueueEntry? createEntry;
     if (serverId == null || serverId <= 0) {
-      debugPrint('[SyncService] Không tìm thấy serverId để cập nhật khách hàng: ${entry.clientUuid}');
-      await _db.markDone(entry.id);
-      return;
+      // Lệnh sửa xếp khi dòng TẠO điểm bán còn đang gửi (customer_local_data_source.updateCustomerOffline): lấy mã server
+      // từ dòng tạo / bảng điểm bán trong máy. Bản cũ đánh dấu "đã gửi" luôn ⇒ mất phần sửa không báo.
+      createEntry = await _db.getEntryByClientUuid(entry.clientUuid);
+      if (createEntry != null && createEntry.id != entry.id && (createEntry.serverId ?? 0) > 0) {
+        serverId = createEntry.serverId;
+      } else {
+        final localCust = await (_db.select(_db.localCustomers)
+              ..where((tbl) => tbl.clientUuid.equals(entry.clientUuid))
+              ..limit(1))
+            .getSingleOrNull();
+        if (localCust?.id != null && localCust!.id! > 0) serverId = localCust.id;
+      }
+    }
+
+    if (serverId == null || serverId <= 0) {
+      debugPrint('[SyncService] Chưa có serverId để cập nhật khách hàng: ${entry.clientUuid}');
+      final parent = (createEntry != null && createEntry.id != entry.id && createEntry.op == 'create') ? createEntry : null;
+      _throwParentUnresolved(entry, parent, 'Chưa có mã điểm bán trên máy chủ để gửi phần sửa',
+          parentUuid: entry.clientUuid);
     }
 
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
@@ -943,6 +1068,14 @@ class SyncService {
       final parent = await _db.findVisitQueueEntry(entry.parentUuid!);
       if (parent != null && parent.serverId != null && parent.serverId! > 0) {
         visitId = parent.serverId;
+      } else if (parent != null && (parent.state == 'pending' || parent.state == 'sending')) {
+        // Huỷ lúc check-in còn đang gửi dở: CHỜ check-in có mã server rồi mới huỷ — đánh dấu xong ở đây là để lượt
+        // treo trên server khi check-in lên tới nơi.
+        throw const _ParentPendingException('Chờ check-in của lượt lên server rồi mới huỷ');
+      } else if (parent != null && parent.state == 'done') {
+        // Check-in ĐÃ lên server mà máy không giữ được mã lượt: không huỷ được — báo lỗi (hiện ở "Lỗi đồng bộ") thay vì
+        // đánh dấu xong để lượt mở treo trên server mà không ai biết.
+        throw const AppException('Không xác định được lượt viếng thăm trên máy chủ để huỷ — báo quản lý đóng lượt.', 410);
       }
     }
 
@@ -1361,7 +1494,9 @@ class SyncService {
   ) async {
     final statusCode = dioErr.response?.statusCode;
     final errorMsg = _extractDioErrorMessage(dioErr);
-    return await _handleErrorByStatus(entry, statusCode, errorMsg, currentDeadErrors);
+    final data = dioErr.response?.data;
+    return await _handleErrorByStatus(entry, statusCode, errorMsg, currentDeadErrors,
+        errorCode: data is Map ? data['code']?.toString() : null);
   }
 
   /// Xử lý lỗi từ AppException
@@ -1371,7 +1506,7 @@ class SyncService {
     List<SyncDeadError> currentDeadErrors,
   ) async {
     return await _handleErrorByStatus(entry, appErr.statusCode, appErr.message, currentDeadErrors,
-        parentPending: appErr is _ParentPendingException);
+        parentPending: appErr is _ParentPendingException, errorCode: appErr.code);
   }
 
   /// Xử lý lỗi chung (ngoại lệ mạng hoặc không xác định)
@@ -1380,15 +1515,30 @@ class SyncService {
   }
 
   /// Xử lý lỗi tập trung theo status code:
-  /// - 4xx (400 <= statusCode < 500): Lỗi hỏng vĩnh viễn -> KHÔNG RETRY, chuyển 'dead', báo cho người dùng
-  /// - 500 / 5xx / Network (statusCode == null hoặc >= 500): Lỗi mạng / server tạm thời -> RETRY với Exponential Backoff
+  /// - 401 / DMS_APP_FORBIDDEN: lỗi của PHIÊN đăng nhập -> giữ pending, dừng lô ([_SyncItemStatus.authBlocked])
+  /// - 4xx khác (trừ 408/429): Lỗi hỏng vĩnh viễn -> KHÔNG RETRY, chuyển 'dead', báo cho người dùng
+  /// - 408 / 429 / 5xx / Network (statusCode == null): Lỗi tạm thời -> RETRY với Exponential Backoff
   Future<_SyncItemStatus> _handleErrorByStatus(
     SyncQueueEntry entry,
     int? statusCode,
     String errorMsg,
     List<SyncDeadError> currentDeadErrors, {
     bool parentPending = false,
+    String? errorCode,
   }) async {
+    // 0. Phiên hết hạn / tài khoản bị thu quyền app: dữ liệu của mục KHÔNG sai — đăng nhập lại là gửi được. Chuyển
+    // dead ở đây (bản cũ) là mất trắng: mục dead chỉ xoá được, và cả lô phía sau cũng nhận đúng lỗi này.
+    if (statusCode == 401 || errorCode == 'DMS_APP_FORBIDDEN') {
+      _lastAuthBlockForbidden = errorCode == 'DMS_APP_FORBIDDEN';
+      await _db.reschedule(
+        entry.id,
+        nextAttemptAt: DateTime.now().millisecondsSinceEpoch + authBlockedRetryDelay.inMilliseconds,
+        attempts: entry.attempts,
+        error: errorMsg,
+      );
+      return _SyncItemStatus.authBlocked;
+    }
+
     // 1. §9: Nếu nhận 422 "đã check-out rồi" hoặc "đã đóng" -> Coi là THÀNH CÔNG để dọn hàng đợi
     // CHỈ cho check-out / huỷ lượt (đóng lượt hai lần là cùng kết quả). Mục khác (điểm bán, phiếu, ảnh, vật tư…) mà câu
     // lỗi lỡ chứa cụm này ("Tuyến đã đóng", nhãn tự do…) thì bị nuốt thành "đã gửi" — mất dữ liệu không báo.
@@ -1434,7 +1584,10 @@ class SyncService {
       }
     }
 
-    if (giveUp || (statusCode != null && statusCode >= 400 && statusCode < 500)) {
+    // 408 (quá giờ) / 429 (quá tải — proxy/LB trả) là lỗi TẠM, cùng luật đường trực tuyến (CustomerRepositoryImpl).
+    final permanentClientError =
+        statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 429;
+    if (giveUp || permanentClientError) {
       debugPrint('[SyncService] [4xx - LỖI HỎNG VĨNH VIỄN] Mục #${entry.id} ($statusCode): $errorMsg -> Chuyển "dead", KHÔNG RETRY.');
       await _db.markDead(entry.id, errorMsg);
 
@@ -1471,7 +1624,7 @@ class SyncService {
       return _SyncItemStatus.dead;
     }
 
-    // 4. Phân loại lỗi 500 / 5xx hoặc Lỗi mạng (statusCode == null hoặc statusCode >= 500):
+    // 4. Phân loại lỗi 408 / 429 / 5xx hoặc Lỗi mạng (statusCode == null):
     // -> LỖI MẠNG / LỖI SERVER TẠM THỜI (Transient / Network Error)
     // -> RETRY: Exponential Backoff kèm Jitter ±20%
     debugPrint('[SyncService] [5xx / MẠNG - LỖI TẠM THỜI] Mục #${entry.id} (Status: $statusCode): $errorMsg -> Sẽ RETRY theo Backoff.');

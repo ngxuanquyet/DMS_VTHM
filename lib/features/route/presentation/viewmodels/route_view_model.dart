@@ -55,6 +55,10 @@ import '../../../travel/presentation/viewmodels/travel_view_model.dart';
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialFlushTimeout;
 
+/// Huỷ lượt chờ lô đồng bộ đang chạy xong tối đa bao lâu (check-in có thể đang được gửi) — quá thì xếp lệnh huỷ theo
+/// lượt cha thay vì đoán.
+const Duration cancelWaitForSyncTimeout = Duration(seconds: 15);
+
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
   return RouteApiService(
     ref.read(apiClientProvider),
@@ -2968,6 +2972,11 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // 1. Kiểm tra trong AppDatabase xem lượt này đã từng được đưa vào sync_queue chưa
     SyncQueueEntry? visitEntry;
     if (ref != null) {
+      // Check-in có thể ĐANG được gửi (lô đồng bộ đang chạy): quyết định theo trạng thái lúc đó là đoán — xoá dòng đang
+      // gửi thì check-in vẫn lên server và lượt treo mãi. Chờ lô hiện tại xong (có trần) rồi mới đọc trạng thái.
+      try {
+        await ref!.read(syncServiceProvider).waitUntilIdle().timeout(cancelWaitForSyncTimeout);
+      } catch (_) {}
       try {
         final db = ref!.read(appDatabaseProvider);
         visitEntry = await db.findVisitQueueEntry(clientUuid);
@@ -2985,17 +2994,25 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // 2. Trường hợp A: Lượt chưa tạo trên máy chủ (hoặc mới chỉ nằm trong sync_queue ở trạng thái pending)
     // Theo §5.1 HUY-LUOT-VIENG-THAM-2026-09-30.md:
     // "Lượt chưa kịp đồng bộ thì app xoá thẳng bản ghi cục bộ, đừng gọi check-in rồi gọi huỷ"
+    // Check-in bị server TỪ CHỐI (dead) cũng chưa có gì trên server ⇒ cùng nhánh xoá cục bộ.
+    var unsentDeleted = true;
     if (effectiveVisitId <= 0 &&
-        (visitEntry == null || visitEntry.state == 'pending')) {
-      if (ref != null) {
-        try {
-          final db = ref!.read(appDatabaseProvider);
-          // Xoá toàn bộ tác vụ pending/sending của lượt này (create visit, upload ảnh, checkout) — kèm tệp ảnh của chúng
-          await db.deletePendingVisitQueue(clientUuid);
-        } catch (err) {
-          debugPrint('[CheckInViewModel] Lỗi xoá queue khi hủy lượt: $err');
-        }
+        (visitEntry == null || visitEntry.state == 'pending' || visitEntry.state == 'dead') &&
+        ref != null) {
+      try {
+        // Xoá toàn bộ tác vụ chờ gửi của lượt (create visit, upload ảnh, checkout) — kèm tệp ảnh. Lô đồng bộ vừa kịp
+        // nhận dòng tạo (đang gửi) thì KHÔNG xoá (false) ⇒ rơi xuống nhánh xếp lệnh huỷ chờ check-in bên dưới.
+        unsentDeleted = await ref!.read(appDatabaseProvider).deleteUnsentVisit(clientUuid);
+        if (!unsentDeleted) visitEntry = await ref!.read(appDatabaseProvider).findVisitQueueEntry(clientUuid);
+      } catch (err) {
+        // Không xoá được ⇒ dòng tạo có thể vẫn nằm đó và sẽ gửi: KHÔNG coi là đã dọn — xuống nhánh xếp lệnh huỷ.
+        unsentDeleted = false;
+        debugPrint('[CheckInViewModel] Lỗi xoá queue khi hủy lượt: $err');
       }
+    }
+    if (effectiveVisitId <= 0 &&
+        unsentDeleted &&
+        (visitEntry == null || visitEntry.state == 'pending' || visitEntry.state == 'dead')) {
 
       // Xoá các file ảnh trong state (nếu có)
       for (final photo in state.photos) {
@@ -3171,6 +3188,34 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             .replaceAll('ServerException: ', '')
             .replaceAll('AppException: ', '');
         return (false, msg);
+      }
+    }
+
+    // Check-in vẫn đang gửi sau khi hết thời gian chờ (hoặc đã gửi mà chưa ghi được mã server): không biết lượt đã có
+    // trên server chưa ⇒ xếp lệnh huỷ theo lượt CHA (parentUuid) — hàng đợi chờ check-in có mã rồi mới huỷ, check-in
+    // không lên được thì lệnh huỷ tự xong. Bản cũ chỉ dọn cục bộ và báo thành công ⇒ lượt treo trên server.
+    if (ref != null && visitEntry != null) {
+      try {
+        final db = ref!.read(appDatabaseProvider);
+        // Ảnh / check-out chờ gửi của lượt không còn ý nghĩa; phiếu đã nộp giữ (deletePendingVisitQueue tự xét).
+        await db.deletePendingVisitQueue(clientUuid, keepVisitCreate: true);
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        await db.enqueue(
+          SyncQueueEntriesCompanion(
+            entity: const drift.Value('visit'),
+            op: const drift.Value('cancel'),
+            clientUuid: drift.Value(const Uuid().v4()),
+            parentUuid: drift.Value(clientUuid),
+            payload: drift.Value(jsonEncode({'visit_id': 0})),
+            state: const drift.Value('pending'),
+            createdAt: drift.Value(nowMs),
+            createdElapsed: drift.Value(SystemClock.nowMonotonicMs),
+            bootId: drift.Value(SystemClock.bootId),
+            attempts: const drift.Value(0),
+          ),
+        );
+      } catch (err) {
+        debugPrint('[CheckInViewModel] Lỗi xếp lệnh huỷ chờ check-in: $err');
       }
     }
 
