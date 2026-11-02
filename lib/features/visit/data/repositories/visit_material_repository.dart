@@ -15,6 +15,7 @@ import '../../../../core/utils/system_clock.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
 import '../models/material_create_rules.dart';
+import '../models/outlet_material_view_model.dart';
 import '../models/visit_material_model.dart';
 import '../services/visit_material_api_service.dart';
 
@@ -32,6 +33,16 @@ const String visitMaterialsCachePrefix = 'dms_visit_materials_';
 /// Khoá cache danh mục + loại bắt buộc của lần GET gần nhất (không theo điểm bán) — dùng khi điểm bán chưa có cache.
 /// Cùng tiền tố [visitMaterialsCachePrefix] nên cũng bị xoá khi đăng xuất.
 const String visitMaterialsLastCatalogKey = '${visitMaterialsCachePrefix}_last_catalog';
+
+/// Bản lưu mục Vật tư ở chi tiết điểm bán (#24707): hiện trạng / trang 1 lịch sử từng loại. Cùng tiền tố
+/// [visitMaterialsCachePrefix] ⇒ xoá khi đăng xuất; KHÔNG mang thao tác (`ops`) ⇒ [forgetCachedMaterialOp] bỏ qua.
+const String visitMaterialsOutletViewPrefix = '${visitMaterialsCachePrefix}view_';
+const String visitMaterialsOutletHistoryPrefix = '${visitMaterialsCachePrefix}history_';
+
+/// Trần số bản lưu hiện trạng / lịch sử giữ trên máy (bỏ bản cũ nhất theo `fetched_at`) — trần kỹ thuật chống phình tệp
+/// SharedPreferences (nạp cả tệp vào RAM lúc mở app), không phải nghiệp vụ: NV xem lại vài chục điểm bán gần nhất là đủ.
+const int outletViewCacheMax = 60;
+const int outletHistoryCacheMax = 120;
 
 /// Lối thoát cho thao tác vật tư lỗi máy chủ (5xx / phản hồi sai — mất mạng KHÔNG tính) trong hàng đợi: bỏ cuộc (dead)
 /// chỉ khi ĐỦ [visitMaterialMaxServerFailures] lần lỗi liên tiếp VÀ chuỗi lỗi đã kéo dài ≥ [visitMaterialGiveUpAfter].
@@ -127,6 +138,7 @@ Future<void> forgetCachedMaterialOp(String clientUuid) async {
     final prefs = await SharedPreferences.getInstance();
     for (final key in prefs.getKeys().where((k) => k.startsWith(visitMaterialsCachePrefix)).toList()) {
       if (key == visitMaterialsLastCatalogKey || key == visitMaterialsCreateCatalogKey) continue;
+      if (key.startsWith(visitMaterialsOutletViewPrefix) || key.startsWith(visitMaterialsOutletHistoryPrefix)) continue;
       final raw = prefs.getString(key);
       if (raw == null) continue;
       final decoded = jsonDecode(raw);
@@ -336,6 +348,56 @@ class MaterialsLoadResult {
   });
 }
 
+/// Kết quả nạp mục Vật tư ở màn chi tiết điểm bán (#24707).
+class OutletMaterialsLoadResult {
+  final OutletMaterialsSnapshot? snapshot;
+
+  /// Thời điểm lấy [snapshot] từ server (bản lưu trên máy: lúc lưu).
+  final DateTime? fetchedAt;
+  final bool fromCache;
+
+  /// 403 — tài khoản không có quyền xem vật tư điểm bán ⇒ ẩn mục.
+  final bool forbidden;
+
+  /// Loại có thao tác khai trong lượt còn chờ gửi.
+  final Set<int> pendingTypeIds;
+
+  /// Loại trong danh mục đã lưu (mang `schema` chi tiết ⇒ nhãn lựa chọn đúng) theo id.
+  final Map<int, OutletMaterialType> catalogTypes;
+  final String? error;
+
+  const OutletMaterialsLoadResult({
+    this.snapshot,
+    this.fetchedAt,
+    this.fromCache = false,
+    this.forbidden = false,
+    this.pendingTypeIds = const {},
+    this.catalogTypes = const {},
+    this.error,
+  });
+}
+
+/// Kết quả nạp một trang lịch sử vật tư của điểm bán.
+class OutletMaterialHistoryLoadResult {
+  final OutletMaterialHistoryPage? page;
+  final DateTime? fetchedAt;
+  final bool fromCache;
+  final bool forbidden;
+
+  /// Trang sau trang 1 khi đang ngoại tuyến (bản lưu chỉ có trang 1).
+  final bool offline;
+  final String? error;
+
+  const OutletMaterialHistoryLoadResult({
+    this.page,
+    this.fetchedAt,
+    this.fromCache = false,
+    this.forbidden = false,
+    this.offline = false,
+    this.error,
+  });
+}
+
 /// Kết quả gửi một thao tác.
 class MaterialSubmitOutcome {
   final bool ok;
@@ -409,6 +471,10 @@ bool isRetryableMaterialError(Object e) {
 class VisitMaterialRepository {
   final Ref _ref;
 
+  /// Đã thử tải danh mục "Tạo điểm bán" cho mục Vật tư ở chi tiết điểm bán trong phiên này — không lặp lại mỗi lần nạp
+  /// (403 / danh mục rỗng thì không có gì để lưu, gọi lại chỉ thêm độ trễ).
+  bool _createCatalogTried = false;
+
   VisitMaterialRepository(this._ref);
 
   VisitMaterialApiService get _api => _ref.read(visitMaterialApiServiceProvider);
@@ -466,6 +532,124 @@ class VisitMaterialRepository {
       data: cached.data,
       fromCache: true,
       requiredFromOtherOutlet: cached.requiredFromOtherOutlet,
+      error: error,
+    );
+  }
+
+  /// Hiện trạng vật tư của điểm bán, ngoài lượt (#24707): có mạng ⇒ GET + lưu bản trên máy; mất mạng / lỗi tạm ⇒ bản
+  /// lưu gần nhất. Kèm loại có thao tác khai trong lượt còn chờ gửi (nhãn "chờ đồng bộ").
+  Future<OutletMaterialsLoadResult> loadOutletView(int customerId) async {
+    final prefs = await _prefs();
+    Set<int> pending = const {};
+    try {
+      pending = pendingMaterialTypeIds(
+        _decode(prefs?.getString(_outletKey(customerId))),
+        await _db.getOpenVisitMaterialUuids(),
+      );
+    } catch (_) {}
+    var catalogTypes = _cachedCatalogTypes(prefs);
+
+    String? error;
+    if (_ref.read(connectivityProvider).isOnline) {
+      try {
+        final (raw, snapshot) = await _api.getOutletMaterials(customerId);
+        final now = DateTime.now();
+        await prefs?.setString(
+          _outletViewKey(customerId),
+          jsonEncode({'fetched_at': now.millisecondsSinceEpoch, 'data': raw}),
+        );
+        await _pruneOutletCache(prefs, visitMaterialsOutletViewPrefix, outletViewCacheMax);
+        await prefs?.remove(_outletForbiddenKey);
+        // Có loại mang chi tiết mà danh mục trên máy thiếu schema của nó ⇒ tải danh mục "Tạo điểm bán" (một lần/phiên)
+        // để đọc nhãn lựa chọn.
+        final missing = snapshot.items
+            .any((i) => (i.details?.isNotEmpty ?? false) && catalogTypes[i.type.id]?.schema == null);
+        if (missing && !_createCatalogTried) {
+          _createCatalogTried = true;
+          catalogTypes = {...catalogTypes, ...await _fetchCreateCatalogTypes()};
+        }
+        return OutletMaterialsLoadResult(
+          snapshot: snapshot,
+          fetchedAt: now,
+          pendingTypeIds: pending,
+          catalogTypes: catalogTypes,
+        );
+      } catch (e) {
+        if (_isNoLongerViewable(e)) {
+          // 403 mất quyền · 404/410 ngoài phạm vi xem / điểm bán đã xoá: KHÔNG hiện bản lưu cũ (kể cả khi mất mạng sau
+          // đó) ⇒ bỏ bản lưu của điểm bán.
+          // 403 chỉ là quyền XEM hiện trạng (lịch sử gác quyền riêng); 404/410 ⇒ bỏ cả lịch sử.
+          final forbidden = (e as AppException).statusCode == 403;
+          await _forgetOutletCache(prefs, customerId, history: !forbidden);
+          if (forbidden) {
+            // Nhớ "không có quyền xem" để mở lại khi mất mạng vẫn ẩn mục (không mời "kết nối mạng rồi thử lại").
+            await prefs?.setBool(_outletForbiddenKey, true);
+            return const OutletMaterialsLoadResult(forbidden: true);
+          }
+          return OutletMaterialsLoadResult(error: e.message);
+        }
+        if (!isRetryableMaterialError(e)) error = e is AppException ? e.message : e.toString();
+      }
+    }
+    if (prefs?.getBool(_outletForbiddenKey) == true) return const OutletMaterialsLoadResult(forbidden: true);
+    final cached = _decode(prefs?.getString(_outletViewKey(customerId)));
+    if (cached == null || cached['data'] is! Map) {
+      return OutletMaterialsLoadResult(error: error, pendingTypeIds: pending, catalogTypes: catalogTypes);
+    }
+    return OutletMaterialsLoadResult(
+      snapshot: OutletMaterialsSnapshot.fromJson(Map<String, dynamic>.from(cached['data'] as Map)),
+      fetchedAt: _msToDate(cached['fetched_at']),
+      fromCache: true,
+      pendingTypeIds: pending,
+      catalogTypes: catalogTypes,
+      error: error,
+    );
+  }
+
+  /// Một trang lịch sử vật tư của MỘT loại tại điểm bán (#24707). Trang 1 được lưu trên máy để xem khi mất mạng; trang
+  /// sau chỉ tải khi có mạng.
+  Future<OutletMaterialHistoryLoadResult> loadOutletHistory(
+    int customerId,
+    int materialTypeId, {
+    int page = 1,
+  }) async {
+    final prefs = await _prefs();
+    final key = _outletHistoryKey(customerId, materialTypeId);
+    String? error;
+    if (_ref.read(connectivityProvider).isOnline) {
+      try {
+        final (raw, result) =
+            await _api.getOutletMaterialHistory(customerId, materialTypeId: materialTypeId, page: page);
+        final now = DateTime.now();
+        if (page == 1) {
+          await prefs?.setString(key, jsonEncode({'fetched_at': now.millisecondsSinceEpoch, 'body': raw}));
+          await _pruneOutletCache(prefs, visitMaterialsOutletHistoryPrefix, outletHistoryCacheMax);
+        }
+        return OutletMaterialHistoryLoadResult(page: result, fetchedAt: now);
+      } catch (e) {
+        if (_isNoLongerViewable(e)) {
+          // 403 chỉ là quyền XEM lịch sử ⇒ giữ bản lưu hiện trạng; 404/410 ⇒ bỏ hết của điểm bán.
+          final forbidden = (e as AppException).statusCode == 403;
+          await _forgetOutletCache(prefs, customerId, view: !forbidden);
+          if (forbidden) return const OutletMaterialHistoryLoadResult(forbidden: true);
+          return OutletMaterialHistoryLoadResult(error: e.message);
+        }
+        // Cùng cách mục hiện trạng: lỗi tạm (mạng / 5xx) im lặng dùng bản lưu, chỉ báo lỗi 4xx.
+        if (!isRetryableMaterialError(e)) error = e is AppException ? e.message : e.toString();
+        // Trang sau không có bản lưu ⇒ báo để người dùng bấm thử lại.
+        if (page > 1) return OutletMaterialHistoryLoadResult(error: error, offline: error == null);
+      }
+    } else if (page > 1) {
+      return const OutletMaterialHistoryLoadResult(offline: true);
+    }
+    final cached = page == 1 ? _decode(prefs?.getString(key)) : null;
+    if (cached == null || cached['body'] is! Map) return OutletMaterialHistoryLoadResult(error: error);
+    final body = OutletMaterialHistoryPage.fromJson(Map<String, dynamic>.from(cached['body'] as Map));
+    return OutletMaterialHistoryLoadResult(
+      // Bản lưu chỉ có trang 1 ⇒ không mời "tải thêm" khi đang ngoại tuyến.
+      page: OutletMaterialHistoryPage(items: body.items),
+      fetchedAt: _msToDate(cached['fetched_at']),
+      fromCache: true,
       error: error,
     );
   }
@@ -571,6 +755,90 @@ class VisitMaterialRepository {
   }
 
   static String _outletKey(int customerId) => '$visitMaterialsCachePrefix$customerId';
+
+  /// Server từ chối HẲN việc xem vật tư điểm bán: 403 (mất quyền) · 404/410 (ngoài phạm vi xem / điểm bán đã xoá).
+  /// 4xx khác (408/429/409/401 lúc làm mới phiên…) là tạm — giữ bản lưu.
+  static bool _isNoLongerViewable(Object e) =>
+      e is AppException && (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 410);
+
+  /// Bỏ bản lưu hiện trạng ([view]) và/hoặc lịch sử mọi loại ([history]) của một điểm bán.
+  static Future<void> _forgetOutletCache(
+    SharedPreferences? prefs,
+    int customerId, {
+    bool view = true,
+    bool history = true,
+  }) async {
+    if (prefs == null) return;
+    try {
+      if (view) await prefs.remove(_outletViewKey(customerId));
+      if (!history) return;
+      final hp = '$visitMaterialsOutletHistoryPrefix${customerId}_';
+      for (final k in prefs.getKeys().where((k) => k.startsWith(hp)).toList()) {
+        await prefs.remove(k);
+      }
+    } catch (_) {}
+  }
+
+  /// Loại vật tư mang schema (nhãn lựa chọn, ô ảnh) cho mục Vật tư ở chi tiết điểm bán, từ danh mục ĐÃ LƯU: danh mục
+  /// của lượt gần nhất đè danh mục "Tạo điểm bán".
+  static Map<int, OutletMaterialType> _cachedCatalogTypes(SharedPreferences? prefs) {
+    final out = <int, OutletMaterialType>{};
+    try {
+      final create = _decode(prefs?.getString(visitMaterialsCreateCatalogKey));
+      if (create != null) {
+        for (final t in MaterialCreateCatalog.fromJson(create).types) {
+          out[t.id] = t;
+        }
+      }
+      final last = _decode(prefs?.getString(visitMaterialsLastCatalogKey));
+      if (last != null) {
+        for (final t in VisitMaterialsData.fromJson(last).types) {
+          out[t.id] = t;
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /// Tải danh mục "Tạo điểm bán" (cùng quyền người dùng app, được lưu lại) — khi máy chưa có danh mục nào.
+  Future<Map<int, OutletMaterialType>> _fetchCreateCatalogTypes() async {
+    try {
+      return {for (final t in (await loadCreateCatalog()).catalog?.types ?? const <OutletMaterialType>[]) t.id: t};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Bản lưu mục Vật tư ở chi tiết điểm bán — cùng tiền tố [visitMaterialsCachePrefix] nên bị xoá khi đăng xuất.
+  /// Lần GET hiện trạng gần nhất bị 403 (mọi điểm bán — quyền theo vai, không theo điểm bán).
+  static const String _outletForbiddenKey = '${visitMaterialsOutletViewPrefix}forbidden';
+
+  static String _outletViewKey(int customerId) => '$visitMaterialsOutletViewPrefix$customerId';
+
+  static String _outletHistoryKey(int customerId, int typeId) =>
+      '$visitMaterialsOutletHistoryPrefix${customerId}_$typeId';
+
+  /// Giữ tối đa [max] bản lưu mang tiền tố [prefix] (dọn khi vượt ~10%) — bỏ bản `fetched_at` cũ nhất (bản hỏng coi như cũ nhất).
+  static Future<void> _pruneOutletCache(SharedPreferences? prefs, String prefix, int max) async {
+    if (prefs == null) return;
+    try {
+      final keys = prefs.getKeys().where((k) => k.startsWith(prefix) && k != _outletForbiddenKey).toList();
+      // Dọn theo đợt (vượt trần ~10%) — mỗi lần dọn phải giải mã mọi bản lưu để đọc `fetched_at`.
+      if (keys.length <= max + max ~/ 10) return;
+      int at(String k) {
+        final v = _decode(prefs.getString(k))?['fetched_at'];
+        return v is num ? v.toInt() : 0;
+      }
+
+      final stamps = {for (final k in keys) k: at(k)};
+      keys.sort((a, b) => stamps[a]!.compareTo(stamps[b]!));
+      for (final k in keys.take(keys.length - max)) {
+        await prefs.remove(k);
+      }
+    } catch (_) {}
+  }
+
+  static DateTime? _msToDate(dynamic v) => v is num ? DateTime.fromMillisecondsSinceEpoch(v.toInt()) : null;
 
   static Map<String, dynamic>? _decode(String? raw) {
     if (raw == null || raw.isEmpty) return null;

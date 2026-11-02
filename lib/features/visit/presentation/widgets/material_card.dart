@@ -51,6 +51,10 @@ class MaterialCard extends StatefulWidget {
   /// Thu gọn mặc định, nút mũi tên mở/đóng phần chi tiết (mục Vật tư của lượt viếng thăm).
   final bool collapsible;
 
+  /// Nhãn ô chi tiết theo server (mã ô → nhãn, biểu mẫu hiện hành) — mục Vật tư ở chi tiết điểm bán; THẮNG nhãn trong
+  /// schema của [type] (schema có thể mượn từ danh mục lưu cũ, chỉ dùng cho nhãn lựa chọn + ô ảnh).
+  final Map<String, String> detailLabels;
+
   static const int maxDetailRows = 3;
   static const int maxPhotoThumbs = 4;
 
@@ -68,6 +72,7 @@ class MaterialCard extends StatefulWidget {
     this.action,
     this.compactDetails = false,
     this.collapsible = false,
+    this.detailLabels = const {},
   });
 
   @override
@@ -159,14 +164,14 @@ class _MaterialCardState extends State<MaterialCard> {
         const SizedBox(height: 6),
         _ConditionLegend(counts: positive, conditions: conditions),
       ]);
-      final rows = materialDetailRows(type, details, strings);
+      final rows = materialDetailRows(type, details, strings, labels: widget.detailLabels);
       if (rows.isNotEmpty) {
         children.addAll([const SizedBox(height: 8), Divider(height: 1, color: subColor.withValues(alpha: 0.2))]);
         children.add(widget.compactDetails ? _compactDetails(rows, textColor, subColor) : _detailTable(rows, strings, textColor, subColor));
       }
     }
     if (!collapsed && photos.isNotEmpty && !notPresent) {
-      children.addAll([const SizedBox(height: 8), _PhotoStrip(photos: photos, title: type.name)]);
+      children.addAll([const SizedBox(height: 8), MaterialPhotoStrip(photos: photos, title: type.name)]);
     }
     if (!collapsed && footer != null && footer.isNotEmpty) {
       children.addAll([
@@ -265,29 +270,52 @@ class _MaterialCardState extends State<MaterialCard> {
       );
 }
 
+/// Ô chi tiết của biểu mẫu loại [type] theo mã — đọc schema MỘT lần cho cả loạt ô.
+Map<String, MarketFormBlockEntity> materialDetailBlocks(OutletMaterialType type) =>
+    {for (final b in type.detailBlocks) b.resolved.code: b};
+
 /// Các ô chi tiết ĐÃ ĐIỀN theo thứ tự biểu mẫu của loại: `nhãn → giá trị hiển thị` (lựa chọn ra NHÃN, không ra mã;
 /// có/không ra chữ). Ô trống, ô ảnh/tệp bị bỏ. Biểu mẫu không còn ô đó (đã sửa) ⇒ hiện theo mã ô.
-List<MapEntry<String, String>> materialDetailRows(OutletMaterialType type, Map<String, dynamic>? details, AppStrings strings) {
+/// [labels]: nhãn theo server (mã ô → nhãn) — thắng nhãn trong schema.
+List<MapEntry<String, String>> materialDetailRows(
+  OutletMaterialType type,
+  Map<String, dynamic>? details,
+  AppStrings strings, {
+  Map<String, String> labels = const {},
+}) {
   if (details == null || details.isEmpty) return const [];
-  final blocks = {for (final b in type.detailBlocks) b.resolved.code: b};
+  final blocks = materialDetailBlocks(type);
   final order = [...blocks.keys, ...details.keys.where((k) => !blocks.containsKey(k))];
   final out = <MapEntry<String, String>>[];
   for (final code in order) {
-    if (code.startsWith('_')) continue;
-    final block = blocks[code];
-    final type = block?.resolved.inputType.toLowerCase() ?? '';
-    if (block != null && (block.isImage || type == 'file')) continue;
-    // Không có schema (loại đã gỡ khỏi danh mục): danh sách token/đường dẫn ảnh không phải thông tin để đọc.
-    final raw = details[code];
-    if (block == null && raw is List && raw.isNotEmpty && raw.every((e) => _looksLikePhoto('$e'))) {
-      continue;
-    }
-    final text = _displayValue(details[code], block?.resolved, strings);
-    if (text.isEmpty) continue;
-    final label = block?.resolved.label ?? '';
+    final text = materialDetailValue(type, code, details[code], strings, blocks: blocks);
+    if (text == null || text.isEmpty) continue;
+    final label = (labels[code]?.isNotEmpty ?? false) ? labels[code]! : (blocks[code]?.resolved.label ?? '');
     out.add(MapEntry(label.isNotEmpty ? label : code, text));
   }
   return out;
+}
+
+/// Giá trị hiển thị của MỘT ô chi tiết theo biểu mẫu của [type] (lựa chọn ra nhãn, có/không ra chữ) — MỘT bộ lọc cho thẻ
+/// vật tư ([materialDetailRows]) và dòng "cũ → mới" của lịch sử. null = ô nội bộ (`_…`), ô ảnh/tệp, danh sách ảnh
+/// (không phải thông tin để đọc); '' = trống. [blocks]: [materialDetailBlocks] đã đọc sẵn (khỏi đọc lại schema mỗi ô).
+String? materialDetailValue(
+  OutletMaterialType type,
+  String code,
+  dynamic value,
+  AppStrings strings, {
+  Map<String, MarketFormBlockEntity>? blocks,
+}) {
+  if (code.startsWith('_')) return null;
+  final block = (blocks ?? materialDetailBlocks(type))[code];
+  final inputType = block?.resolved.inputType.toLowerCase() ?? '';
+  if (block != null && (block.isImage || inputType == 'file')) return null;
+  if (block == null) {
+    // Không có schema (loại đã gỡ khỏi danh mục / chưa có danh mục): danh sách ảnh không phải thông tin để đọc. Chuỗi
+    // đơn lẻ giữ nguyên — không phân biệt được token ảnh với chữ dài đúng 32 ký tự.
+    if (value is List && value.isNotEmpty && value.every((e) => _looksLikePhoto('$e'))) return null;
+  }
+  return _displayValue(value, block?.resolved, strings);
 }
 
 /// Token ảnh đã tải lên hoặc đường dẫn tệp trên máy — KHÔNG phải mọi chuỗi có "/" ("60x90/cm", "12/10").
@@ -373,12 +401,12 @@ class _ConditionLegend extends StatelessWidget {
   }
 }
 
-/// Dải ảnh thu nhỏ (tối đa [MaterialCard.maxPhotoThumbs], ô cuối "+N"); chạm mở trình xem toàn màn.
-class _PhotoStrip extends StatelessWidget {
+/// Dải ảnh vật tư (tối đa [MaterialCard.maxPhotoThumbs] ô, chạm xem to) — dùng chung thẻ vật tư và lịch sử vật tư.
+class MaterialPhotoStrip extends StatelessWidget {
   final List<MaterialPhoto> photos;
   final String title;
 
-  const _PhotoStrip({required this.photos, required this.title});
+  const MaterialPhotoStrip({super.key, required this.photos, required this.title});
 
   @override
   Widget build(BuildContext context) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_meta_entity.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_dynamic_column.dart';
@@ -15,7 +16,28 @@ import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 import 'package:vthm_dms/core/services/erp_link_request_service.dart';
 
+import 'package:vthm_dms/features/visit/data/models/outlet_material_view_model.dart';
+import 'package:vthm_dms/features/visit/data/models/visit_material_model.dart';
+import 'package:vthm_dms/features/visit/data/repositories/visit_material_repository.dart';
+
 import 'helpers/fake_erp_link_request_service.dart';
+
+/// Mục Vật tư (#24707): trả sẵn một loại, không gọi mạng / DB.
+class FakeVisitMaterialRepository extends VisitMaterialRepository {
+  FakeVisitMaterialRepository(super.ref);
+
+  @override
+  Future<OutletMaterialsLoadResult> loadOutletView(int customerId) async => OutletMaterialsLoadResult(
+        snapshot: const OutletMaterialsSnapshot(items: [
+          OutletMaterialView(
+            type: OutletMaterialType(id: 3, name: 'Kệ trưng bày', unit: 'cái'),
+            conditionCounts: {'good': 2},
+            quantity: 2,
+          ),
+        ]),
+        fetchedAt: DateTime(2026, 11, 2, 9, 30),
+      );
+}
 
 class FakeRouteApiService extends Fake implements RouteApiService {
   @override
@@ -99,6 +121,9 @@ class MockCustomerRepository implements CustomerRepository {
 }
 
 void main() {
+  // Mục Vật tư dò lượt đang mở trong bản lưu trên máy (SharedPreferences).
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('CustomerDetailScreen renders customer identity, photo carousel, contact, and action buttons', (tester) async {
     const testCustomer = CustomerEntity(
       id: 999,
@@ -143,6 +168,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          visitMaterialRepositoryProvider.overrideWith((ref) => FakeVisitMaterialRepository(ref)),
           customerRepositoryProvider.overrideWithValue(mockRepo),
           erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
@@ -170,6 +196,12 @@ void main() {
     expect(find.text('Đại lý cấp 1'), findsOneWidget);
     expect(find.text('KPP · MB1'), findsAtLeastNWidgets(1));
     expect(find.text('Kênh GT'), findsNothing, reason: 'Không rơi về kênh MobiWork cũ (#23682).');
+
+    // Mục Vật tư (#24707): hiện trạng từ repo; ngoài lượt chỉ xem, không có nút Sửa.
+    await tester.scrollUntilVisible(find.text('Kệ trưng bày'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Kệ trưng bày'), findsOneWidget);
+    expect(find.text('Chỉ sửa được vật tư khi đang check-in tại điểm bán này.'), findsOneWidget);
+    expect(find.text('Sửa vật tư'), findsNothing);
     expect(find.text('Tuyến Bắc Từ Liêm'), findsAtLeastNWidgets(1));
 
     // Verify Photo count pill (2 ảnh)
@@ -226,6 +258,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          visitMaterialRepositoryProvider.overrideWith((ref) => FakeVisitMaterialRepository(ref)),
           customerRepositoryProvider.overrideWithValue(mockRepo),
           erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
@@ -275,6 +308,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          visitMaterialRepositoryProvider.overrideWith((ref) => FakeVisitMaterialRepository(ref)),
           customerRepositoryProvider.overrideWithValue(mockRepo),
           erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(
@@ -338,6 +372,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          visitMaterialRepositoryProvider.overrideWith((ref) => FakeVisitMaterialRepository(ref)),
           customerRepositoryProvider.overrideWithValue(mockRepo),
           erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
           routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),

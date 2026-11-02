@@ -11,7 +11,10 @@ import '../../domain/entities/visit_requirements_entity.dart';
 /// - `GET  /dms/visits/{id}/materials`  → [VisitMaterialsData]
 /// - `POST /dms/visits/{id}/materials`  → [MaterialSaveResponse] (luôn 200 khi lô hợp lệ — đọc `ok` từng phần tử)
 
-int? _toInt(dynamic v) {
+int? _toInt(dynamic v) => materialToInt(v);
+
+/// Đọc số nguyên từ JSON (số hoặc chuỗi); null khi không đọc được — dùng chung các mô hình vật tư.
+int? materialToInt(dynamic v) {
   if (v == null) return null;
   if (v is num) return v.toInt();
   return int.tryParse(v.toString());
@@ -554,6 +557,19 @@ VisitMaterialsData applyMaterialOperation(
     items.add(next);
   }
   return data.copyWith(items: items);
+}
+
+/// "2026-10-30 12:10:03+07" → "30/10 12:10"; chỉ có ngày → "30/10". Server trả giờ VN kèm múi, giữ nguyên như chuỗi.
+/// Gọi khi chuỗi dài ≥ 10.
+String shortMaterialDateTime(String raw) {
+  final day = '${raw.substring(8, 10)}/${raw.substring(5, 7)}';
+  return raw.length >= 16 ? '$day ${raw.substring(11, 16)}' : day;
+}
+
+/// Giờ trên máy → "30/10 12:10" (cùng dạng [shortMaterialDateTime]) — "cập nhật lúc" của bản lưu.
+String shortLocalDateTime(DateTime d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
 }
 
 /// `as_of` server ("2026-10-30 12:10:03+07") → DateTime; null khi không có / sai dạng.

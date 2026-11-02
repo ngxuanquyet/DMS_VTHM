@@ -493,9 +493,16 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// clientUuid các thao tác vật tư server đã từ chối (dead) — mọi lượt; để cache không tính chúng là "đã kiểm".
-  Future<Set<String>> getDeadVisitMaterialUuids() async {
+  Future<Set<String>> getDeadVisitMaterialUuids() => _visitMaterialUuidsInStates(const ['dead']);
+
+  /// clientUuid các thao tác vật tư CHƯA lên server (pending/sending) — mọi lượt; mục Vật tư ở chi tiết điểm bán (#24707)
+  /// gắn nhãn "chờ đồng bộ".
+  Future<Set<String>> getOpenVisitMaterialUuids() => _visitMaterialUuidsInStates(const ['pending', 'sending']);
+
+  /// clientUuid thao tác vật tư của người đang dùng máy có trạng thái thuộc [states] — mọi lượt.
+  Future<Set<String>> _visitMaterialUuidsInStates(List<String> states) async {
     final rows = await (select(syncQueueEntries)
-          ..where((tbl) => isMine(tbl) & tbl.entity.equals('visit_material') & tbl.state.equals('dead')))
+          ..where((tbl) => isMine(tbl) & tbl.entity.equals('visit_material') & tbl.state.isIn(states)))
         .get();
     return rows.map((r) => r.clientUuid).toSet();
   }

@@ -297,15 +297,9 @@ class _VisitMaterialsScreenState extends ConsumerState<VisitMaterialsScreen> {
       photos: item.lastPhotos,
       status: status,
       footer: item.asOf != null && item.asOf!.length >= 10
-          ? strings.materialsLastCheck(_shortDateTime(item.asOf!), item.lastUserName)
+          ? strings.materialsLastCheck(shortMaterialDateTime(item.asOf!), item.lastUserName)
           : null,
       onTap: () => _openEdit(item.type, item),
     );
-  }
-
-  /// "2026-10-30 12:10:03+07" → "30/10 12:10"; chỉ có ngày → "30/10". Server trả giờ VN kèm múi, giữ nguyên như chuỗi.
-  static String _shortDateTime(String raw) {
-    final day = '${raw.substring(8, 10)}/${raw.substring(5, 7)}';
-    return raw.length >= 16 ? '$day ${raw.substring(11, 16)}' : day;
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/localization/language_provider.dart';
 import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -22,6 +23,7 @@ import '../viewmodels/customer_view_model.dart';
 import '../widgets/customer_card.dart';
 import '../widgets/pending_sync_dismissible.dart';
 import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
+import '../../../visit/presentation/widgets/outlet_materials_detail_card.dart';
 import '../widgets/erp_links_form_field.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
@@ -47,6 +49,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   int _currentPhotoIndex = 0;
   bool _isLoading = false;
   GoongMapStyle _mapStyle = GoongMapStyle.standard;
+
+  /// Tăng khi kéo làm mới ⇒ mục Vật tư nạp lại.
+  int _materialsRefreshToken = 0;
 
   @override
   void initState() {
@@ -101,7 +106,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   /// [fromPull]: gọi từ kéo-xuống-làm-mới — AppRefreshIndicator đã báo kết quả, không hiện thêm thông báo riêng.
   Future<void> _handleRefresh({bool fromPull = false}) async {
     if (_customer.id <= 0) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _materialsRefreshToken++;
+    });
     try {
       final updated = await ref
           .read(customerRepositoryProvider)
@@ -486,6 +494,23 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
+
+                    // 5c. Vật tư tại điểm (#24707): hiện trạng + lịch sử theo loại; sửa chỉ khi đang check-in tại đây.
+                    if (_customer.id > 0)
+                      OutletMaterialsDetailCard(
+                        customerId: _customer.id,
+                        customerName: _customer.name,
+                        refreshToken: _materialsRefreshToken,
+                        sectionBuilder: (content) => Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildSectionCard(
+                            title: ref.read(stringsProvider).materialsTitle,
+                            icon: Icons.inventory_2_outlined,
+                            isDark: isDark,
+                            children: [content],
+                          ),
+                        ),
+                      ),
 
                     // 6. Dynamic Fields Card (if available)
                     if (_hasDynamicFields()) ...[

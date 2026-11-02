@@ -700,6 +700,40 @@ class AppStrings {
   String materialsCheckoutBlocked(String names) =>
       isVietnamese ? 'Chưa kiểm vật tư bắt buộc: $names' : 'Required materials not checked: $names';
 
+  // Vật tư ở màn chi tiết điểm bán (#24707)
+  String get outletMaterialsEdit => isVietnamese ? 'Sửa vật tư' : 'Edit materials';
+  String get outletMaterialsEditHint => isVietnamese
+      ? 'Chỉ sửa được vật tư khi đang check-in tại điểm bán này.'
+      : 'Materials can only be edited while checked in at this outlet.';
+  String get outletMaterialsResumeHint => isVietnamese
+      ? 'Đang có lượt mở tại điểm bán này — vào lại lượt ở màn Tuyến để sửa vật tư.'
+      : 'There is an open visit here — resume it from the Routes screen to edit materials.';
+  String outletMaterialsCachedAt(String when) =>
+      isVietnamese ? 'Bản lưu trên máy, cập nhật lúc $when' : 'Saved copy, updated $when';
+  String get outletMaterialsNoCache => isVietnamese
+      ? 'Chưa có bản lưu vật tư của điểm bán này. Vui lòng kết nối mạng rồi thử lại.'
+      : 'No saved materials for this outlet yet. Please connect and retry.';
+  String get outletMaterialsPendingSync => isVietnamese ? 'Chờ đồng bộ' : 'Pending sync';
+  String outletMaterialsPendingNote(int n) => isVietnamese
+      ? '$n loại vật tư có thay đổi đang chờ gửi — số liệu dưới đây chưa gồm thay đổi đó.'
+      : '$n material type(s) have changes waiting to sync — figures below do not include them yet.';
+  String get outletMaterialsHidden =>
+      isVietnamese ? 'Đang ẩn (điểm bán bị từ chối duyệt)' : 'Hidden (outlet rejected)';
+  String get outletMaterialsTypeRetired => isVietnamese ? 'Loại đã ngừng dùng' : 'Type retired';
+  String get outletMaterialsNeedNetwork =>
+      isVietnamese ? 'Cần kết nối mạng để tải thêm lịch sử.' : 'Connect to the internet to load more history.';
+  String outletMaterialsHistoryTitle(String name) => isVietnamese ? 'Lịch sử: $name' : 'History: $name';
+  String get outletMaterialsHistoryEmpty =>
+      isVietnamese ? 'Chưa có lịch sử thay đổi.' : 'No change history yet.';
+  String get outletMaterialsHistoryNoCache => isVietnamese
+      ? 'Chưa có bản lưu lịch sử của loại này. Vui lòng kết nối mạng rồi thử lại.'
+      : 'No saved history for this type yet. Please connect and retry.';
+  String get outletMaterialsLoadMore => isVietnamese ? 'Tải thêm' : 'Load more';
+  String outletMaterialsVisit(int id) => isVietnamese ? 'Lượt #$id' : 'Visit #$id';
+  String outletMaterialsReason(String r) => isVietnamese ? 'Lý do: $r' : 'Reason: $r';
+  String outletMaterialsQuantity(int n, String unit) =>
+      isVietnamese ? 'Số lượng: ${materialsCount(n, unit)}' : 'Quantity: ${materialsCount(n, unit)}';
+
   // Vật tư khai lúc tạo điểm bán (#24526)
   String get createMaterialsTitle => isVietnamese ? 'Vật tư tại điểm' : 'Materials at outlet';
   String get createMaterialsHint => isVietnamese
