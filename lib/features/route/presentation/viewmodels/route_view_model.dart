@@ -382,12 +382,54 @@ class RouteViewModel extends StateNotifier<RouteState> {
   /// CHỈ chạy ở lượt nạp thường; lượt nạp ngầm sau tải điểm bán KHÔNG gọi — chụp todayVisits cũ mà đối chiếu đúng lúc
   /// người dùng vừa check-in là huỷ nhầm lượt mới.
   Future<(List<VisitEntity>, VisitEntity?)> _loadTodayVisits() async {
+    // Lượt CÒN MỞ trên server, KHÔNG giới hạn ngày: lượt treo từ hôm trước không có trong danh sách hôm nay mà vẫn chặn
+    // mọi check-in mới (server không có cron đóng hộ) — phải hiện ra để nhân viên vào check-out / huỷ. `null` = không
+    // tra được (mất mạng / lỗi) ⇒ không kết luận gì từ nó. Tải SONG SONG với danh sách hôm nay.
+    final openStartedAt = DateTime.now();
+    Future<List<VisitEntity>?> openFuture = Future.value(null);
+    final repo = visitRepository;
+    try {
+      if (ref != null && repo is VisitRepositoryImpl && ref!.read(connectivityProvider).isOnline) {
+        openFuture = repo.getOpenVisits().then<List<VisitEntity>?>((v) => v).catchError((Object e) {
+          debugPrint('[RouteViewModel] Không tải được lượt còn mở: $e');
+          return null;
+        });
+      }
+    } catch (_) {}
+
     // 2. Fetch today's visits to detect visited/in-progress dealers (§2.3)
     List<VisitEntity> todayVisits = [];
     try {
       todayVisits = await getTodayVisitsUseCase();
     } catch (e) {
       debugPrint('[RouteViewModel] Lỗi khi tải lượt viếng thăm hôm nay: $e');
+    }
+    final openVisits = await openFuture;
+    final pendingCancelVisitIds = <int>{};
+    final pendingCancelUuids = <String>{};
+    // Lượt có check-out NGOẠI TUYẾN còn chờ gửi: trên server vẫn "mở" nhưng nhân viên đã check-out — không đưa lên làm
+    // lượt đang mở (vào lại là check-out lần hai, đua với lệnh trong hàng đợi).
+    final pendingCheckoutVisitIds = <int>{};
+    final pendingCheckoutUuids = <String>{};
+    if (ref != null) {
+      try {
+        final db = ref!.read(appDatabaseProvider);
+        final pendingCheckouts = await (db.select(db.syncQueueEntries)
+              ..where((tbl) =>
+                  db.isMine(tbl) &
+                  tbl.entity.equals('visit') &
+                  tbl.op.equals('checkout') &
+                  (tbl.state.equals('pending') | tbl.state.equals('sending'))))
+            .get();
+        for (final entry in pendingCheckouts) {
+          if (entry.parentUuid != null) pendingCheckoutUuids.add(entry.parentUuid!);
+          try {
+            final payload = jsonDecode(entry.payload);
+            final vId = payload is Map ? int.tryParse(payload['visit_id']?.toString() ?? '') : null;
+            if (vId != null && vId > 0) pendingCheckoutVisitIds.add(vId);
+          } catch (_) {}
+        }
+      } catch (_) {}
     }
 
     // Kiểm tra các lượt đang nằm trong hàng đợi huỷ ngoại tuyến (sync_queue)
@@ -404,8 +446,6 @@ class RouteViewModel extends StateNotifier<RouteState> {
                           tbl.state.equals('sending')),
                 ))
                 .get();
-        final pendingCancelVisitIds = <int>{};
-        final pendingCancelUuids = <String>{};
         for (final entry in pendingCancels) {
           if (entry.parentUuid != null) {
             pendingCancelUuids.add(entry.parentUuid!);
@@ -463,7 +503,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
               '[RouteViewModel] Lượt viếng thăm id=${saved.id} đã hoàn tất trên server, xoá active visit stale.',
             );
             await visitRepository!.clearActiveVisit();
-          } else if (todayVisits.isNotEmpty && saved.id > 0 && matchingServerVisit == null) {
+          } else if (saved.id > 0 &&
+              matchingServerVisit == null &&
+              saved.isCheckinToday &&
+              todayVisits.isNotEmpty &&
+              !(openVisits?.any((v) => v.id == saved.id) ?? false)) {
             // ⚠️ LƯỢT ĐÃ BỊ HUỶ TRÊN SERVER (§4.1 HUY-LUOT-VIENG-THAM-2026-09-30):
             // Khi server trả về todayVisits thành công nhưng lượt server (saved.id > 0) biến mất hoàn toàn
             // khỏi todayVisits, điều đó có nghĩa là lượt này đã bị huỷ trên server!
@@ -472,11 +516,35 @@ class RouteViewModel extends StateNotifier<RouteState> {
             );
             await visitRepository!.clearActiveVisit();
             await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
+          } else if (saved.id > 0 &&
+              !saved.isCheckinToday &&
+              openVisits != null &&
+              !openVisits.any((v) => v.id == saved.id) &&
+              (saved.checkinAt?.isBefore(openStartedAt) ?? false)) {
+            // Lượt NGÀY KHÁC lưu trên máy mà server không còn coi là mở (đã check-out / huỷ ở đâu đó) ⇒ chỉ bỏ bản lưu.
+            // KHÔNG gọi huỷ: không biết nó đóng hay huỷ, và huỷ là ghi lên server.
+            await visitRepository!.clearActiveVisit();
           } else {
             activeVisit = saved;
           }
         }
       } catch (_) {}
+    }
+
+    // Không có lượt mở hôm nay (cả bản lưu trên máy) mà server còn lượt mở ngày khác ⇒ đó là lượt treo: đưa lên làm
+    // lượt đang mở (hộp thoại chặn có nút "Vào lượt đang mở" để check-out / huỷ). Bỏ lượt đang có lệnh huỷ / check-out
+    // chờ gửi.
+    if (activeVisit == null && openVisits != null) {
+      for (final v in openVisits) {
+        final pendingCancel = pendingCancelVisitIds.contains(v.id) ||
+            (v.clientUuid != null && pendingCancelUuids.contains(v.clientUuid));
+        final pendingCheckout = pendingCheckoutVisitIds.contains(v.id) ||
+            (v.clientUuid != null && pendingCheckoutUuids.contains(v.clientUuid));
+        if (v.isOpen && !v.isCancelled && !pendingCancel && !pendingCheckout) {
+          activeVisit = v;
+          break;
+        }
+      }
     }
 
     return (todayVisits, activeVisit);

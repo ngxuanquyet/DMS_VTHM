@@ -186,6 +186,15 @@ class VisitEntity {
   /// Đã huỷ lượt viếng thăm (§3.1 HUY-LUOT-VIENG-THAM-2026-09-30)
   bool get isCancelled => cancelledAt != null;
 
+  /// Check-in rơi vào HÔM NAY (giờ máy). Lượt ngày khác không bao giờ có trong danh sách "lượt hôm nay" — vắng mặt ở đó
+  /// KHÔNG có nghĩa là đã huỷ (lượt treo hôm trước vẫn đang mở trên server).
+  bool get isCheckinToday {
+    final l = checkinAt?.toLocal();
+    if (l == null) return false;
+    final n = DateTime.now();
+    return l.year == n.year && l.month == n.month && l.day == n.day;
+  }
+
   /// Đã hoàn thành check-out (lượt "Tạo điểm bán" tính là đã hoàn tất)
   bool get isCompleted => (checkoutAt != null || isNewOutlet) && cancelledAt == null;
 

@@ -46,6 +46,19 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 /// hoặc lượt đổi mạng gửi ngay, không phải chờ hết khoảng này.
 const Duration authBlockedRetryDelay = Duration(minutes: 1);
 
+/// Mã lỗi server khi mở lượt mới mà còn lượt cũ chưa check-out (`OpenVisitException::CODE`).
+const String openVisitErrorCode = 'DMS_VISIT_STILL_OPEN';
+
+/// Trần số lần check-in bị server trả [openVisitErrorCode] (mỗi lần cách tối đa 5 phút ⇒ ≈ 2 giờ CÓ MẠNG). Trần kỹ thuật
+/// chống vòng lặp vĩnh viễn (mục chờ gửi chặn đăng xuất): lượt trước không được đóng trong chừng ấy thì báo lỗi ở "Lỗi
+/// đồng bộ" thay vì thử mãi. Màn tuyến đưa lượt treo lên để nhân viên check-out / huỷ trước khi tới trần. Đếm RIÊNG
+/// trong payload ([openVisitCountKey]) — không dùng `attempts`: "Đồng bộ ngay" đặt lại `attempts`, và `attempts` còn
+/// đếm cả lỗi mạng/5xx.
+const int openVisitMaxAttempts = 24;
+
+/// Khoá nội bộ trong payload dòng tạo lượt: số lần server trả [openVisitErrorCode]. KHÔNG gửi lên server.
+const String openVisitCountKey = '_still_open_count';
+
 class SyncDeadError {
   final int entryId;
   final String entity;
@@ -302,6 +315,13 @@ class SyncService {
         if (await _db.isCheckoutHeld(entry, released: releasesCheckout)) {
           debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn ảnh/phiếu/vật tư của lượt chưa gửi.');
           // Tính là "chưa xong" — kết quả/thông báo đồng bộ không được báo thành công khi lượt còn chưa check-out.
+          retryableCount++;
+          continue;
+        }
+
+        // Check-in lượt sau nhường check-out còn chờ của lượt trước (server không mở lượt mới khi lượt cũ còn mở).
+        if (await _db.isVisitCreateHeld(entry)) {
+          debugPrint('[SyncService] Hoãn check-in #${entry.id}: check-out của lượt trước chưa gửi.');
           retryableCount++;
           continue;
         }
@@ -809,6 +829,7 @@ class SyncService {
   /// Đồng bộ Check-in viếng thăm lên server (§3 & §9)
   Future<void> _syncCreateVisit(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
+    payload.remove(openVisitCountKey);
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
 
@@ -1598,7 +1619,23 @@ class SyncService {
     }
 
     // 408 (quá giờ) / 429 (quá tải — proxy/LB trả) là lỗi TẠM, cùng luật đường trực tuyến (CustomerRepositoryImpl).
-    final permanentClientError =
+    // Check-in bị từ chối vì còn lượt trước chưa check-out (DMS_VISIT_STILL_OPEN): CHỜ — lượt trước được check-out /
+    // huỷ là gửi được; coi là lỗi vĩnh viễn thì lượt mới (cùng ảnh, phiếu, check-out của nó) bị bỏ trắng.
+    var stillOpen = errorCode == openVisitErrorCode && entry.entity == 'visit' && entry.op == 'create';
+    if (stillOpen) {
+      Map<String, dynamic> p = {};
+      try {
+        p = jsonDecode(entry.payload) as Map<String, dynamic>;
+      } catch (_) {}
+      final count = ((p[openVisitCountKey] as num?)?.toInt() ?? 0) + 1;
+      p[openVisitCountKey] = count;
+      await _db.updatePayload(entry.id, jsonEncode(p));
+      if (count >= openVisitMaxAttempts) {
+        stillOpen = false;
+        errorMsg = 'Lượt trước vẫn chưa được check-out / huỷ sau $count lần thử — vào lượt đang mở để đóng nó: $errorMsg';
+      }
+    }
+    final permanentClientError = !stillOpen &&
         statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 429;
     if (giveUp || permanentClientError) {
       debugPrint('[SyncService] [4xx - LỖI HỎNG VĨNH VIỄN] Mục #${entry.id} ($statusCode): $errorMsg -> Chuyển "dead", KHÔNG RETRY.');

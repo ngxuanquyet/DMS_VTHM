@@ -518,6 +518,25 @@ class AppDatabase extends _$AppDatabase {
     return rows.any((c) => released == null || !released(c));
   }
 
+  /// Dòng TẠO lượt viếng thăm phải đứng sau check-out / huỷ còn chờ của lượt KHÁC nhập trước nó: server không mở lượt
+  /// mới khi lượt trước còn mở (422 DMS_VISIT_STILL_OPEN). Chỉ xét `pending`: trong một lô các mục đi lần lượt nên lúc
+  /// tới dòng tạo, dòng 'sending' của lượt trước chỉ có thể là mồ côi (app bị tắt giữa chừng) — giữ theo nó là kẹt tới
+  /// lần khởi động sau.
+  Future<bool> isVisitCreateHeld(SyncQueueEntry entry) async {
+    if (entry.entity != 'visit' || entry.op != 'create') return false;
+    final row = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.id.isSmallerThanValue(entry.id) &
+              tbl.entity.equals('visit') &
+              (tbl.op.equals('checkout') | tbl.op.equals('cancel')) &
+              tbl.parentUuid.equals(entry.clientUuid).not() &
+              tbl.state.equals('pending'))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null;
+  }
+
   /// Lấy danh sách tất cả các mục đang chờ gửi hoặc đang gửi (pending & sending)
   Future<List<SyncQueueEntry>> getAllPendingQueueEntries() {
     return (select(syncQueueEntries)

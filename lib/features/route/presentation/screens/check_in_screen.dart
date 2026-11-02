@@ -210,8 +210,11 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
       // ⚠️ Nếu todayVisits đã tải về từ server thành công nhưng lượt server (currentActive.id > 0) biến mất:
       // Theo §4.1 HUY-LUOT-VIENG-THAM-2026-09-30, lượt đã huỷ biến mất khỏi /dms/visits/mine
+      // CHỈ với lượt của HÔM NAY: lượt treo từ hôm trước không bao giờ có trong danh sách hôm nay mà vẫn đang mở
+      // (màn tuyến đưa nó lên từ danh sách lượt còn mở) — coi là đã huỷ thì nhân viên không bao giờ gỡ được nó.
       final isStaleCancelledOnServer = todayVisits.isNotEmpty &&
           currentActive.id > 0 &&
+          currentActive.isCheckinToday &&
           matchingServerVisit == null;
 
       if ((matchingServerVisit != null && !matchingServerVisit.isOpen) || isStaleCancelledOnServer) {

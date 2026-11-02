@@ -29,6 +29,10 @@ class VisitRepositoryImpl implements VisitRepository {
 
   VisitRepositoryImpl(this._apiService);
 
+  /// Lượt CÒN MỞ trên server, KHÔNG giới hạn ngày (lượt treo từ hôm trước vẫn chặn mọi check-in mới). Lỗi mạng ném ra —
+  /// nơi gọi coi là "không tra được", không kết luận gì.
+  Future<List<VisitEntity>> getOpenVisits() => _apiService.getMyVisits(openOnly: true, perPage: 20);
+
   @override
   Future<List<VisitEntity>> getTodayVisits() async {
     return getVisitsByDate(DateTime.now());

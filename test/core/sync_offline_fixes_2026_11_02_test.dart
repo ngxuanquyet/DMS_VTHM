@@ -411,6 +411,89 @@ void main() {
     expect(sent['queued_seconds'], isA<int>());
   });
 
+  group('nhóm 1 (rà soát 02/11) — check-in lượt sau không chết vì check-out lượt trước chưa tới', () {
+    test('check-out lượt A còn chờ ⇒ check-in lượt B ĐỨNG CHỜ, không gửi; A gửi xong thì B đi', () async {
+      final later = DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch;
+      boot((o) => o.path == '/dms/visits' ? (201, {'success': true, 'data': {'id': 902}}) : null);
+      final coA = await enqueue('visit', 'checkout', 'coA', parent: 'visitA', payload: '{"visit_id":901}', nextAttemptAt: later);
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+      final sync = container.read(syncServiceProvider);
+
+      await sync.syncQueue();
+      expect(adapter.paths.contains('/dms/visits'), isFalse, reason: 'lỗi cũ: B gửi trước khi A check-out ⇒ 422 ⇒ dead');
+      expect((await row(createB)).state, 'pending');
+
+      await db.markDone(coA);
+      await sync.syncQueue();
+      expect(adapter.paths, contains('/dms/visits'));
+      expect((await row(createB)).state, 'done');
+    });
+
+    test('server trả DMS_VISIT_STILL_OPEN cho check-in ⇒ giữ chờ (lượt trước sẽ được check-out/huỷ), KHÔNG dead', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'Bạn còn một lượt viếng thăm chưa check-out.'})
+          : null);
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+
+      final result = await container.read(syncServiceProvider).syncQueue();
+
+      expect(result.deadErrors, isEmpty);
+      expect((await row(createB)).state, 'pending');
+    });
+
+    test('lệnh HUỶ lượt A còn chờ cũng giữ check-in B; check-out mồ côi "sending" thì không giữ', () async {
+      boot((o) => null);
+      final later = DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch;
+      await enqueue('visit', 'cancel', 'cxA', parent: 'visitA', payload: '{"visit_id":901}', nextAttemptAt: later);
+      final b = await row(await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}'));
+      expect(await db.isVisitCreateHeld(b), isTrue);
+
+      await db.delete(db.syncQueueEntries).go();
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'sending');
+      final b2 = await row(await enqueue('visit', 'create', 'visitB2', payload: '{"customer_id":10}'));
+      expect(await db.isVisitCreateHeld(b2), isFalse);
+    });
+
+    test('DMS_VISIT_STILL_OPEN quá trần số lần ⇒ báo lỗi (dead), không thử mãi', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'Bạn còn một lượt viếng thăm chưa check-out.'})
+          : null);
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({'customer_id': 10, openVisitCountKey: openVisitMaxAttempts - 1}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(createB)).state, 'dead');
+      final sent = adapter.calls.firstWhere((c) => c.path == '/dms/visits').data as Map;
+      expect(sent.containsKey(openVisitCountKey), isFalse, reason: 'khoá nội bộ không được gửi lên server');
+    });
+
+    test('bộ đếm STILL_OPEN không tính lỗi mạng trước đó và không bị "Đồng bộ ngay" xoá', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'còn lượt'})
+          : null);
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+      await (db.update(db.syncQueueEntries)..where((t) => t.id.equals(createB)))
+          .write(const SyncQueueEntriesCompanion(attempts: Value(50)));
+
+      await container.read(syncServiceProvider).syncQueue(force: true);
+      await container.read(syncServiceProvider).syncQueue(force: true);
+
+      final r = await row(createB);
+      expect(r.state, 'pending', reason: 'lỗi mạng cũ (attempts 50) không được tính vào trần');
+      expect(jsonDecode(r.payload)[openVisitCountKey], 2);
+    });
+
+    test('422 khác của check-in vẫn là lỗi vĩnh viễn', () async {
+      boot((o) => o.path == '/dms/visits' ? (422, {'success': false, 'message': 'Ngoài vùng điểm bán'}) : null);
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(createB)).state, 'dead');
+    });
+  });
+
   group('#1 AuthInterceptor chỉ xoá phiên khi máy chủ TỪ CHỐI phiên làm mới', () {
     late _Adapter main;
 
