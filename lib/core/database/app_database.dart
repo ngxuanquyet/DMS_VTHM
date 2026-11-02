@@ -561,6 +561,10 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
+  /// Một dòng hàng đợi theo id (đọc lại bản mới nhất ngay trước khi gửi).
+  Future<SyncQueueEntry?> getEntryById(int id) =>
+      (select(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
+
   /// Tìm mục trong hàng đợi theo clientUuid (phục vụ liên kết cha-con: visit -> photos/checkout)
   /// Dòng ĐẦU TIÊN (dòng tạo) mang [clientUuid] — dòng sửa điểm bán (`update`) dùng chung clientUuid với dòng tạo, nên
   /// không dùng getSingleOrNull (ném StateError ⇒ mục con thử lại mãi).

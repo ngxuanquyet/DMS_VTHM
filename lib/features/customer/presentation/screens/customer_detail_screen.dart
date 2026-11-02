@@ -1603,6 +1603,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     'approval_status', 'approval_label', 'approval_color', 'approval_note', 'approval_at',
     // Tỉnh/xã theo danh mục (#24072) — id + nguồn giữ trong dynamicFields cho màn sửa, tên đã hiện ở ô tỉnh/xã riêng.
     'province_id', 'ward_id', 'geo_source',
+    // Ngày sinh người liên hệ là trường cố định (giữ trong dynamicFields cho màn sửa), không phải cột động.
+    'birthday',
   };
 
   bool _hasDynamicFields() {

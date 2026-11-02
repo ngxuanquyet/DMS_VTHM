@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
@@ -519,6 +520,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
     if (changes['data'] is Map) {
       newDynamicFields.addAll(changes['data'] as Map<String, dynamic>);
     }
+    // Sinh nhật là ô gốc nhưng giữ trong dynamicFields để màn sửa nạp lại (#24698 lỗi 11).
+    if (changes['birthday'] != null) newDynamicFields['birthday'] = changes['birthday'];
 
     // Tỉnh/xã theo danh mục (#24072): ghi id MỚI vào bản nhớ (cả RAM lẫn SQLite qua cacheRemoteCustomers) và gỡ cờ "suy từ
     // địa chỉ cũ" — để nguyên id cũ + cờ cũ thì lần sửa sau gửi lại cặp CŨ và đè mất lựa chọn vừa lưu (review 23/10).
@@ -614,8 +617,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   @override
-  Future<CustomerEntity> createCustomer(Map<String, dynamic> data) async {
+  Future<CustomerEntity> createCustomer(Map<String, dynamic> input) async {
     final isOnline = _isOnline;
+    // client_uuid sinh MỘT lần lúc bấm tạo, dùng cho CẢ lần gửi trực tuyến lẫn bản ghi hàng đợi: lần gửi trực tuyến quá
+    // giờ mà server đã ghi thì hàng đợi gửi lại CÙNG uuid ⇒ server trả bản cũ. Sinh uuid mới ở nhánh ngoại tuyến là tạo
+    // điểm bán TRÙNG + hai lượt "Tạo điểm bán" (rà soát #24698 lỗi 9).
+    final existingUuid = input['client_uuid']?.toString();
+    final data = <String, dynamic>{
+      ...input,
+      'client_uuid': (existingUuid != null && existingUuid.isNotEmpty) ? existingUuid : const Uuid().v4(),
+    };
 
     if (isOnline) {
       try {

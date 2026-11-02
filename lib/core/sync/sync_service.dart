@@ -432,11 +432,14 @@ class SyncService {
 
   /// Xử lý một mục trong hàng đợi
   Future<_SyncItemStatus> _processEntry(
-    SyncQueueEntry entry,
+    SyncQueueEntry batchEntry,
     List<SyncDeadError> currentDeadErrors,
   ) async {
     // Đánh dấu sang 'sending' — dòng đã bị xoá / đổi trạng thái sau lúc nạp lô (huỷ lượt chưa gửi…) thì KHÔNG gửi.
-    if (!await _db.markSending(entry.id)) return _SyncItemStatus.skipped;
+    if (!await _db.markSending(batchEntry.id)) return _SyncItemStatus.skipped;
+    // Đọc LẠI dòng sau khi giành: lô nạp sẵn tới 50 mục, người dùng có thể đã gộp phần sửa vào payload (sửa điểm bán)
+    // trong lúc chờ tới lượt — gửi bản trong RAM là gửi payload cũ rồi markDone, phần sửa mất (rà soát #24698 lỗi 8).
+    final entry = await _db.getEntryById(batchEntry.id) ?? batchEntry;
 
     try {
       if (entry.entity == 'customer' && entry.op == 'create') {

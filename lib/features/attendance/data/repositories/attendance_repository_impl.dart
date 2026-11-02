@@ -93,7 +93,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final map = jsonDecode(cachedJson) as Map<String, dynamic>;
-        return AttendanceConfigModel.fromJson(map).toEntity();
+        final cached = AttendanceConfigModel.fromJson(map).toEntity();
+        // Mất mạng: tự tính khoảng cách theo chỗ đứng HIỆN TẠI — bộ đệm mang khoảng cách của lần tải trước (#24698 lỗi 1).
+        return (lat != null && lng != null) ? cached.withDistancesFrom(lat, lng) : cached;
       } catch (_) {}
     }
 

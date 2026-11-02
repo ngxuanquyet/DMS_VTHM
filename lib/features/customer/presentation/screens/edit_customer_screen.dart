@@ -412,6 +412,13 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         changes['email'] = newEmail.isNotEmpty ? newEmail : null;
       }
 
+      // Sinh nhật — ô GỐC của điểm bán (server nhận `birthday` ở gốc body; gửi trong `data` là 400 "Unknown dynamic
+      // field", mất cả lần sửa — rà soát #24698 lỗi 11). Chỉ gửi khi có giá trị và khác giá trị đang biết.
+      final newBirthday = formData['birthday']?.toString().trim();
+      if (newBirthday != null && newBirthday.isNotEmpty && newBirthday != c.dynamicFields['birthday']?.toString()) {
+        changes['birthday'] = newBirthday;
+      }
+
       // Địa chỉ
       final newAddress = formData['address']?.toString().trim();
       if (newAddress != null && newAddress.isNotEmpty && newAddress != c.address) {
@@ -492,7 +499,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         'route_ids', 'route_id', 'address', 'delivery_address', 'province_name', 'ward_name',
         'contact_name', 'contact_person', 'contact_title', 'phone', 'email', 'coords', 'lat', 'lng',
         'photo_file_id', 'photos', 'photo_tokens', 'code', 'id', 'status', 'is_active',
-        'province_id', 'ward_id', 'geo_source', 'erp_links',
+        'province_id', 'ward_id', 'geo_source', 'erp_links', 'birthday',
       };
       final dynamicChanges = <String, dynamic>{};
       for (final entry in formData.entries) {

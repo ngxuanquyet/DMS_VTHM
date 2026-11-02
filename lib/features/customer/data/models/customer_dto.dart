@@ -110,7 +110,8 @@ class CustomerDto {
     // Tỉnh/xã theo danh mục (#24072) giữ trong dynamicFields: màn sửa nạp mọi khoá ở đây làm giá trị ban đầu của ô cứng
     // `province_id`/`ward_id`, SQLite lưu kèm (`dynamicFieldsJson`) nên offline vẫn còn. Payload lọc lại khoá cố định / cấm
     // (`customer_payload_helper`), nên chúng không lọt vào `data`.
-    for (final k in const ['province_id', 'ward_id', 'geo_source']) {
+    // `birthday`: ô gốc server trả ở gốc JSON — giữ ở đây để màn sửa nạp giá trị đang lưu (#24698 lỗi 11).
+    for (final k in const ['province_id', 'ward_id', 'geo_source', 'birthday']) {
       if (json[k] != null) dynamicMap[k] = json[k];
     }
 

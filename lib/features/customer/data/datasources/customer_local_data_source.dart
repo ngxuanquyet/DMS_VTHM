@@ -26,8 +26,10 @@ class CustomerLocalDataSource {
   /// - Ghi vào SQLite (LocalCustomers)
   /// - Đẩy vào hàng đợi sync_queue (SyncQueueEntries)
   Future<CustomerEntity> createCustomerOffline(Map<String, dynamic> data) async {
-    // 1. Sinh client_uuid LÚC NHẬP (BB-2: một lần duy nhất, không sinh lại lúc gửi)
-    final clientUuid = _uuid.v4();
+    // 1. Sinh client_uuid LÚC NHẬP (BB-2: một lần duy nhất, không sinh lại lúc gửi). Nơi gọi đã sinh (lần gửi trực tuyến
+    // vừa hỏng mang uuid này) thì DÙNG LẠI — server chống trùng theo nó (#24698 lỗi 9).
+    final givenUuid = data['client_uuid']?.toString();
+    final clientUuid = (givenUuid != null && givenUuid.isNotEmpty) ? givenUuid : _uuid.v4();
     final now = DateTime.now();
     // ISO-8601 có múi giờ tường minh (§6.5)
     final clientTimeIso = '${now.toIso8601String()}+07:00';
@@ -559,6 +561,9 @@ class CustomerLocalDataSource {
     }
     if (changes.containsKey('province_id') && !changes.containsKey('ward_id')) dynFields['ward_id'] = null;
 
+    // Sinh nhật (ô gốc) lưu kèm dynamicFields như tỉnh/xã để màn sửa nạp lại đúng giá trị vừa sửa (#24698 lỗi 11).
+    if (changes['birthday'] != null) dynFields['birthday'] = changes['birthday'];
+
     if (changes['photo_tokens'] is List) {
       final photos = (changes['photo_tokens'] as List).map((e) => e.toString()).toList();
       dynFields['photo_tokens'] = photos;
@@ -655,6 +660,8 @@ class CustomerLocalDataSource {
       if (contactTitle != null) queuePayload['contact_title'] = contactTitle;
       if (phone.isNotEmpty) queuePayload['phone'] = phone;
       if (email != null) queuePayload['email'] = email;
+      // Sinh nhật là ô GỐC (không phải ô động trong `data`) — #24698 lỗi 11.
+      if (changes['birthday'] != null) queuePayload['birthday'] = changes['birthday'];
       if (address.isNotEmpty) queuePayload['address'] = address;
       if (lat != null) queuePayload['lat'] = lat;
       if (lng != null) queuePayload['lng'] = lng;
@@ -677,7 +684,12 @@ class CustomerLocalDataSource {
       if (changes.containsKey('routes')) queuePayload['routes'] = changes['routes'];
       if (changes.containsKey('route_ids')) queuePayload['route_ids'] = changes['route_ids'];
 
-      await (_db.update(_db.syncQueueEntries)..where((tbl) => tbl.id.equals(entry.id))).write(
+      // Ghi CÓ ĐIỀU KIỆN trạng thái vừa đọc: lô đồng bộ có thể vừa giành dòng ('sending') giữa lúc đọc và lúc ghi — ghi
+      // đè thì trạng thái quay về 'pending' rồi lô gửi xong markDone, phần gộp mất (rà soát #24698 lỗi 8). Không ghi được
+      // ⇒ xếp lệnh SỬA riêng như ca dòng tạo đang gửi.
+      final written = await (_db.update(_db.syncQueueEntries)
+            ..where((tbl) => tbl.id.equals(entry.id) & tbl.state.equals(entry.state)))
+          .write(
         SyncQueueEntriesCompanion(
           payload: Value(jsonEncode(queuePayload)),
           state: const Value('pending'),
@@ -686,6 +698,13 @@ class CustomerLocalDataSource {
           lastError: const Value(null),
         ),
       );
+      if (written == 0) {
+        await enqueueCustomerUpdate(serverId: entry.serverId ?? 0, clientUuid: clientUuid, changes: changes, nowMs: nowMs);
+        return _mapRowToEntity((await (_db.select(_db.localCustomers)
+                  ..where((tbl) => tbl.clientUuid.equals(clientUuid)))
+                .get())
+            .first);
+      }
 
       // Lệnh SỬA xếp từ lần sửa trước (lúc dòng tạo đang gửi) chạy SAU dòng tạo — không phủ phần sửa mới này lên nó thì
       // nó đè giá trị CŨ lên điểm bán vừa tạo bằng giá trị mới.
@@ -968,7 +987,11 @@ class CustomerLocalDataSource {
         }
         merged['erp_link_changes'] = theoMa.values.toList();
       }
-      await (_db.update(_db.syncQueueEntries)..where((tbl) => tbl.id.equals(entry.id))).write(
+      // Ghi CÓ ĐIỀU KIỆN còn 'pending': lô vừa giành dòng giữa lúc đọc và lúc ghi thì KHÔNG ghi đè (phần gộp sẽ mất khi
+      // lô markDone) — xếp dòng mới bên dưới (rà soát #24698 lỗi 8).
+      final written = await (_db.update(_db.syncQueueEntries)
+            ..where((tbl) => tbl.id.equals(entry.id) & tbl.state.equals('pending')))
+          .write(
         SyncQueueEntriesCompanion(
           payload: Value(jsonEncode(merged)),
           state: const Value('pending'),
@@ -977,22 +1000,22 @@ class CustomerLocalDataSource {
           lastError: const Value(null),
         ),
       );
-    } else {
-      await _db.enqueue(
-        SyncQueueEntriesCompanion(
-          entity: const Value('customer'),
-          op: const Value('update'),
-          clientUuid: Value(clientUuid),
-          serverId: Value(serverId),
-          payload: Value(jsonEncode(changes)),
-          state: const Value('pending'),
-          attempts: const Value(0),
-          nextAttemptAt: Value(nowMs),
-          createdAt: Value(nowMs),
-          createdElapsed: Value(SystemClock.nowMonotonicMs),
-          bootId: Value(SystemClock.bootId),
-        ),
-      );
+      if (written > 0) return;
     }
+    await _db.enqueue(
+      SyncQueueEntriesCompanion(
+        entity: const Value('customer'),
+        op: const Value('update'),
+        clientUuid: Value(clientUuid),
+        serverId: Value(serverId),
+        payload: Value(jsonEncode(changes)),
+        state: const Value('pending'),
+        attempts: const Value(0),
+        nextAttemptAt: Value(nowMs),
+        createdAt: Value(nowMs),
+        createdElapsed: Value(SystemClock.nowMonotonicMs),
+        bootId: Value(SystemClock.bootId),
+      ),
+    );
   }
 }

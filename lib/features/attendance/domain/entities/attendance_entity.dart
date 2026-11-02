@@ -1,3 +1,4 @@
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
 /// Cấu hình trạng thái hôm nay từ GET /attendance/mobile/config (§2 SPEC-2026-10-06)
@@ -134,6 +135,24 @@ class AttendanceConfigEntity {
     return t;
   }
 
+  /// Bản sao với khoảng cách tới từng địa điểm TÍNH LẠI theo chỗ đứng [lat]/[lng] — dùng khi cấu hình đọc từ bộ nhớ đệm
+  /// (mất mạng / server lỗi): `distance_m` trong bộ đệm là của LẦN TẢI TRƯỚC (có khi rỗng — tải không kèm toạ độ), xét
+  /// vùng bằng nó là chặn oan người đã tới nơi, hoặc cho qua người đã đi chỗ khác rồi server từ chối lúc đồng bộ ⇒ mất
+  /// lượt (rà soát #24698 lỗi 1). Cùng phép đo với server: khoảng cách đường chim bay tới tâm, so bán kính.
+  AttendanceConfigEntity withDistancesFrom(double lat, double lng) => AttendanceConfigEntity(
+        canPunch: canPunch,
+        blockedReason: blockedReason,
+        group: group,
+        photo: photo,
+        today: today,
+        locations: [
+          for (final l in locations)
+            (l.isEverywhere || l.lat == null || l.lng == null)
+                ? l
+                : l.withDistance(Geolocator.distanceBetween(lat, lng, l.lat!, l.lng!).round()),
+        ],
+      );
+
   /// Kiểm tra xem hiện tại người dùng có nằm trong bất kỳ geofence nào không
   /// Quy tắc 06/10/2026: Nếu có bất kỳ địa điểm kind == 'everywhere' thì luôn hợp lệ
   bool isWithinAnyGeofence() {
@@ -216,6 +235,19 @@ class AttendanceLocationItemEntity {
   });
 
   bool get isEverywhere => kind == 'everywhere';
+
+  /// Bản sao với khoảng cách mới (mét).
+  AttendanceLocationItemEntity withDistance(int meters) => AttendanceLocationItemEntity(
+        id: id,
+        code: code,
+        name: name,
+        kind: kind,
+        kindLabel: kindLabel,
+        lat: lat,
+        lng: lng,
+        radiusM: radiusM,
+        distanceM: meters,
+      );
 
   bool get isWithinRadius {
     if (isEverywhere) return true;
