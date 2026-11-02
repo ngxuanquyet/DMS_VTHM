@@ -15,6 +15,9 @@ class VisitEntity {
   final String? checkoutAtRaw;
   final DateTime? cancelledAt;
   final String? cancelledAtRaw;
+
+  /// Lượt QUÊN check-out được server (cron đầu ngày) kết thúc tự động — nhãn "Chưa check-out", KHÔNG còn mở (#24701).
+  final String? autoEndedAtRaw;
   final int? durationSeconds;
   final int customerId;
   final String customerName;
@@ -82,6 +85,7 @@ class VisitEntity {
     this.checkoutAtRaw,
     this.cancelledAt,
     this.cancelledAtRaw,
+    this.autoEndedAtRaw,
     this.durationSeconds,
     required this.customerId,
     this.customerName = '',
@@ -181,7 +185,10 @@ class VisitEntity {
 
   /// Phiên viếng thăm đang mở (chưa hoàn thành check-out và chưa huỷ).
   /// Lượt "Tạo điểm bán" luôn coi là đã đóng.
-  bool get isOpen => checkoutAt == null && cancelledAt == null && !isNewOutlet;
+  bool get isOpen => checkoutAt == null && cancelledAt == null && !isNewOutlet && !isAutoEnded;
+
+  /// Lượt quên check-out đã được server kết thúc tự động ("Chưa check-out") — không có giờ ra, không còn chặn check-in.
+  bool get isAutoEnded => checkoutAt == null && cancelledAt == null && (autoEndedAtRaw?.isNotEmpty ?? false);
 
   /// Đã huỷ lượt viếng thăm (§3.1 HUY-LUOT-VIENG-THAM-2026-09-30)
   bool get isCancelled => cancelledAt != null;
@@ -270,6 +277,7 @@ class VisitEntity {
       checkoutAtRaw: rawCheckout,
       cancelledAt: parsedCancelled,
       cancelledAtRaw: rawCancelled,
+      autoEndedAtRaw: json['auto_ended_at']?.toString(),
       durationSeconds: json['duration_seconds'] is num
           ? (json['duration_seconds'] as num).toInt()
           : int.tryParse(json['duration_seconds']?.toString() ?? ''),
@@ -325,6 +333,7 @@ class VisitEntity {
         'checkin_at': checkinAtRaw,
         'checkout_at': checkoutAtRaw,
         'cancelled_at': cancelledAtRaw,
+        'auto_ended_at': autoEndedAtRaw,
         'duration_seconds': durationSeconds,
         'customer_id': customerId,
         'customer_name': customerName,
@@ -366,6 +375,7 @@ class VisitEntity {
     String? checkoutAtRaw,
     DateTime? cancelledAt,
     String? cancelledAtRaw,
+    String? autoEndedAtRaw,
     int? durationSeconds,
     int? customerId,
     String? customerName,
@@ -406,6 +416,7 @@ class VisitEntity {
       checkoutAtRaw: checkoutAtRaw ?? this.checkoutAtRaw,
       cancelledAt: cancelledAt ?? this.cancelledAt,
       cancelledAtRaw: cancelledAtRaw ?? this.cancelledAtRaw,
+      autoEndedAtRaw: autoEndedAtRaw ?? this.autoEndedAtRaw,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       customerId: customerId ?? this.customerId,
       customerName: customerName ?? this.customerName,

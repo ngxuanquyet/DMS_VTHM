@@ -70,6 +70,12 @@ class VisitReportCard extends StatelessWidget {
       statusBgColor = const Color(0xFFE0F2FE);
       statusText = 'Đang viếng thăm';
       statusIcon = Icons.sync_rounded;
+    } else if (visit.isAutoEnded) {
+      // Lượt quên check-out đã được hệ thống kết thúc tự động (#24701) — vẫn tính lượt, không có giờ ra.
+      statusColor = const Color(0xFF6B7280);
+      statusBgColor = const Color(0xFFF3F4F6);
+      statusText = 'Chưa check-out';
+      statusIcon = Icons.timer_off_outlined;
     }
 
     return Container(

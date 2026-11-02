@@ -9,6 +9,9 @@ class VisitHistoryItemEntity {
   final String? visitDate;
   final String? checkinAt;
   final String? checkoutAt;
+
+  /// Lượt quên check-out đã được hệ thống kết thúc tự động ("Chưa check-out", #24701).
+  final String? autoEndedAt;
   final int? durationSeconds;
   final int? userId;
   final String employeeName;
@@ -34,6 +37,7 @@ class VisitHistoryItemEntity {
     this.visitDate,
     this.checkinAt,
     this.checkoutAt,
+    this.autoEndedAt,
     this.durationSeconds,
     this.userId,
     required this.employeeName,
@@ -60,7 +64,10 @@ class VisitHistoryItemEntity {
 
   Color? get visitKindBootstrapColor => VisitEntity.bootstrapColorOf(visitKindColor);
 
-  bool get isOpen => checkoutAt == null && !isNewOutlet;
+  bool get isOpen => checkoutAt == null && !isNewOutlet && !isAutoEnded;
+
+  /// Lượt quên check-out đã được hệ thống kết thúc tự động — không có giờ ra, không còn mở.
+  bool get isAutoEnded => checkoutAt == null && (autoEndedAt?.isNotEmpty ?? false);
   bool get isClosedStore => visitResult == 'closed';
 
   String get formattedDuration {
@@ -81,6 +88,7 @@ class VisitHistoryItemEntity {
       visitDate: json['visit_date']?.toString(),
       checkinAt: json['checkin_at']?.toString(),
       checkoutAt: json['checkout_at']?.toString(),
+      autoEndedAt: json['auto_ended_at']?.toString(),
       durationSeconds: json['duration_seconds'] is num
           ? (json['duration_seconds'] as num).toInt()
           : int.tryParse(json['duration_seconds']?.toString() ?? ''),
@@ -118,6 +126,7 @@ class VisitHistoryItemEntity {
         'visit_date': visitDate,
         'checkin_at': checkinAt,
         'checkout_at': checkoutAt,
+        'auto_ended_at': autoEndedAt,
         'duration_seconds': durationSeconds,
         'user_id': userId,
         'employee_name': employeeName,

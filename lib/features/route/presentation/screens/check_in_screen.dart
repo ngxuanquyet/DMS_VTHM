@@ -182,7 +182,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     if (activeVisit == null) {
       try {
         final saved = await ref.read(visitRepositoryProvider).getActiveVisit();
-        if (saved != null && saved.isOpen) {
+        // Lượt NGÀY KHÁC lưu trên máy không khoá check-in (server chỉ chặn lượt treo cùng ngày — #24701).
+        if (saved != null && saved.isOpen && saved.isCheckinToday) {
           activeVisit = saved;
         }
       } catch (_) {}

@@ -138,11 +138,14 @@ void showVisitDetailBottomSheet(BuildContext context, VisitEntity visit) {
                 ),
               _detailRow(
                 'Kết quả viếng thăm',
-                visit.visitResultLabel ??
-                    (visit.visitResult == 'closed'
-                        ? 'Cửa hàng đóng cửa'
-                        : (visit.isOpen ? 'Đang thực hiện' : 'Thành công (Mở cửa)')),
-                valueColor: visit.resultBootstrapColor,
+                // Lượt quên check-out đã được hệ thống kết thúc tự động (#24701): nhãn đứng TRƯỚC nhãn kết quả server.
+                visit.isAutoEnded
+                    ? 'Chưa check-out'
+                    : visit.visitResultLabel ??
+                        (visit.visitResult == 'closed'
+                            ? 'Cửa hàng đóng cửa'
+                            : (visit.isOpen ? 'Đang thực hiện' : 'Thành công (Mở cửa)')),
+                valueColor: visit.isAutoEnded ? const Color(0xFF6B7280) : visit.resultBootstrapColor,
               ),
               if (visit.closedNote != null && visit.closedNote!.isNotEmpty)
                 _detailRow('Lý do đóng cửa', visit.closedNote!),

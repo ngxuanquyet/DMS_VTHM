@@ -516,13 +516,9 @@ class RouteViewModel extends StateNotifier<RouteState> {
             );
             await visitRepository!.clearActiveVisit();
             await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
-          } else if (saved.id > 0 &&
-              !saved.isCheckinToday &&
-              openVisits != null &&
-              !openVisits.any((v) => v.id == saved.id) &&
-              (saved.checkinAt?.isBefore(openStartedAt) ?? false)) {
-            // Lượt NGÀY KHÁC lưu trên máy mà server không còn coi là mở (đã check-out / huỷ ở đâu đó) ⇒ chỉ bỏ bản lưu.
-            // KHÔNG gọi huỷ: không biết nó đóng hay huỷ, và huỷ là ghi lên server.
+          } else if (!saved.isCheckinToday && (saved.checkinAt?.isBefore(openStartedAt) ?? false)) {
+            // Lượt NGÀY KHÁC lưu trên máy ⇒ chỉ bỏ bản lưu, KHÔNG khoá app: server chỉ chặn lượt treo cùng ngày, cron đầu
+            // ngày đánh dấu "Chưa check-out" (#24701). KHÔNG gọi huỷ (huỷ là ghi lên server; lượt vẫn được tính).
             await visitRepository!.clearActiveVisit();
           } else {
             activeVisit = saved;
@@ -531,16 +527,18 @@ class RouteViewModel extends StateNotifier<RouteState> {
       } catch (_) {}
     }
 
-    // Không có lượt mở hôm nay (cả bản lưu trên máy) mà server còn lượt mở ngày khác ⇒ đó là lượt treo: đưa lên làm
-    // lượt đang mở (hộp thoại chặn có nút "Vào lượt đang mở" để check-out / huỷ). Bỏ lượt đang có lệnh huỷ / check-out
-    // chờ gửi.
+    // Danh sách hôm nay không ra lượt mở (lỗi tải / chưa kịp lưu máy) mà danh sách lượt CÒN MỞ của server có lượt HÔM NAY
+    // ⇒ đưa lên làm lượt đang mở (hộp thoại chặn có nút "Vào lượt đang mở" để check-out / huỷ). Lượt ngày cũ không chặn —
+    // cron đầu ngày đánh dấu "Chưa check-out" (#24701). Bỏ lượt đang có lệnh huỷ / check-out chờ gửi.
     if (activeVisit == null && openVisits != null) {
       for (final v in openVisits) {
         final pendingCancel = pendingCancelVisitIds.contains(v.id) ||
             (v.clientUuid != null && pendingCancelUuids.contains(v.clientUuid));
         final pendingCheckout = pendingCheckoutVisitIds.contains(v.id) ||
             (v.clientUuid != null && pendingCheckoutUuids.contains(v.clientUuid));
-        if (v.isOpen && !v.isCancelled && !pendingCancel && !pendingCheckout) {
+        // Chỉ lượt của HÔM NAY mới chặn (server cũng chỉ chặn lượt treo cùng ngày — #24701): lượt ngày cũ chưa kịp được
+        // cron đánh dấu "Chưa check-out" không được khoá app.
+        if (v.isOpen && !v.isCancelled && !pendingCancel && !pendingCheckout && v.isCheckinToday) {
           activeVisit = v;
           break;
         }

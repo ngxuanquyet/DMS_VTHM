@@ -374,7 +374,11 @@ class _VisitHistoryDetailSheetState
             children: [
               _buildTimeColumn('Giờ vào', item.checkinAt, isDark),
               Container(width: 1, height: 28, color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
-              _buildTimeColumn('Giờ ra', item.checkoutAt ?? (item.isOpen ? 'Đang mở' : '—'), isDark),
+              _buildTimeColumn(
+                'Giờ ra',
+                item.checkoutAt ?? (item.isOpen ? 'Đang mở' : (item.isAutoEnded ? 'Chưa check-out' : '—')),
+                isDark,
+              ),
               Container(width: 1, height: 28, color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
               _buildTimeColumn('Thời gian', item.formattedDuration, isDark),
             ],
