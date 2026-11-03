@@ -159,12 +159,21 @@ class AppDatabase extends _$AppDatabase {
 
   int? get ownerUserId => _ownerUserId;
 
+  /// Người đang đăng nhập, hoặc — trong lúc đăng xuất — người vừa đăng nhập gần nhất (chủ mặc định của [enqueue]).
+  int? get ownerOrLastUserId => _ownerUserId ?? _lastOwnerUserId;
+
+  /// Người dùng đã TỰ đăng xuất kèm xoá dữ liệu của họ ([clearUserData]) kể từ lần đăng nhập gần nhất — lượt chấm công về
+  /// muộn không được xếp lại vào máy (#24698 vòng 3). Đăng nhập lại ([setOwner]) thì về false.
+  bool get userDataClearedSinceLogin => _userDataCleared;
+  bool _userDataCleared = false;
+
   /// Đặt người đang đăng nhập; dòng của bản app cũ ([_legacyOwner]) giao cho người đăng nhập đầu tiên sau nâng cấp
   /// (bản cũ vốn gửi chúng bằng token của bất kỳ ai — không tệ hơn).
   Future<void> setOwner(int? userId) async {
     _ownerUserId = userId;
     if (userId != null) {
       _lastOwnerUserId = userId;
+      _userDataCleared = false;
       await transaction(() async {
         await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
             .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
@@ -384,7 +393,10 @@ class AppDatabase extends _$AppDatabase {
       await (delete(localCustomers)..where(isMyCustomer)).go();
       return true;
     });
-    if (cleared) await _deleteRowFiles(rows, customerUuids);
+    if (cleared) {
+      _userDataCleared = true;
+      await _deleteRowFiles(rows, customerUuids);
+    }
     return cleared;
   }
 
@@ -448,7 +460,9 @@ class AppDatabase extends _$AppDatabase {
           await for (final f in dir.list()) {
             final name = p.basename(f.path);
             final bare = name.startsWith('wm_') ? name.substring(3) : name;
-            if (customerUuids.any((u) => bare.startsWith('${u}_photo_'))) files.add(f.path);
+            if (customerUuids.any((u) => bare.startsWith('${u}_photo_') || bare.startsWith('${u}_material_'))) {
+              files.add(f.path);
+            }
           }
         }
       } catch (e) {
@@ -507,6 +521,18 @@ class AppDatabase extends _$AppDatabase {
       if (rows.isNotEmpty) await (delete(syncQueueEntries)..where((t) => t.id.isIn(rows.map((r) => r.id)))).go();
     });
     return rows.length;
+  }
+
+  /// Khoá (mã server, client_uuid) của các điểm bán còn lệnh SỬA chưa gửi xong của [owner] — lần tải danh sách không đè
+  /// các dòng này bằng bản server cũ hơn phần sửa (#24698 vòng 3). Một truy vấn cho cả lô.
+  Future<({Set<int> ids, Set<String> uuids})> unsentCustomerUpdateKeys(int owner) async {
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) => tbl.ownerUserId.equals(owner) & _unsentCustomerUpdate(tbl)))
+        .get();
+    return (
+      ids: {for (final r in rows) if ((r.serverId ?? 0) > 0) r.serverId!},
+      uuids: {for (final r in rows) if (r.clientUuid.isNotEmpty) r.clientUuid},
+    );
   }
 
   /// Đánh dấu điểm bán bị lỗi đồng bộ vĩnh viễn (4xx)
@@ -707,15 +733,19 @@ class AppDatabase extends _$AppDatabase {
           ..where((tbl) =>
               isMine(tbl) &
               (beforeId != null ? tbl.id.isSmallerThanValue(beforeId) : const Constant(true)) &
-              tbl.entity.equals('customer') &
-              tbl.op.equals('update') &
+              _unsentCustomerUpdate(tbl) &
               ((serverId > 0 ? tbl.serverId.equals(serverId) : const Constant(false)) |
-                  (clientUuid != null && clientUuid.isNotEmpty ? tbl.clientUuid.equals(clientUuid) : const Constant(false))) &
-              (tbl.state.equals('pending') | tbl.state.equals('sending')))
+                  (clientUuid != null && clientUuid.isNotEmpty ? tbl.clientUuid.equals(clientUuid) : const Constant(false))))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
           ..limit(1))
         .getSingleOrNull();
   }
+
+  /// Vế lọc "lệnh SỬA điểm bán chưa gửi xong" — dùng chung [latestUnsentCustomerUpdate] và [unsentCustomerUpdateKeys].
+  Expression<bool> _unsentCustomerUpdate(SyncQueueEntries tbl) =>
+      tbl.entity.equals('customer') &
+      tbl.op.equals('update') &
+      (tbl.state.equals('pending') | tbl.state.equals('sending'));
 
   /// Lệnh check-out / huỷ ở trạng thái [state] của lượt KHÁC, nhập trước dòng tạo lượt [entry]; [createdFromMs]: chỉ dòng
   /// tạo từ mốc đó trở đi.

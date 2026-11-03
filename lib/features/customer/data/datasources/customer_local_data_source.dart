@@ -158,9 +158,12 @@ class CustomerLocalDataSource {
 
     // Chuẩn bị payload cho hàng đợi sync_queue: lưu cả danh sách ảnh cục bộ để SyncService upload khi có mạng
     final queuePayload = Map<String, dynamic>.from(payloadMap);
-    // Vật tư khai lúc tạo (#24526): giữ NGUYÊN thao tác (kể cả đường dẫn ảnh + `detail_photo_fields`) — SyncService đổi
-    // ảnh ra token lúc gửi rồi mới dựng khuôn §2.
-    if (data['materials'] is List) queuePayload['materials'] = data['materials'];
+    // Vật tư khai lúc tạo (#24526): giữ NGUYÊN thao tác (kể cả `detail_photo_fields`) — SyncService đổi ảnh ra token lúc
+    // gửi rồi mới dựng khuôn §2. Ảnh chép vào thư mục lưu lâu dài như ảnh điểm bán (#24698 vòng 3: ảnh camera ở thư mục
+    // tạm bị hệ điều hành dọn trước khi có mạng ⇒ vật tư gửi thiếu ảnh, server bỏ thao tác mà không báo).
+    if (data['materials'] is List) {
+      queuePayload['materials'] = await _persistMaterialPhotos(data['materials'] as List, '${clientUuid}_material');
+    }
     // Lần gửi trực tuyến vừa hỏng mà server CÓ THỂ đã ghi ⇒ mang dấu sang dòng hàng đợi (lần sửa sau không gộp vào nó).
     if (data[queueMaybeOnServerKey] == true) queuePayload[queueMaybeOnServerKey] = true;
     if (allPhotos.isNotEmpty) {
@@ -317,6 +320,7 @@ class CustomerLocalDataSource {
     bool reconcile = false,
     Set<int>? syncedIdsBeforeFetch,
     Future<bool> Function()? isStale,
+    bool localEdit = false,
   }) async {
     // Chủ của danh sách = người đang đăng nhập LÚC BẮT ĐẦU ghi — đổi tài khoản giữa một lô thì phần còn lại vẫn mang chủ
     // cũ (rồi bị ẩn với người mới) chứ không chảy sang người mới (#24698 nhóm 3). Chưa đăng nhập ⇒ không ghi.
@@ -326,7 +330,9 @@ class CustomerLocalDataSource {
       // [isStale]: kiểm lại TRƯỚC MỖI LÔ (vd đã đổi tài khoản giữa chừng) — ghi nhiều lô nên kiểm một lần đầu là không đủ.
       if (isStale != null && await isStale()) return;
       final chunk = remoteList.sublist(i, math.min(i + _cacheChunk, remoteList.length));
-      await _db.transaction(() => _cacheRemoteChunk(chunk, owner));
+      // Đọc tập "còn lệnh sửa chờ" TRONG transaction của lô: lệnh sửa xếp giữa hai lô vẫn được tính.
+      await _db.transaction(() async => _cacheRemoteChunk(chunk, owner,
+          unsentEdits: localEdit ? null : await _db.unsentCustomerUpdateKeys(owner)));
     }
 
     if (reconcile) {
@@ -346,7 +352,10 @@ class CustomerLocalDataSource {
   /// Ảnh chụp ID điểm bán đã đồng bộ — lấy TRƯỚC khi tải danh sách, truyền vào [cacheRemoteCustomers].
   Future<Set<int>> syncedServerIds() => _db.syncedCustomerIds();
 
-  Future<void> _cacheRemoteChunk(List<CustomerEntity> remoteList, int owner) async {
+  /// [unsentEdits]: khoá điểm bán còn lệnh SỬA chờ gửi — bản server không đè các dòng đó; null = ghi bản sửa của chính người
+  /// dùng (`localEdit`), không áp luật này.
+  Future<void> _cacheRemoteChunk(List<CustomerEntity> remoteList, int owner,
+      {({Set<int> ids, Set<String> uuids})? unsentEdits}) async {
     for (final remote in remoteList) {
       // 1. Kiểm tra xem điểm bán này đã tồn tại trên SQLite chưa (theo serverId, code hoặc clientUuid)
       LocalCustomer? existing;
@@ -367,6 +376,15 @@ class CustomerLocalDataSource {
               ..where((tbl) => tbl.ownerUserId.equals(owner) & tbl.clientUuid.equals(remote.clientUuid!)))
             .get();
         if (matches.isNotEmpty) existing = matches.first;
+      }
+
+      // Dòng của chính mình còn lệnh SỬA chưa gửi ⇒ KHÔNG đè bằng bản server (cũ hơn phần sửa): đè thì phần sửa ngoại tuyến
+      // "biến mất" trên máy — kể cả toạ độ dùng tính khoảng cách check-in (#24698 vòng 3). Gửi xong thì lần tải sau cập nhật.
+      if (unsentEdits != null &&
+          existing != null &&
+          existing.ownerUserId == owner &&
+          (unsentEdits.ids.contains(existing.id) || unsentEdits.uuids.contains(existing.clientUuid))) {
+        continue;
       }
 
       // Giữ nguyên clientUuid của bản ghi hiện có để UPDATE thay vì INSERT thêm bản ghi mới. Trùng khoá dòng chờ gửi của
@@ -449,6 +467,36 @@ class CustomerLocalDataSource {
   /// Chép ảnh điểm bán chờ gửi vào `offline_customer_photos` ([OfflinePhotoStore.persist]); [prefix] theo client_uuid.
   Future<List<String>> persistOfflinePhotos(List<String> paths, String prefix) =>
       OfflinePhotoStore.persist(paths, dirName: 'offline_customer_photos', prefix: prefix);
+
+  /// Ảnh của các thao tác vật tư (`photos` + ô ảnh trong `details` theo `detail_photo_fields`) ⇒ [persistOfflinePhotos].
+  Future<List<dynamic>> _persistMaterialPhotos(List<dynamic> materials, String prefix) async {
+    final out = <dynamic>[];
+    for (var i = 0; i < materials.length; i++) {
+      final m = materials[i];
+      if (m is! Map) {
+        out.add(m);
+        continue;
+      }
+      final op = Map<String, dynamic>.from(m);
+      if (op['photos'] is List) {
+        op['photos'] = await persistOfflinePhotos((op['photos'] as List).map((e) => e.toString()).toList(), '${prefix}_$i');
+      }
+      final fields = op['detail_photo_fields'];
+      if (op['details'] is Map && fields is List) {
+        final details = Map<String, dynamic>.from(op['details'] as Map);
+        for (final f in fields) {
+          final v = details[f.toString()];
+          if (v is List) {
+            details[f.toString()] =
+                await persistOfflinePhotos(v.map((e) => e.toString()).toList(), '${prefix}_${i}_$f');
+          }
+        }
+        op['details'] = details;
+      }
+      out.add(op);
+    }
+    return out;
+  }
 
   /// Cập nhật thông tin điểm bán offline/lỗi và làm mới hàng đợi đồng bộ
   Future<CustomerEntity> updateCustomerOffline(

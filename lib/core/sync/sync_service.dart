@@ -120,7 +120,7 @@ class SyncService {
   bool _lastAuthBlockForbidden = false;
 
   /// Phiên đã bị xoá khỏi máy (AuthInterceptor xoá khi máy chủ từ chối làm mới) — không còn refresh token.
-  static Future<bool> _sessionCleared() async {
+  static Future<bool> sessionCleared() async {
     try {
       final token = (await SharedPreferences.getInstance()).getString(AppConstants.keyRefreshToken);
       return token == null || token.isEmpty;
@@ -409,7 +409,7 @@ class SyncService {
       // xuất, mà gửi thì mãi 401.
       // CHỈ khi phiên đã bị xoá thật (làm mới bị từ chối ⇒ không còn refresh token) hoặc bị thu quyền app — 401 của
       // lần gửi lại sau khi làm mới THÀNH CÔNG thì phiên vẫn sống: chỉ dừng lô, đăng xuất là thu hồi oan token mới.
-      if (sessionRejected && (forbidden || await _sessionCleared())) {
+      if (sessionRejected && (forbidden || await sessionCleared())) {
         try {
           await _ref.read(authViewModelProvider.notifier).forceLogoutSessionRejected();
         } catch (e) {
@@ -569,7 +569,7 @@ class SyncService {
     if (!await file.exists()) {
       // iOS đổi UUID thư mục app sau cập nhật/khôi phục: tệp vẫn còn, chỉ đường dẫn tuyệt đối lưu từ trước đã cũ ⇒ dựng
       // lại theo thư mục Documents hiện tại trước khi kết luận là mất.
-      final rebased = await _rebaseToCurrentDocuments(cleanPath);
+      final rebased = await OfflinePhotoStore.rebaseToCurrentDocuments(cleanPath);
       if (rebased != null) file = rebased;
     }
     if (!await file.exists()) {
@@ -643,31 +643,6 @@ class SyncService {
     return _appDirsCache = dirs;
   }
 
-  /// Tệp ảnh của mục hàng đợi còn trên máy không: đường dẫn đã lưu, hoặc — iOS đổi UUID thư mục app sau cập nhật/khôi phục —
-  /// dựng lại theo thư mục Documents hiện tại. null = mất thật (#24698: trước đây chỉ ảnh điểm bán dựng lại, ảnh viếng
-  /// thăm / phiếu / chấm công thành "mất tệp" dù tệp vẫn còn).
-  static Future<File?> _existingLocalFile(String? path) async {
-    if (path == null || path.isEmpty) return null;
-    final clean = OfflinePhotoStore.toFilePath(path);
-    final file = File(clean);
-    if (await file.exists()) return file;
-    return _rebaseToCurrentDocuments(clean);
-  }
-
-  /// Đường dẫn cũ `…/Documents/<phần sau>` dựng lại theo thư mục Documents HIỆN TẠI (null nếu không áp dụng / không có).
-  static Future<File?> _rebaseToCurrentDocuments(String path) async {
-    const marker = '/Documents/';
-    final i = path.indexOf(marker);
-    if (i < 0) return null;
-    try {
-      final docs = (await getApplicationDocumentsDirectory()).path;
-      final candidate = File(p.join(docs, path.substring(i + marker.length)));
-      return candidate.path != path && await candidate.exists() ? candidate : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Đồng bộ tạo mới khách hàng lên server theo hợp đồng 30/09/2026
   Future<void> _syncCreateCustomer(SyncQueueEntry entry) async {
     final rawSource = jsonDecode(entry.payload) as Map<String, dynamic>;
@@ -729,6 +704,9 @@ class SyncService {
 
     // Vật tư khai lúc tạo (#24526): đổi ảnh trên máy ra token NGAY lúc đồng bộ, như thao tác vật tư của lượt. Lỗi tải
     // ảnh ném ra ⇒ mục thử lại, không gửi điểm bán thiếu ảnh vật tư (bản ngoại tuyến server BỎ thao tác sai).
+    // Đường dẫn ảnh vật tư trên máy — dọn sau khi tạo xong (bước 6), lấy TRƯỚC khi bị thay bằng token.
+    final materialPhotos = <String>[];
+    collectFilePaths(rawSource['materials'], materialPhotos);
     if (rawSource['materials'] is List) {
       rawSource['materials'] = await resolveCreateMaterials(
         rawSource['materials'],
@@ -833,9 +811,9 @@ class SyncService {
       }
     }
 
-    // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server
-    if (candidatePhotos.isNotEmpty) {
-      for (final p in candidatePhotos) {
+    // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server (cả ảnh vật tư khai lúc tạo — vòng 3)
+    if (candidatePhotos.isNotEmpty || materialPhotos.isNotEmpty) {
+      for (final p in [...candidatePhotos, ...materialPhotos]) {
         if (p.contains('offline_customer_photos')) {
           try {
             final f = File(p);
@@ -1063,7 +1041,7 @@ class SyncService {
     }
 
     // Mất tệp ảnh ⇒ báo lỗi (dead, hiện ở "Lỗi đồng bộ"), KHÔNG đánh dấu "đã gửi" — lượt sẽ thiếu ảnh mà không ai biết.
-    final file = await _existingLocalFile(entry.localPath);
+    final file = await OfflinePhotoStore.existingFile(entry.localPath);
     if (file == null) {
       throw const AppException('Tệp ảnh viếng thăm không còn trên máy, không gửi được.', 410);
     }
@@ -1354,7 +1332,7 @@ class SyncService {
         if (paths is List) {
           final newTokens = <String>[];
           for (final p in paths) {
-            final file = await _existingLocalFile(p.toString());
+            final file = await OfflinePhotoStore.existingFile(p.toString());
             // Mất tệp ⇒ báo lỗi (dead), không nộp phiếu thiếu ảnh mà không ai biết.
             if (file == null) {
               throw const AppException('Ảnh của phiếu không còn trên máy, không gửi được.', 410);
@@ -1606,7 +1584,7 @@ class SyncService {
       _throwParentUnresolved(entry, parent, 'Lượt chấm công chưa được đồng bộ lên máy chủ');
     }
 
-    final file = await _existingLocalFile(entry.localPath ?? payload['local_path']?.toString());
+    final file = await OfflinePhotoStore.existingFile(entry.localPath ?? payload['local_path']?.toString());
     if (file == null) {
       throw const AppException('Tệp ảnh chấm công không còn trên máy, không gửi được.', 410);
     }
@@ -1768,8 +1746,12 @@ class SyncService {
       await _db.markDead(entry.id, errorMsg);
 
       // Khách hàng -> đánh dấu lỗi đồng bộ (KHÔNG phải "bị từ chối duyệt" — xem markCustomerSyncError)
+      // Lệnh SỬA (điểm bán ĐÃ có trên server) bị từ chối: KHÔNG gắn 'error' lên dòng — dòng 'error' có mã server không bao
+      // giờ được đối chiếu dọn đi (điểm bán bị gỡ phân công / xoá thành "ma" mãi trên tuyến, #24698 vòng 3). Lỗi vẫn hiện ở
+      // danh sách đồng bộ lỗi; lần tải danh sách sau đặt dòng về bản server (hoặc bỏ nếu server không còn trả).
       if (entry.entity == 'customer') {
-        await _db.markCustomerSyncError(entry.clientUuid, errorMsg);
+        if (entry.op != 'update') await _db.markCustomerSyncError(entry.clientUuid, errorMsg);
+        // Tải lại danh sách: lệnh sửa bị từ chối ⇒ dòng về bản server (bỏ giá trị bị từ chối, vd toạ độ dùng tính khoảng cách).
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         } catch (_) {}

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -72,6 +73,18 @@ class ServerTimeInterceptor extends Interceptor {
 
 class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;
+
+  /// Gọi khi máy chủ TỪ CHỐI phiên làm mới (phiên đã xoá; trừ ca bị thu quyền app — nơi gọi nhận DmsAppForbiddenException)
+  /// — để màn hình về đăng nhập thay vì mọi thao tác trực tuyến báo 401 mãi (#24698 vòng 3). AuthViewModel gắn.
+  static void Function()? onSessionRejected;
+
+  static void _notifySessionRejected() {
+    try {
+      onSessionRejected?.call();
+    } catch (e) {
+      debugPrint('[AuthInterceptor] Không báo được phiên bị từ chối: $e');
+    }
+  }
 
   /// Dio gọi `/auth/refresh` — mặc định dựng mới mỗi lần; test truyền bản có adapter giả.
   final Dio Function() _refreshDio;
@@ -152,6 +165,8 @@ class AuthInterceptor extends QueuedInterceptor {
 
           // Máy chủ TỪ CHỐI phiên làm mới (4xx) -> Clear session
           await _clearSession(prefs);
+          // Bị thu quyền app: nơi gọi nhận DmsAppForbiddenException và báo đúng lý do — đừng đăng xuất kèm câu "hết phiên".
+          if (!isDmsForbidden) _notifySessionRejected();
 
           if (isDmsForbidden) {
             final msg = (resData is Map ? resData['message']?.toString() : null) ??

@@ -534,10 +534,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
     final updated = _applyChangesToCustomer(current, changes);
     _cachedCustomers[index] = updated;
 
-    // 1. Cập nhật vào SQLite LocalCustomers
-    await _localDataSource.cacheRemoteCustomers([updated]);
-
-    // 2. Đẩy vào hàng đợi sync_queue
+    // 1. Đẩy vào hàng đợi sync_queue TRƯỚC khi ghi bản sửa vào máy: lần tải danh sách chạy song song chỉ chừa dòng còn
+    // lệnh sửa chờ — ghi bản sửa trước thì giữa hai bước nó bị bản server cũ đè (#24698 vòng 3).
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
     await _localDataSource.enqueueCustomerUpdate(
@@ -546,6 +544,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
       changes: changes,
       nowMs: nowMs,
     );
+
+    // 2. Cập nhật vào SQLite LocalCustomers
+    await _localDataSource.cacheRemoteCustomers([updated], localEdit: true);
 
     return updated;
   }
@@ -890,6 +891,13 @@ class CustomerRepositoryImpl implements CustomerRepository {
     try {
       final dto = await _apiService.getCustomerDetail(id);
       final entity = dto.toEntity();
+      // Còn lệnh SỬA chờ gửi ⇒ bản server cũ hơn phần sửa: trả bản trong máy (cùng luật lần tải danh sách — vòng 3).
+      if (await _localDataSource.hasUnsentCustomerUpdate(id, entity.clientUuid)) {
+        final i = _cachedCustomers.indexWhere((c) => c.id == id);
+        if (i != -1) return _cachedCustomers[i];
+        final local = (await _localDataSource.getLocalCustomers()).where((c) => c.id == id).firstOrNull;
+        if (local != null) return local;
+      }
       unawaited(_localDataSource.cacheRemoteCustomers([entity]));
       final index = _cachedCustomers.indexWhere((c) => c.id == id);
       if (index != -1) {

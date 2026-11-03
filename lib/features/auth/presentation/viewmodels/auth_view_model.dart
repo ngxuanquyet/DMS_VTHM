@@ -86,7 +86,22 @@ class AuthViewModel extends StateNotifier<AuthState> {
     this.ref,
   }) : super(const AuthState()) {
     _init();
+    if (ref != null) AuthInterceptor.onSessionRejected = _onSessionRejected;
   }
+
+  void _onSessionRejected() {
+    if (mounted) unawaited(forceLogoutSessionRejected());
+  }
+
+  @override
+  void dispose() {
+    if (AuthInterceptor.onSessionRejected == _onSessionRejected) AuthInterceptor.onSessionRejected = null;
+    super.dispose();
+  }
+
+  /// Lượt đăng xuất đang chạy (tự chọn hoặc cưỡng bức) — [logout] xếp lượt sau đứng chờ nó; đăng xuất cưỡng bức chờ nó xong
+  /// rồi mới quyết (#24698 vòng 3).
+  Future<bool>? _logoutRun;
 
   Future<void> _init() async {
     final savedUser = await getSavedUsernameUseCase();
@@ -112,6 +127,20 @@ class AuthViewModel extends StateNotifier<AuthState> {
           );
           return false;
         } on ServerException catch (e) {
+          // Phiên bị máy chủ từ chối (refresh hết hạn — interceptor đã xoá phiên) ⇒ về đăng nhập; coi như mất mạng thì app
+          // "đã đăng nhập" mà mọi thao tác trực tuyến báo 401 (#24698 vòng 3).
+          if (e.statusCode == 401 && await SyncService.sessionCleared()) {
+            try {
+              await logout();
+            } catch (err) {
+              debugPrint('[AuthViewModel] Đăng xuất khi phiên bị từ chối lỗi: $err');
+            }
+            state = state.copyWith(
+              status: AuthStatus.error,
+              errorMessage: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+            );
+            return false;
+          }
           if (e.statusCode == 403 || e.code == 'DMS_APP_FORBIDDEN') {
             await logout();
             state = state.copyWith(
@@ -222,7 +251,29 @@ class AuthViewModel extends StateNotifier<AuthState> {
   /// thăm chưa đóng hoặc mục chờ gửi (vừa phát sinh sau lúc màn hình kiểm) thì KHÔNG đăng xuất, trả false; không thì
   /// xoá hàng đợi + điểm bán + ảnh offline TRƯỚC rồi mới đăng xuất.
   /// Đăng xuất cưỡng bức (bị thu quyền app) KHÔNG đụng hàng đợi — không ai được hỏi, không xoá mất dữ liệu.
-  Future<bool> logout({bool requireCleared = false}) async {
+  Future<bool> logout({bool requireCleared = false}) {
+    // Một lượt đăng xuất một lúc (tự chọn / cưỡng bức / checkAuth): lượt sau CHỜ lượt đang chạy rồi mới chạy phần của
+    // mình (yêu cầu dọn dữ liệu khác nhau — dùng chung kết quả là sai). Gắn [_logoutRun] NGAY (không qua await) để hai lời
+    // gọi sát nhau không cùng thấy "rảnh" (#24698 vòng 3).
+    final prev = _logoutRun;
+    final run = () async {
+      if (prev != null) {
+        try {
+          await prev;
+        } catch (_) {}
+        // Lượt trước đã đưa ra khỏi phiên ⇒ xong; chạy lại chỉ gọi máy chủ lần nữa và đè trạng thái/câu báo của lượt đó.
+        // Trừ lượt đòi XOÁ dữ liệu (tự đăng xuất) — lượt trước (cưỡng bức) không xoá, báo "xong" là sai.
+        if (state.status != AuthStatus.authenticated && !requireCleared) return true;
+      }
+      return _logout(requireCleared: requireCleared);
+    }();
+    _logoutRun = run;
+    return run.whenComplete(() {
+      if (identical(_logoutRun, run)) _logoutRun = null;
+    });
+  }
+
+  Future<bool> _logout({required bool requireCleared}) async {
     // Lỗi DB thì ném lên cho màn hình báo — đừng nuốt thành "còn mục chờ gửi" (người dùng đồng bộ lại mãi vô ích).
     if (requireCleared) {
       final db = ref?.read(appDatabaseProvider);
@@ -261,9 +312,33 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
   /// Đăng xuất CƯỠNG BỨC khi lô đồng bộ thấy phiên đã chết (401 sau khi làm mới thất bại / bị thu quyền app) — GIỮ
   /// nguyên hàng đợi (không `requireCleared`): đúng người đăng nhập lại là gửi tiếp. Đưa về màn đăng nhập kèm câu báo.
-  Future<void> forceLogoutSessionRejected() async {
+  Future<void> forceLogoutSessionRejected() {
+    // Một lượt cưỡng bức một lúc: hook của interceptor + lô đồng bộ cùng báo một sự kiện; lời gọi đăng xuất lên máy chủ
+    // nhận 401 cũng gọi hook lần nữa — tất cả dùng chung lượt đang chạy.
+    return _forceRun ??= _forceLogout().whenComplete(() {
+      _forceRun = null;
+    });
+  }
+
+  Future<void>? _forceRun;
+
+  Future<void> _forceLogout() async {
+    // Đang có lượt đăng xuất (vd người dùng tự đăng xuất) ⇒ chờ nó; xong mà đã ra khỏi phiên thì thôi — không chồng câu
+    // "hết phiên" lên lượt tự đăng xuất.
+    final running = _logoutRun;
+    if (running != null) {
+      try {
+        await running;
+      } catch (_) {}
+    }
     if (state.status != AuthStatus.authenticated) return;
-    await logout();
+    try {
+      await logout();
+    } catch (e) {
+      // Gọi từ hook (không ai chờ) — lỗi không được thành lỗi không bắt; đăng xuất không xong thì giữ nguyên trạng thái.
+      debugPrint('[AuthViewModel] Đăng xuất cưỡng bức lỗi: $e');
+      return;
+    }
     state = state.copyWith(
       status: AuthStatus.error,
       errorMessage: 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để gửi tiếp dữ liệu đang chờ đồng bộ.',

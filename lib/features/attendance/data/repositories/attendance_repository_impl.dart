@@ -33,6 +33,17 @@ final attendanceRepositoryProvider = Provider<AttendanceRepository>((ref) {
   );
 });
 
+/// Người KHÁC đã đăng nhập kể từ lúc bấm (khoá [historyKey]). Chưa có ai (phiên vừa bị máy chủ từ chối — interceptor xoá
+/// hồ sơ) KHÔNG phải đổi người: lượt chấm / ảnh vẫn của người bấm, hàng đợi gắn người đăng nhập gần nhất (#24698 vòng 3).
+/// Người dùng đã TỰ đăng xuất kèm xoá dữ liệu ([AppDatabase.userDataClearedSinceLogin]) cũng tính là "đã rời" — không xếp
+/// lại dữ liệu của họ vào máy dùng chung.
+bool _otherAccount(SharedPreferences prefs, String? historyKey, [AppDatabase? db]) {
+  // Đã tự đăng xuất kèm xoá — kể cả khi hồ sơ trong máy CHƯA kịp xoá (đang chờ máy chủ đăng xuất).
+  if (db?.userDataClearedSinceLogin ?? false) return true;
+  final current = attendanceHistoryCacheKey(prefs);
+  return current != null && current != historyKey;
+}
+
 class AttendanceRepositoryImpl implements AttendanceRepository {
   final AttendanceApiService _apiService;
   final AppDatabase? database;
@@ -131,6 +142,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     final finalUuid = clientUuid ?? const Uuid().v4();
     // Khoá bộ đệm của người BẤM — lấy trước `await` mạng: đổi tài khoản giữa chừng thì lượt này không rơi vào bộ đệm người mới.
     final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
+    // Chủ hàng đợi = người BẤM: lượt / ảnh rơi vào hàng đợi sau khi người đó đã rời phiên vẫn thuộc họ, không thuộc người
+    // đăng nhập sau (#24698 vòng 3).
+    final ownerAtStart = database?.ownerOrLastUserId;
     final now = DateTime.now();
     final clientTimeIso = now.toIso8601String();
 
@@ -169,6 +183,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           rethrow;
         }
         debugPrint('[AttendanceRepo] Server lỗi tạm khi chấm công (${serverErr.statusCode}) -> Đưa vào hàng đợi ngoại tuyến');
+      } on DmsAppForbiddenException {
+        // Bị thu quyền app: không xếp hàng (không gửi được tới khi cấp lại) — báo đúng lý do.
+        rethrow;
       } catch (e) {
         // Lỗi mạng hoặc server sập 5xx -> Đưa vào hàng đợi ngoại tuyến
         debugPrint('[AttendanceRepo] Lỗi mạng khi chấm công -> Đưa vào hàng đợi ngoại tuyến: $e');
@@ -176,8 +193,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     }
 
     // Hàng đợi gắn người ĐANG đăng nhập — tài khoản đổi trong lúc chờ mạng thì lượt của người bấm không được gửi dưới tên
-    // người mới.
-    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+    // người mới. Chưa có ai (phiên vừa bị máy chủ từ chối — interceptor xoá hồ sơ) thì KHÔNG phải đổi người: hàng đợi gắn
+    // người đăng nhập gần nhất, đăng nhập lại là gửi tiếp — báo "tài khoản đã thay đổi" là sai và mất lượt chấm (vòng 3).
+    if (_otherAccount(await SharedPreferences.getInstance(), historyKey, database)) {
       throw const AppException('Tài khoản đăng nhập đã thay đổi trong lúc chấm công. Vui lòng chấm công lại.');
     }
 
@@ -192,6 +210,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     if (database != null && queued == null) {
       await database!.enqueue(
         SyncQueueEntriesCompanion.insert(
+          ownerUserId: Value.absentIfNull(ownerAtStart),
           entity: 'attendance_punch',
           op: 'create',
           clientUuid: finalUuid,
@@ -234,6 +253,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   }) async {
     final now = takenAt ?? DateTime.now();
     final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
+    final ownerAtStart = database?.ownerOrLastUserId;
 
     if (_isOnline && punchId > 0) {
       try {
@@ -258,13 +278,15 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           rethrow;
         }
         debugPrint('[AttendanceRepo] Server lỗi tạm khi tải ảnh (${serverErr.statusCode}) -> Đưa vào hàng đợi ngoại tuyến');
+      } on DmsAppForbiddenException {
+        rethrow; // như punch(): bị thu quyền app thì không xếp hàng
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi mạng khi tải ảnh -> Đưa vào hàng đợi ngoại tuyến: $e');
       }
     }
 
     // Như punch(): tài khoản đổi trong lúc chờ mạng thì không gửi ảnh của người cũ dưới tên người mới.
-    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+    if (_otherAccount(await SharedPreferences.getInstance(), historyKey, database)) {
       throw const AppException('Tài khoản đăng nhập đã thay đổi trong lúc gửi ảnh. Vui lòng chấm công lại.');
     }
 
@@ -283,6 +305,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     if (database != null) {
       await database!.enqueue(
         SyncQueueEntriesCompanion.insert(
+          ownerUserId: Value.absentIfNull(ownerAtStart),
           entity: 'attendance_photo',
           op: 'upload',
           clientUuid: photoUuid,
@@ -326,6 +349,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   }) async {
     final now = takenAt ?? DateTime.now();
     final historyKey = attendanceHistoryCacheKey(await SharedPreferences.getInstance());
+    final ownerAtStart = database?.ownerOrLastUserId;
     final photoUuid = const Uuid().v4();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
@@ -339,7 +363,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         .first;
 
     // Chép ảnh là I/O bất đồng bộ — tài khoản đổi trong lúc đó thì không gửi ảnh của người cũ dưới tên người mới.
-    if (attendanceHistoryCacheKey(await SharedPreferences.getInstance()) != historyKey) {
+    if (_otherAccount(await SharedPreferences.getInstance(), historyKey, database)) {
       // Bản chép là ảnh chân dung người cũ, không có dòng hàng đợi nào trỏ tới ⇒ không ai dọn — xoá ngay.
       if (localSavedPath != file.path) {
         try {
@@ -361,6 +385,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     if (database != null) {
       await database!.enqueue(
         SyncQueueEntriesCompanion.insert(
+          ownerUserId: Value.absentIfNull(ownerAtStart),
           entity: 'attendance_photo',
           op: 'upload',
           clientUuid: photoUuid,
@@ -673,6 +698,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   Future<void> _savePunchToLocalHistory(String? historyKey, AttendancePunchEntity punch) async {
     final prefs = await SharedPreferences.getInstance();
     // Ghi SAU `await` mạng: tài khoản đã đổi / đã đăng xuất ⇒ bỏ, không dựng lại bộ đệm của người cũ.
+    // Bộ đệm lịch sử: CHẶT — chưa có ai đăng nhập (đã đăng xuất) cũng không ghi, kẻo dựng lại dữ liệu người cũ trên máy dùng chung.
     if (historyKey == null || attendanceHistoryCacheKey(prefs) != historyKey) return;
     final cachedJson = prefs.getString(historyKey);
     List<Map<String, dynamic>> rawList = [];
@@ -745,6 +771,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
 
   Future<void> _attachPhotoToLocalPunch(String? historyKey, int punchId, AttendancePunchPhotoEntity photo) async {
     final prefs = await SharedPreferences.getInstance();
+    // Bộ đệm lịch sử: CHẶT — chưa có ai đăng nhập (đã đăng xuất) cũng không ghi, kẻo dựng lại dữ liệu người cũ trên máy dùng chung.
     if (historyKey == null || attendanceHistoryCacheKey(prefs) != historyKey) return;
     final cachedJson = prefs.getString(historyKey);
     if (cachedJson == null || cachedJson.isEmpty) return;

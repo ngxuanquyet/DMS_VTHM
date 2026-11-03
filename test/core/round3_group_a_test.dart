@@ -331,6 +331,24 @@ void main() {
     expect(queueMaybeOnServer((await row(id)).payload), isFalse);
   });
 
+  test('C4 (nhóm B) lệnh SỬA bị 404 (điểm bán không còn) ⇒ dòng KHÔNG gắn lỗi, đối chiếu danh sách dọn được', () async {
+    boot((o) => o.path.startsWith('/crm/customers/55') ? (404, {'success': false, 'message': 'Không tìm thấy'}) : null);
+    await db.setOwner(7);
+    final local = CustomerLocalDataSource(db);
+    await local.cacheRemoteCustomers([
+      const CustomerEntity(
+        id: 55, code: 'KH55', name: 'A', clientUuid: 'server_55', type: 'Đại lý', route: 'Tuyến 1',
+        address: 'Hà Nội', contactPerson: 'A', phone: '0901234567', status: 'active', syncStatus: 'synced'),
+    ]);
+    final id = await enqueue('customer', 'update', 'server_55', serverId: 55, payload: jsonEncode({'name': 'B'}));
+    await container.read(syncServiceProvider).syncQueue();
+    expect((await row(id)).state, 'dead');
+    final cust = await (db.select(db.localCustomers)..where((t) => t.id.equals(55))).getSingle();
+    expect(cust.syncStatus, 'synced', reason: "lỗi cũ: 'error' ⇒ đối chiếu không bao giờ dọn ⇒ điểm bán ma");
+    await local.cacheRemoteCustomers([], reconcile: true, syncedIdsBeforeFetch: {55});
+    expect(await (db.select(db.localCustomers)..where((t) => t.id.equals(55))).get(), isEmpty);
+  });
+
   group('C2 lệnh sửa điểm bán đi đúng thứ tự nhập', () {
     test('lệnh sau CHỜ lệnh trước còn chờ / đang gửi; lệnh trước xong thì đi', () async {
       boot((_) => null);

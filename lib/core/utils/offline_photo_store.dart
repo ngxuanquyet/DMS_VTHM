@@ -24,6 +24,31 @@ class OfflinePhotoStore {
     }
   }
 
+  /// Tệp ảnh của mục hàng đợi còn trên máy không: đường dẫn đã lưu, hoặc — iOS đổi UUID thư mục app sau cập nhật/khôi phục —
+  /// dựng lại theo thư mục Documents hiện tại. null = mất thật (#24698: trước đây chỉ ảnh điểm bán dựng lại, ảnh viếng
+  /// thăm / phiếu / chấm công thành "mất tệp" dù tệp vẫn còn).
+  static Future<File?> existingFile(String? path) async {
+    if (path == null || path.isEmpty) return null;
+    final clean = toFilePath(path);
+    final file = File(clean);
+    if (await file.exists()) return file;
+    return rebaseToCurrentDocuments(clean);
+  }
+
+  /// Đường dẫn cũ `…/Documents/<phần sau>` dựng lại theo thư mục Documents HIỆN TẠI (null nếu không áp dụng / không có).
+  static Future<File?> rebaseToCurrentDocuments(String path) async {
+    const marker = '/Documents/';
+    final i = path.indexOf(marker);
+    if (i < 0) return null;
+    try {
+      final docs = (await getApplicationDocumentsDirectory()).path;
+      final candidate = File(p.join(docs, path.substring(i + marker.length)));
+      return candidate.path != path && await candidate.exists() ? candidate : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Bản lưu lâu dài của từng ảnh trong [paths], cùng thứ tự: token ảnh (32 hex), tệp đã nằm trong [dirName], tệp không
   /// còn ⇒ giữ nguyên; tệp khác ⇒ chép vào `Documents/<dirName>/<prefix>_<mốc>_<i>.<ext>` (giữ dấu "đã đóng watermark"
   /// — [PhotoWatermarkHelper.keepMarkerName] — không thì lúc gửi bị đóng thêm lớp thứ hai). Lỗi ⇒ trả nguyên [paths].

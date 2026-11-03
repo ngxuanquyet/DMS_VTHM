@@ -11,6 +11,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../domain/entities/visit_requirements_entity.dart';
@@ -433,11 +434,10 @@ Future<MaterialOperation> resolveOperationPhotos(
         out.add(raw);
         continue;
       }
-      var path = raw;
-      if (path.startsWith('file://')) path = Uri.parse(path).toFilePath();
-      final file = File(path);
-      if (!await file.exists()) {
-        debugPrint('[VisitMaterial] Ảnh không còn trên máy, bỏ qua: $path');
+      // iOS đổi thư mục app sau cập nhật ⇒ dựng lại đường dẫn theo Documents hiện tại (#24698 vòng 3).
+      final file = await OfflinePhotoStore.existingFile(raw);
+      if (file == null) {
+        debugPrint('[VisitMaterial] Ảnh không còn trên máy, bỏ qua: $raw');
         continue;
       }
       final token = await upload(file);

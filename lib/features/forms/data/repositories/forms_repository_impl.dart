@@ -146,20 +146,18 @@ class FormsRepositoryImpl implements FormsRepository {
     MarketFormSubmissionModel submission, {
     bool isOffline = false,
   }) async {
-    // Kiểm tra xem trong answers có ảnh nào chưa có token (đang lưu tạm localPath) không
-    bool hasPendingLocalPhotos = false;
-    submission.answers.forEach((k, v) {
-      if (v is List) {
-        for (final item in v) {
-          final str = item.toString();
-          if (str.contains('/') || str.contains(r'\') || str.length != 32) {
-            hasPendingLocalPhotos = true;
-          }
-        }
-      }
-    });
+    // Ô ảnh còn mang ĐƯỜNG DẪN trên máy (chưa tải được ra token) ⇒ đi hàng đợi. Chỉ xét đúng các đường dẫn ảnh của phiếu:
+    // ô chọn nhiều cũng là danh sách chuỗi — xét theo độ dài / dấu '/' thì phiếu nào có ô chọn nhiều cũng bị coi là "có ảnh
+    // chưa tải", lỗi kiểm tra của server không hiện ngay mà chết trong hàng đợi (#24698 vòng 3).
+    final localPaths = {...?submission.localPhotoPaths?.values.expand((p) => p)};
+    final hasPendingLocalPhotos = submission.answers.values.any((v) =>
+        (v is List && v.any((item) => localPaths.contains(item.toString()))) ||
+        (v is String && localPaths.contains(v)));
+    // Phiếu khảo sát của lượt check-in NGOẠI TUYẾN chưa lên server (mã lượt âm): server không nhận ⇒ đi hàng đợi, đứng sau
+    // dòng tạo lượt (hàng đợi tra mã lượt qua parentUuid). Gửi thẳng là 422 rồi báo lỗi, kẹt cổng phiếu bắt buộc.
+    final visitNotOnServer = submission.visitId != null && submission.visitId! <= 0;
 
-    if (isOffline || hasPendingLocalPhotos) {
+    if (isOffline || hasPendingLocalPhotos || visitNotOnServer) {
       return _saveToSyncQueue(submission);
     }
 
