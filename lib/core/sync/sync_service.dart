@@ -33,6 +33,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+import '../dynamic_form/matrix_photo_key.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -1332,6 +1333,11 @@ class SyncService {
         if (paths is List) {
           final newTokens = <String>[];
           for (final p in paths) {
+            // Ảnh đã có token (bản nháp khôi phục, không còn tệp trên máy) — giữ nguyên, không tải lại.
+            if (isUploadedPhotoToken(p.toString())) {
+              newTokens.add(p.toString());
+              continue;
+            }
             final file = await OfflinePhotoStore.existingFile(p.toString());
             // Mất tệp ⇒ báo lỗi (dead), không nộp phiếu thiếu ảnh mà không ai biết.
             if (file == null) {
@@ -1340,7 +1346,8 @@ class SyncService {
             newTokens.add(await _uploadTempPhoto('/dms/form-photos', file));
           }
           if (newTokens.isNotEmpty) {
-            answers[fieldCode] = newTokens;
+            // Khoá ma trận `<ô>::<loại>` ⇒ ghi vào `photos.<loại>` của ô (#24767).
+            applyPhotoList(answers, fieldCode, newTokens);
           }
         }
       }
@@ -1350,12 +1357,11 @@ class SyncService {
     // Kiểm tra xem trong answers có trường ảnh nào còn đang giữ đường dẫn file cục bộ không
     bool hasLocalPathsInAnswers = false;
     answers.forEach((k, v) {
-      if (v is List) {
-        for (final item in v) {
-          final str = item.toString();
-          if (str.contains('/') || str.contains(r'\') || str.length != 32) {
-            hasLocalPathsInAnswers = true;
-          }
+      // Ô ma trận trưng bày: ảnh lồng trong `photos.<mã loại>`.
+      final items = v is List ? v.map((e) => e.toString()) : matrixPhotoStrings(v);
+      for (final str in items) {
+        if (str.contains('/') || str.contains(r'\') || str.length != 32) {
+          hasLocalPathsInAnswers = true;
         }
       }
     });

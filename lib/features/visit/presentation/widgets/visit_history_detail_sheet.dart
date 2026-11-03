@@ -7,6 +7,8 @@ import '../../../forms/data/models/market_form_model.dart';
 import '../../domain/entities/visit_history_entity.dart';
 import '../../domain/usecases/visit_usecases.dart';
 import 'visit_kind_badge.dart';
+import '../../../forms/presentation/widgets/dynamic_renderer/display_matrix_field_widget.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 /// Modal bottom sheet hiển thị chi tiết một lượt viếng thăm lịch sử (§2.4 SPEC 16/10/2026)
 /// Hiển thị ảnh (ghép URL tương đối / MobiWork) và các biểu mẫu đã nộp kèm câu hỏi & câu trả lời.
@@ -819,6 +821,8 @@ class _VisitHistoryDetailSheetState
       // Ô công thức: số server đã tính + lưu, định dạng theo cấu hình ô (hàng nghìn, tiền tệ, số lẻ).
       final soCongThuc = formulaCodes.containsKey(code) ? FormulaEvaluator.toNum(val) : null;
       if (soCongThuc != null) displayValue = FormulaEvaluator.formatWith(soCongThuc, formulaCodes[code]);
+      // Ô ma trận trưng bày: tóm tắt số mặt + % SOS thay cho chuỗi Map thô (#24767).
+      displayValue = displayMatrixSummary(val) ?? displayValue;
 
       // Kiểm tra xem có phải ảnh (trong answerPhotos) không
       final List<String> photoUrls = [];
@@ -826,8 +830,9 @@ class _VisitHistoryDetailSheetState
         if (val is String && form.answerPhotos!.containsKey(val)) {
           final p = form.answerPhotos![val].toString();
           photoUrls.add(p.startsWith('http') ? p : '${AppConstants.baseUrl}/$p');
-        } else if (val is List) {
-          for (final token in val) {
+        } else if (val is List || matrixPhotoStrings(val).isNotEmpty) {
+          // Ô ma trận trưng bày: ảnh theo loại ở `photos.<mã loại>`.
+          for (final token in val is List ? val : matrixPhotoStrings(val)) {
             if (form.answerPhotos!.containsKey(token.toString())) {
               final p = form.answerPhotos![token.toString()].toString();
               photoUrls.add(p.startsWith('http') ? p : '${AppConstants.baseUrl}/$p');
@@ -850,6 +855,15 @@ class _VisitHistoryDetailSheetState
               ),
             ),
             const SizedBox(height: 2),
+            // Ô ma trận: tóm tắt số mặt hiện CÙNG ảnh (ô ảnh thường chỉ có ảnh).
+            if (photoUrls.isNotEmpty && displayMatrixSummary(val) != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  displayValue,
+                  style: TextStyle(fontSize: 13, color: isDark ? Colors.white : const Color(0xFF111827)),
+                ),
+              ),
             if (photoUrls.isNotEmpty)
               Wrap(
                 spacing: 6,

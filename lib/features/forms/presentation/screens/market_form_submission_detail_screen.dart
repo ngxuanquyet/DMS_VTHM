@@ -9,6 +9,8 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
 import '../viewmodels/forms_view_model.dart';
+import '../widgets/dynamic_renderer/display_matrix_field_widget.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 /// Màn xem lại chi tiết phiếu biểu mẫu đã nộp theo đặc tả §4.3 & §9:
 /// GET /dms/form-submissions/{id}
@@ -274,15 +276,22 @@ class _MarketFormSubmissionDetailScreenState
                 _buildPhotoFieldAnswer(detail, value, isDark)
               else if (isLocationField)
                 _buildLocationFieldAnswer(value, isDark)
-              else
+              else ...[
                 Text(
-                  detail.choiceLabelOf(fieldCode) ?? value?.toString() ?? '—',
+                  // Ô ma trận trưng bày: tóm tắt số mặt + % SOS thay cho chuỗi Map thô (#24767).
+                  displayMatrixSummary(value) ?? detail.choiceLabelOf(fieldCode) ?? value?.toString() ?? '—',
                   style: AppTypography.bodyMedium(
                     color: isDark
                         ? AppColors.darkOnSurface
                         : AppColors.onSurface,
                   ).copyWith(fontWeight: FontWeight.w500),
                 ),
+                // Ảnh theo loại trưng bày của ô ma trận.
+                if (matrixPhotoStrings(value).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildPhotoFieldAnswer(detail, matrixPhotoStrings(value).toList(), isDark),
+                ],
+              ],
             ],
           ),
         );

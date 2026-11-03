@@ -11,6 +11,8 @@ import '../../../data/models/market_form_submission_model.dart';
 import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
+import 'display_matrix_field_widget.dart';
+import '../../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../../core/widgets/note_field_widget.dart';
 import '../../../../../core/widgets/form_fields/form_field_parts.dart';
 import '../../../../../core/dynamic_form/widgets/heading_field_widget.dart';
@@ -117,8 +119,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   Map<String, List<String>> getLocalPhotoPaths() {
     final Map<String, List<String>> map = {};
     _photoEntries.forEach((code, entries) {
+      // Ảnh khôi phục từ bản nháp chỉ có token (không còn tệp trên máy) ⇒ đưa TOKEN vào danh sách, đúng vị trí: hàng đợi
+      // giữ nguyên token đó và thay cả danh sách — bỏ đi thì lượt tải lại làm rơi ảnh.
       final paths = entries
-          .map((e) => e.localPath)
+          .map((e) => e.localPath.isNotEmpty ? e.localPath : (e.token ?? ''))
           .where((p) => p.isNotEmpty)
           .toList();
       if (paths.isNotEmpty) {
@@ -127,6 +131,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     });
     return map;
   }
+
+  /// Ô ma trận đang có ô đếm gõ sai dạng (vd `2,5,`) — bước Lưu chặn, không lặng lẽ bỏ số khỏi tổng.
+  final Map<String, bool> _matrixInvalid = {};
+
+  /// Danh mục ô ma trận đã đọc từ `config` — bất biến suốt màn điền, đọc một lần mỗi ô.
+  final Map<String, DisplayMatrixConfig> _matrixCfg = {};
+
+  DisplayMatrixConfig _matrixOf(MarketFormBlockEntity block) =>
+      _matrixCfg.putIfAbsent(block.resolved.code, () => DisplayMatrixConfig.fromConfig(block.resolved.configMap));
+
+  bool _isMatrixBlock(MarketFormBlockEntity block) => block.resolved.inputType.toLowerCase() == 'display_matrix';
 
   int _resolveMaxFiles(MarketFormBlockEntity block) {
     if (block.resolved.maxFiles > 0) {
@@ -213,6 +228,27 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           _photoEntries[code] = entries;
         }
       }
+    }
+
+    // Ô ma trận trưng bày: ảnh theo loại ở `photos.<mã loại>` (token hoặc đường dẫn máy của bản nháp ngoại tuyến).
+    for (final block in widget.blocks) {
+      if (!_isMatrixBlock(block)) continue;
+      final raw = _answers[block.resolved.code];
+      final photos = raw is Map ? raw['photos'] : null;
+      if (photos is! Map) continue;
+      final nhanAnh = {for (final t in _matrixOf(block).types) if (t.maxPhotos > 0) t.code};
+      photos.forEach((type, list) {
+        // Loại đã thôi nhận ảnh / không còn trong ô: ảnh cũ của bản nháp không nạp — gửi đi là server từ chối.
+        if (list is! List || !nhanAnh.contains('$type')) return;
+        final entries = <FormPhotoEntry>[
+          for (final item in list)
+            if ('$item'.trim().isNotEmpty)
+              isUploadedPhotoToken('$item')
+                  ? FormPhotoEntry(localPath: '', token: '$item', previewUrl: '/dms/form-photos/public/$item')
+                  : FormPhotoEntry(localPath: '$item'),
+        ];
+        if (entries.isNotEmpty) _photoEntries[matrixPhotoKey(block.resolved.code, '$type')] = entries;
+      });
     }
 
     // Tự động gán defaultCustomerId cho các ô ref_customer hoặc ô khách hàng
@@ -405,6 +441,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
       final code = block.resolved.code;
       final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
+
+      // Ô ma trận trưng bày (#24767): cùng luật server — ô trống = 0 (C1); ảnh tối thiểu chỉ bắt khi loại có số > 0 (C2).
+      if (_isMatrixBlock(block)) {
+        final err = _syncMatrixAnswer(block, validate: true);
+        if (err != null) newErrors[code] = err;
+        continue;
+      }
 
       // Xử lý riêng cho ô ảnh (§1, §2, §3)
       if (block.isImage || block.resolved.inputType.toLowerCase() == 'file') {
@@ -704,6 +747,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'image':
       case 'file':
         return _buildImageField(context, block, isDark);
+      case 'display_matrix':
+        return _buildDisplayMatrixField(context, block, isDark);
       case 'location':
       case 'address':
       case 'dia_chi':
@@ -1210,19 +1255,42 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     bool isDark,
   ) {
     final code = block.resolved.code;
-    final maxFiles = _resolveMaxFiles(block);
-    final minFiles = _resolveMinFiles(block);
-    final entries = _photoEntries[code] ?? [];
+    return _buildPhotoPicker(
+      context,
+      isDark,
+      key: code,
+      label: block.resolved.label,
+      description: block.resolved.description,
+      isRequired: block.required,
+      minFiles: _resolveMinFiles(block),
+      maxFiles: _resolveMaxFiles(block),
+      error: _errors[code],
+    );
+  }
+
+  /// Bộ chụp ảnh dùng chung: ô ảnh (khoá = mã ô) và ảnh từng loại của ô ma trận (khoá [matrixPhotoKey]).
+  Widget _buildPhotoPicker(
+    BuildContext context,
+    bool isDark, {
+    required String key,
+    required String label,
+    String? watermark,
+    String? description,
+    bool isRequired = false,
+    int minFiles = 0,
+    required int maxFiles,
+    String? error,
+  }) {
+    final entries = _photoEntries[key] ?? [];
     final canAddMore = entries.length < maxFiles;
-    final error = _errors[code];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         FormFieldLabel(
-          label: block.resolved.label,
-          isRequired: block.required,
-          description: block.resolved.description,
+          label: label,
+          isRequired: isRequired,
+          description: description,
           trailing: FormPhotoCountBadge(count: entries.length, max: maxFiles, min: minFiles),
         ),
         const SizedBox(height: kFormLabelGap),
@@ -1237,7 +1305,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   spacing: 10,
                   runSpacing: 10,
                   children: entries
-                      .map((entry) => _buildPhotoThumbnail(context, block, entry, isDark))
+                      .map((entry) => _buildPhotoThumbnail(context, key, entry, isDark))
                       .toList(),
                 ),
                 const SizedBox(height: 12),
@@ -1258,11 +1326,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   icon: const Icon(Icons.camera_alt_rounded, size: 20),
                   label: Text(
                     entries.isEmpty
-                        ? 'Chụp ảnh ${block.resolved.label.isNotEmpty ? block.resolved.label : ""}'.trim()
+                        ? 'Chụp ảnh $label'.trim()
                         : 'Chụp thêm ảnh (${entries.length}/$maxFiles)',
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   ),
-                  onPressed: () => _pickAndUploadPhoto(context, block, ImageSource.camera),
+                  onPressed: () => _pickAndUploadPhoto(context, key, watermark ?? label, maxFiles),
                 )
               else
                 Container(
@@ -1295,9 +1363,82 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
+  // ==========================================
+  // Ô MA TRẬN TRƯNG BÀY SOS (#24767)
+  // ==========================================
+
+  Widget _buildDisplayMatrixField(BuildContext context, MarketFormBlockEntity block, bool isDark) {
+    final code = block.resolved.code;
+    final cfg = _matrixOf(block);
+    return DisplayMatrixFieldWidget(
+      fieldCode: code,
+      label: block.resolved.label,
+      description: block.resolved.description,
+      isRequired: block.required,
+      config: cfg,
+      counts: DisplayMatrixFieldWidget.countsOf(_answers[code]),
+      errorText: _errors[code],
+      onChanged: (counts, invalid) {
+        _matrixInvalid[code] = invalid;
+        final cur = _answers[code];
+        final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
+        // Xoá hết số và không ảnh ⇒ ô RỖNG (điều kiện hiển thị "có giá trị" và bản nháp đọc đúng).
+        _updateValue(code, counts.isEmpty && photos.isEmpty ? null : {'counts': counts, 'photos': photos});
+      },
+      photoSection: (t) => _buildPhotoPicker(
+        context,
+        isDark,
+        key: matrixPhotoKey(code, t.code),
+        label: 'Ảnh ${t.name}',
+        // Đóng dấu ảnh theo nhãn ô như mọi ảnh biểu mẫu khác (không theo tên loại).
+        watermark: block.resolved.label,
+        minFiles: t.effectiveMinPhotos,
+        maxFiles: t.maxPhotos.clamp(1, 10),
+      ),
+    );
+  }
+
+  /// Ghép số đếm + ảnh theo loại vào câu trả lời của ô ma trận; [validate] ⇒ trả câu lỗi (cùng luật server) hoặc `null`.
+  /// Không nhập ô nào và không ảnh nào ⇒ gỡ câu trả lời (rỗng — luật bắt buộc quyết).
+  String? _syncMatrixAnswer(MarketFormBlockEntity block, {bool validate = false}) {
+    final code = block.resolved.code;
+    final cfg = _matrixOf(block);
+    final counts = DisplayMatrixFieldWidget.countsOf(_answers[code]);
+    final photos = <String, List<String>>{};
+    for (final t in cfg.types) {
+      // Loại không chụp ảnh (max 0): ảnh còn sót của bản nháp cũ không gửi — server từ chối "không nhận ảnh".
+      if (t.maxPhotos <= 0) continue;
+      final list = (_photoEntries[matrixPhotoKey(code, t.code)] ?? const <FormPhotoEntry>[])
+          .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (list.isNotEmpty) photos[t.code] = list;
+    }
+    if (counts.isEmpty && photos.isEmpty) {
+      _answers.remove(code);
+    } else {
+      _answers[code] = {'counts': counts, 'photos': photos};
+    }
+    if (!validate) return null;
+
+    final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
+    if (block.required && counts.isEmpty && photos.isEmpty) return '$label không được để trống.';
+    if (_matrixInvalid[code] == true) return '$label – có ô đếm nhập sai dạng số.';
+    final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
+    if (cellErr != null) return '$label – $cellErr';
+    for (final t in cfg.types) {
+      final n = (photos[t.code] ?? const []).length;
+      if (t.maxPhotos > 0 && n > t.maxPhotos) return '$label – ${t.name}: tối đa ${t.maxPhotos} ảnh.';
+      if (t.effectiveMinPhotos > 0 && DisplayMatrixTotals.sumOfType(counts, t.code) > 0 && n < t.effectiveMinPhotos) {
+        return '$label – ${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
+      }
+    }
+    return null;
+  }
+
   Widget _buildPhotoThumbnail(
     BuildContext context,
-    MarketFormBlockEntity block,
+    String key,
     FormPhotoEntry entry,
     bool isDark,
   ) {
@@ -1370,7 +1511,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                             const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 22),
                             const SizedBox(height: 2),
                             InkWell(
-                              onTap: () => _retryUploadPhoto(block.resolved.code, entry),
+                              onTap: () => _retryUploadPhoto(key, entry),
                               child: const Text(
                                 'Thử lại',
                                 style: TextStyle(
@@ -1396,7 +1537,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           top: -6,
           right: -6,
           child: GestureDetector(
-            onTap: () => _removePhoto(block.resolved.code, entry),
+            onTap: () => _removePhoto(key, entry),
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: const BoxDecoration(
@@ -1452,11 +1593,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Future<void> _pickAndUploadPhoto(
     BuildContext context,
-    MarketFormBlockEntity block,
-    ImageSource source,
+    String code,
+    String label,
+    int maxFiles,
   ) async {
-    final code = block.resolved.code;
-    final maxFiles = _resolveMaxFiles(block);
     final currentEntries = _photoEntries[code] ?? [];
     if (currentEntries.length >= maxFiles) return;
 
@@ -1496,7 +1636,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       try {
         final watermarked = await PhotoWatermarkHelper.addWatermark(
           imageFile: File(photo.path),
-          locationName: block.resolved.label,
+          locationName: label,
         );
         entry.localPath = watermarked.path;
 
@@ -1577,6 +1717,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   void _updateAnswersForImageField(String code) {
+    // Ảnh của một loại trong ô ma trận: ghép lại câu trả lời của CẢ ô.
+    final matrix = splitMatrixPhotoKey(code);
+    if (matrix != null) {
+      final block = widget.blocks.where((b) => b.resolved.code == matrix.$1).firstOrNull;
+      if (block != null) {
+        _errors.remove(matrix.$1);
+        _syncMatrixAnswer(block);
+      }
+      widget.onChanged?.call(_answers);
+      return;
+    }
     final entries = _photoEntries[code] ?? [];
     if (entries.isNotEmpty) {
       _answers[code] = entries

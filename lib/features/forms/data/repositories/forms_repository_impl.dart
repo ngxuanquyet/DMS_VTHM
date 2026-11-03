@@ -16,6 +16,7 @@ import '../models/form_photo_model.dart';
 import '../models/market_form_model.dart';
 import '../models/market_form_submission_model.dart';
 import '../services/forms_api_service.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 class FormsRepositoryImpl implements FormsRepository {
   final FormsApiService _apiService;
@@ -152,7 +153,9 @@ class FormsRepositoryImpl implements FormsRepository {
     final localPaths = {...?submission.localPhotoPaths?.values.expand((p) => p)};
     final hasPendingLocalPhotos = submission.answers.values.any((v) =>
         (v is List && v.any((item) => localPaths.contains(item.toString()))) ||
-        (v is String && localPaths.contains(v)));
+        (v is String && localPaths.contains(v)) ||
+        // Ô ma trận trưng bày: ảnh nằm ở `photos.<mã loại>` (#24767).
+        matrixPhotoStrings(v).any(localPaths.contains));
     // Phiếu khảo sát của lượt check-in NGOẠI TUYẾN chưa lên server (mã lượt âm): server không nhận ⇒ đi hàng đợi, đứng sau
     // dòng tạo lượt (hàng đợi tra mã lượt qua parentUuid). Gửi thẳng là 422 rồi báo lỗi, kẹt cổng phiếu bắt buộc.
     final visitNotOnServer = submission.visitId != null && submission.visitId! <= 0;
@@ -177,6 +180,11 @@ class FormsRepositoryImpl implements FormsRepository {
             final paths = entry.value;
             final newTokens = <String>[];
             for (final p in paths) {
+              // Ảnh đã có token mà không còn tệp trên máy (bản nháp khôi phục) — giữ nguyên.
+              if (isUploadedPhotoToken(p)) {
+                newTokens.add(p);
+                continue;
+              }
               final file = File(p);
               if (await file.exists()) {
                 final photoResult = await _apiService.uploadPhoto(file);
@@ -184,7 +192,7 @@ class FormsRepositoryImpl implements FormsRepository {
               }
             }
             if (newTokens.isNotEmpty) {
-              updatedAnswers[fieldCode] = newTokens;
+              applyPhotoList(updatedAnswers, fieldCode, newTokens);
             }
           }
           final retrySubmission = MarketFormSubmissionModel(
@@ -221,7 +229,8 @@ class FormsRepositoryImpl implements FormsRepository {
     if (paths == null || paths.isEmpty) return null;
     return {
       for (final e in paths.entries)
-        e.key: await OfflinePhotoStore.persist(e.value, dirName: 'offline_form_photos', prefix: '${uuid}_${e.key}'),
+        // Khoá ma trận `<ô>::<loại>` — bỏ ':' khỏi tên tệp.
+        e.key: await OfflinePhotoStore.persist(e.value, dirName: 'offline_form_photos', prefix: '${uuid}_${e.key.replaceAll(':', '_')}'),
     };
   }
 
