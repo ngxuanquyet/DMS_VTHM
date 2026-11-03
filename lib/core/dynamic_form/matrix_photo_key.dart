@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// Khoá ảnh của MỘT loại trưng bày trong ô Ma trận trưng bày (#24767): `<mã ô>::<mã loại>`.
 ///
 /// Dùng chung giữa màn điền biểu mẫu (bộ chụp/tải ảnh theo khoá) và hàng đợi ngoại tuyến (`_local_photo_paths` — tải ảnh
@@ -65,4 +67,32 @@ Future<dynamic> resolveMatrixPhotos(dynamic value, Future<String?> Function(Stri
     if (list.isNotEmpty) photos['${e.key}'] = list;
   }
   return Map<String, dynamic>.from(value)..['photos'] = photos;
+}
+
+/// Đường dẫn ảnh TRÊN MÁY (chưa là token) của mọi ô ma trận trong [source] — ở gốc và trong `data`. Dùng để dọn bản chép lâu
+/// dài sau khi điểm bán đã lên server.
+List<String> matrixLocalPaths(Map source) {
+  final out = <String>[];
+  void quet(Map m) {
+    for (final v in m.values) {
+      for (final s in matrixPhotoStrings(v)) {
+        if (!isUploadedPhotoToken(s) && !s.contains('/crm/customer-photos/public/')) out.add(s);
+      }
+    }
+  }
+
+  quet(source);
+  if (source['data'] is Map) quet(source['data'] as Map);
+  return out;
+}
+
+/// Xoá các bản chép ảnh ma trận trong thư mục ảnh ngoại tuyến của điểm bán (bỏ qua tệp ngoài thư mục đó / đã mất).
+Future<void> deleteOfflineMatrixPhotos(List<String> paths) async {
+  for (final p in paths) {
+    if (!p.contains('offline_customer_photos')) continue;
+    try {
+      final f = File(p);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
 }

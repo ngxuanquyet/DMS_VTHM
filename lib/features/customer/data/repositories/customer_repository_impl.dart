@@ -24,6 +24,7 @@ import '../utils/customer_payload_helper.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 final customerApiServiceProvider = Provider<CustomerApiService>((ref) {
   return CustomerApiService(ref.read(apiClientProvider));
@@ -676,6 +677,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
         final serverCode = dto.code.isNotEmpty ? dto.code : '';
 
         if (serverId > 0) {
+          // Ảnh ma trận đã lên server ⇒ dọn bản chép lâu dài trên máy.
+          await deleteOfflineMatrixPhotos(matrixLocalPaths(data));
           // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
           if (cleanPayload['materials'] is List) {
             await cacheCreatedOutletMaterials(
@@ -793,6 +796,22 @@ class CustomerRepositoryImpl implements CustomerRepository {
           _uploadMaterialPhoto,
         ),
       };
+    }
+
+    // 1c. Ô ma trận trưng bày (#24773): ảnh theo loại trên máy ⇒ token. Lỗi tải ném [NetworkException] ⇒ createCustomer rơi về
+    // đường hàng đợi (đồng bộ tải lại), không gửi đường dẫn máy cho server từ chối cả điểm bán.
+    if (matrixLocalPaths(source).isNotEmpty) {
+      source = Map<String, dynamic>.from(source);
+      for (final key in source.keys.toList()) {
+        source[key] = await resolveMatrixPhotos(source[key], _uploadPhotoOrQueue);
+      }
+      if (source['data'] is Map) {
+        final d = Map<String, dynamic>.from(source['data'] as Map);
+        for (final key in d.keys.toList()) {
+          d[key] = await resolveMatrixPhotos(d[key], _uploadPhotoOrQueue);
+        }
+        source['data'] = d;
+      }
     }
 
     // 2. Sử dụng CustomerPayloadHelper để xây dựng payload chuẩn 25 khoá gốc

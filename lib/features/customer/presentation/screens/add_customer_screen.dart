@@ -832,28 +832,15 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         payload.remove('lng');
       }
 
-      // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG ô — có mạng thì đổi ra token ngay; mất mạng thì chép vào thư
-      // mục lâu dài (ảnh tạm của máy ảnh bị dọn), hàng đợi đổi ra token lúc đồng bộ.
+      // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG ô — chép vào thư mục lâu dài (ảnh tạm của máy ảnh bị dọn). Kho
+      // điểm bán đổi ra token khi gửi; tải lỗi giữa chừng thì cả lượt tạo rơi về hàng đợi (không bị server từ chối vì đường dẫn).
       for (final key in payload.keys.toList()) {
         final v = payload[key];
         if (v is! Map || v['photos'] is! Map) continue;
-        payload[key] = await resolveMatrixPhotos(v, (path) async {
-          if (!isOnline) {
-            return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first;
-          }
-          try {
-            final toaDo = payload['coords'] is Map ? payload['coords'] as Map : const {};
-            final res = await repo.uploadCustomerPhoto(
-              path,
-              locationName: payload['name']?.toString() ?? 'Điểm bán mới',
-              lat: (toaDo['lat'] as num?)?.toDouble(),
-              lng: (toaDo['lng'] as num?)?.toDouble(),
-            );
-            return res['token']?.toString();
-          } catch (_) {
-            return null;
-          }
-        });
+        payload[key] = await resolveMatrixPhotos(
+          v,
+          (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first,
+        );
       }
 
       // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)

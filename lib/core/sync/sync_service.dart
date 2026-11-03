@@ -680,7 +680,9 @@ class SyncService {
       }
     }
 
-    // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG giá trị ô (gốc payload hoặc `data`) — đổi đường dẫn máy ra token.
+    // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG giá trị ô (gốc payload hoặc `data`) — đổi đường dẫn máy ra token;
+    // bản chép trên máy dọn ở bước 6.
+    final matrixPhotos = matrixLocalPaths(rawSource);
     Future<String?> taiAnh(String p) => _resolvePhotoToken(p);
     for (final key in rawSource.keys.toList()) {
       rawSource[key] = await resolveMatrixPhotos(rawSource[key], taiAnh);
@@ -839,6 +841,8 @@ class SyncService {
       }
     }
 
+    await deleteOfflineMatrixPhotos(matrixPhotos);
+
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
 
@@ -887,7 +891,9 @@ class SyncService {
       payload['photo_tokens'] = resolved;
     }
 
-    // Ô ma trận trưng bày (#24773): ảnh theo loại chụp lúc mất mạng (đường dẫn máy) ⇒ đổi ra token trước khi PATCH.
+    // Ô ma trận trưng bày (#24773): ảnh theo loại chụp lúc mất mạng (đường dẫn máy) ⇒ đổi ra token trước khi PATCH; dọn bản
+    // chép trên máy sau khi PATCH xong.
+    final matrixPhotos = matrixLocalPaths(payload);
     if (payload['data'] is Map) {
       final d = Map<String, dynamic>.from(payload['data'] as Map);
       for (final key in d.keys.toList()) {
@@ -901,6 +907,7 @@ class SyncService {
     payload['offline_queue'] = true;
     await _apiClient.patch('/crm/customers/$serverId', data: payload);
     await _db.markDone(entry.id, serverId: serverId);
+    await deleteOfflineMatrixPhotos(matrixPhotos);
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
   }
 
