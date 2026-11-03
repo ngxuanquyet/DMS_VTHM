@@ -11,7 +11,8 @@ import '../../../data/models/market_form_submission_model.dart';
 import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
-import 'note_field_widget.dart';
+import '../../../../../core/widgets/note_field_widget.dart';
+import '../../../../../core/dynamic_form/widgets/heading_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import 'route_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
@@ -665,7 +666,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     switch (type) {
       case 'heading':
-        return _buildHeading(block, isDark);
+        return HeadingFieldWidget(
+          code: block.resolved.code,
+          title: block.resolved.label,
+          description: block.resolved.description,
+          level: DynamicFormField.headingLevelOf({'config': block.resolved.configMap}),
+        );
       case 'divider':
         return const Divider(height: 24, thickness: 1);
       case 'note':
@@ -856,96 +862,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // ==========================================
   // NHÓM TRÌNH BÀY (HEADING / NOTE / DIVIDER)
   // ==========================================
-
-  /// Cấp tiêu đề (`config.level`): 1 = Tiêu đề (mặc định), 2 = Tiêu đề con; thiếu / không hợp lệ ⇒ 1.
-  static int headingLevelOf(MarketFormBlockEntity block) {
-    final cfg = block.resolved.configMap;
-    final raw = cfg?['level'];
-    final level = raw is num ? raw.toInt() : int.tryParse(raw?.toString().trim() ?? '');
-    return level == 2 ? 2 : 1;
-  }
-
-  Widget _buildHeading(MarketFormBlockEntity block, bool isDark) {
-    final hasDesc = block.resolved.description != null &&
-        block.resolved.description!.trim().isNotEmpty;
-    if (headingLevelOf(block) == 2) return _buildSubHeading(block, isDark, hasDesc);
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 4),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-            width: 2,
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.label_important_rounded,
-                size: 20,
-                color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  block.resolved.label,
-                  style: AppTypography.titleMedium(
-                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                  ).copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          if (hasDesc) ...[
-            const SizedBox(height: 4),
-            Text(
-              block.resolved.description!.trim(),
-              style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-              ).copyWith(fontSize: 12),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Tiêu đề con (cấp 2): chữ nhỏ hơn, thụt vào, vẫn hiện dòng mô tả.
-  Widget _buildSubHeading(MarketFormBlockEntity block, bool isDark, bool hasDesc) {
-    final accent = isDark ? AppColors.primaryFixedDim : AppColors.primary;
-    return Container(
-      key: ValueKey('subheading_${block.resolved.code}'),
-      margin: const EdgeInsets.only(left: 16, top: 4),
-      padding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
-      decoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 3))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            block.resolved.label,
-            style: AppTypography.titleMedium(
-              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-            ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
-          if (hasDesc) ...[
-            const SizedBox(height: 2),
-            Text(
-              block.resolved.description!.trim(),
-              style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-              ).copyWith(fontSize: 12),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
   Widget _buildNote(MarketFormBlockEntity block, bool isDark) => NoteFieldWidget(
         title: block.resolved.label,

@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../../../core/utils/rich_image_cache.dart';
-import '../../../../../core/theme/app_colors.dart';
-import '../../../../../core/theme/app_typography.dart';
+import '../utils/rich_image_cache.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 
-/// Ô "Tài liệu hướng dẫn" (`note`) của biểu mẫu thị trường: [title] làm tiêu đề có biểu tượng; BẤM mới mở / thu phần
+/// Ô "Ghi chú hướng dẫn" (`note`) — dùng chung biểu mẫu thị trường và form Thêm/Sửa điểm bán: [title] làm tiêu đề có biểu tượng; BẤM mới mở / thu phần
 /// [description] — HTML server đã làm sạch (đoạn, đậm/nghiêng, danh sách, liên kết, ảnh `<img data-token>`).
 /// Ô note cũ: description chữ thường ⇒ hiện nguyên văn (giữ xuống dòng); không có tiêu đề ⇒ hiện thẳng nội dung như
 /// trước, không thu gọn. Không ghi gì vào câu trả lời.
@@ -19,8 +19,10 @@ class NoteFieldWidget extends StatefulWidget {
 
   /// CHỈ thẻ của trình soạn văn bản — chữ thường của ô note cũ kiểu `<Tên SP>` không bị coi là HTML (mất chữ).
   static final RegExp _htmlTag = RegExp(
-      // Sau tên thẻ phải là '>' / '/>' hoặc một thuộc tính `ten=` — chữ thường kiểu `<sữa …>`, `<b 2 thùng>` không khớp.
-      r'<\s*/?\s*(p|br|strong|b|em|i|u|s|ul|ol|li|a|img|h[1-6]|span|div|blockquote|hr|table|thead|tbody|tr|td|th|code|pre|sub|sup)(\s*/?>|\s+[a-zA-Z-]+\s*=[^>]*>)',
+      // CÙNG luật server (RichTextHelper::EDITOR_HTML_RE) + SPA (lib/richtext.ts): khoảng trắng chỉ [ \t\r\n\f] (không NBSP —
+      // PHP không /u coi \s là ASCII; lệch là server bỏ qua làm sạch mà app vẽ HTML). Sau tên thẻ phải là '>' / '/>' hoặc
+      // thuộc tính `ten=` — chữ thường kiểu `<sữa …>`, `<b 2 thùng>` không khớp.
+      r'<[ \t\r\n\f]*/?[ \t\r\n\f]*(p|br|strong|b|em|i|u|s|ul|ol|li|a|img|h[1-6]|span|div|blockquote|hr|table|thead|tbody|tr|td|th|code|pre|sub|sup)([ \t\r\n\f]*/?>|[ \t\r\n\f]+[a-zA-Z-]+[ \t\r\n\f]*=[^>]*>)',
       caseSensitive: false);
 
   /// Nội dung có thẻ HTML (khác chữ thường của ô note cũ).

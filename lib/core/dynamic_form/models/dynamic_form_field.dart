@@ -57,7 +57,17 @@ enum DynamicFormFieldType {
 
   /// Ô CÔNG THỨC (`formula`) — chỉ đọc, app tự tính từ các ô khác theo [DynamicFormField.formula]; không gửi lên
   /// (server tự tính lại và lưu)
-  formula;
+  formula,
+
+  /// Ô TRÌNH BÀY — tiêu đề phần (`heading`), cấp ở [DynamicFormField.level]; không thu giá trị
+  heading,
+
+  /// Ô TRÌNH BÀY — Ghi chú hướng dẫn (`note`): tiêu đề [DynamicFormField.label], bấm mở/thu nội dung
+  /// [DynamicFormField.helperText] (HTML đã làm sạch); không thu giá trị
+  note;
+
+  /// Ô chỉ để trình bày (tiêu đề / ghi chú): không có giá trị, không vào formData gửi đi, không kiểm bắt buộc.
+  bool get isDisplayOnly => this == heading || this == note;
 
   /// Chuyển đổi chuỗi type từ API (case-insensitive) sang enum
   static DynamicFormFieldType fromString(String? typeStr) {
@@ -76,7 +86,6 @@ enum DynamicFormFieldType {
       case 'longtext':
       case 'textarea':
       case 'paragraph':
-      case 'note':
       case 'description':
         return DynamicFormFieldType.longText;
 
@@ -170,6 +179,12 @@ enum DynamicFormFieldType {
 
       case 'formula':
         return DynamicFormFieldType.formula;
+
+      case 'heading':
+        return DynamicFormFieldType.heading;
+
+      case 'note':
+        return DynamicFormFieldType.note;
 
       default:
         return DynamicFormFieldType.text;
@@ -310,6 +325,22 @@ class DynamicFormField {
   /// Thứ tự sắp xếp
   final int order;
 
+  /// Cấp của ô tiêu đề ([DynamicFormFieldType.heading], khoá phẳng `level` của schema): 1 = tiêu đề mở mục, 2 = tiêu
+  /// đề con (chữ nhỏ hơn, thụt vào). Ô khác / thiếu / không hợp lệ ⇒ 1.
+  final int level;
+
+  /// DANH TÍNH mục khi [section] mở bởi ô tiêu đề của Cấu hình trường (= mã ô tiêu đề); `null` = mục app tự đặt.
+  /// Form nhóm ô theo danh tính này (hai tiêu đề cùng nhãn là hai mục khác nhau) và KHÔNG đoán kiểu mục theo chữ trong
+  /// tên (mục "động" bỏ khung, mục "vị trí" thành khối bản đồ).
+  final String? sectionKey;
+
+  /// Ô tiêu đề này chỉ còn là DÒNG MÔ TẢ của tiêu đề cấp 1 (tên tiêu đề đã thành tiêu đề khung mục) — form chỉ vẽ mô
+  /// tả, và gắn nó vào khúc vẽ đầu tiên của mục.
+  final bool isSectionDescription;
+
+  /// Ô chỉ để trình bày (tiêu đề / ghi chú) — xem [DynamicFormFieldType.isDisplayOnly].
+  bool get isDisplayOnly => type.isDisplayOnly;
+
   /// Chú giải / Hướng dẫn nhập trường
   String? get description => helperText;
 
@@ -344,13 +375,29 @@ class DynamicFormField {
     this.section,
     this.badge,
     this.order = 0,
+    this.level = 1,
+    this.sectionKey,
+    this.isSectionDescription = false,
   });
+
+  /// Cấp tiêu đề — luật CHUNG form điểm bán và biểu mẫu thị trường: khoá phẳng `level` (schema điểm bán) rồi
+  /// `config.level`; chỉ 2 là tiêu đề con, thiếu / không hợp lệ ⇒ 1.
+  static int headingLevelOf(Map<dynamic, dynamic> json) {
+    final raw = json['level'] ?? (json['config'] is Map ? (json['config'] as Map)['level'] : null);
+    final level = raw is num ? raw.toInt() : int.tryParse(raw?.toString().trim() ?? '');
+    return level == 2 ? 2 : 1;
+  }
 
   factory DynamicFormField.fromJson(Map<String, dynamic> json) {
     final typeStr = json['type']?.toString() ??
         json['input_type']?.toString() ??
         json['data_type']?.toString();
     var type = DynamicFormFieldType.fromString(typeStr);
+    // `note` là Ghi chú hướng dẫn (ô trình bày) CHỈ khi là loại ô của server (`input_type`); khoá cũ `type`/`data_type`
+    // = 'note' là ô Ghi chú NHẬP LIỆU kiểu cũ ⇒ giữ ô chữ dài thu giá trị.
+    if (type == DynamicFormFieldType.note && (json['type'] != null || json['input_type'] == null)) {
+      type = DynamicFormFieldType.longText;
+    }
     final formula = FormulaConfig.fromMap(json['formula']);
     if (formula != null) type = DynamicFormFieldType.formula;
 
@@ -445,8 +492,9 @@ class DynamicFormField {
       type: type,
       placeholder: json['placeholder']?.toString() ?? json['hint']?.toString(),
       helperText: helperText,
-      // Ô công thức không bao giờ bắt buộc (không có ô nhập).
+      // Ô công thức / ô trình bày không bao giờ bắt buộc (không có ô nhập).
       isRequired: formula == null &&
+          !type.isDisplayOnly &&
           (json['required'] == true || json['is_required'] == true || json['is_required'] == 1),
       isReadOnly: json['read_only'] == true ||
           json['is_readonly'] == true ||
@@ -482,6 +530,7 @@ class DynamicFormField {
       section: section,
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
+      level: headingLevelOf(json),
     );
   }
 
@@ -517,6 +566,9 @@ class DynamicFormField {
     String? section,
     String? badge,
     int? order,
+    int? level,
+    String? sectionKey,
+    bool? isSectionDescription,
   }) {
     return DynamicFormField(
       code: code ?? this.code,
@@ -549,6 +601,9 @@ class DynamicFormField {
       section: section ?? this.section,
       badge: badge ?? this.badge,
       order: order ?? this.order,
+      level: level ?? this.level,
+      sectionKey: sectionKey ?? this.sectionKey,
+      isSectionDescription: isSectionDescription ?? this.isSectionDescription,
     );
   }
 

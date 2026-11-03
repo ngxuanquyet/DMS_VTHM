@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
 import 'package:vthm_dms/core/utils/rich_image_cache.dart';
 import 'package:vthm_dms/features/route/presentation/providers/user_routes_provider.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
@@ -268,10 +269,10 @@ void main() {
       await tester.pumpWidget(_wrap(blocks, key));
       await tester.pumpAndSettle();
 
-      expect(MarketFormRendererState.headingLevelOf(blocks[0]), 1);
-      expect(MarketFormRendererState.headingLevelOf(blocks[1]), 1);
-      expect(MarketFormRendererState.headingLevelOf(blocks[2]), 2);
-      expect(MarketFormRendererState.headingLevelOf(blocks[3]), 2);
+      expect(DynamicFormField.headingLevelOf({'config': blocks[0].resolved.configMap}), 1);
+      expect(DynamicFormField.headingLevelOf({'config': blocks[1].resolved.configMap}), 1);
+      expect(DynamicFormField.headingLevelOf({'config': blocks[2].resolved.configMap}), 2);
+      expect(DynamicFormField.headingLevelOf({'config': blocks[3].resolved.configMap}), 2);
 
       expect(find.byKey(const ValueKey('subheading_h1')), findsNothing);
       expect(find.byKey(const ValueKey('subheading_h1x')), findsNothing);

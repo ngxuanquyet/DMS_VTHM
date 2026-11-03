@@ -16,7 +16,7 @@ void main() {
       o('nha_phan_phoi', section: 'Thông tin mở rộng (Động)'),
       o('region_id', section: 'Thông tin chung'),
       o('phone', section: 'Thông tin liên hệ'),
-    ], {});
+    ]);
     expect(f.map((x) => x.code), ['name', 'nha_phan_phoi', 'region_id', 'phone']);
     expect(f.map((x) => x.section).toSet(), {'Thông tin điểm bán'});
   });
@@ -24,10 +24,10 @@ void main() {
   test('ô heading mở mục cho các ô sau nó và không thành ô', () {
     final f = sectionsFromConfig([
       o('name'),
-      const DynamicFormField(code: 'h1', label: 'Liên hệ', type: DynamicFormFieldType.text),
+      const DynamicFormField(code: 'h1', label: 'Liên hệ', type: DynamicFormFieldType.heading),
       o('phone'),
       o('email'),
-    ], {'h1'});
+    ]);
     expect(f.map((x) => x.code), ['name', 'phone', 'email']);
     expect(f.map((x) => x.section), ['Thông tin điểm bán', 'Liên hệ', 'Liên hệ']);
   });
@@ -37,7 +37,7 @@ void main() {
       o('name'),
       const DynamicFormField(code: 'coords', label: 'Toạ độ', type: DynamicFormFieldType.location),
       o('mw_nhan_1'),
-    ], {});
+    ]);
     await tester.pumpWidget(ProviderScope(
       child: MaterialApp(
         home: Scaffold(body: SingleChildScrollView(child: DynamicFormBuilder(fields: fields, keepFieldOrder: true))),

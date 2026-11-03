@@ -148,17 +148,26 @@ String optionLabel(String code, String name) {
   return ten.isEmpty || ten == code.trim() ? code : '$code - $ten';
 }
 
-/// Gán MỤC theo Cấu hình trường điểm bán, giữ nguyên thứ tự: ô `heading` (mã trong [headingCodes]) mở một mục cho mọi ô
-/// sau nó và không vẽ thành ô; ô đứng trước tiêu đề đầu tiên thuộc mục chung "Thông tin điểm bán".
-List<DynamicFormField> sectionsFromConfig(List<DynamicFormField> fields, Set<String?> headingCodes) {
+/// Gán MỤC theo Cấu hình trường điểm bán, giữ nguyên thứ tự: ô tiêu đề cấp 1 ([DynamicFormFieldType.heading]) có nhãn
+/// mở một mục cho mọi ô sau nó — danh tính mục = mã ô tiêu đề ([DynamicFormField.sectionKey]), tên = nhãn đã trim thành
+/// tiêu đề khung mục; dòng mô tả (nếu có) ở lại thành ô [DynamicFormField.isSectionDescription] đầu mục. Ô đứng trước
+/// tiêu đề đầu tiên thuộc mục chung "Thông tin điểm bán". Tiêu đề con (cấp 2) và tiêu đề cấp 1 nhãn rỗng KHÔNG mở mục:
+/// vẽ tại chỗ (nhãn rỗng ⇒ chỉ dòng mô tả).
+List<DynamicFormField> sectionsFromConfig(List<DynamicFormField> fields) {
   var muc = 'Thông tin điểm bán';
+  String? khoa;
   final out = <DynamicFormField>[];
   for (final f in fields) {
-    if (headingCodes.contains(f.code)) {
-      muc = f.label.isNotEmpty ? f.label : muc;
+    final ten = f.label.trim();
+    if (f.type == DynamicFormFieldType.heading && f.level != 2 && ten.isNotEmpty) {
+      muc = ten;
+      khoa = f.code;
+      if ((f.helperText?.trim() ?? '').isNotEmpty) {
+        out.add(f.copyWith(section: muc, sectionKey: khoa, isSectionDescription: true));
+      }
       continue;
     }
-    out.add(f.copyWith(section: muc));
+    out.add(f.copyWith(section: muc, sectionKey: khoa));
   }
   return out;
 }
@@ -266,6 +275,7 @@ List<DynamicFormField> buildCustomerFormFields(
         final label = f.label.toLowerCase();
         if (code == 'code' || code == 'id') return false;
         if (code == 'status' || code == 'is_active') return false;
+        if (f.isDisplayOnly) return true; // tiêu đề / ghi chú: nhãn là chữ trình bày, không lọc theo nhãn
         if (label.contains('hoạt động') || label.contains('ngừng hoạt động')) return false;
         return true;
       })
@@ -457,9 +467,9 @@ List<DynamicFormField> buildCustomerFormFields(
   }
 
   // Cấu hình toàn bộ các trường ảnh ở màn nhập khách hàng: chỉ cho phép chụp từ camera, không cho chọn từ thư viện
-  // Ô công thức không bao giờ là ô ảnh (mã như `thanh_tien` chứa "anh_" vẫn là công thức).
+  // Ô công thức / ô trình bày không bao giờ là ô ảnh (mã như `thanh_tien` chứa "anh_" vẫn là công thức).
   for (int i = 0; i < fields.length; i++) {
-    if (fields[i].type == DynamicFormFieldType.formula) continue;
+    if (fields[i].type == DynamicFormFieldType.formula || fields[i].isDisplayOnly) continue;
     if (fields[i].type == DynamicFormFieldType.photo || isCustomerPhotoKey(fields[i].code)) {
       fields[i] = fields[i].copyWith(
         type: DynamicFormFieldType.photo,
@@ -499,17 +509,12 @@ List<DynamicFormField> buildCustomerFormFields(
   // nhóm app tự đặt theo mã ô, không tự thêm ô động ngoài cấu hình. Mục = ô `heading` của cấu hình (mở một mục cho
   // mọi ô sau nó); chưa có tiêu đề nào thì một mục chung. Ô app tự chèn (tuyến bán hàng, kênh/tuyến khi schema
   // cũ, ô dự phòng thiếu) nằm ngay cạnh ô liên quan nên đi theo mục của ô đứng trước.
-  final headingCodes = fieldsJson
-      .whereType<Map>()
-      .where((f) => f['input_type']?.toString() == 'heading')
-      .map((f) => f['code']?.toString())
-      .toSet();
-  final theoMuc = sectionsFromConfig(fields, headingCodes);
+  final theoMuc = sectionsFromConfig(fields);
 
   // 🔴 Bỏ các text/badge '(Bắt buộc)', '(Region - bắt buộc để sinh mã)' trong nhãn vì trường bắt buộc đã có dấu * đỏ
   return [
     for (final f in theoMuc)
-      f.copyWith(
+      if (f.isDisplayOnly) f else f.copyWith(
         label: f.label
             .replaceAll(RegExp(r'\s*\((?:bắt buộc|Bắt buộc|Region\s*-\s*bắt buộc để sinh mã)\)', caseSensitive: false), '')
             .replaceAll(RegExp(r'\s*-\s*bắt buộc\b', caseSensitive: false), '')

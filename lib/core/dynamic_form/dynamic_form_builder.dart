@@ -12,6 +12,7 @@ import 'widgets/boolean_field_widget.dart';
 import 'widgets/datetime_field_widget.dart';
 import 'widgets/gps_coordinates_field_widget.dart';
 import 'widgets/gps_field_widget.dart';
+import 'widgets/heading_field_widget.dart';
 import 'widgets/long_text_field_widget.dart';
 import 'widgets/multiple_choice_field_widget.dart';
 import 'widgets/number_field_widget.dart';
@@ -22,6 +23,7 @@ import 'widgets/text_field_widget.dart';
 import '../widgets/location_field_widget.dart';
 import '../widgets/erp_partner_field_widget.dart';
 import '../widgets/geo_select_field_widget.dart';
+import '../widgets/note_field_widget.dart';
 import '../map/app_map_location_card.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
@@ -133,6 +135,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       // Khởi tạo trước key và focusNode cho trường
       _getFieldKey(field.code);
       _getFocusNode(field.code);
+      // Ô trình bày (tiêu đề / ghi chú) không thu giá trị ⇒ KHÔNG có khoá trong [_formData]: không lọt vào dữ liệu gửi
+      // đi, bản lưu nháp, hàng đợi, so sánh "đã thay đổi" — kể cả khi bản lưu cũ / dữ liệu điểm bán mang trùng mã.
+      if (field.isDisplayOnly) continue;
 
       // Nếu người dùng đã nhập hoặc chỉnh sửa dữ liệu của trường này -> Giữ nguyên 100% không bị mất
       if (preserveExisting && existingData.containsKey(field.code) && existingData[field.code] != null) {
@@ -328,7 +333,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
     for (final field in widget.fields) {
       // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc); ô công thức chỉ đọc, không kiểm.
-      if (hidden.contains(field.code) || field.type == DynamicFormFieldType.formula) continue;
+      if (hidden.contains(field.code) || field.type == DynamicFormFieldType.formula || field.isDisplayOnly) continue;
       final value = _formData[field.code];
 
       // 0. Ô có phép kiểm riêng (màn gọi cung cấp) — thay cho kiểm "bắt buộc" mặc định.
@@ -520,6 +525,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         lower.isEmpty;
   }
 
+  /// Khúc chỉ gồm ô toạ độ (coords / lat / lng) — ô trình bày (dòng mô tả, ghi chú) không tính; phải có ít nhất một ô toạ độ.
+  bool _onlyCoords(List<DynamicFormField> fs) {
+    final nhap = fs.where((f) => !f.isDisplayOnly);
+    return nhap.isNotEmpty && nhap.every((f) => f.isCoordsField || f.code == 'lat' || f.code == 'lng');
+  }
+
   bool _isLocationSection(String title) {
     final lower = title.toLowerCase().trim();
     return lower.contains('vị trí') ||
@@ -535,17 +546,25 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     // Phân nhóm các trường theo Section (nếu có) — bỏ các ô đang ẩn theo `show_if`
     _formulaValuesCache = formulaValues;
     final hidden = _hiddenWith(_formulaValuesCache);
-    final sections = <MapEntry<String, List<DynamicFormField>>>[];
-    for (final field in widget.fields) {
-      if (hidden.contains(field.code)) continue;
-      final sec = field.isCoordsField ? 'Vị trí trên bản đồ' : (field.section ?? 'Thông tin chung');
+    // Mục theo cấu hình (danh tính [DynamicFormField.sectionKey], không thì tên mục) KHÔNG còn ô nhập nào được vẽ (kể cả
+    // bản đồ) ⇒ bỏ luôn ô trình bày của mục (mô tả, tiêu đề con, ghi chú) — không vẽ khung chỉ có chữ trình bày.
+    String mucCua(DynamicFormField f) => f.sectionKey != null ? 'h:${f.sectionKey}' : 's:${f.section ?? 'Thông tin chung'}';
+    final dangHien = widget.fields.where((f) => !hidden.contains(f.code)).toList();
+    final mucCoNhap = {for (final f in dangHien) if (!f.isDisplayOnly) mucCua(f)};
+
+    // Chia khúc theo thứ tự cấu hình. Khoá khúc = danh tính mục; bản đồ (coords) luôn là khúc riêng.
+    final sections = <({String key, String title, List<DynamicFormField> fields})>[];
+    for (final field in dangHien) {
+      if (field.isDisplayOnly && !mucCoNhap.contains(mucCua(field))) continue;
+      final key = field.isCoordsField ? 'coords' : mucCua(field);
+      final title = field.isCoordsField ? 'Vị trí trên bản đồ' : (field.section ?? 'Thông tin chung');
       final khoi = widget.keepFieldOrder
-          ? (sections.isNotEmpty && sections.last.key == sec ? sections.last : null)
-          : sections.where((e) => e.key == sec).firstOrNull;
+          ? (sections.isNotEmpty && sections.last.key == key ? sections.last : null)
+          : sections.where((e) => e.key == key).firstOrNull;
       if (khoi != null) {
-        khoi.value.add(field);
+        khoi.fields.add(field);
       } else {
-        sections.add(MapEntry(sec, [field]));
+        sections.add((key: key, title: title, fields: [field]));
       }
     }
 
@@ -554,14 +573,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       children: [
         ...sections.indexed.map((cap) {
           final secEntry = cap.$2;
-          final sectionTitle = secEntry.key;
-          final sectionFields = secEntry.value;
-          // keepFieldOrder: mục bị bản đồ (hoặc khối khác) chia đôi — phần sau vẫn trong khung nhưng KHÔNG lặp tiêu đề.
-          final noiTiep = sections.take(cap.$1).any((e) => e.key == sectionTitle);
+          final sectionTitle = secEntry.title;
+          final sectionFields = secEntry.fields;
+          // Mục mở bởi tiêu đề của cấu hình: KHÔNG đoán kiểu mục theo chữ trong tên.
+          final theoTieuDe = sectionFields.any((f) => f.sectionKey != null && !f.isCoordsField);
+          // keepFieldOrder: mục bị bản đồ (hoặc khối khác) chia đôi — phần sau vẫn trong khung nhưng KHÔNG lặp tiêu đề
+          // (so theo DANH TÍNH mục, không theo tên).
+          final noiTiep = sections.take(cap.$1).any((e) => e.key == secEntry.key);
 
           // 🔴 Bỏ hẳn card thông tin mở rộng (động): không vẽ Card container và không vẽ Header bar,
           // các field được vẽ trực tiếp ra ngoài layout form
-          if (_isDynamicSection(sectionTitle)) {
+          if (!theoTieuDe && _isDynamicSection(sectionTitle)) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Column(
@@ -573,7 +595,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
           // 🔴 Giống form sửa điểm bán: Bỏ hẳn card bọc ở ngoài với field toạ độ / vị trí trên bản đồ,
           // vẽ trực tiếp AppMapLocationCard ra ngoài layout form kèm header phân đoạn
-          if (_isLocationSection(sectionTitle) || sectionFields.every((f) => f.isCoordsField || f.code == 'lat' || f.code == 'lng')) {
+          if ((!theoTieuDe && _isLocationSection(sectionTitle)) || _onlyCoords(sectionFields)) {
             final isCoordsRequired = sectionFields.any((f) => f.isRequired);
             return Padding(
               padding: const EdgeInsets.only(bottom: 24),
@@ -1055,6 +1077,25 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           value: value,
           errorText: errorText,
           onChanged: (id) => _updateGeo(field, id),
+        );
+
+      case DynamicFormFieldType.heading:
+        final moTa = field.helperText?.trim() ?? '';
+        // Dòng mô tả của tiêu đề cấp 1 đã thành tiêu đề khung mục / tiêu đề cấp 1 nhãn rỗng: chỉ vẽ dòng mô tả.
+        if (field.isSectionDescription || (field.level != 2 && field.label.trim().isEmpty)) {
+          return moTa.isEmpty
+              ? const SizedBox.shrink()
+              : Padding(padding: const EdgeInsets.only(bottom: 14), child: HeadingFieldWidget.descriptionText(context, moTa));
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: HeadingFieldWidget(code: field.code, title: field.label, description: field.helperText, level: field.level),
+        );
+
+      case DynamicFormFieldType.note:
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: NoteFieldWidget(title: field.label, description: field.helperText),
         );
 
       case DynamicFormFieldType.formula:
