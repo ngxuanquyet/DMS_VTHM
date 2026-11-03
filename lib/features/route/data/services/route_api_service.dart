@@ -3,22 +3,19 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/database/app_database.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/account_key.dart';
-import '../../../customer/domain/entities/customer_entity.dart';
 import '../../domain/entities/route_entity.dart';
 import '../models/route_model.dart';
 
 class RouteApiService {
   final ApiClient _apiClient;
-  final AppDatabase? _db;
 
   static const String _legacyUserRoutesCacheKey = 'dms_user_routes_cache_v1';
   static const String _legacyRouteDetailCacheKey = 'dms_route_detail_cache_v1';
   static const String _legacyDealerCheckinCacheKey = 'dms_dealer_checkin_data_cache_v1';
 
-  RouteApiService(this._apiClient, [this._db]);
+  RouteApiService(this._apiClient);
 
   /// Lấy họ tên hiển thị của tài khoản hiện tại
   Future<String> _getCurrentUserName(SharedPreferences prefs) async {
@@ -38,7 +35,8 @@ class RouteApiService {
   /// Cache key phân vùng theo từng tài khoản
   Future<String> _getUserRoutesCacheKey(SharedPreferences prefs) async {
     final accountKey = currentAccountKey(prefs);
-    return 'dms_user_routes_${accountKey}_v2';
+    // v3: bản v2 của bản app cũ có thể mang id tuyến GIẢ 1, 2, 3… (#24698 vòng 3) — bỏ, tải lại.
+    return 'dms_user_routes_${accountKey}_v3';
   }
 
   Future<String> _getRouteDetailCacheKey(SharedPreferences prefs) async {
@@ -55,6 +53,8 @@ class RouteApiService {
   Future<void> _cleanStaleMockRoutes(SharedPreferences prefs, String cacheKey) async {
     // 1. Xóa cache legacy dùng chung
     await prefs.remove(_legacyUserRoutesCacheKey);
+    // Bản v2 có thể mang id tuyến giả của bản app cũ (#24698 vòng 3).
+    await prefs.remove('dms_user_routes_${currentAccountKey(prefs)}_v2');
     await prefs.remove(_legacyRouteDetailCacheKey);
     await prefs.remove(_legacyDealerCheckinCacheKey);
 
@@ -71,80 +71,6 @@ class RouteApiService {
         await prefs.remove(cacheKey);
       }
     }
-  }
-
-  /// Trích xuất danh sách tuyến trực tiếp từ SQLite của khách hàng đã lưu trên máy
-  Future<List<UserRouteEntity>> _extractRoutesFromLocalDatabase(
-    SharedPreferences prefs,
-    String cacheKey,
-  ) async {
-    if (_db == null) return [];
-    try {
-      final localCustomers = await _db.getAllLocalCustomers();
-      if (localCustomers.isEmpty) return [];
-
-      final currentUserName = await _getCurrentUserName(prefs);
-      final isMockUser = currentUserName.toLowerCase().contains('vũ tùng dương') ||
-          currentUserName.toLowerCase().contains('vu tung duong');
-
-      final routeMap = <String, int>{};
-      int autoIdCounter = 1;
-
-      for (final c in localCustomers) {
-        // Trích xuất từ dynamicFieldsJson nếu có route_ids hoặc routes
-        if (c.dynamicFieldsJson.isNotEmpty) {
-          try {
-            final dyn = jsonDecode(c.dynamicFieldsJson) as Map<String, dynamic>;
-            final dynRoutes = dyn['routes'];
-            final dynRouteIds = dyn['route_ids'];
-            if (dynRoutes is List) {
-              for (int i = 0; i < dynRoutes.length; i++) {
-                final rName = dynRoutes[i].toString().trim();
-                if (rName.isNotEmpty &&
-                    !CustomerEntity.isInvalidOrProvinceRoute(rName, provinceName: c.provinceName) &&
-                    (isMockUser || (!rName.contains('Vũ Tùng Dương') && !rName.contains('Vu Tung Duong')))) {
-                  int id = autoIdCounter++;
-                  if (dynRouteIds is List && i < dynRouteIds.length) {
-                    final parsedId = int.tryParse(dynRouteIds[i].toString());
-                    if (parsedId != null && parsedId > 0) id = parsedId;
-                  }
-                  routeMap.putIfAbsent(rName, () => id);
-                }
-              }
-            }
-          } catch (_) {}
-        }
-
-        // Trích xuất từ c.route
-        final rawRoute = c.route.trim();
-        if (rawRoute.isNotEmpty &&
-            !CustomerEntity.isInvalidOrProvinceRoute(rawRoute, provinceName: c.provinceName)) {
-          final parts = rawRoute.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
-          for (final p in parts) {
-            if (!CustomerEntity.isInvalidOrProvinceRoute(p, provinceName: c.provinceName) &&
-                (isMockUser || (!p.contains('Vũ Tùng Dương') && !p.contains('Vu Tung Duong')))) {
-              routeMap.putIfAbsent(p, () => autoIdCounter++);
-            }
-          }
-        }
-      }
-
-      if (routeMap.isNotEmpty) {
-        final routes = routeMap.entries
-            .map((entry) => UserRouteEntity(id: entry.value, name: entry.key, code: entry.key))
-            .toList();
-
-        await prefs.setString(
-          cacheKey,
-          jsonEncode(routes.map((r) => r.toJson()).toList()),
-        );
-        debugPrint('[RouteApiService] Đã trích xuất ${routes.length} tuyến từ SQLite khách hàng cho tài khoản hiện tại');
-        return routes;
-      }
-    } catch (e) {
-      debugPrint('[RouteApiService] Không thể trích xuất tuyến từ SQLite: $e');
-    }
-    return [];
   }
 
   Future<RouteDetailModel> getRouteDetail({bool forceRefresh = false}) async {
@@ -336,6 +262,8 @@ class RouteApiService {
           );
           return routes;
         }
+        // Máy chủ trả RỖNG (không còn tuyến nào) ⇒ bỏ bộ đệm cũ, đừng phục vụ lại danh sách cũ (#24698 vòng 3).
+        await prefs.remove(cacheKey);
       }
     } catch (_) {
       // 3. Khi không có mạng hoặc lỗi kết nối -> Đọc lại từ cache tài khoản
@@ -354,17 +282,8 @@ class RouteApiService {
         } catch (_) {}
       }
 
-      // 4. Nếu cache chưa có và đang offline -> Lấy tuyến thực tế từ SQLite của tài khoản
-      final localRoutes = await _extractRoutesFromLocalDatabase(prefs, cacheKey);
-      if (localRoutes.isNotEmpty) {
-        return localRoutes;
-      }
-    }
-
-    // Cuối cùng thử trích xuất từ SQLite nếu API trả rỗng hoặc thất bại
-    final fallbackLocalRoutes = await _extractRoutesFromLocalDatabase(prefs, cacheKey);
-    if (fallbackLocalRoutes.isNotEmpty) {
-      return fallbackLocalRoutes;
+      // Không trích tuyến từ điểm bán trong máy: id tuyến lưu ở điểm bán có thể là id GIẢ của bản app cũ (1, 2, 3… trùng
+      // tuyến thật trên prod) — chỉ tin danh sách /dms/routes/mine (#24698 vòng 3, chủ hệ thống chốt 03/11/2026).
     }
 
     return [];
@@ -395,6 +314,8 @@ class RouteApiService {
             cacheKey,
             jsonEncode(routes.map((r) => r.toJson()).toList()),
           );
+        } else {
+          await prefs.remove(cacheKey);
         }
       }
     } catch (_) {}

@@ -60,10 +60,7 @@ import '../../../visit/data/repositories/visit_material_repository.dart' show vi
 const Duration cancelWaitForSyncTimeout = Duration(seconds: 15);
 
 final routeApiServiceProvider = Provider<RouteApiService>((ref) {
-  return RouteApiService(
-    ref.read(apiClientProvider),
-    ref.read(appDatabaseProvider),
-  );
+  return RouteApiService(ref.read(apiClientProvider));
 });
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {

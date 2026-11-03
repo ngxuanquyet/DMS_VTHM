@@ -323,11 +323,10 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       final rId = int.tryParse(rawRouteIds.toString());
       if (rId != null) finalRouteIds = [rId];
     }
-    if (finalRouteIds.isEmpty && widget.customer.routeIds.isNotEmpty) {
-      finalRouteIds = widget.customer.routeIds;
-    } else if (finalRouteIds.isEmpty && userRoutes.isNotEmpty) {
-      finalRouteIds = [userRoutes.first.id];
-    }
+    // CHỈ gửi tuyến có id THẬT của nhân viên — id cũ trong máy có thể là id giả của bản app cũ (1, 2, 3… trùng tuyến thật
+    // trên prod); không chọn gì thì KHÔNG tự gán tuyến đầu tiên (#24698 vòng 3).
+    final realRouteIds = realRouteOptions(userRoutes).map((o) => o.value).toSet();
+    finalRouteIds = finalRouteIds.where(realRouteIds.contains).toList();
 
     setState(() => _isSubmitting = true);
 
@@ -763,52 +762,22 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
               ),
             ),
             data: (schemaData) {
-              // Tuyến bán hàng từ GET /dms/routes/mine hoặc danh sách tuyến
+              // Tuyến bán hàng từ GET /dms/routes/mine — CHỈ tuyến có id thật.
               final userRoutes = ref.watch(userAssignedRoutesProvider).valueOrNull ?? [];
-              // Chỉ lấy 2 trường cần — theo dõi trọn state Tuyến (2.000 điểm bán, đổi theo GPS/lọc/tải ngầm) làm cả form
-              // (DynamicFormBuilder) dựng lại liên tục khi đang nhập.
-              final currentRouteState = ref.watch(
-                routeViewModelProvider.select((s) => (availableRoutes: s.availableRoutes, selectedRoute: s.selectedRoute)),
-              );
 
-              final List<DynamicFormOption> dynamicRouteOptions;
-              if (userRoutes.isNotEmpty) {
-                dynamicRouteOptions = userRoutes
-                    .map((r) => DynamicFormOption(
-                          label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'),
-                          value: r.id,
-                        ))
-                    .toList();
-              } else {
-                final validRoutes = currentRouteState.availableRoutes
-                    .where((r) => r != 'Tất cả tuyến' && !CustomerEntity.isInvalidOrProvinceRoute(r))
-                    .toList();
-                if (validRoutes.isNotEmpty) {
-                  int tempId = 1;
-                  dynamicRouteOptions = validRoutes.map((r) => DynamicFormOption(label: r, value: tempId++)).toList();
-                } else {
-                  dynamicRouteOptions = [const DynamicFormOption(label: 'Chưa phân tuyến', value: 0)];
-                }
-              }
-
-              // Đảm bảo tuyến hiện tại của điểm bán luôn xuất hiện trong danh sách lựa chọn
+              // CHỈ tuyến thật của nhân viên. Tuyến hiện tại của điểm bán không có trong danh sách (id trong máy có thể là id
+              // giả của bản app cũ, hoặc danh sách chưa tải) ⇒ chỉ HIỆN tên với đúng giá trị đang điền sẵn để ô không trống —
+              // bước Lưu chỉ gửi id thật nên giá trị đó không bao giờ được gửi. Ô không bắt buộc ở màn Sửa (#24698 vòng 3).
+              final dynamicRouteOptions = realRouteOptions(userRoutes);
               final customerRouteName = c.route.isNotEmpty && c.route != 'Tất cả tuyến'
                   ? c.route
                   : (c.routes.isNotEmpty ? c.routes.first : null);
-              final customerRouteId = c.routeIds.isNotEmpty ? c.routeIds.first : null;
-              if (customerRouteName != null && customerRouteName.isNotEmpty) {
-                final exists = dynamicRouteOptions.any((opt) =>
-                    (customerRouteId != null && opt.value == customerRouteId) ||
-                    opt.label.toLowerCase().trim() == customerRouteName.toLowerCase().trim());
-                if (!exists) {
-                  dynamicRouteOptions.insert(
-                    0,
-                    DynamicFormOption(
-                      label: customerRouteName,
-                      value: customerRouteId ?? 99999,
-                    ),
-                  );
-                }
+              final initialRoute = _initialData['route_ids'];
+              if (customerRouteName != null &&
+                  customerRouteName.trim().isNotEmpty &&
+                  initialRoute != null &&
+                  !dynamicRouteOptions.any((o) => o.value == initialRoute)) {
+                dynamicRouteOptions.insert(0, DynamicFormOption(label: customerRouteName, value: initialRoute));
               }
 
               // Cùng bộ ô với màn Thêm mới — đúng Cấu hình trường điểm bán, không đắp khoá dữ liệu thành ô.
@@ -823,6 +792,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                   .where((f) => f.code != 'erp_links' || c.id > 0)
                   // Ô "Khách hàng ERP" chỉ bắt buộc khi TẠO — điểm bán cũ sửa việc khác không bị ép nối (chốt 27/10/2026).
                   .map((f) => f.code == 'erp_links' ? f.copyWith(isRequired: false) : f)
+                  // Ô Tuyến không bắt buộc ở màn SỬA: không đổi thì không gửi; bắt buộc là chặn cả lần sửa không liên quan tới
+                  // tuyến khi tuyến hiện tại không có trong danh sách tuyến thật (máy chưa tải, id cũ không còn) — vòng 3.
+                  .map((f) => f.code == 'route_ids' || f.code == 'route_id' ? f.copyWith(isRequired: false) : f)
                   .toList();
 
               if (fields.isEmpty) {

@@ -62,7 +62,7 @@ void main() {
       ],
     };
 
-    final routeService = RouteApiService(fakeApiClient, db);
+    final routeService = RouteApiService(fakeApiClient);
     final user1Routes = await routeService.getMyRoutes();
 
     expect(user1Routes.length, 2);
@@ -70,7 +70,7 @@ void main() {
     expect(user1Routes[1].name, 'Tuyến Cầu Giấy - Ba Đình');
 
     // Verify cache key exists for user_001
-    expect(prefs.containsKey('dms_user_routes_user_001_v2'), isTrue);
+    expect(prefs.containsKey('dms_user_routes_user_001_v3'), isTrue);
 
     // 2. User 2 logs in
     await prefs.setString(
@@ -116,7 +116,7 @@ void main() {
       ]),
     );
     await prefs.setString(
-      'dms_user_routes_user_123_v2',
+      'dms_user_routes_user_123_v3',
       jsonEncode([
         {'id': 5, 'name': 'Vũ Tùng Dương - T2', 'code': 'T2'},
       ]),
@@ -134,16 +134,16 @@ void main() {
 
     fakeApiClient.shouldThrow = true; // Offline
 
-    final routeService = RouteApiService(fakeApiClient, db);
+    final routeService = RouteApiService(fakeApiClient);
     final routes = await routeService.getMyRoutes();
 
     // Should purge mock data and not return Vũ Tùng Dương
     expect(routes.any((r) => r.name.contains('Vũ Tùng Dương')), isFalse);
     expect(prefs.containsKey('dms_user_routes_cache_v1'), isFalse);
-    expect(prefs.containsKey('dms_user_routes_user_123_v2'), isFalse);
+    expect(prefs.containsKey('dms_user_routes_user_123_v3'), isFalse);
   });
 
-  test('RouteApiService derives routes from local SQLite customers when offline without route cache', () async {
+  test('RouteApiService KHÔNG dựng tuyến từ điểm bán trong máy khi mất mạng và chưa có bộ đệm (#24698 vòng 3)', () async {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setString(
@@ -176,13 +176,48 @@ void main() {
 
     fakeApiClient.shouldThrow = true; // Offline
 
-    final routeService = RouteApiService(fakeApiClient, db);
+    final routeService = RouteApiService(fakeApiClient);
     final routes = await routeService.getMyRoutes();
 
-    expect(routes.length, 2);
-    expect(routes.map((r) => r.name), containsAll(['Tuyến Minh Khai - Bạch Mai', 'Tuyến Đại La']));
+    // id tuyến lưu ở điểm bán có thể là id giả của bản app cũ ⇒ chỉ tin /dms/routes/mine.
+    expect(routes, isEmpty);
+    expect(prefs.containsKey('dms_user_routes_user_999_v3'), isFalse);
+  });
 
-    // It should have written the derived routes into user_999's cache
-    expect(prefs.containsKey('dms_user_routes_user_999_v2'), isTrue);
+  group('#24698 vòng 3: không dựng / không nhận id tuyến giả', () {
+    Future<void> seed(String uuid, {required List<String> names, required List<int> ids}) =>
+        db.insertOrUpdateCustomer(LocalCustomersCompanion(
+          id: Value(uuid.hashCode.abs() % 100000 + 1),
+          clientUuid: Value(uuid),
+          name: const Value('Điểm'),
+          code: Value('KH-$uuid'),
+          nameUnaccent: const Value('diem'),
+          address: const Value('HN'),
+          contactPerson: const Value('A'),
+          phone: const Value('0900000000'),
+          route: Value(names.join(', ')),
+          dynamicFieldsJson: Value(jsonEncode({'routes': names, 'route_ids': ids})),
+        ));
+
+    setUp(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(AppConstants.keyUserData, jsonEncode({'id': 'user_777', 'username': 'u'}));
+    });
+
+    test('API trả RỖNG ⇒ xoá bộ đệm tuyến cũ', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('dms_user_routes_user_777_v3', jsonEncode([{'id': 9, 'name': 'Cũ', 'code': 'C'}]));
+      fakeApiClient.response = {'success': true, 'data': <dynamic>[]};
+      expect(await RouteApiService(fakeApiClient).getMyRoutes(forceRefresh: true), isEmpty);
+      expect(prefs.containsKey('dms_user_routes_user_777_v3'), isFalse);
+    });
+
+    test('API trả RỖNG ⇒ rỗng, không lấy tuyến trích từ điểm bán trong máy', () async {
+      await seed('c-ok', names: ['Tuyến A'], ids: [501]);
+      fakeApiClient.response = {'success': true, 'data': <dynamic>[]};
+      final routes = await RouteApiService(fakeApiClient).getMyRoutes(forceRefresh: true);
+      expect(routes, isEmpty);
+    });
+
   });
 }
