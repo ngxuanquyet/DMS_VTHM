@@ -1192,6 +1192,17 @@ class $LocalCustomersTable extends LocalCustomers
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _ownerUserIdMeta = const VerificationMeta(
+    'ownerUserId',
+  );
+  @override
+  late final GeneratedColumn<int> ownerUserId = GeneratedColumn<int>(
+    'owner_user_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1221,6 +1232,7 @@ class $LocalCustomersTable extends LocalCustomers
     syncStatus,
     createdAt,
     updatedAt,
+    ownerUserId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1432,6 +1444,15 @@ class $LocalCustomersTable extends LocalCustomers
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('owner_user_id')) {
+      context.handle(
+        _ownerUserIdMeta,
+        ownerUserId.isAcceptableOrUnknown(
+          data['owner_user_id']!,
+          _ownerUserIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1549,6 +1570,10 @@ class $LocalCustomersTable extends LocalCustomers
         DriftSqlType.string,
         data['${effectivePrefix}updated_at'],
       ),
+      ownerUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}owner_user_id'],
+      ),
     );
   }
 
@@ -1586,6 +1611,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
   final String syncStatus;
   final String? createdAt;
   final String? updatedAt;
+  final int? ownerUserId;
   const LocalCustomer({
     this.id,
     required this.clientUuid,
@@ -1614,6 +1640,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
     required this.syncStatus,
     this.createdAt,
     this.updatedAt,
+    this.ownerUserId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1673,6 +1700,9 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
     if (!nullToAbsent || updatedAt != null) {
       map['updated_at'] = Variable<String>(updatedAt);
     }
+    if (!nullToAbsent || ownerUserId != null) {
+      map['owner_user_id'] = Variable<int>(ownerUserId);
+    }
     return map;
   }
 
@@ -1727,6 +1757,9 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
       updatedAt: updatedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(updatedAt),
+      ownerUserId: ownerUserId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerUserId),
     );
   }
 
@@ -1763,6 +1796,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       createdAt: serializer.fromJson<String?>(json['createdAt']),
       updatedAt: serializer.fromJson<String?>(json['updatedAt']),
+      ownerUserId: serializer.fromJson<int?>(json['ownerUserId']),
     );
   }
   @override
@@ -1796,6 +1830,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
       'syncStatus': serializer.toJson<String>(syncStatus),
       'createdAt': serializer.toJson<String?>(createdAt),
       'updatedAt': serializer.toJson<String?>(updatedAt),
+      'ownerUserId': serializer.toJson<int?>(ownerUserId),
     };
   }
 
@@ -1827,6 +1862,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
     String? syncStatus,
     Value<String?> createdAt = const Value.absent(),
     Value<String?> updatedAt = const Value.absent(),
+    Value<int?> ownerUserId = const Value.absent(),
   }) => LocalCustomer(
     id: id.present ? id.value : this.id,
     clientUuid: clientUuid ?? this.clientUuid,
@@ -1859,6 +1895,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
     syncStatus: syncStatus ?? this.syncStatus,
     createdAt: createdAt.present ? createdAt.value : this.createdAt,
     updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+    ownerUserId: ownerUserId.present ? ownerUserId.value : this.ownerUserId,
   );
   LocalCustomer copyWithCompanion(LocalCustomersCompanion data) {
     return LocalCustomer(
@@ -1911,6 +1948,9 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
           : this.syncStatus,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      ownerUserId: data.ownerUserId.present
+          ? data.ownerUserId.value
+          : this.ownerUserId,
     );
   }
 
@@ -1943,7 +1983,8 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
           ..write('dynamicFieldsJson: $dynamicFieldsJson, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUserId: $ownerUserId')
           ..write(')'))
         .toString();
   }
@@ -1977,6 +2018,7 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
     syncStatus,
     createdAt,
     updatedAt,
+    ownerUserId,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -2008,7 +2050,8 @@ class LocalCustomer extends DataClass implements Insertable<LocalCustomer> {
           other.dynamicFieldsJson == this.dynamicFieldsJson &&
           other.syncStatus == this.syncStatus &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.ownerUserId == this.ownerUserId);
 }
 
 class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
@@ -2039,6 +2082,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
   final Value<String> syncStatus;
   final Value<String?> createdAt;
   final Value<String?> updatedAt;
+  final Value<int?> ownerUserId;
   final Value<int> rowid;
   const LocalCustomersCompanion({
     this.id = const Value.absent(),
@@ -2068,6 +2112,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalCustomersCompanion.insert({
@@ -2098,6 +2143,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
     this.syncStatus = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : clientUuid = Value(clientUuid),
        name = Value(name),
@@ -2133,6 +2179,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
     Expression<String>? syncStatus,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
+    Expression<int>? ownerUserId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2163,6 +2210,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
       if (syncStatus != null) 'sync_status': syncStatus,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (ownerUserId != null) 'owner_user_id': ownerUserId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2195,6 +2243,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
     Value<String>? syncStatus,
     Value<String?>? createdAt,
     Value<String?>? updatedAt,
+    Value<int?>? ownerUserId,
     Value<int>? rowid,
   }) {
     return LocalCustomersCompanion(
@@ -2225,6 +2274,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
       syncStatus: syncStatus ?? this.syncStatus,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      ownerUserId: ownerUserId ?? this.ownerUserId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2313,6 +2363,9 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<String>(updatedAt.value);
     }
+    if (ownerUserId.present) {
+      map['owner_user_id'] = Variable<int>(ownerUserId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2349,6 +2402,7 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
           ..write('syncStatus: $syncStatus, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('ownerUserId: $ownerUserId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2829,6 +2883,7 @@ typedef $$LocalCustomersTableCreateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> createdAt,
       Value<String?> updatedAt,
+      Value<int?> ownerUserId,
       Value<int> rowid,
     });
 typedef $$LocalCustomersTableUpdateCompanionBuilder =
@@ -2860,6 +2915,7 @@ typedef $$LocalCustomersTableUpdateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> createdAt,
       Value<String?> updatedAt,
+      Value<int?> ownerUserId,
       Value<int> rowid,
     });
 
@@ -3004,6 +3060,11 @@ class $$LocalCustomersTableFilterComposer
 
   ColumnFilters<String> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3151,6 +3212,11 @@ class $$LocalCustomersTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalCustomersTableAnnotationComposer
@@ -3264,6 +3330,11 @@ class $$LocalCustomersTableAnnotationComposer
 
   GeneratedColumn<String> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => column,
+  );
 }
 
 class $$LocalCustomersTableTableManager
@@ -3326,6 +3397,7 @@ class $$LocalCustomersTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> createdAt = const Value.absent(),
                 Value<String?> updatedAt = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalCustomersCompanion(
                 id: id,
@@ -3355,6 +3427,7 @@ class $$LocalCustomersTableTableManager
                 syncStatus: syncStatus,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                ownerUserId: ownerUserId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3386,6 +3459,7 @@ class $$LocalCustomersTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> createdAt = const Value.absent(),
                 Value<String?> updatedAt = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalCustomersCompanion.insert(
                 id: id,
@@ -3415,6 +3489,7 @@ class $$LocalCustomersTableTableManager
                 syncStatus: syncStatus,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                ownerUserId: ownerUserId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -43,11 +43,18 @@ void main() {
         "INSERT INTO sync_queue_entries (entity, op, client_uuid, payload, created_at, created_elapsed, boot_id, "
         "owner_user_id) VALUES ('visit', 'create', 'u-1', '{}', 0, 0, 'b', 7)",
       );
+      raw.execute(
+        "INSERT INTO local_customers (client_uuid, name, name_unaccent, address, contact_person, phone) "
+        "VALUES ('c-old', 'Điểm bán cũ', 'diem ban cu', 'HN', 'A', '0900')",
+      );
       raw.execute('PRAGMA user_version = 3');
     });
     final db = AppDatabase(executor, 7);
     addTearDown(db.close);
     expect(await _queueIndexes(db), containsAll(_expected));
     expect(await db.countPendingSync(), 1);
+    // Schema 5 (#24698 nhóm 3): điểm bán trong máy có chủ — dòng của bản cũ giao cho người đăng nhập kế tiếp.
+    await db.setOwner(7);
+    expect((await db.getAllLocalCustomers()).map((c) => c.clientUuid), ['c-old']);
   });
 }

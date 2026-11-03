@@ -53,7 +53,23 @@ class CustomerRepositoryImpl implements CustomerRepository {
   final Ref? _ref;
   final bool Function()? _isOnlineChecker;
 
-  List<CustomerEntity> _cachedCustomers = [];
+  List<CustomerEntity> _cachedCustomersStore = [];
+  int? _cachedCustomersOwner;
+
+  /// Danh sách điểm bán giữ trong bộ nhớ — CỦA tài khoản đang đăng nhập: đổi tài khoản thì bỏ (repository sống suốt vòng
+  /// đời app; không bỏ thì người sau mất mạng được trả danh sách của người trước, #24698 nhóm 3).
+  List<CustomerEntity> get _cachedCustomers {
+    if (_cachedCustomersOwner != _localDataSource.ownerUserId) {
+      _cachedCustomersStore = [];
+      _cachedCustomersOwner = _localDataSource.ownerUserId;
+    }
+    return _cachedCustomersStore;
+  }
+
+  set _cachedCustomers(List<CustomerEntity> value) {
+    _cachedCustomersStore = value;
+    _cachedCustomersOwner = _localDataSource.ownerUserId;
+  }
   List<CustomerDynamicColumn> _cachedColumns = [];
   CustomerMetaData? _cachedMeta;
 

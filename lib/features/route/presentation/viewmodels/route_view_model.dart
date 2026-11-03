@@ -2215,7 +2215,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (code == null || code.isEmpty || code == '0') return null;
       final db = ref!.read(appDatabaseProvider);
       final localCust = await (db.select(db.localCustomers)
-            ..where((tbl) => tbl.code.equals(code) & tbl.id.isNull())
+            ..where((tbl) => db.isMyCustomer(tbl) & tbl.code.equals(code) & tbl.id.isNull())
             ..limit(1))
           .getSingleOrNull();
       final u = localCust?.clientUuid;

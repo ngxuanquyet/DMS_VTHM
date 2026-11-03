@@ -140,6 +140,7 @@ void main() {
           address: 'Hà Nội',
           contactPerson: 'A',
           phone: '0901',
+          ownerUserId: const Value(1),
         ),
       );
 
@@ -153,6 +154,7 @@ void main() {
           address: 'Hà Nội',
           contactPerson: 'A',
           phone: '0901',
+          ownerUserId: const Value(1),
         ),
       );
 

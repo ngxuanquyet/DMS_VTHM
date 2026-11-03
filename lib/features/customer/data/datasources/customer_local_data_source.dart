@@ -18,6 +18,9 @@ class CustomerLocalDataSource {
 
   CustomerLocalDataSource(this._db);
 
+  /// Tài khoản đang đăng nhập (chủ các dòng điểm bán trong máy).
+  int? get ownerUserId => _db.ownerUserId;
+
   /// Thêm mới điểm bán ngoại tuyến (§1 BB-1, BB-2, BB-3, §3.1 & §7)
   /// - Sinh client_uuid v4 ngay lúc nhập
   /// - Ghi vào SQLite (LocalCustomers)
@@ -313,22 +316,26 @@ class CustomerLocalDataSource {
     Set<int>? syncedIdsBeforeFetch,
     Future<bool> Function()? isStale,
   }) async {
+    // Chủ của danh sách = người đang đăng nhập LÚC BẮT ĐẦU ghi — đổi tài khoản giữa một lô thì phần còn lại vẫn mang chủ
+    // cũ (rồi bị ẩn với người mới) chứ không chảy sang người mới (#24698 nhóm 3). Chưa đăng nhập ⇒ không ghi.
+    final owner = _db.ownerUserId;
+    if (owner == null) return;
     for (var i = 0; i < remoteList.length; i += _cacheChunk) {
       // [isStale]: kiểm lại TRƯỚC MỖI LÔ (vd đã đổi tài khoản giữa chừng) — ghi nhiều lô nên kiểm một lần đầu là không đủ.
       if (isStale != null && await isStale()) return;
       final chunk = remoteList.sublist(i, math.min(i + _cacheChunk, remoteList.length));
-      await _db.transaction(() => _cacheRemoteChunk(chunk));
+      await _db.transaction(() => _cacheRemoteChunk(chunk, owner));
     }
 
     if (reconcile) {
       if (isStale != null && await isStale()) return;
       final activeIds = remoteList.map((e) => e.id).where((id) => id > 0).toList();
       if (syncedIdsBeforeFetch != null) {
-        await _db.deleteSyncedCustomersIn(syncedIdsBeforeFetch.difference(activeIds.toSet()));
+        await _db.deleteSyncedCustomersIn(syncedIdsBeforeFetch.difference(activeIds.toSet()), owner: owner);
       } else {
-        await _db.deleteSyncedCustomersNotIn(activeIds);
+        await _db.deleteSyncedCustomersNotIn(activeIds, owner: owner);
       }
-      await _db.cleanupDuplicateCustomers();
+      await _db.cleanupDuplicateCustomers(owner: owner);
     }
   }
 
@@ -337,30 +344,31 @@ class CustomerLocalDataSource {
   /// Ảnh chụp ID điểm bán đã đồng bộ — lấy TRƯỚC khi tải danh sách, truyền vào [cacheRemoteCustomers].
   Future<Set<int>> syncedServerIds() => _db.syncedCustomerIds();
 
-  Future<void> _cacheRemoteChunk(List<CustomerEntity> remoteList) async {
+  Future<void> _cacheRemoteChunk(List<CustomerEntity> remoteList, int owner) async {
     for (final remote in remoteList) {
       // 1. Kiểm tra xem điểm bán này đã tồn tại trên SQLite chưa (theo serverId, code hoặc clientUuid)
       LocalCustomer? existing;
       if (remote.id > 0) {
         final matches = await (_db.select(_db.localCustomers)
-              ..where((tbl) => tbl.id.equals(remote.id)))
+              ..where((tbl) => tbl.ownerUserId.equals(owner) & tbl.id.equals(remote.id)))
             .get();
         if (matches.isNotEmpty) existing = matches.first;
       }
       if (existing == null && remote.code.isNotEmpty && !remote.code.startsWith('PENDING_')) {
         final matches = await (_db.select(_db.localCustomers)
-              ..where((tbl) => tbl.code.equals(remote.code)))
+              ..where((tbl) => tbl.ownerUserId.equals(owner) & tbl.code.equals(remote.code)))
             .get();
         if (matches.isNotEmpty) existing = matches.first;
       }
       if (existing == null && remote.clientUuid != null && remote.clientUuid!.isNotEmpty) {
         final matches = await (_db.select(_db.localCustomers)
-              ..where((tbl) => tbl.clientUuid.equals(remote.clientUuid!)))
+              ..where((tbl) => tbl.ownerUserId.equals(owner) & tbl.clientUuid.equals(remote.clientUuid!)))
             .get();
         if (matches.isNotEmpty) existing = matches.first;
       }
 
-      // Giữ nguyên clientUuid của bản ghi hiện có để UPDATE thay vì INSERT thêm bản ghi mới
+      // Giữ nguyên clientUuid của bản ghi hiện có để UPDATE thay vì INSERT thêm bản ghi mới. Trùng khoá dòng chờ gửi của
+      // tài khoản khác ⇒ [AppDatabase.insertOrUpdateCustomer] bỏ qua, không ghi đè.
       final clientUuid = existing?.clientUuid ?? remote.clientUuid ?? 'server_${remote.id}';
       final nameUnaccent = StringUtils.toUnaccentedLower(remote.name);
 
@@ -368,6 +376,7 @@ class CustomerLocalDataSource {
         LocalCustomersCompanion(
           id: Value(remote.id),
           clientUuid: Value(clientUuid),
+          ownerUserId: Value(owner),
           code: Value(remote.code),
           name: Value(remote.name),
           nameUnaccent: Value(nameUnaccent),
@@ -418,7 +427,7 @@ class CustomerLocalDataSource {
       // Nếu có bản ghi trùng thừa khác có cùng server ID nhưng clientUuid khác -> dọn dẹp
       if (remote.id > 0) {
         await (_db.delete(_db.localCustomers)
-              ..where((tbl) => tbl.id.equals(remote.id) & tbl.clientUuid.isNotValue(clientUuid)))
+              ..where((tbl) => tbl.ownerUserId.equals(owner) & tbl.id.equals(remote.id) & tbl.clientUuid.isNotValue(clientUuid)))
             .go();
       }
     }

@@ -61,6 +61,10 @@ class LocalCustomers extends Table {
   TextColumn get syncStatus => text().withDefault(const Constant('pending'))(); // 'synced' | 'pending' | 'error'
   TextColumn get createdAt => text().nullable()();
   TextColumn get updatedAt => text().nullable()();
+  // Tài khoản (usr_user.id) mà dòng này thuộc về — máy dùng chung / đổi tài khoản: người sau KHÔNG thấy điểm bán (kể cả
+  // điểm bán tạo ngoại tuyến chờ gửi) của người trước (#24698 vòng 2, nhóm 3). -1 = dòng của bản app cũ (người đăng nhập
+  // kế tiếp nhận về, như hàng đợi).
+  IntColumn get ownerUserId => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {clientUuid};
@@ -74,7 +78,7 @@ class AppDatabase extends _$AppDatabase {
         super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -82,6 +86,7 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
           await _createCustomerIndexes();
           await _createQueueIndexes();
+          await _createCustomerOwnerIndex();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -94,6 +99,15 @@ class AppDatabase extends _$AppDatabase {
           if (from < 4) {
             await _createQueueIndexes();
           }
+          if (from < 5) {
+            // Kiểm trước: bản dựng thử (và máy hạ cấp rồi nâng lại) có thể đã có cột — thêm lại là "duplicate column".
+            final cols = await customSelect("SELECT name FROM pragma_table_info('local_customers')").get();
+            if (!cols.any((r) => r.read<String>('name') == 'owner_user_id')) {
+              await m.addColumn(localCustomers, localCustomers.ownerUserId);
+              await customStatement('UPDATE local_customers SET owner_user_id = $_legacyOwner');
+            }
+            await _createCustomerOwnerIndex();
+          }
         },
       );
 
@@ -102,6 +116,13 @@ class AppDatabase extends _$AppDatabase {
   Future<void> _createCustomerIndexes() async {
     await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_id ON local_customers (id)');
     await customStatement('CREATE INDEX IF NOT EXISTS idx_local_customers_code ON local_customers (code)');
+  }
+
+  /// Index lọc điểm bán theo chủ ([isMyCustomer]) — schema 5.
+  Future<void> _createCustomerOwnerIndex() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_local_customers_owner ON local_customers (owner_user_id, sync_status)',
+    );
   }
 
   /// Index hàng đợi: mọi truy vấn theo tập lọc `owner_user_id` + `state` (đếm/liệt kê/gửi — badge trên thanh trên cùng
@@ -134,8 +155,21 @@ class AppDatabase extends _$AppDatabase {
     _ownerUserId = userId;
     if (userId != null) {
       _lastOwnerUserId = userId;
-      await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
-          .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
+      await transaction(() async {
+        await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
+            .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
+        // Điểm bán: dòng bản cũ (-1) như hàng đợi; dòng vô chủ (NULL — ghi khi chưa ai đăng nhập trong lần chạy) chỉ nhận
+        // phần ĐÃ đồng bộ (bộ đệm): dòng chờ gửi vô chủ đi cùng dòng hàng đợi vô chủ, hàng đợi không giao nó cho ai.
+        await (update(localCustomers)
+              ..where((t) =>
+                  t.ownerUserId.equals(_legacyOwner) | (t.ownerUserId.isNull() & t.syncStatus.equals('synced'))))
+            .write(LocalCustomersCompanion(ownerUserId: Value(userId)));
+        // MỘT chủ một lúc (chủ hệ thống chốt 03/11/2026, #24698 nhóm 3): bộ đệm điểm bán đã đồng bộ của tài khoản khác bỏ
+        // hẳn (họ vào lại thì tải lại); điểm bán họ tạo / sửa ngoại tuyến còn chờ gửi GIỮ, ẩn qua [isMyCustomer].
+        await (delete(localCustomers)
+              ..where((t) => t.syncStatus.equals('synced') & t.ownerUserId.equals(userId).not()))
+            .go();
+      });
       // Chạy nền: lần đầu sau nâng cấp có thể dọn hàng trăm tệp — đừng bắt đăng nhập chờ.
       unawaited(purgeDoneEntries().catchError((Object e) {
         debugPrint('[AppDatabase] Lỗi dọn mục đã gửi: $e');
@@ -146,9 +180,19 @@ class AppDatabase extends _$AppDatabase {
 
   /// Vế lọc "dòng của người đang đăng nhập" — MỌI truy vấn hàng đợi theo tập (gửi, đếm, liệt kê, dọn, gộp) phải đi qua
   /// đây. Chưa đăng nhập ⇒ không dòng nào.
-  Expression<bool> isMine(SyncQueueEntries t) {
+  Expression<bool> isMine(SyncQueueEntries t) => _ownedByMe(t.ownerUserId);
+
+  /// Vế lọc "điểm bán trong máy của người đang đăng nhập" — mọi truy vấn điểm bán theo TẬP (liệt kê, tìm, đếm, đối chiếu,
+  /// dọn) phải đi qua đây. Chưa đăng nhập ⇒ không dòng nào.
+  Expression<bool> isMyCustomer(LocalCustomers t) => _ownedByMe(t.ownerUserId);
+
+  /// Dòng điểm bán của [owner] khi nơi gọi đã chốt chủ, không thì của người đang đăng nhập.
+  Expression<bool> _ownedBy(LocalCustomers t, int? owner) =>
+      owner == null ? isMyCustomer(t) : t.ownerUserId.equals(owner);
+
+  Expression<bool> _ownedByMe(Expression<int> ownerColumn) {
     final owner = _ownerUserId;
-    return owner == null ? const Constant(false) : t.ownerUserId.equals(owner);
+    return owner == null ? const Constant(false) : ownerColumn.equals(owner);
   }
 
   // ===========================================================================
@@ -320,10 +364,12 @@ class AppDatabase extends _$AppDatabase {
       if (await countPendingSync() > 0) return false;
       rows.addAll(await (select(syncQueueEntries)..where(isMine)).get());
       customerUuids.addAll(rows.where((r) => r.entity == 'customer').map((r) => r.clientUuid));
-      final c = selectOnly(localCustomers)..addColumns([localCustomers.clientUuid]);
+      final c = selectOnly(localCustomers)
+        ..addColumns([localCustomers.clientUuid])
+        ..where(isMyCustomer(localCustomers));
       customerUuids.addAll((await c.map((r) => r.read(localCustomers.clientUuid)).get()).whereType<String>());
       await (delete(syncQueueEntries)..where(isMine)).go();
-      await delete(localCustomers).go();
+      await (delete(localCustomers)..where(isMyCustomer)).go();
       return true;
     });
     if (cleared) await _deleteRowFiles(rows, customerUuids);
@@ -737,13 +783,32 @@ class AppDatabase extends _$AppDatabase {
   // ===========================================================================
 
   /// Thêm mới hoặc cập nhật thông tin điểm bán cục bộ
+  /// Tự gắn người đang đăng nhập nếu nơi gọi không ghi (như [enqueue]). Khoá trùng dòng CHỜ GỬI của tài khoản khác
+  /// (điểm bán chung tuyến họ sửa ngoại tuyến, điểm bán họ tạo) ⇒ KHÔNG ghi: ghi đè là mất phần chờ gửi của họ — người này
+  /// thiếu điểm bán đó trong máy tới khi họ gửi xong (chủ hệ thống chấp nhận, "một chủ một lúc" 03/11/2026, #24698 nhóm 3).
+  /// Chưa rõ chủ (chưa ai đăng nhập trong lần chạy) ⇒ chỉ ghi đè dòng đã đồng bộ / vô chủ, GIỮ chủ cũ của dòng.
+  /// Giá trị trả về là của câu INSERT — lượt bị bỏ qua vẫn trả số khác 0, đừng dùng nó để biết đã ghi hay chưa.
+  /// Điều kiện nằm trong chính câu upsert (`ON CONFLICT … DO UPDATE … WHERE`) — kiểm rồi ghi riêng là hở giữa hai bước.
   Future<int> insertOrUpdateCustomer(LocalCustomersCompanion customer) {
-    return into(localCustomers).insertOnConflictUpdate(customer);
+    final owner = customer.ownerUserId.present ? customer.ownerUserId.value : (_ownerUserId ?? _lastOwnerUserId);
+    // Chưa rõ chủ ⇒ BỎ cột chủ khỏi câu ghi (kể cả nơi gọi truyền `Value(null)`) để dòng có sẵn giữ chủ của nó.
+    final row = customer.copyWith(ownerUserId: owner == null ? const Value.absent() : Value(owner));
+    return into(localCustomers).insert(
+      row,
+      onConflict: DoUpdate(
+        (_) => row,
+        where: (old) =>
+            old.syncStatus.equals('synced') |
+            old.ownerUserId.isNull() |
+            (owner == null ? const Constant(false) : old.ownerUserId.equals(owner)),
+      ),
+    );
   }
 
   /// Lấy toàn bộ danh sách khách hàng cục bộ (ưu tiên bản ghi pending/error lên đầu, sau đó theo thời gian tạo mới nhất)
   Future<List<LocalCustomer>> getAllLocalCustomers() {
     return (select(localCustomers)
+          ..where(isMyCustomer)
           ..orderBy([
             (tbl) => OrderingTerm(
                   expression: tbl.syncStatus.equals('synced'),
@@ -757,7 +822,10 @@ class AppDatabase extends _$AppDatabase {
   /// Số điểm bán trong máy — đếm bằng SQL, không nạp cả bảng (1.000+ dòng đủ cột) chỉ để lấy `length`.
   Future<int> countLocalCustomers() async {
     final count = localCustomers.clientUuid.count();
-    final row = await (selectOnly(localCustomers)..addColumns([count])).getSingle();
+    final row = await (selectOnly(localCustomers)
+          ..addColumns([count])
+          ..where(isMyCustomer(localCustomers)))
+        .getSingle();
     return row.read(count) ?? 0;
   }
 
@@ -766,6 +834,7 @@ class AppDatabase extends _$AppDatabase {
   Future<String?> firstLocalCustomerNameNotIn(Set<int> visitedIds) async {
     final query = selectOnly(localCustomers)
       ..addColumns([localCustomers.name])
+      ..where(isMyCustomer(localCustomers))
       ..orderBy([
         OrderingTerm(expression: localCustomers.syncStatus.equals('synced'), mode: OrderingMode.asc),
         OrderingTerm.desc(localCustomers.createdAt),
@@ -786,7 +855,8 @@ class AppDatabase extends _$AppDatabase {
     final q = '%$unaccentedQuery%';
     return (select(localCustomers)
           ..where((tbl) =>
-              tbl.nameUnaccent.like(q) | tbl.code.like(q) | tbl.phone.like(q) | tbl.address.like(q))
+              isMyCustomer(tbl) &
+              (tbl.nameUnaccent.like(q) | tbl.code.like(q) | tbl.phone.like(q) | tbl.address.like(q)))
           ..orderBy([
             (tbl) => OrderingTerm(
                   expression: tbl.syncStatus.equals('synced'),
@@ -818,9 +888,10 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Dọn dẹp các bản ghi khách hàng bị trùng lặp trên SQLite (theo id hoặc code)
-  Future<void> cleanupDuplicateCustomers() async {
+  /// [owner]: chủ mà nơi gọi đã chốt từ đầu lượt ghi (mặc định: người đang đăng nhập).
+  Future<void> cleanupDuplicateCustomers({int? owner}) async {
     try {
-      final all = await select(localCustomers).get();
+      final all = await (select(localCustomers)..where((t) => _ownedBy(t, owner))).get();
       final seenIds = <int, String>{};
       final seenCodes = <String, String>{};
       final toDelete = <String>[];
@@ -855,12 +926,13 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Xóa các điểm bán đã đồng bộ trên SQLite nhưng không còn trong danh sách ID từ máy chủ (§7 reconcile)
-  Future<int> deleteSyncedCustomersNotIn(List<int> activeServerIds) {
+  Future<int> deleteSyncedCustomersNotIn(List<int> activeServerIds, {int? owner}) {
     if (activeServerIds.isEmpty) {
-      return (delete(localCustomers)..where((tbl) => tbl.syncStatus.equals('synced'))).go();
+      return (delete(localCustomers)..where((tbl) => _ownedBy(tbl, owner) & tbl.syncStatus.equals('synced'))).go();
     }
     return (delete(localCustomers)
           ..where((tbl) =>
+              _ownedBy(tbl, owner) &
               tbl.syncStatus.equals('synced') &
               (tbl.id.isNotNull() & tbl.id.isNotIn(activeServerIds))))
         .go();
@@ -870,22 +942,24 @@ class AppDatabase extends _$AppDatabase {
   Future<Set<int>> syncedCustomerIds() async {
     final rows = await (selectOnly(localCustomers)
           ..addColumns([localCustomers.id])
-          ..where(localCustomers.syncStatus.equals('synced') & localCustomers.id.isNotNull()))
+          ..where(isMyCustomer(localCustomers) &
+              localCustomers.syncStatus.equals('synced') &
+              localCustomers.id.isNotNull()))
         .get();
     return {for (final r in rows) r.read(localCustomers.id)!};
   }
 
   /// Xóa các điểm bán đã đồng bộ có ID trong [serverIds] (reconcile theo ảnh chụp — xem [syncedCustomerIds]).
-  Future<int> deleteSyncedCustomersIn(Iterable<int> serverIds) {
+  Future<int> deleteSyncedCustomersIn(Iterable<int> serverIds, {int? owner}) {
     if (serverIds.isEmpty) return Future.value(0);
     return (delete(localCustomers)
-          ..where((tbl) => tbl.syncStatus.equals('synced') & tbl.id.isIn(serverIds)))
+          ..where((tbl) => _ownedBy(tbl, owner) & tbl.syncStatus.equals('synced') & tbl.id.isIn(serverIds)))
         .go();
   }
 
   /// Xóa 1 điểm bán theo ID khỏi SQLite
   Future<int> deleteCustomerById(int id) {
-    return (delete(localCustomers)..where((tbl) => tbl.id.equals(id))).go();
+    return (delete(localCustomers)..where((tbl) => isMyCustomer(tbl) & tbl.id.equals(id))).go();
   }
 
   /// Xóa bản ghi điểm bán chờ đồng bộ khỏi SQLite và hủy các tác vụ sync liên quan trong sync_queue. Trả `false` (không
