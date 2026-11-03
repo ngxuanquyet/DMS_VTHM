@@ -111,6 +111,8 @@ class MarketFormResolvedEntity {
   bool get allowOther => options.isNotEmpty && ChoiceOther.enabledIn({'config': _configMap});
 
   /// `config` dạng Map (server có thể gửi chuỗi JSON); `null` nếu không đọc được.
+  Map? get configMap => _configMap;
+
   Map? get _configMap {
     var cfg = config;
     if (cfg is String && cfg.trim().startsWith('{')) {

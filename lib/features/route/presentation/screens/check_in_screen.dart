@@ -1357,6 +1357,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                               customerContext: customerContext,
                               lockCustomer: true,
                               visitClientUuid: vm.sessionClientUuid,
+                              routeIds: [
+                                if (state.visitEntity?.routeId != null) state.visitEntity!.routeId!,
+                                ...?customer?.routeIds,
+                              ],
                             ),
                           );
                           if (result == true) {

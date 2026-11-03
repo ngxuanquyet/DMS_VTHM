@@ -25,8 +25,10 @@ import '../../../forms/domain/services/dynamic_rule_evaluator.dart';
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart';
-import '../../../route/domain/entities/route_entity.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
+// Tuyến của NV dời sang route/presentation/providers — giữ export để nơi gọi cũ không đổi import.
+export '../../../route/presentation/providers/user_routes_provider.dart' show userAssignedRoutesProvider, realRouteOptions;
+import '../../../route/presentation/providers/user_routes_provider.dart';
 
 /// Provider lấy schema form khách hàng (dùng chung màn thêm / sửa điểm bán + hộp sửa nhanh).
 /// Hiện bản cache NGAY (app phải chạy offline, mạng chậm không treo màn), rồi khi có mạng tải bản
@@ -63,14 +65,6 @@ final customerMetaProvider = FutureProvider.autoDispose<CustomerMetaData>((ref) 
   return meta;
 });
 
-/// Provider lấy danh sách tuyến của chính nhân viên đăng nhập (GET /dms/routes/mine)
-final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEntity>>((ref) async {
-  final apiService = ref.watch(routeApiServiceProvider);
-  final routes = (await apiService.getMyRoutes()).where((r) => r.id > 0).toList();
-  // Không có danh sách tuyến thì trả rỗng — KHÔNG dựng id giả 1, 2, 3… theo tên tuyến của điểm bán: id 1 là một tuyến thật
-  // trên prod, chọn vào là gắn nhầm tuyến (#24698 vòng 3, chủ hệ thống chốt 03/11/2026).
-  return routes;
-});
 
 /// Hai ô Kênh / Tuyến tự khai cho màn TẠO điểm bán (chốt 21/10/2026) — dựng từ `meta.createChoices`.
 ///
@@ -176,12 +170,6 @@ const List<DynamicFormField> kScopeFieldStubs = [
   DynamicFormField(code: 'territory_code', label: '', type: DynamicFormFieldType.singleChoice),
 ];
 
-/// Lựa chọn ô Tuyến bán hàng — CHỈ tuyến thật của nhân viên ([userAssignedRoutesProvider], đã lọc id). Không có ⇒ rỗng,
-/// KHÔNG dựng id giả theo tên: id 1, 2, 3… là tuyến thật trên prod (#24698 vòng 3, chủ hệ thống chốt 03/11/2026). Dùng chung
-/// Thêm / Sửa.
-List<DynamicFormOption> realRouteOptions(List<UserRouteEntity> routes) => routes
-    .map((r) => DynamicFormOption(label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'), value: r.id))
-    .toList();
 
 /// Ô ảnh của form điểm bán (theo mã ô) — dùng chung màn Thêm mới và Sửa.
 bool isCustomerPhotoKey(String key) {

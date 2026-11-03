@@ -11,7 +11,9 @@ import '../../../data/models/market_form_submission_model.dart';
 import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
+import 'note_field_widget.dart';
 import 'ref_customer_field_widget.dart';
+import 'route_field_widget.dart';
 import '../../../../../core/widgets/location_field_widget.dart';
 import '../../../../../core/widgets/erp_partner_field_widget.dart';
 import '../../../../../core/widgets/geo_select_field_widget.dart';
@@ -60,6 +62,10 @@ class MarketFormRenderer extends StatefulWidget {
   final String? defaultCustomerCode;
   final String? defaultCustomerAddress;
   final bool lockCustomer;
+
+  /// Tuyến ưu tiên để TỰ ĐIỀN ô `ref_dms_route` (tuyến của lượt viếng thăm, rồi tuyến của điểm bán) — chỉ điền id có
+  /// trong danh sách tuyến của NV.
+  final List<int> defaultRouteIds;
   final int defaultMaxPhotos;
   final Future<FormPhotoModel> Function(File file)? onUploadPhoto;
 
@@ -74,6 +80,7 @@ class MarketFormRenderer extends StatefulWidget {
     this.defaultCustomerCode,
     this.defaultCustomerAddress,
     this.lockCustomer = false,
+    this.defaultRouteIds = const [],
     this.defaultMaxPhotos = 10,
     this.onUploadPhoto,
   });
@@ -246,6 +253,18 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (!trong) continue;
       final d = cfg['default'];
       _answers[code] = d is List ? d.map((e) => e.toString()).toList() : d.toString();
+    }
+
+    // Ô Tuyến bán hàng: giá trị là SỐ NGUYÊN id tuyến (nháp / mặc định có thể là chuỗi số).
+    for (final block in widget.blocks) {
+      if (block.resolved.inputType.toLowerCase() != 'ref_dms_route') continue;
+      final code = block.resolved.code;
+      final id = RouteFieldWidget.idOf(_answers[code]);
+      if (id == null) {
+        _answers.remove(code);
+      } else {
+        _answers[code] = id;
+      }
     }
 
     // Ô cho nhập «Khác…»: câu trả lời (nháp / bản ghi cũ) có giá trị ngoài danh sách ⇒ chọn sẵn «Khác…».
@@ -612,6 +631,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: visibleBlocks.map((block) {
         return Padding(
+          // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng dẫn,
+          // đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
+          key: ValueKey('block_${block.resolved.code}'),
           padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
           child: _buildBlock(context, block, isDark),
         );
@@ -721,6 +743,18 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'ref_province':
       case 'ref_ward':
         return _buildGeoField(block);
+      case 'ref_dms_route':
+        return RouteFieldWidget(
+          label: _buildLabel(block, isDark),
+          selectedId: RouteFieldWidget.idOf(_answers[block.resolved.code]),
+          preferredIds: widget.defaultRouteIds,
+          decoration: _inputDecoration(
+            hintText: 'Chọn tuyến bán hàng...',
+            isDark: isDark,
+            errorText: _errors[block.resolved.code],
+          ),
+          onChanged: (id) => _updateValue(block.resolved.code, id),
+        );
       default:
         return _buildTextField(block, isDark, isMultiline: false);
     }
@@ -823,9 +857,18 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // NHÓM TRÌNH BÀY (HEADING / NOTE / DIVIDER)
   // ==========================================
 
+  /// Cấp tiêu đề (`config.level`): 1 = Tiêu đề (mặc định), 2 = Tiêu đề con; thiếu / không hợp lệ ⇒ 1.
+  static int headingLevelOf(MarketFormBlockEntity block) {
+    final cfg = block.resolved.configMap;
+    final raw = cfg?['level'];
+    final level = raw is num ? raw.toInt() : int.tryParse(raw?.toString().trim() ?? '');
+    return level == 2 ? 2 : 1;
+  }
+
   Widget _buildHeading(MarketFormBlockEntity block, bool isDark) {
     final hasDesc = block.resolved.description != null &&
         block.resolved.description!.trim().isNotEmpty;
+    if (headingLevelOf(block) == 2) return _buildSubHeading(block, isDark, hasDesc);
 
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 4),
@@ -873,37 +916,41 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-  Widget _buildNote(MarketFormBlockEntity block, bool isDark) {
+  /// Tiêu đề con (cấp 2): chữ nhỏ hơn, thụt vào, vẫn hiện dòng mô tả.
+  Widget _buildSubHeading(MarketFormBlockEntity block, bool isDark, bool hasDesc) {
+    final accent = isDark ? AppColors.primaryFixedDim : AppColors.primary;
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.darkSurfaceContainer
-            : AppColors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-        ),
-      ),
-      child: Row(
+      key: ValueKey('subheading_${block.resolved.code}'),
+      margin: const EdgeInsets.only(left: 16, top: 4),
+      padding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
+      decoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 3))),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, size: 20, color: AppColors.secondary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              block.resolved.label.isNotEmpty
-                  ? block.resolved.label
-                  : (block.resolved.description ?? ''),
-              style: AppTypography.bodyMedium(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-              ),
-            ),
+          Text(
+            block.resolved.label,
+            style: AppTypography.titleMedium(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
           ),
+          if (hasDesc) ...[
+            const SizedBox(height: 2),
+            Text(
+              block.resolved.description!.trim(),
+              style: AppTypography.bodySmall(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+              ).copyWith(fontSize: 12),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _buildNote(MarketFormBlockEntity block, bool isDark) => NoteFieldWidget(
+        title: block.resolved.label,
+        description: block.resolved.description,
+      );
 
   // ==========================================
   // Ô NHẬP VĂN BẢN (TEXT & TEXTAREA)

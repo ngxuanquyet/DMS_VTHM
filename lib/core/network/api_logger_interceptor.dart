@@ -128,7 +128,10 @@ class AppApiLoggerInterceptor extends Interceptor {
     final data = response.data;
     if (data != null) {
       buffer.writeln('│ 📄 Response Body:');
-      if (data is Map || data is List) {
+      if (response.requestOptions.responseType == ResponseType.bytes) {
+        // Tệp nhị phân (ảnh rich-image): in cỡ, KHÔNG mã hoá từng byte thành JSON (giật màn hình, tràn log).
+        buffer.writeln('│    <${data is List ? data.length : '?'} bytes>');
+      } else if (data is Map || data is List) {
         try {
           final formatted = _encoder.convert(data);
           for (final line in formatted.split('\n')) {
@@ -165,7 +168,9 @@ class AppApiLoggerInterceptor extends Interceptor {
     final errData = err.response?.data;
     if (errData != null) {
       buffer.writeln('│ 📄 Error Response:');
-      if (errData is Map || errData is List) {
+      if (err.requestOptions.responseType == ResponseType.bytes) {
+        buffer.writeln('│    <${errData is List ? errData.length : '?'} bytes>');
+      } else if (errData is Map || errData is List) {
         try {
           final formatted = _encoder.convert(errData);
           for (final line in formatted.split('\n')) {

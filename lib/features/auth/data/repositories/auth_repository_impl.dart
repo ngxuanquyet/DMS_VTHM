@@ -8,6 +8,7 @@ import '../../domain/repositories/auth_repository.dart';
 import '../models/user_model.dart';
 import '../services/auth_api_service.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialsCachePrefix;
+import '../../../../core/utils/rich_image_cache.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthApiService _apiService;
@@ -138,6 +139,8 @@ class AuthRepositoryImpl implements AuthRepository {
     for (final k in keys) {
       await prefs.remove(k);
     }
+    // Ảnh của ô "Tài liệu hướng dẫn" (rich-image) tải về khi điền phiếu — máy dùng chung không giữ lại cho người sau.
+    await RichImageCache.clear();
   }
 
   @override

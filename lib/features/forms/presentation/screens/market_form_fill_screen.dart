@@ -31,6 +31,9 @@ class MarketFormFillArgs {
   /// còn offline, và để check-out offline của lượt chờ phiếu gửi xong (server đếm phiếu bắt buộc ở cổng check-out).
   final String? visitClientUuid;
 
+  /// Tuyến để tự điền ô `ref_dms_route` theo thứ tự ưu tiên (tuyến của lượt, rồi tuyến của điểm bán).
+  final List<int> routeIds;
+
   const MarketFormFillArgs({
     required this.config,
     required this.kind,
@@ -43,6 +46,7 @@ class MarketFormFillArgs {
     this.customerContext,
     this.lockCustomer,
     this.visitClientUuid,
+    this.routeIds = const [],
   });
 
   /// Kiểm tra xem có cần cố định (khoá) trường khách hàng không
@@ -482,6 +486,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
               defaultCustomerCode: widget.args.customerCode,
               defaultCustomerAddress: widget.args.customerAddress,
               lockCustomer: widget.args.isCustomerLocked,
+              defaultRouteIds: widget.args.routeIds,
               onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
             ),
             const SizedBox(height: 80),
