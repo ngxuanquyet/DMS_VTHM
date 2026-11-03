@@ -180,45 +180,18 @@ const List<DynamicFormField> kScopeFieldStubs = [
 ];
 
 
-/// Ô ảnh của form điểm bán (theo mã ô) — dùng chung màn Thêm mới và Sửa.
-bool isCustomerPhotoKey(String key) {
-  final k = key.toLowerCase();
-  const nonPhotoKeys = {
-    'route_ids',
-    'route_id',
-    'customer_type_id',
-    'channel_id',
-    'region_id',
-    'sale_group_id',
-    'id',
-    'code',
-    'status',
-    'lat',
-    'lng',
-    'data',
-    'customer_type_name',
-    'channel_name',
-    'region_name',
-    'route',
-    'route_name',
-    'type',
-    'name',
-    'phone',
-    'email',
-    'address',
-    'tax_code',
-    'notes',
-    'description',
-    'contact_name',
-    'contact_title',
-    'birthday',
-    'delivery_address',
-    'province_name',
-    'ward_name',
-  };
-  if (nonPhotoKeys.contains(k)) return false;
-  return k.contains('photo') || k.contains('image') || k.contains('anh_') || k.contains('hinh_');
-}
+/// Khoá ảnh CỨNG của điểm bán (ô `photo_file_id` + các khoá gửi token) — có mặt dù schema có hay không.
+const Set<String> kCustomerPhotoKeys = {'photo_file_id', 'photo', 'photo_token', 'photo_tokens', 'photos'};
+
+/// Mã các ô ẢNH của form điểm bán — theo LOẠI Ô server gửi (`input_type: image`), không đoán theo mã.
+Set<String> customerPhotoFieldCodes(List<DynamicFormField> fields) =>
+    {for (final f in fields) if (f.type == DynamicFormFieldType.photo) f.code};
+
+/// Khoá dữ liệu là ảnh (dùng chung màn Thêm mới và Sửa): khoá ảnh cứng hoặc mã ô ảnh của schema [photoCodes].
+/// 🔴 KHÔNG đoán theo chuỗi con của mã ô: mã tiếng Việt không dấu `doanh_so_…`, `danh_gia_…`, `hoan_thanh_…` chứa
+/// "anh_" từng bị vẽ thành ô chụp ảnh và giá trị bị đem đi tải lên như ảnh lúc Lưu (03/11/2026).
+bool isCustomerPhotoKey(String key, {Set<String> photoCodes = const {}}) =>
+    kCustomerPhotoKeys.contains(key) || photoCodes.contains(key);
 
 
 /// Mã các ô ĐỘNG đang ẩn theo điều kiện `show_if` — dùng chung màn Thêm mới và Sửa (truyền vào
@@ -470,7 +443,7 @@ List<DynamicFormField> buildCustomerFormFields(
   // Ô công thức / ô trình bày không bao giờ là ô ảnh (mã như `thanh_tien` chứa "anh_" vẫn là công thức).
   for (int i = 0; i < fields.length; i++) {
     if (fields[i].type == DynamicFormFieldType.formula || fields[i].isDisplayOnly) continue;
-    if (fields[i].type == DynamicFormFieldType.photo || isCustomerPhotoKey(fields[i].code)) {
+    if (fields[i].type == DynamicFormFieldType.photo || kCustomerPhotoKeys.contains(fields[i].code)) {
       fields[i] = fields[i].copyWith(
         type: DynamicFormFieldType.photo,
         allowGallery: false,
@@ -534,6 +507,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
+
+  /// Mã ô ẢNH của form đang vẽ ([customerPhotoFieldCodes]) — bước Lưu chỉ coi đúng các khoá này (+ khoá ảnh cứng) là ảnh.
+  Set<String> _photoFieldCodes = const {};
 
   /// Bước "Vật tư tại điểm" (#24526): danh mục + luật "Tạo điểm bán" (cache dùng ngoại tuyến), thao tác đã khai.
   MaterialCreateCatalog? _materialCatalog;
@@ -756,7 +732,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu)
     bool hasPhoto = false;
     for (final key in formData.keys) {
-      if (isCustomerPhotoKey(key)) {
+      if (isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) {
         final val = formData[key];
         if (val is List && val.isNotEmpty) {
           hasPhoto = true;
@@ -864,7 +840,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             : (payload['lng'] is num ? (payload['lng'] as num).toDouble() : null);
 
         for (final key in payload.keys.toList()) {
-          if (!isCustomerPhotoKey(key)) continue;
+          if (!isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) continue;
 
           final val = payload[key];
           if (val is List) {
@@ -951,7 +927,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         // 🔴 Khi offline: Gom toàn bộ ảnh vào photo_tokens và photo_token để chuẩn bị lưu SQLite & sync_queue
         final List<String> offlinePhotos = [];
         for (final key in payload.keys.toList()) {
-          if (!isCustomerPhotoKey(key)) continue;
+          if (!isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) continue;
           final val = payload[key];
           if (val is List) {
             for (final item in val) {
@@ -1306,6 +1282,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                   ? f.copyWith(isRequired: false)
                   : f)
               .toList();
+          _photoFieldCodes = customerPhotoFieldCodes(fields);
 
           if (fields.isEmpty) {
             return const Center(
