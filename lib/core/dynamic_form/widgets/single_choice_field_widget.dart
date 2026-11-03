@@ -5,6 +5,7 @@ import '../../../core/theme/app_typography.dart';
 import '../choice_other.dart';
 import '../models/dynamic_form_field.dart';
 import 'choice_other_input.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicSingleChoiceFieldWidget extends StatelessWidget {
@@ -86,7 +87,6 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final options = field.options;
 
     // Lấy label của item đang chọn (nếu có)
@@ -113,92 +113,19 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
         field.code == 'khach_hang_vthm';
 
     if (isDropdown) {
-      final isRoute = field.code.contains('route');
       return DynamicFormFieldWrapper(
         field: field,
-        errorText: errorText,
-        child: _withOther(DropdownButtonFormField<dynamic>(
+        child: _withOther(FormDropdown<dynamic>(
           focusNode: focusNode,
           initialValue: _otherActive ? ChoiceOther.key : selectedOption?.value,
-          isDense: true,
           isExpanded: true,
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-          ),
-          dropdownColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
-          borderRadius: AppRadius.roundedMd,
-          style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-          ).copyWith(fontWeight: FontWeight.w600),
-          decoration: InputDecoration(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            prefixIcon: Icon(
-              isRoute ? Icons.alt_route_rounded : Icons.arrow_drop_down_circle_outlined,
-              size: 20,
-              color: selectedOption != null
-                  ? AppColors.primary
-                  : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-            ),
-            hintText: field.placeholder ?? 'Chọn ${field.label.toLowerCase()}...',
-            hintStyle: AppTypography.bodyMedium(
-              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-            ),
-            filled: true,
-            fillColor: field.isReadOnly
-                ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
-                : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-            border: OutlineInputBorder(
-              borderRadius: AppRadius.roundedMd,
-              borderSide: BorderSide(
-                color: errorText != null
-                    ? AppColors.error
-                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: AppRadius.roundedMd,
-              borderSide: BorderSide(
-                color: errorText != null
-                    ? AppColors.error
-                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: AppRadius.roundedMd,
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: AppRadius.roundedMd,
-              borderSide: const BorderSide(color: AppColors.error, width: 1.5),
-            ),
-          ),
-          hint: Text(
-            field.placeholder ?? 'Chọn ${field.label.toLowerCase()}...',
-            style: AppTypography.bodyMedium(
-              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-            ),
-          ),
+          readOnly: field.isReadOnly,
+          hintText: field.placeholder ?? 'Chọn ${field.label.toLowerCase()}...',
+          errorText: errorText,
           items: [...options, ?otherOption].map((opt) {
             return DropdownMenuItem<dynamic>(
               value: opt.value,
-              child: Row(
-                children: [
-                  if (opt.icon != null) ...[
-                    Icon(opt.icon, size: 16, color: opt.color ?? AppColors.primary),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: Text(
-                      opt.label,
-                      style: AppTypography.bodyMedium(
-                        color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+              child: Text(opt.label, overflow: TextOverflow.ellipsis),
             );
           }).toList(),
           onChanged: field.isReadOnly ? null : (val) => _select(val),
@@ -207,137 +134,45 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
     }
 
     // Nếu options > 4 hoặc catalog != null, render ô chọn modal/bottomsheet tìm kiếm — trừ khi admin đặt "bày hết ra"
-    // (`choiceDisplay == 'list'`, ô Kênh): luôn vẽ nút chọn bên dưới dù nhiều lựa chọn.
+    // (`choiceDisplay == 'list'`, ô Kênh): luôn vẽ danh sách dù nhiều lựa chọn.
     if (field.choiceDisplay != 'list' && (options.length > 4 || field.catalog != null)) {
+      final daChon = selectedOption != null || _otherActive;
       return DynamicFormFieldWrapper(
         field: field,
-        errorText: errorText,
-        child: _withOther(InkWell(
+        child: _withOther(FormTapField(
+          text: selectedOption?.label ??
+              (_otherActive ? ChoiceOther.label : null) ??
+              field.placeholder ??
+              'Chọn ${field.label.toLowerCase()}',
+          hasValue: daChon,
+          hintText: 'Chọn ${field.label.toLowerCase()}',
+          errorText: errorText,
+          readOnly: field.isReadOnly,
           onTap: field.isReadOnly ? null : () => _showSearchablePicker(context),
-          borderRadius: AppRadius.roundedMd,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: field.isReadOnly
-                  ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
-                  : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-              borderRadius: AppRadius.roundedMd,
-              border: Border.all(
-                color: errorText != null
-                    ? AppColors.error
-                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.arrow_drop_down_circle_outlined,
-                  size: 18,
-                  color: selectedOption != null
-                      ? AppColors.primary
-                      : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    selectedOption?.label ??
-                        (_otherActive ? ChoiceOther.label : null) ??
-                        field.placeholder ??
-                        'Chọn ${field.label.toLowerCase()}',
-                    style: AppTypography.bodyMedium(
-                      color: selectedOption != null
-                          ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                          : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                    ).copyWith(
-                      fontWeight: selectedOption != null ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if ((selectedOption != null || _otherActive) && !field.isReadOnly)
-                  GestureDetector(
-                    onTap: () {
-                      if (_otherActive) onOtherChanged!(null);
-                      onChanged(null);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Icon(
-                        Icons.cancel_rounded,
-                        size: 16,
-                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                      ),
-                    ),
-                  ),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                ),
-              ],
-            ),
-          ),
+          suffixIcon: daChon && !field.isReadOnly
+              ? IconButton(
+                  icon: const Icon(Icons.clear_rounded, size: 18),
+                  tooltip: 'Bỏ chọn',
+                  onPressed: () {
+                    if (_otherActive) onOtherChanged!(null);
+                    onChanged(null);
+                  },
+                )
+              : const Icon(Icons.arrow_drop_down),
         )),
       );
     }
 
-    // Nếu options <= 4, render dạng các nút Chip / Radio cards trực quan
+    // Ít lựa chọn (hoặc admin đặt "bày hết ra"): danh sách nút tròn trong khung — như biểu mẫu khảo sát.
     return DynamicFormFieldWrapper(
       field: field,
+      gap: kFormLabelGapChoice,
       errorText: errorText,
-      child: _withOther(Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [...options, ?otherOption].map((opt) {
-          final isSelected = opt.value == ChoiceOther.key
-              ? _otherActive
-              : !_otherActive && (opt.value == value || opt.value.toString() == value?.toString());
-          return InkWell(
-            onTap: field.isReadOnly ? null : () => _select(opt.value),
-            borderRadius: AppRadius.roundedMd,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? (isDark ? AppColors.primary : AppColors.primaryContainer)
-                    : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-                borderRadius: AppRadius.roundedMd,
-                border: Border.all(
-                  color: isSelected
-                      ? (isDark ? AppColors.primary : AppColors.primaryContainer)
-                      : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-                  width: isSelected ? 1.5 : 1.0,
-                ),
-                boxShadow: isSelected ? AppShadows.level1 : [],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                    size: 16,
-                    color: isSelected
-                        ? Colors.white
-                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    opt.label,
-                    style: AppTypography.bodySmall(
-                      color: isSelected
-                          ? Colors.white
-                          : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                    ).copyWith(
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
+      child: _withOther(FormRadioGroup(
+        options: [...options, ?otherOption].map((o) => FormChoiceOption(o.value, o.label)).toList(),
+        selectedKey: _otherActive ? ChoiceOther.key : selectedOption?.value.toString(),
+        hasError: errorText != null,
+        onChanged: field.isReadOnly ? null : _select,
       )),
     );
   }

@@ -10,6 +10,7 @@ import '../../utils/photo_watermark_helper.dart';
 import '../../widgets/camera_permission_dialog.dart';
 import '../../widgets/app_fullscreen_image_viewer.dart';
 import '../models/dynamic_form_field.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicPhotoFieldWidget extends StatelessWidget {
@@ -370,14 +371,31 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return DynamicFormFieldWrapper(
-      field: field,
-      errorText: errorText,
+    // Vỏ như ô ảnh của biểu mẫu khảo sát (#24756): nhãn + huy hiệu số ảnh, khung viền chứa lưới ảnh + nút thêm.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Photos Grid Preview + Add Button
-          Wrap(
+          FormFieldLabel(
+            label: field.label,
+            isRequired: field.isRequired,
+            description: field.description,
+            asTextWidget: true,
+            trailing: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                ?DynamicFieldBadge.of(field),
+                FormPhotoCountBadge(count: photoPaths.length, max: field.maxPhotos),
+              ],
+            ),
+          ),
+          const SizedBox(height: kFormLabelGap),
+          FormPhotoFrame(
+            hasError: errorText != null,
+            child: Wrap(
             spacing: 10,
             runSpacing: 10,
             children: [
@@ -486,8 +504,10 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
+          if (errorText != null && errorText!.isNotEmpty) FormFieldErrorText(errorText!),
         ],
       ),
     );

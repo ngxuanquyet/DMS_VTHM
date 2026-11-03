@@ -12,6 +12,7 @@ import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import '../../../../../core/widgets/note_field_widget.dart';
+import '../../../../../core/widgets/form_fields/form_field_parts.dart';
 import '../../../../../core/dynamic_form/widgets/heading_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import 'route_field_widget.dart';
@@ -336,7 +337,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         key: ValueKey('choice_other_${block.resolved.code}'),
         initialText: _otherText[block.resolved.code],
         onChanged: (t) => _updateOtherText(block, t),
-        decoration: _inputDecoration(hintText: 'Nhập giá trị khác...', isDark: isDark),
       );
 
   @override
@@ -999,27 +999,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Widget _buildBooleanField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
-    final current = _answers[code] == true;
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: _errors.containsKey(code)
-              ? AppColors.error
-              : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-        ),
-      ),
-      child: SwitchListTile(
-        tileColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        title: _buildLabel(block, isDark),
-        value: current,
-        activeThumbColor: AppColors.primary,
-        onChanged: (val) => _updateValue(code, val),
-      ),
+    return FormSwitchTile(
+      title: _buildLabel(block, isDark),
+      value: _answers[code] == true,
+      hasError: _errors.containsKey(code),
+      onChanged: (val) => _updateValue(code, val),
     );
   }
 
@@ -1030,7 +1014,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   Widget _buildRadioField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
     final current = _answers[code];
-    final options = block.resolved.options;
     final allowOther = _allowsOther(block);
     final otherActive = allowOther && _otherText.containsKey(code);
 
@@ -1038,51 +1021,45 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildLabel(block, isDark),
-        const SizedBox(height: 6),
-        Material(
-          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(
-              color: _errors.containsKey(code)
-                  ? AppColors.error
-                  : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-            ),
-          ),
-          child: Column(
-            children: [
-              ...options.map((o) => (value: o.value, label: o.label)),
-              if (allowOther) (value: ChoiceOther.key, label: ChoiceOther.label),
-            ].map((opt) {
-              // ignore: deprecated_member_use
-              return RadioListTile<String>(
-                title: Text(
-                  opt.label,
-                  style: AppTypography.bodyMedium(
-                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                  ),
-                ),
-                value: opt.value,
-                // ignore: deprecated_member_use
-                groupValue: otherActive ? ChoiceOther.key : current?.toString(),
-                activeColor: AppColors.primary,
-                // ignore: deprecated_member_use
-                onChanged: (val) {
-                  if (val == ChoiceOther.key) {
-                    _setOtherActive(block, true);
-                  } else {
-                    _otherText.remove(code);
-                    _updateValue(code, val);
-                  }
-                },
-              );
-            }).toList(),
-          ),
+        const SizedBox(height: kFormLabelGapChoice),
+        FormRadioGroup(
+          options: _choiceOptions(block, allowOther),
+          selectedKey: otherActive ? ChoiceOther.key : current?.toString(),
+          hasError: _errors.containsKey(code),
+          onChanged: (val) {
+            if (val == ChoiceOther.key) {
+              _setOtherActive(block, true);
+            } else {
+              _otherText.remove(code);
+              _updateValue(code, val);
+            }
+          },
         ),
         if (otherActive) _buildOtherInput(block, isDark),
-        if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
+        if (_errors.containsKey(code)) FormFieldErrorText(_errors[code]!),
       ],
     );
+  }
+
+  /// Lựa chọn của ô (giá trị chuỗi) + «Khác…» cuối danh sách khi ô cho nhập khác.
+  List<FormChoiceOption> _choiceOptions(MarketFormBlockEntity block, bool allowOther) => [
+        ...block.resolved.options.map((o) => FormChoiceOption(o.value, o.label)),
+        if (allowOther) const FormChoiceOption(ChoiceOther.key, ChoiceOther.label),
+      ];
+
+  /// Tích / bỏ tích một lựa chọn của ô chọn nhiều — «Khác…» bật/tắt ô gõ.
+  void _toggleMulti(MarketFormBlockEntity block, List<String> currentList, Object? value, bool on) {
+    if (value == ChoiceOther.key) {
+      _setOtherActive(block, on);
+      return;
+    }
+    final updated = List<String>.from(currentList);
+    if (on) {
+      updated.add(value as String);
+    } else {
+      updated.remove(value);
+    }
+    _updateValue(block.resolved.code, updated);
   }
 
   // ==========================================
@@ -1092,7 +1069,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   Widget _buildCheckboxField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
     final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
-    final options = block.resolved.options;
     final allowOther = _allowsOther(block);
     final otherActive = allowOther && _otherText.containsKey(code);
 
@@ -1100,57 +1076,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildLabel(block, isDark),
-        const SizedBox(height: 6),
-        Material(
-          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(
-              color: _errors.containsKey(code)
-                  ? AppColors.error
-                  : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-            ),
-          ),
-          child: Column(
-            children: options.map((opt) {
-              final isChecked = currentList.contains(opt.value);
-              return CheckboxListTile(
-                title: Text(
-                  opt.label,
-                  style: AppTypography.bodyMedium(
-                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                  ),
-                ),
-                value: isChecked,
-                activeColor: AppColors.primary,
-                onChanged: (checked) {
-                  final updated = List<String>.from(currentList);
-                  if (checked == true) {
-                    updated.add(opt.value);
-                  } else {
-                    updated.remove(opt.value);
-                  }
-                  _updateValue(code, updated);
-                },
-              );
-            }).followedBy([
-              if (allowOther)
-                CheckboxListTile(
-                  title: Text(
-                    ChoiceOther.label,
-                    style: AppTypography.bodyMedium(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ),
-                  ),
-                  value: otherActive,
-                  activeColor: AppColors.primary,
-                  onChanged: (checked) => _setOtherActive(block, checked == true),
-                ),
-            ]).toList(),
-          ),
+        const SizedBox(height: kFormLabelGapChoice),
+        FormCheckboxGroup(
+          options: _choiceOptions(block, allowOther),
+          isChecked: (v) => v == ChoiceOther.key ? otherActive : currentList.contains(v),
+          hasError: _errors.containsKey(code),
+          onChanged: (v, on) => _toggleMulti(block, currentList, v, on),
         ),
         if (otherActive) _buildOtherInput(block, isDark),
-        if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
+        if (_errors.containsKey(code)) FormFieldErrorText(_errors[code]!),
       ],
     );
   }
@@ -1170,8 +1104,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildLabel(block, isDark),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
+        const SizedBox(height: kFormLabelGap),
+        FormDropdown<String>(
           initialValue: otherActive ? ChoiceOther.key : (options.any((o) => o.value == current) ? current : null),
           items: [
             ...options.map((o) => DropdownMenuItem(
@@ -1180,16 +1114,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 )),
             if (allowOther) const DropdownMenuItem(value: ChoiceOther.key, child: Text(ChoiceOther.label)),
           ],
-          style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-          ),
-          dropdownColor:
-              isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-          decoration: _inputDecoration(
-            hintText: 'Chọn một giá trị...',
-            isDark: isDark,
-            errorText: _errors[code],
-          ),
+          hintText: 'Chọn một giá trị...',
+          errorText: _errors[code],
           onChanged: (val) {
             if (val == ChoiceOther.key) {
               _setOtherActive(block, true);
@@ -1211,7 +1137,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   Widget _buildMultiSelectField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
     final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
-    final options = block.resolved.options;
     final allowOther = _allowsOther(block);
     final otherActive = allowOther && _otherText.containsKey(code);
 
@@ -1219,56 +1144,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildLabel(block, isDark),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: options.map((opt) {
-            final isSelected = currentList.contains(opt.value);
-            return FilterChip(
-              label: Text(opt.label),
-              selected: isSelected,
-              selectedColor: isDark
-                  ? AppColors.primary.withValues(alpha: 0.3)
-                  : AppColors.primaryContainer.withValues(alpha: 0.3),
-              checkmarkColor: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                    : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
-              onSelected: (selected) {
-                final updated = List<String>.from(currentList);
-                if (selected) {
-                  updated.add(opt.value);
-                } else {
-                  updated.remove(opt.value);
-                }
-                _updateValue(code, updated);
-              },
-            );
-          }).followedBy([
-            if (allowOther)
-              FilterChip(
-                label: const Text(ChoiceOther.label),
-                selected: otherActive,
-                selectedColor: isDark
-                    ? AppColors.primary.withValues(alpha: 0.3)
-                    : AppColors.primaryContainer.withValues(alpha: 0.3),
-                checkmarkColor: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                labelStyle: TextStyle(
-                  color: otherActive
-                      ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                      : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                  fontWeight: otherActive ? FontWeight.w600 : FontWeight.normal,
-                ),
-                onSelected: (selected) => _setOtherActive(block, selected),
-              ),
-          ]).toList(),
+        const SizedBox(height: kFormLabelGap),
+        FormChipGroup(
+          options: _choiceOptions(block, allowOther),
+          isSelected: (v) => v == ChoiceOther.key ? otherActive : currentList.contains(v),
+          onSelected: (v, on) => _toggleMulti(block, currentList, v, on),
         ),
         if (otherActive) _buildOtherInput(block, isDark),
-        if (_errors.containsKey(code)) _buildErrorText(_errors[code]!),
+        if (_errors.containsKey(code)) FormFieldErrorText(_errors[code]!),
       ],
     );
   }
@@ -1289,8 +1172,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildLabel(block, isDark),
-        const SizedBox(height: 8),
-        InkWell(
+        const SizedBox(height: kFormLabelGap),
+        FormTapField(
+          text: current ?? 'Chưa chọn ngày',
+          hasValue: current != null,
+          hintText: 'Chọn ngày...',
+          errorText: _errors[code],
+          suffixIcon: const Icon(Icons.calendar_today_rounded, size: 20),
           onTap: () async {
             final initialDate = current != null
                 ? (DateTime.tryParse(current) ?? DateTime.now())
@@ -1307,23 +1195,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               _updateValue(code, formatted);
             }
           },
-          borderRadius: BorderRadius.circular(10),
-          child: InputDecorator(
-            decoration: _inputDecoration(
-              hintText: 'Chọn ngày...',
-              isDark: isDark,
-              errorText: _errors[code],
-              suffixIcon: const Icon(Icons.calendar_today_rounded, size: 20),
-            ),
-            child: Text(
-              current ?? 'Chưa chọn ngày',
-              style: AppTypography.bodyMedium(
-                color: current != null
-                    ? (isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                    : (isDark ? AppColors.darkOutline : AppColors.outlineVariant),
-              ),
-            ),
-          ),
         ),
       ],
     );
@@ -1343,58 +1214,21 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final minFiles = _resolveMinFiles(block);
     final entries = _photoEntries[code] ?? [];
     final canAddMore = entries.length < maxFiles;
-    final belowMin = entries.length < minFiles;
     final error = _errors[code];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _buildLabel(block, isDark)),
-            const SizedBox(width: 8),
-            // Flexible: nhãn "· tối thiểu N" dài hơn — ô nửa bề rộng trên máy hẹp không được tràn hàng.
-            Flexible(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  minFiles > 0 ? '${entries.length}/$maxFiles ảnh · tối thiểu $minFiles' : '${entries.length}/$maxFiles ảnh',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: AppTypography.labelSmall(
-                    color: entries.isNotEmpty && belowMin
-                        ? AppColors.error
-                        : entries.length >= maxFiles
-                            ? AppColors.primary
-                            : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                  ).copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ],
+        FormFieldLabel(
+          label: block.resolved.label,
+          isRequired: block.required,
+          description: block.resolved.description,
+          trailing: FormPhotoCountBadge(count: entries.length, max: maxFiles, min: minFiles),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kFormLabelGap),
 
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: error != null
-                  ? AppColors.error
-                  : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-              width: error != null ? 1.5 : 1.0,
-            ),
-          ),
+        FormPhotoFrame(
+          hasError: error != null,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1456,7 +1290,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             ],
           ),
         ),
-        if (error != null) _buildErrorText(error),
+        if (error != null) FormFieldErrorText(error),
       ],
     );
   }
@@ -1759,88 +1593,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // HELPER WIDGETS
   // ==========================================
 
-  Widget _buildLabel(MarketFormBlockEntity block, bool isDark) {
-    final hasDesc = block.resolved.description != null &&
-        block.resolved.description!.trim().isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        RichText(
-          text: TextSpan(
-            text: block.resolved.label,
-            style: AppTypography.titleMedium(
-              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-            ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
-            children: [
-              if (block.required)
-                const TextSpan(
-                  text: ' *',
-                  style: TextStyle(
-                    color: AppColors.error,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (hasDesc) ...[
-          const SizedBox(height: 3),
-          Text(
-            block.resolved.description!.trim(),
-            style: AppTypography.bodySmall(
-              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-            ).copyWith(fontSize: 12),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildErrorText(String error) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 4),
-      child: Text(
-        error,
-        style: const TextStyle(color: AppColors.error, fontSize: 12),
-      ),
-    );
-  }
+  Widget _buildLabel(MarketFormBlockEntity block, bool isDark) => FormFieldLabel(
+        label: block.resolved.label,
+        isRequired: block.required,
+        description: block.resolved.description,
+      );
 
   InputDecoration _inputDecoration({
     required String hintText,
     required bool isDark,
     String? errorText,
     Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: AppTypography.bodyMedium(
-        color: isDark ? AppColors.darkOutline : AppColors.outlineVariant,
-      ),
-      errorText: errorText,
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor:
-          isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(
-          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-        ),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(
-          color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-      ),
-    );
-  }
+  }) =>
+      formFieldDecoration(hintText: hintText, isDark: isDark, errorText: errorText, suffixIcon: suffixIcon);
 }

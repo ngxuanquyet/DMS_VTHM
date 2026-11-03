@@ -7,10 +7,10 @@ import '../../../core/map/goong_config.dart';
 import '../../../core/map/goong_models.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/voice_input_mic_button.dart';
 import '../models/dynamic_form_field.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicTextFieldWidget extends StatefulWidget {
@@ -35,9 +35,8 @@ class DynamicTextFieldWidget extends StatefulWidget {
 
 class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
   late final TextEditingController _controller;
-  late final FocusNode _focusNode;
+  late FocusNode _focusNode; // đổi được trong didUpdateWidget khi màn chứa đổi focusNode
   bool _isInternalFocusNode = false;
-  bool _isFocused = false;
 
   final GoongApiService _goongService = GoongApiService();
   Timer? _debounceTimer;
@@ -85,16 +84,6 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
       _focusNode = FocusNode();
       _isInternalFocusNode = true;
     }
-    _isFocused = _focusNode.hasFocus;
-    _focusNode.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (mounted && _isFocused != _focusNode.hasFocus) {
-      setState(() {
-        _isFocused = _focusNode.hasFocus;
-      });
-    }
   }
 
   @override
@@ -105,7 +94,6 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
       _controller.text = widget.value ?? '';
     }
     if (widget.focusNode != oldWidget.focusNode) {
-      _focusNode.removeListener(_onFocusChange);
       if (_isInternalFocusNode) {
         _focusNode.dispose();
       }
@@ -116,15 +104,12 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
         _focusNode = FocusNode();
         _isInternalFocusNode = true;
       }
-      _isFocused = _focusNode.hasFocus;
-      _focusNode.addListener(_onFocusChange);
     }
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    _focusNode.removeListener(_onFocusChange);
     if (_isInternalFocusNode) {
       _focusNode.dispose();
     }
@@ -196,108 +181,81 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
 
     return DynamicFormFieldWrapper(
       field: widget.field,
-      errorText: widget.errorText,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: widget.field.isReadOnly
-                  ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
-                  : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-              borderRadius: AppRadius.roundedMd,
-              border: Border.all(
-                color: widget.errorText != null
-                    ? AppColors.error
-                    : (_isFocused
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant)),
-                width: _isFocused ? 1.5 : 1.0,
-              ),
-            ),
-            child: TextField(
-              focusNode: _focusNode,
-              controller: _controller,
+          TextField(
+            focusNode: _focusNode,
+            controller: _controller,
+            readOnly: widget.field.isReadOnly,
+            keyboardType: _isPhoneField
+                ? TextInputType.phone
+                : (_isEmailField
+                    ? TextInputType.emailAddress
+                    : (_isAddressField
+                        ? TextInputType.streetAddress
+                        : TextInputType.text)),
+            inputFormatters: _isPhoneField
+                ? [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d+ ()-]')),
+                  ]
+                : null,
+            textInputAction: TextInputAction.next,
+            onChanged: (val) {
+              // Không gọi trim() ở đây để cho phép người dùng gõ dấu space bình thường
+              widget.onChanged(val.isNotEmpty ? val : null);
+              _onAddressSearch(val);
+            },
+            style: formFieldTextStyle(isDark),
+            decoration: formFieldDecoration(
+              isDark: isDark,
               readOnly: widget.field.isReadOnly,
-              keyboardType: _isPhoneField
-                  ? TextInputType.phone
+              errorText: widget.errorText,
+              hintText: widget.field.placeholder ??
+                  (_isPhoneField
+                      ? 'Nhập số điện thoại...'
+                      : 'Nhập ${widget.field.label.toLowerCase()}...'),
+              prefixText: widget.field.prefixText != null ? '${widget.field.prefixText} ' : null,
+              suffixText: widget.field.suffixText,
+              // Biểu tượng loại ô (điện thoại / email / chữ) — gợi ý bàn phím sẽ mở.
+              prefixIcon: _isPhoneField
+                  ? const Icon(Icons.phone_outlined, size: 18)
                   : (_isEmailField
-                      ? TextInputType.emailAddress
-                      : (_isAddressField
-                          ? TextInputType.streetAddress
-                          : TextInputType.text)),
-              inputFormatters: _isPhoneField
-                  ? [
-                      FilteringTextInputFormatter.allow(RegExp(r'[\d+ ()-]')),
-                    ]
-                  : null,
-              textInputAction: TextInputAction.next,
-              onChanged: (val) {
-                // Không gọi trim() ở đây để cho phép người dùng gõ dấu space bình thường
-                widget.onChanged(val.isNotEmpty ? val : null);
-                _onAddressSearch(val);
-              },
-              style: AppTypography.bodyMedium(
-                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-              ),
-              decoration: InputDecoration(
-                hintText: widget.field.placeholder ??
-                    (_isPhoneField
-                        ? 'Nhập số điện thoại...'
-                        : 'Nhập ${widget.field.label.toLowerCase()}...'),
-                hintStyle: AppTypography.bodySmall(
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                ),
-                prefixText: widget.field.prefixText != null ? '${widget.field.prefixText} ' : null,
-                suffixText: widget.field.suffixText,
-                prefixIcon: _isPhoneField
-                    ? const Icon(Icons.phone_outlined, size: 18)
-                    : (_isEmailField
-                        ? const Icon(Icons.email_outlined, size: 18)
-                        : const Icon(Icons.edit_note_rounded, size: 18)),
-                suffixIcon: !widget.field.isReadOnly
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_controller.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 16),
-                              tooltip: 'Xóa nội dung',
-                              onPressed: () {
-                                _debounceTimer?.cancel();
-                                setState(() {
-                                  _controller.clear();
-                                  _suggestions = [];
-                                  _isSearchingSuggestions = false;
-                                });
-                                widget.onChanged(null);
-                              },
-                            ),
-                          VoiceInputMicButton(
-                            currentText: _controller.text,
-                            fieldName: widget.field.label,
-                            onTextRecognized: (newText) {
+                      ? const Icon(Icons.email_outlined, size: 18)
+                      : const Icon(Icons.edit_note_rounded, size: 18)),
+              suffixIcon: !widget.field.isReadOnly
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_controller.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 16),
+                            tooltip: 'Xóa nội dung',
+                            onPressed: () {
+                              _debounceTimer?.cancel();
                               setState(() {
-                                _controller.text = newText;
+                                _controller.clear();
+                                _suggestions = [];
+                                _isSearchingSuggestions = false;
                               });
-                              widget.onChanged(newText.isNotEmpty ? newText : null);
-                              _onAddressSearch(newText);
+                              widget.onChanged(null);
                             },
                           ),
-                          const SizedBox(width: 4),
-                        ],
-                      )
-                    : null,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
-                filled: false,
-                fillColor: Colors.transparent,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
+                        VoiceInputMicButton(
+                          currentText: _controller.text,
+                          fieldName: widget.field.label,
+                          onTextRecognized: (newText) {
+                            setState(() {
+                              _controller.text = newText;
+                            });
+                            widget.onChanged(newText.isNotEmpty ? newText : null);
+                            _onAddressSearch(newText);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    )
+                  : null,
             ),
           ),
 

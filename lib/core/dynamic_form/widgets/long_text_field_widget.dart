@@ -6,10 +6,10 @@ import '../../../core/map/goong_config.dart';
 import '../../../core/map/goong_models.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/voice_input_mic_button.dart';
 import '../models/dynamic_form_field.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicLongTextFieldWidget extends StatefulWidget {
@@ -34,9 +34,8 @@ class DynamicLongTextFieldWidget extends StatefulWidget {
 
 class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget> {
   late final TextEditingController _controller;
-  late final FocusNode _focusNode;
+  late FocusNode _focusNode; // đổi được trong didUpdateWidget khi màn chứa đổi focusNode
   bool _isInternalFocusNode = false;
-  bool _isFocused = false;
 
   final GoongApiService _goongService = GoongApiService();
   Timer? _debounceTimer;
@@ -58,16 +57,6 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
       _focusNode = FocusNode();
       _isInternalFocusNode = true;
     }
-    _isFocused = _focusNode.hasFocus;
-    _focusNode.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (mounted && _isFocused != _focusNode.hasFocus) {
-      setState(() {
-        _isFocused = _focusNode.hasFocus;
-      });
-    }
   }
 
   @override
@@ -78,7 +67,6 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
       _controller.text = widget.value ?? '';
     }
     if (widget.focusNode != oldWidget.focusNode) {
-      _focusNode.removeListener(_onFocusChange);
       if (_isInternalFocusNode) {
         _focusNode.dispose();
       }
@@ -89,15 +77,12 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
         _focusNode = FocusNode();
         _isInternalFocusNode = true;
       }
-      _isFocused = _focusNode.hasFocus;
-      _focusNode.addListener(_onFocusChange);
     }
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    _focusNode.removeListener(_onFocusChange);
     if (_isInternalFocusNode) {
       _focusNode.dispose();
     }
@@ -169,87 +154,40 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
 
     return DynamicFormFieldWrapper(
       field: widget.field,
-      errorText: widget.errorText,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: widget.field.isReadOnly
-                  ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
-                  : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-              borderRadius: AppRadius.roundedMd,
-              border: Border.all(
-                color: widget.errorText != null
-                    ? AppColors.error
-                    : (_isFocused
-                        ? AppColors.primary
-                        : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant)),
-                width: _isFocused ? 1.5 : 1.0,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                TextField(
-                  focusNode: _focusNode,
-                  controller: _controller,
-                  readOnly: widget.field.isReadOnly,
-                  minLines: 3,
-                  maxLines: 6,
-                  onChanged: (val) {
-                    setState(() {});
-                    // Không gọi trim() ở đây để cho phép người dùng gõ dấu space bình thường
-                    widget.onChanged(val.isNotEmpty ? val : null);
-                    _onAddressSearch(val);
-                  },
-                  style: AppTypography.bodyMedium(
-                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: widget.field.placeholder ?? 'Nhập chi tiết ${widget.field.label.toLowerCase()}...',
-                    hintStyle: AppTypography.bodySmall(
-                      color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
+          TextField(
+            focusNode: _focusNode,
+            controller: _controller,
+            readOnly: widget.field.isReadOnly,
+            minLines: 3,
+            maxLines: 4,
+            keyboardType: TextInputType.multiline,
+            onChanged: (val) {
+              // Không gọi trim() ở đây để cho phép người dùng gõ dấu space bình thường
+              widget.onChanged(val.isNotEmpty ? val : null);
+              _onAddressSearch(val);
+            },
+            style: formFieldTextStyle(isDark),
+            decoration: formFieldDecoration(
+              isDark: isDark,
+              readOnly: widget.field.isReadOnly,
+              errorText: widget.errorText,
+              hintText: widget.field.placeholder ?? 'Nhập ${widget.field.label.toLowerCase()}...',
+              suffixIcon: widget.field.isReadOnly
+                  ? null
+                  : VoiceInputMicButton(
+                      currentText: _controller.text,
+                      fieldName: widget.field.label,
+                      onTextRecognized: (newText) {
+                        setState(() {
+                          _controller.text = newText;
+                        });
+                        widget.onChanged(newText.isNotEmpty ? newText : null);
+                        _onAddressSearch(newText);
+                      },
                     ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    focusedErrorBorder: InputBorder.none,
-                    filled: false,
-                    fillColor: Colors.transparent,
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                if (!widget.field.isReadOnly)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8, bottom: 4, left: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${_controller.text.length} ký tự',
-                          style: AppTypography.labelSmall(
-                            color: isDark ? AppColors.darkOutline : AppColors.outline,
-                          ).copyWith(fontSize: 10),
-                        ),
-                        VoiceInputMicButton(
-                          currentText: _controller.text,
-                          fieldName: widget.field.label,
-                          size: 18,
-                          onTextRecognized: (newText) {
-                            setState(() {
-                              _controller.text = newText;
-                            });
-                            widget.onChanged(newText.isNotEmpty ? newText : null);
-                            _onAddressSearch(newText);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
             ),
           ),
 

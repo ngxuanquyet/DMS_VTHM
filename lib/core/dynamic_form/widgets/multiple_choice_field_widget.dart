@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../choice_other.dart';
 import '../models/dynamic_form_field.dart';
 import 'choice_other_input.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import 'dynamic_form_field_wrapper.dart';
 
 class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
@@ -136,7 +136,6 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final options = field.options;
 
     if (field.choiceDisplay == 'dropdown') {
@@ -144,105 +143,33 @@ class DynamicMultipleChoiceFieldWidget extends StatelessWidget {
       if (_otherActive) nhan.add(otherText!.isEmpty ? ChoiceOther.label : otherText!);
       return DynamicFormFieldWrapper(
         field: field,
-        errorText: errorText,
-        child: _withOther(InkWell(
+        child: _withOther(FormTapField(
+          text: nhan.isEmpty ? (field.placeholder ?? 'Chọn ${field.label.toLowerCase()}') : nhan.join(', '),
+          hasValue: nhan.isNotEmpty,
+          hintText: 'Chọn ${field.label.toLowerCase()}',
+          errorText: errorText,
+          readOnly: field.isReadOnly,
           onTap: field.isReadOnly ? null : () => _showPicker(context),
-          borderRadius: AppRadius.roundedMd,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest,
-              borderRadius: AppRadius.roundedMd,
-              border: Border.all(
-                color: errorText != null
-                    ? AppColors.error
-                    : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    nhan.isEmpty ? (field.placeholder ?? 'Chọn ${field.label.toLowerCase()}') : nhan.join(', '),
-                    style: AppTypography.bodyMedium(
-                      color: nhan.isEmpty
-                          ? (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline)
-                          : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-                ),
-              ],
-            ),
-          ),
+          suffixIcon: const Icon(Icons.arrow_drop_down),
         )),
       );
     }
 
+    // Danh sách ô tick trong khung — như biểu mẫu khảo sát.
     return DynamicFormFieldWrapper(
       field: field,
+      gap: kFormLabelGapChoice,
       errorText: errorText,
-      child: _withOther(Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          ...options,
-          if (_showOther) const DynamicFormOption(label: ChoiceOther.label, value: ChoiceOther.key),
-        ].map((opt) {
-          final laKhac = opt.value == ChoiceOther.key;
-          final isSelected = laKhac ? _otherActive : selectedValues.contains(opt.value);
-          return InkWell(
-            onTap: field.isReadOnly
-                ? null
-                : () => laKhac ? onOtherChanged!(_otherActive ? null : '') : _toggleOption(opt.value),
-            borderRadius: AppRadius.roundedMd,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? (isDark ? AppColors.secondary : AppColors.secondaryContainer)
-                    : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-                borderRadius: AppRadius.roundedMd,
-                border: Border.all(
-                  color: isSelected
-                      ? (isDark ? AppColors.secondary : AppColors.secondaryContainer)
-                      : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-                ),
-                boxShadow: isSelected ? AppShadows.level1 : [],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isSelected ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                    size: 16,
-                    color: isSelected
-                        ? (isDark ? Colors.white : AppColors.onSecondaryContainer)
-                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    opt.label,
-                    style: AppTypography.bodySmall(
-                      color: isSelected
-                          ? (isDark ? Colors.white : AppColors.onSecondaryContainer)
-                          : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
-                    ).copyWith(
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
+      child: _withOther(FormCheckboxGroup(
+        options: [
+          ...options.map((o) => FormChoiceOption(o.value, o.label)),
+          if (_showOther) const FormChoiceOption(ChoiceOther.key, ChoiceOther.label),
+        ],
+        isChecked: (v) => v == ChoiceOther.key ? _otherActive : selectedValues.contains(v),
+        hasError: errorText != null,
+        onChanged: field.isReadOnly
+            ? null
+            : (v, _) => v == ChoiceOther.key ? onOtherChanged!(_otherActive ? null : '') : _toggleOption(v),
       )),
     );
   }

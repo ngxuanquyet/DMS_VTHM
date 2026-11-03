@@ -2,122 +2,74 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 import '../models/dynamic_form_field.dart';
 
+/// Vỏ một ô của form động — CÙNG cách vẽ biểu mẫu khảo sát/thu thập (#24756): [FormFieldLabel] (huy hiệu / "Chỉ đọc"
+/// bên phải) → [gap] → ô → dòng lỗi [FormFieldErrorText]; cách ô sau [kFormFieldSpacing]. Ô có viền nhập hiện lỗi
+/// trong viền (`formFieldDecoration(errorText:)`) và KHÔNG truyền [errorText] vào đây.
 class DynamicFormFieldWrapper extends StatelessWidget {
   final DynamicFormField field;
   final Widget child;
   final String? errorText;
+  final double gap;
 
   const DynamicFormFieldWrapper({
     super.key,
     required this.field,
     required this.child,
     this.errorText,
+    this.gap = kFormLabelGap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
+      padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label Row with Required marker & ReadOnly/custom badge
-          Row(
-            children: [
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    text: field.label,
-                    style: AppTypography.labelLarge(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ).copyWith(fontWeight: FontWeight.w600),
-                    children: [
-                      if (field.isRequired)
-                        const TextSpan(
-                          text: ' *',
-                          style: TextStyle(
-                            color: AppColors.error,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (field.badge != null && field.badge!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.darkSurfaceContainer
-                        : AppColors.surfaceContainerHigh,
-                    borderRadius: AppRadius.roundedSm,
-                  ),
-                  child: Text(
-                    field.badge!,
-                    style: AppTypography.labelSmall(
-                      color: isDark
-                          ? AppColors.darkOnSurfaceVariant
-                          : AppColors.onSurfaceVariant,
-                    ).copyWith(fontSize: 10),
-                  ),
-                )
-              else if (field.isReadOnly)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.darkSurfaceContainer
-                        : AppColors.surfaceContainerHigh,
-                    borderRadius: AppRadius.roundedSm,
-                  ),
-                  child: Text(
-                    'Chỉ đọc',
-                    style: AppTypography.labelSmall(
-                      color: isDark
-                          ? AppColors.darkOnSurfaceVariant
-                          : AppColors.onSurfaceVariant,
-                    ).copyWith(fontSize: 10),
-                  ),
-                ),
-            ],
+          FormFieldLabel(
+            label: field.label,
+            isRequired: field.isRequired,
+            description: field.description,
+            asTextWidget: true,
+            trailing: DynamicFieldBadge.of(field),
           ),
-          // Chú giải / Hướng dẫn của trường ngay dưới nhãn
-          if (field.description != null && field.description!.trim().isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              field.description!.trim(),
-              style: AppTypography.bodySmall(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline,
-              ).copyWith(fontSize: 12),
-            ),
-          ],
-          const SizedBox(height: 6),
-
-          // Main Field Input
+          SizedBox(height: gap),
           child,
-
-          // Error Text
-          if (errorText != null && errorText!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.error_outline_rounded, size: 13, color: AppColors.error),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    errorText!,
-                    style: AppTypography.bodySmall(color: AppColors.error).copyWith(fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          if (errorText != null && errorText!.isNotEmpty) FormFieldErrorText(errorText!),
         ],
+      ),
+    );
+  }
+}
+
+/// Huy hiệu bên phải nhãn ô: [DynamicFormField.badge] hoặc "Chỉ đọc" (ô khoá); `null` = không có.
+class DynamicFieldBadge extends StatelessWidget {
+  final String text;
+
+  const DynamicFieldBadge(this.text, {super.key});
+
+  static Widget? of(DynamicFormField field) {
+    final t = (field.badge != null && field.badge!.isNotEmpty) ? field.badge : (field.isReadOnly ? 'Chỉ đọc' : null);
+    return t == null ? null : DynamicFieldBadge(t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
+        borderRadius: AppRadius.roundedSm,
+      ),
+      child: Text(
+        text,
+        style: AppTypography.labelSmall(
+          color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+        ).copyWith(fontSize: 10),
       ),
     );
   }

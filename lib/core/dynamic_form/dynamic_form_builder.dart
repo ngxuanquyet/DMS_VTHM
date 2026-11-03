@@ -7,6 +7,7 @@ import 'choice_other.dart';
 import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
 import 'widgets/dynamic_form_field_wrapper.dart';
+import '../widgets/form_fields/form_field_parts.dart';
 import 'widgets/formula_field_widget.dart';
 import 'widgets/boolean_field_widget.dart';
 import 'widgets/datetime_field_widget.dart';
@@ -497,26 +498,6 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
-  IconData _getSectionIcon(String title) {
-    final lower = title.toLowerCase();
-    if (lower.contains('chung') || lower.contains('cơ bản') || lower.contains('tổng quan')) {
-      return Icons.storefront_rounded;
-    }
-    if (lower.contains('liên hệ') || lower.contains('người liên hệ') || lower.contains('contact')) {
-      return Icons.contact_phone_rounded;
-    }
-    if (lower.contains('địa chỉ') || lower.contains('vị trí') || lower.contains('tọa độ') || lower.contains('gps')) {
-      return Icons.location_on_rounded;
-    }
-    if (lower.contains('ảnh') || lower.contains('hình') || lower.contains('photo') || lower.contains('image')) {
-      return Icons.photo_camera_rounded;
-    }
-    if (lower.contains('mở rộng') || lower.contains('động') || lower.contains('dynamic') || lower.contains('khác')) {
-      return Icons.extension_rounded;
-    }
-    return Icons.folder_open_rounded;
-  }
-
   bool _isDynamicSection(String title) {
     final lower = title.toLowerCase().trim();
     return lower.contains('mở rộng') ||
@@ -615,78 +596,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             );
           }
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
-              borderRadius: AppRadius.roundedLg,
-              border: Border.all(
-                color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                width: 1,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x06000000),
-                  offset: Offset(0, 2),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Section Header Bar
-                if (!noiTiep) Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.darkSurfaceContainerLowest
-                        : AppColors.surfaceContainerHigh.withValues(alpha: 0.35),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                    border: Border(
-                      bottom: BorderSide(
-                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: AppRadius.roundedSm,
-                        ),
-                        child: Icon(
-                          _getSectionIcon(sectionTitle),
-                          size: 16,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          sectionTitle,
-                          style: AppTypography.titleMedium(
-                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                          ).copyWith(fontWeight: FontWeight.w700, fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Fields List inside Section
+          // Mục thường: tiêu đề mục kiểu tiêu đề của biểu mẫu khảo sát/thu thập (#24756) rồi các ô — không khung thẻ.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!noiTiep)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: _buildSectionFieldWidgets(sectionFields),
-                  ),
+                  padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
+                  child: HeadingFieldWidget(code: secEntry.key, title: sectionTitle),
                 ),
-              ],
-            ),
+              ..._buildSectionFieldWidgets(sectionFields),
+            ],
           );
         }),
 
@@ -1085,16 +1005,16 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         if (field.isSectionDescription || (field.level != 2 && field.label.trim().isEmpty)) {
           return moTa.isEmpty
               ? const SizedBox.shrink()
-              : Padding(padding: const EdgeInsets.only(bottom: 14), child: HeadingFieldWidget.descriptionText(context, moTa));
+              : Padding(padding: const EdgeInsets.only(bottom: kFormFieldSpacing), child: HeadingFieldWidget.descriptionText(context, moTa));
         }
         return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
           child: HeadingFieldWidget(code: field.code, title: field.label, description: field.helperText, level: field.level),
         );
 
       case DynamicFormFieldType.note:
         return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
           child: NoteFieldWidget(title: field.label, description: field.helperText),
         );
 
