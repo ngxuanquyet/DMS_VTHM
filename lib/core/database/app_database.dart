@@ -78,7 +78,7 @@ class AppDatabase extends _$AppDatabase {
         super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -107,6 +107,16 @@ class AppDatabase extends _$AppDatabase {
               await customStatement('UPDATE local_customers SET owner_user_id = $_legacyOwner');
             }
             await _createCustomerOwnerIndex();
+          }
+          if (from < 6) {
+            // Bản cũ gán nhầm "bị từ chối duyệt" cho điểm bán gửi lỗi (tạo hoặc sửa bị 4xx). "Từ chối" thật chỉ đến từ dữ
+            // liệu máy chủ, dòng khi đó là 'synced' — dòng 'error' mang 'rejected' đều do app gán ⇒ trả về chờ duyệt.
+            // Chưa từng lên máy chủ (id NULL) ⇒ chờ duyệt; đã có trên máy chủ (lỗi khi SỬA) ⇒ trạng thái gốc không còn, lấy
+            // "đã duyệt" — gần đúng nhất cho điểm bán đang dùng; lần tải danh sách sau máy chủ ghi lại đúng.
+            await customStatement(
+              "UPDATE local_customers SET approval_status = CASE WHEN id IS NULL THEN 'pending' ELSE 'approved' END "
+              "WHERE sync_status = 'error' AND approval_status = 'rejected'",
+            );
           }
         },
       );
@@ -498,12 +508,12 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Đánh dấu điểm bán bị lỗi đồng bộ vĩnh viễn (4xx)
+  /// Máy chủ từ chối DỮ LIỆU điểm bán (4xx khi gửi) ⇒ chỉ đánh dấu lỗi đồng bộ. KHÔNG đặt "bị từ chối duyệt": đó là
+  /// quyết định của người duyệt trên máy chủ, gán nhầm thì điểm bán biến khỏi tuyến, mất nút Sửa (không sửa để gửi lại
+  /// được) và hiện banner "bị từ chối" oan (#24698 nhóm 4).
   Future<void> markCustomerSyncError(String clientUuid, String error) async {
     await (update(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).write(
-      const LocalCustomersCompanion(
-        syncStatus: Value('error'),
-        approvalStatus: Value('rejected'),
-      ),
+      const LocalCustomersCompanion(syncStatus: Value('error')),
     );
   }
 

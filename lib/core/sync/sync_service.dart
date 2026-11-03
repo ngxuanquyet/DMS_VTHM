@@ -1726,7 +1726,7 @@ class SyncService {
       debugPrint('[SyncService] [4xx - LỖI HỎNG VĨNH VIỄN] Mục #${entry.id} ($statusCode): $errorMsg -> Chuyển "dead", KHÔNG RETRY.');
       await _db.markDead(entry.id, errorMsg);
 
-      // Nếu là khách hàng -> cập nhật syncStatus = 'error' và approvalStatus = 'rejected'
+      // Khách hàng -> đánh dấu lỗi đồng bộ (KHÔNG phải "bị từ chối duyệt" — xem markCustomerSyncError)
       if (entry.entity == 'customer') {
         await _db.markCustomerSyncError(entry.clientUuid, errorMsg);
         try {

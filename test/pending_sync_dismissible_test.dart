@@ -262,7 +262,7 @@ void main() {
       var currentList = await localDataSource.getLocalCustomers();
       var curCustomer = currentList.firstWhere((c) => c.clientUuid == uuid);
       expect(curCustomer.syncStatus, 'error');
-      expect(curCustomer.approvalStatus, 'rejected');
+      expect(curCustomer.approvalStatus, 'pending'); // lỗi đồng bộ ≠ bị từ chối duyệt (#24698 nhóm 4)
 
       var curEntries = await (database.select(database.syncQueueEntries)
             ..where((tbl) => tbl.clientUuid.equals(uuid)))

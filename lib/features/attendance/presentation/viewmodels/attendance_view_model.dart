@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -307,6 +308,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         );
       }
 
+      _refreshTodayAfterPunch(punchResult, position);
       return punchResult;
     } catch (e) {
       final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
@@ -414,6 +416,8 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         id: punchResult.id,
         punchAt: punchResult.punchAt,
         clientUuid: punchResult.clientUuid,
+        direction: punchResult.direction,
+        directionLabel: punchResult.directionLabel,
         lat: punchResult.lat,
         lng: punchResult.lng,
         accuracyM: punchResult.accuracyM,
@@ -452,6 +456,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         errorMessage: null,
       );
 
+      _refreshTodayAfterPunch(punchResult, position);
       return true;
     } catch (e) {
       final msg = e.toString().replaceAll('AppException: ', '').replaceAll('ServerException: ', '');
@@ -462,6 +467,39 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       );
       return false;
     }
+  }
+
+  /// Số thứ tự lần tải lại cấu hình sau khi chấm gần nhất — lần cũ về muộn bị bỏ, không đè cấu hình mới hơn.
+  int _todayRefreshSeq = 0;
+
+  /// Lượt vừa chấm đã lên máy chủ ⇒ tải lại cấu hình (khối "hôm nay": nút Vào/Ra, giờ Vào/Ra) theo vị trí lúc chấm, chạy
+  /// nền — không thì nút / giờ đứng nguyên tới lần tải sau (#24698 nhóm 4). Như [updateUserLocation] (khớp lại địa điểm
+  /// đang chọn) + dựng lại đồng hồ giờ làm theo giờ Vào, và GIỮ câu báo đang hiện (copyWith xoá nếu không truyền).
+  /// Lượt chờ gửi: máy chủ chưa tính, giữ nguyên tới lần tải sau.
+  void _refreshTodayAfterPunch(AttendancePunchEntity punch, Position position) {
+    if (punch.id <= 0) return;
+    final seq = ++_todayRefreshSeq;
+    unawaited(() async {
+      try {
+        final config = await getConfigUseCase(lat: position.latitude, lng: position.longitude);
+        if (!mounted || seq != _todayRefreshSeq) return;
+        final selected = state.selectedLocation;
+        final match = selected == null ? null : config.locations.where((l) => l.id == selected.id).firstOrNull;
+        final firstIn = config.currentToday?.firstInAt;
+        final inAt = firstIn == null ? null : DateTime.tryParse(firstIn.replaceAll(' ', 'T'));
+        state = state.copyWith(
+          config: config,
+          selectedLocation: match ?? config.closestLocation,
+          liveWorkDurationSeconds:
+              inAt == null ? null : math.max(0, DateTime.now().difference(inAt).inSeconds),
+          workDurationAsOf: inAt == null ? null : DateTime.now(),
+          successMessage: state.successMessage,
+          errorMessage: state.errorMessage,
+        );
+      } catch (e) {
+        debugPrint('[AttendanceViewModel] Lỗi tải lại cấu hình sau khi chấm: $e');
+      }
+    }());
   }
 
   /// `client_uuid` của lượt chấm [punchId] trong màn (lượt mới nhất hoặc lịch sử); `null` khi không thấy.
@@ -518,9 +556,14 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         );
       }
 
-      // Cập nhật lượt chấm hiện tại
-      if (state.latestPunch != null && state.latestPunch!.id == punchId) {
-        final currentPhotos = List<AttendancePunchPhotoEntity>.from(state.latestPunch!.photos);
+      // Cập nhật lượt được bổ sung ảnh — lượt mới nhất HOẶC lượt cũ trong lịch sử (trước đây chỉ lượt mới nhất ⇒ lượt cũ
+      // vẫn hiện "Thiếu ảnh" dù ảnh đã vào hàng đợi, #24698 nhóm 4).
+      final latest = state.latestPunch;
+      final target = (latest != null && latest.id == punchId)
+          ? latest
+          : state.history.where((p) => p.id == punchId).firstOrNull;
+      if (target != null) {
+        final currentPhotos = List<AttendancePunchPhotoEntity>.from(target.photos);
         currentPhotos.removeWhere((p) => p.photoType == photoType);
         currentPhotos.add(photo);
 
@@ -538,18 +581,20 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         );
 
         final updatedPunch = AttendancePunchEntity(
-          id: state.latestPunch!.id,
-          punchAt: state.latestPunch!.punchAt,
-          clientUuid: state.latestPunch!.clientUuid,
-          lat: state.latestPunch!.lat,
-          lng: state.latestPunch!.lng,
-          accuracyM: state.latestPunch!.accuracyM,
-          geofenceId: state.latestPunch!.geofenceId,
-          geofenceName: state.latestPunch!.geofenceName,
-          isOutsideGeofence: state.latestPunch!.isOutsideGeofence,
-          isMockLocation: state.latestPunch!.isMockLocation,
-          isTimeTampered: state.latestPunch!.isTimeTampered,
-          duplicate: state.latestPunch!.duplicate,
+          id: target.id,
+          punchAt: target.punchAt,
+          clientUuid: target.clientUuid,
+          lat: target.lat,
+          lng: target.lng,
+          accuracyM: target.accuracyM,
+          geofenceId: target.geofenceId,
+          geofenceName: target.geofenceName,
+          isOutsideGeofence: target.isOutsideGeofence,
+          isMockLocation: target.isMockLocation,
+          isTimeTampered: target.isTimeTampered,
+          duplicate: target.duplicate,
+          direction: target.direction,
+          directionLabel: target.directionLabel,
           photos: currentPhotos,
           requirements: updatedRequirements,
         );
@@ -562,7 +607,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
 
         state = state.copyWith(
           isUploadingPhoto: false,
-          latestPunch: updatedPunch,
+          latestPunch: identical(target, latest) ? updatedPunch : latest,
           history: updatedHistory,
         );
       } else {

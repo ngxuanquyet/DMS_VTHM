@@ -13,6 +13,9 @@ class AppConstants {
   static const int receiveTimeout = 15000;
   /// Chờ phản hồi khi GỬI ẢNH (multipart): server còn xử lý ảnh sau khi nhận đủ — 15s là quá giờ oan, app gửi lại cả ảnh.
   static const int uploadReceiveTimeout = 60000;
+
+  /// Trần thời gian GỬI tệp (ảnh đã nén vài trăm KB) — trần kỹ thuật: quá trần là lỗi mạng tạm, hàng đợi thử lại sau.
+  static const int uploadSendTimeout = 120000;
   static const String headerClientKey = 'X-Client';
   static const String headerClientValue = 'dms-app';
 

@@ -66,6 +66,13 @@ void main() {
     expect(repo.parents, ['old-uuid'], reason: 'lỗi cũ: luôn lấy latestPunch.clientUuid');
   });
 
+  test('bổ sung ảnh cho lượt CŨ ⇒ chính lượt đó trong lịch sử nhận ảnh (nhóm 4: hết "Thiếu ảnh" oan)', () async {
+    await vm.uploadPunchPhoto(punchId: -1000, file: File('/tmp/x.jpg'), photoType: 'front');
+    final old = vm.state.history.singleWhere((p) => p.id == -1000);
+    expect(old.photos.map((p) => p.photoType), ['front'], reason: 'lỗi cũ: chỉ cập nhật khi là lượt mới nhất');
+    expect(vm.state.latestPunch?.photos, isEmpty);
+  });
+
   test('lượt mới nhất vẫn gắn đúng', () async {
     await vm.uploadPunchPhoto(punchId: -2000, file: File('/tmp/x.jpg'), photoType: 'front');
     expect(repo.parents, ['latest-uuid']);

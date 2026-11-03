@@ -436,6 +436,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
     // lượt đang mở (vào lại là check-out lần hai, đua với lệnh trong hàng đợi).
     final pendingCheckoutVisitIds = <int>{};
     final pendingCheckoutUuids = <String>{};
+    // Lúc bấm check-out (mốc nhập hàng đợi) theo id / client_uuid lượt — để hiện lượt là "đã check-out" thay vì "đang mở".
+    final pendingCheckoutAt = <Object, DateTime>{};
     if (ref != null) {
       try {
         final db = ref!.read(appDatabaseProvider);
@@ -447,12 +449,30 @@ class RouteViewModel extends StateNotifier<RouteState> {
                   (tbl.state.equals('pending') | tbl.state.equals('sending'))))
             .get();
         for (final entry in pendingCheckouts) {
-          if (entry.parentUuid != null) pendingCheckoutUuids.add(entry.parentUuid!);
+          final at = DateTime.fromMillisecondsSinceEpoch(entry.createdAt);
+          if (entry.parentUuid != null) {
+            pendingCheckoutUuids.add(entry.parentUuid!);
+            pendingCheckoutAt[entry.parentUuid!] = at;
+          }
           try {
             final payload = jsonDecode(entry.payload);
             final vId = payload is Map ? int.tryParse(payload['visit_id']?.toString() ?? '') : null;
-            if (vId != null && vId > 0) pendingCheckoutVisitIds.add(vId);
+            if (vId != null && vId > 0) {
+              pendingCheckoutVisitIds.add(vId);
+              pendingCheckoutAt[vId] = at;
+            }
           } catch (_) {}
+        }
+        // Server chưa nhận check-out nên còn trả lượt là "mở" ⇒ hiện đúng thao tác của nhân viên: đã check-out (chờ gửi).
+        // Không thì tuyến hiện "Đang ghé", lượt được chọn làm lượt đang mở và nhân viên vào check-out lần hai (#24698
+        // nhóm 4). Check-out bị từ chối hẳn (dead) KHÔNG nằm đây — lượt hiện lại là đang mở để đóng lại.
+        if (pendingCheckoutAt.isNotEmpty) {
+          todayVisits = todayVisits.map((v) {
+            if (!v.isOpen) return v;
+            final at = pendingCheckoutAt[v.id > 0 ? v.id : -1] ??
+                (v.clientUuid == null ? null : pendingCheckoutAt[v.clientUuid!]);
+            return at == null ? v : v.copyWith(checkoutAt: at, checkoutAtRaw: at.toIso8601String());
+          }).toList();
         }
       } catch (_) {}
     }
@@ -515,11 +535,17 @@ class RouteViewModel extends StateNotifier<RouteState> {
         final saved = await visitRepository!.getActiveVisit();
         if (saved != null && saved.isOpen && !saved.isCancelled) {
           // Kiểm tra xem lượt này trên server (todayVisits) đã có bản ghi và đã đóng/huỷ chưa
+          // Khớp CHÍNH lượt đã lưu: cùng id / client_uuid; theo điểm bán chỉ khi lượt server check-in KHÔNG TRƯỚC lượt đã
+          // lưu. Ghé lại cùng điểm bán sau khi check-out (trực tuyến hoặc chờ gửi) thì lượt cũ cùng điểm bán đã đóng — khớp
+          // theo điểm bán trần là xoá nhầm lượt đang mở mới (#24698 nhóm 4).
+          final savedAt = saved.checkinAt;
           final matchingServerVisit = todayVisits
               .where(
                 (v) =>
                     (v.id == saved.id && v.id > 0) ||
-                    saved.isAtCustomer(v.customerId, v.customerClientUuid),
+                    ((saved.clientUuid?.isNotEmpty ?? false) && v.clientUuid == saved.clientUuid) ||
+                    (saved.isAtCustomer(v.customerId, v.customerClientUuid) &&
+                        (savedAt == null || v.checkinAt == null || !v.checkinAt!.isBefore(savedAt))),
               )
               .firstOrNull;
           if (matchingServerVisit != null && !matchingServerVisit.isOpen) {

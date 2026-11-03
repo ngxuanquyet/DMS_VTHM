@@ -420,7 +420,8 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     final queuedUuids = queuedAfter.map((e) => e.clientUuid).toSet();
     final queued = [...queuedAfter, ...queuedBefore.where((e) => !queuedUuids.contains(e.clientUuid))];
     var queuedPhotos = const <SyncQueueEntry>[];
-    if (queued.isNotEmpty && database != null) {
+    // Ảnh chờ gửi cũng gắn vào lượt ĐÃ có trên server (ảnh bổ sung / tải lỗi sau khi chấm trực tuyến) ⇒ luôn nạp.
+    if (database != null) {
       try {
         queuedPhotos = await database!.getQueuedAttendancePhotos();
       } catch (_) {}
@@ -438,13 +439,67 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       await prefs.setString(historyKey, jsonEncode(raw));
     }
 
+    // Giải mã `punch_id` của ảnh chờ gửi MỘT lần (không giải mã lại cho từng lượt).
+    final photoRefs = [
+      for (final e in queuedPhotos)
+        (entry: e, punchId: () {
+          try {
+            return ((jsonDecode(e.payload) as Map<String, dynamic>)['punch_id'] as num?)?.toInt() ?? 0;
+          } catch (_) {
+            return 0;
+          }
+        }()),
+    ];
     final entities = <AttendancePunchEntity>[];
     for (final item in raw) {
       try {
-        entities.add(AttendancePunchModel.fromJson(item).toEntity());
+        entities.add(AttendancePunchModel.fromJson(_withQueuedPhotos(item, photoRefs)).toEntity());
       } catch (_) {}
     }
     return entities;
+  }
+
+  /// Bản HIỂN THỊ của lượt [punch] kèm ảnh còn chờ gửi của nó (theo lượt cha hoặc `punch_id`) — không thì lượt đã có ảnh
+  /// trong hàng đợi vẫn hiện "Thiếu ảnh" (#24698 nhóm 4). Ảnh chờ gửi thay ảnh cùng loại (trước/sau) đang có, như màn bổ
+  /// sung ảnh. Không ghi vào bộ đệm: gửi xong, ảnh thật về theo lịch sử server.
+  Map<String, dynamic> _withQueuedPhotos(
+    Map<String, dynamic> punch,
+    List<({SyncQueueEntry entry, int punchId})> queuedPhotos,
+  ) {
+    if (queuedPhotos.isEmpty) return punch;
+    final uuid = punch['client_uuid']?.toString() ?? '';
+    final id = int.tryParse(punch['id']?.toString() ?? '') ?? 0;
+    final photos = [
+      for (final p in (punch['photos'] as List<dynamic>? ?? const [])) if (p is Map<String, dynamic>) p,
+    ];
+    var added = false;
+    for (final q in queuedPhotos) {
+      if (!((uuid.isNotEmpty && q.entry.parentUuid == uuid) || (id > 0 && q.punchId == id))) continue;
+      try {
+        final map = _queuedPhotoToMap(q.entry);
+        if (photos.any((p) => p['id']?.toString() == map['id']?.toString())) continue;
+        final type = map['photo_type'];
+        if (type == 'front' || type == 'back') photos.removeWhere((p) => p['photo_type'] == type);
+        photos.add(map);
+        added = true;
+      } catch (_) {}
+    }
+    if (!added) return punch;
+    final req = _photoRequirements(photos);
+    final old = punch['requirements'];
+    if (old is! Map<String, dynamic>) return {...punch, 'photos': photos, 'requirements': req};
+    return {
+      ...punch,
+      'photos': photos,
+      'requirements': {
+        ...old,
+        'photo_count': photos.length,
+        // Thiếu khoá = còn thiếu ảnh (cùng mặc định với AttendanceRequirementsModel.fromJson).
+        'need_front': (old['need_front'] ?? true) == true && req['need_front'] == true,
+        'need_back': (old['need_back'] ?? true) == true && req['need_back'] == true,
+        'satisfied': old['satisfied'] == true || req['satisfied'] == true,
+      },
+    };
   }
 
   Future<List<SyncQueueEntry>> _queuedAttendancePunches() async {

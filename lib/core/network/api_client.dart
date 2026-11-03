@@ -286,6 +286,8 @@ class ApiClient {
         contentType: 'multipart/form-data',
         receiveTimeout:
             options?.receiveTimeout ?? const Duration(milliseconds: AppConstants.uploadReceiveTimeout),
+        // Thiếu trần GỬI thì sóng yếu treo lượt tải ảnh nhiều phút, cả hàng đợi đứng sau nó (#24698 nhóm 4).
+        sendTimeout: options?.sendTimeout ?? const Duration(milliseconds: AppConstants.uploadSendTimeout),
       );
       final response = await _dio.post(
         path,

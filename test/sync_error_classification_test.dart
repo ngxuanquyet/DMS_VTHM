@@ -150,7 +150,7 @@ void main() {
       expect(pending.isEmpty, isTrue);
     });
 
-    test('markCustomerSyncError sets syncStatus to error and approvalStatus to rejected', () async {
+    test('markCustomerSyncError chỉ đặt lỗi đồng bộ — KHÔNG gán "bị từ chối duyệt" (#24698 nhóm 4)', () async {
       const clientUuid = 'customer-err-uuid';
       await database.insertOrUpdateCustomer(
         const LocalCustomersCompanion(
@@ -171,7 +171,7 @@ void main() {
       expect(customers.length, 1);
       expect(customers.first.clientUuid, clientUuid);
       expect(customers.first.syncStatus, 'error');
-      expect(customers.first.approvalStatus, 'rejected');
+      expect(customers.first.approvalStatus, 'pending', reason: 'lỗi cũ: rejected ⇒ ẩn khỏi tuyến, mất nút Sửa');
     });
   });
 
