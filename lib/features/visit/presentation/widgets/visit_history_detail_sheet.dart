@@ -7,7 +7,7 @@ import '../../../forms/data/models/market_form_model.dart';
 import '../../domain/entities/visit_history_entity.dart';
 import '../../domain/usecases/visit_usecases.dart';
 import 'visit_kind_badge.dart';
-import '../../../forms/presentation/widgets/dynamic_renderer/display_matrix_field_widget.dart';
+import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 /// Modal bottom sheet hiển thị chi tiết một lượt viếng thăm lịch sử (§2.4 SPEC 16/10/2026)

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../../../core/theme/app_colors.dart';
-import '../../../../../core/theme/app_typography.dart';
-import '../../../../../core/widgets/form_fields/form_field_parts.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_typography.dart';
+import '../../widgets/form_fields/form_field_parts.dart';
 
 /// Một thương hiệu trong `config.matrix.brands` của ô Ma trận trưng bày (#24767).
 class DisplayMatrixBrand {
@@ -166,6 +166,19 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     return out;
   }
 
+  /// Chỉ giữ thương hiệu/loại ô ĐANG hỏi — số của dòng admin đã bỏ khỏi ô không hiện để xoá, gửi lại thì server từ chối.
+  static DisplayMatrixCounts onlyAsked(DisplayMatrixCounts counts, DisplayMatrixConfig cfg) {
+    final b = {for (final x in cfg.brands) x.code};
+    final t = {for (final x in cfg.types) x.code};
+    final out = <String, Map<String, num>>{};
+    counts.forEach((brand, row) {
+      if (!b.contains(brand)) return;
+      final r = {for (final e in row.entries) if (t.contains(e.key)) e.key: e.value};
+      if (r.isNotEmpty) out[brand] = r;
+    });
+    return out;
+  }
+
   /// Lỗi của số đếm theo luật server (số lẻ quá số chữ số của loại, vượt trần); hợp lệ ⇒ `null`.
   static String? countsError(DisplayMatrixCounts counts, DisplayMatrixConfig cfg) {
     final byCode = {for (final t in cfg.types) t.code: t};
@@ -227,7 +240,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> {
       // Số sai luật (lẻ quá, vượt trần) VẪN ghi để bước Lưu chặn với câu lỗi — bỏ đi thì tổng tụt mà không ai biết.
       (next[brand] ??= {})[type.code] = n;
     }
-    widget.onChanged(next, _cellErr.values.contains('Số không hợp lệ'));
+    widget.onChanged(DisplayMatrixFieldWidget.onlyAsked(next, widget.config), _cellErr.values.contains('Số không hợp lệ'));
   }
 
   void _showHint(DisplayMatrixType type) {

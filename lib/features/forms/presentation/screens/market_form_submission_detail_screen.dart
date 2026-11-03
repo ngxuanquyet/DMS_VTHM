@@ -9,7 +9,7 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
 import '../viewmodels/forms_view_model.dart';
-import '../widgets/dynamic_renderer/display_matrix_field_widget.dart';
+import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
 
 /// Màn xem lại chi tiết phiếu biểu mẫu đã nộp theo đặc tả §4.3 & §9:

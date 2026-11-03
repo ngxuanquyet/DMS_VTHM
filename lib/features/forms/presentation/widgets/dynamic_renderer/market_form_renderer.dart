@@ -11,7 +11,7 @@ import '../../../data/models/market_form_submission_model.dart';
 import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
-import 'display_matrix_field_widget.dart';
+import '../../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../../core/widgets/note_field_widget.dart';
 import '../../../../../core/widgets/form_fields/form_field_parts.dart';
@@ -1403,7 +1403,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   String? _syncMatrixAnswer(MarketFormBlockEntity block, {bool validate = false}) {
     final code = block.resolved.code;
     final cfg = _matrixOf(block);
-    final counts = DisplayMatrixFieldWidget.countsOf(_answers[code]);
+    final counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_answers[code]), cfg);
     final photos = <String, List<String>>{};
     for (final t in cfg.types) {
       // Loại không chụp ảnh (max 0): ảnh còn sót của bản nháp cũ không gửi — server từ chối "không nhận ảnh".

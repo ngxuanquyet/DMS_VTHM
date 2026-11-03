@@ -6,6 +6,7 @@ import '../widgets/app_button.dart';
 import 'choice_other.dart';
 import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
+import 'widgets/display_matrix_field_widget.dart';
 import 'widgets/dynamic_form_field_wrapper.dart';
 import '../widgets/form_fields/form_field_parts.dart';
 import 'widgets/formula_field_widget.dart';
@@ -392,6 +393,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         }
       }
 
+      // Ô ma trận trưng bày: luật số + ảnh theo loại (cùng luật server).
+      if (field.type == DynamicFormFieldType.displayMatrix) {
+        final loi = _matrixError(field, value);
+        if (loi != null) {
+          newErrors[field.code] = loi;
+          isValid = false;
+          firstInvalidCode ??= field.code;
+        }
+        continue;
+      }
+
       // 2. Kiểm tra trường Vị trí GPS / Địa chỉ
       if (field.type == DynamicFormFieldType.location) {
         final isPureAddress = (field.code == 'address' ||
@@ -750,6 +762,77 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return widgets;
   }
 
+  /// Ô ma trận đang có ô đếm gõ sai dạng — [validate] chặn (không lặng lẽ bỏ số khỏi tổng).
+  final Map<String, bool> _matrixInvalid = {};
+
+  /// Ô MA TRẬN TRƯNG BÀY (#24773) ở form điểm bán: thẻ theo thương hiệu + ảnh theo loại (bộ chụp ảnh của form điểm bán,
+  /// chỉ máy ảnh). Giá trị `{counts, photos}`; ảnh là đường dẫn máy / token — màn gửi đổi ra token trước khi lưu.
+  Widget _buildDisplayMatrix(DynamicFormField field, dynamic value, String? errorText) {
+    final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
+    // Chỉ loại ĐANG hỏi và còn nhận ảnh (max > 0): ảnh của loại đã thôi chụp không có ô để xoá, gửi lại thì server từ chối.
+    final hoi = {for (final t in cfg.types) if (t.maxPhotos > 0) t.code};
+    final photos = value is Map && value['photos'] is Map
+        ? (Map<String, dynamic>.from(value['photos'] as Map)..removeWhere((k, _) => !hoi.contains(k)))
+        : <String, dynamic>{};
+    void ghi(DisplayMatrixCounts counts, Map<String, dynamic> anh) =>
+        updateFieldValue(field.code, counts.isEmpty && anh.isEmpty ? null : {'counts': counts, 'photos': anh});
+
+    return DisplayMatrixFieldWidget(
+      fieldCode: field.code,
+      label: field.label,
+      description: field.description,
+      isRequired: field.isRequired,
+      config: cfg,
+      counts: DisplayMatrixFieldWidget.countsOf(value),
+      errorText: errorText,
+      onChanged: (counts, invalid) {
+        _matrixInvalid[field.code] = invalid;
+        ghi(counts, photos);
+      },
+      photoSection: (t) => DynamicPhotoFieldWidget(
+        field: DynamicFormField(
+          code: '${field.code}::${t.code}',
+          label: 'Ảnh ${t.name}',
+          type: DynamicFormFieldType.photo,
+          maxPhotos: t.maxPhotos.clamp(1, 10),
+          allowGallery: false,
+        ),
+        photoPaths: (photos[t.code] is List ? photos[t.code] as List : const []).map((e) => e.toString()).toList(),
+        onChanged: (list) {
+          // Đọc giá trị MỚI NHẤT (ảnh loại khác có thể vừa thêm trong lúc máy ảnh/đóng dấu đang chạy).
+          final cur = _formData[field.code];
+          final anh = cur is Map && cur['photos'] is Map
+              ? (Map<String, dynamic>.from(cur['photos'] as Map)..removeWhere((k, _) => !hoi.contains(k)))
+              : <String, dynamic>{};
+          if (list.isEmpty) {
+            anh.remove(t.code);
+          } else {
+            anh[t.code] = list;
+          }
+          ghi(DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_formData[field.code]), cfg), anh);
+        },
+      ),
+    );
+  }
+
+  /// Lỗi của ô ma trận theo luật server (C2 ảnh tối thiểu khi loại có số > 0, số lẻ/trần, ô gõ sai dạng); hợp lệ ⇒ `null`.
+  String? _matrixError(DynamicFormField field, dynamic value) {
+    if (_matrixInvalid[field.code] == true) return '${field.label} – có ô đếm nhập sai dạng số.';
+    final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
+    final counts = DisplayMatrixFieldWidget.countsOf(value);
+    final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
+    if (cellErr != null) return '${field.label} – $cellErr';
+    final photos = value is Map && value['photos'] is Map ? value['photos'] as Map : const {};
+    for (final t in cfg.types) {
+      final n = photos[t.code] is List ? (photos[t.code] as List).length : 0;
+      if (t.maxPhotos > 0 && n > t.maxPhotos) return '${field.label} – ${t.name}: tối đa ${t.maxPhotos} ảnh.';
+      if (t.effectiveMinPhotos > 0 && DisplayMatrixTotals.sumOfType(counts, t.code) > 0 && n < t.effectiveMinPhotos) {
+        return '${field.label} – ${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
+      }
+    }
+    return null;
+  }
+
   /// Kết quả ô công thức của lần dựng hiện tại (tính một lần mỗi `build`).
   Map<String, num?> _formulaValuesCache = const {};
 
@@ -840,6 +923,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           errorText: errorText,
           onChanged: (val) => updateFieldValue(field.code, val),
         );
+
+      case DynamicFormFieldType.displayMatrix:
+        return _buildDisplayMatrix(field, value, errorText);
 
       case DynamicFormFieldType.rating:
         final intVal = value is int ? value : (int.tryParse(value?.toString() ?? '') ?? 5);

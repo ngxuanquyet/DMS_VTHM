@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/matrix_photo_key.dart';
 import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
-import 'package:vthm_dms/features/forms/presentation/widgets/dynamic_renderer/display_matrix_field_widget.dart';
+import 'package:vthm_dms/core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import 'package:vthm_dms/features/forms/presentation/widgets/dynamic_renderer/market_form_renderer.dart';
 
 /// Ô MA TRẬN TRƯNG BÀY SOS (`display_matrix`, #24767): mỗi thương hiệu một thẻ, số mặt + % SOS tự tính (cùng công thức

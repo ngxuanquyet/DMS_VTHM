@@ -680,6 +680,19 @@ class SyncService {
       }
     }
 
+    // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG giá trị ô (gốc payload hoặc `data`) — đổi đường dẫn máy ra token.
+    Future<String?> taiAnh(String p) => _resolvePhotoToken(p);
+    for (final key in rawSource.keys.toList()) {
+      rawSource[key] = await resolveMatrixPhotos(rawSource[key], taiAnh);
+    }
+    if (rawSource['data'] is Map) {
+      final d = Map<String, dynamic>.from(rawSource['data'] as Map);
+      for (final key in d.keys.toList()) {
+        d[key] = await resolveMatrixPhotos(d[key], taiAnh);
+      }
+      rawSource['data'] = d;
+    }
+
     // Phân giải ảnh trong map 'data' nếu có
     if (rawSource['data'] is Map<String, dynamic>) {
       final dataMap = Map<String, dynamic>.from(rawSource['data'] as Map<String, dynamic>);
@@ -872,6 +885,15 @@ class SyncService {
         if (res != null) resolved.add(res);
       }
       payload['photo_tokens'] = resolved;
+    }
+
+    // Ô ma trận trưng bày (#24773): ảnh theo loại chụp lúc mất mạng (đường dẫn máy) ⇒ đổi ra token trước khi PATCH.
+    if (payload['data'] is Map) {
+      final d = Map<String, dynamic>.from(payload['data'] as Map);
+      for (final key in d.keys.toList()) {
+        d[key] = await resolveMatrixPhotos(d[key], _resolvePhotoToken);
+      }
+      payload['data'] = d;
     }
 
     // Lượt sửa từ HÀNG ĐỢI ngoại tuyến (#24331): server nới phép kiểm (bỏ mục `erp_link_changes` sai thay vì 4xx — 4xx làm hàng

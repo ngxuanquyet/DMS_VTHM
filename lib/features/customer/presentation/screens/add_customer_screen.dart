@@ -29,6 +29,8 @@ import '../../../route/presentation/viewmodels/route_view_model.dart';
 // Tuyến của NV dời sang route/presentation/providers — giữ export để nơi gọi cũ không đổi import.
 export '../../../route/presentation/providers/user_routes_provider.dart' show userAssignedRoutesProvider, realRouteOptions;
 import '../../../route/presentation/providers/user_routes_provider.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 
 /// Provider lấy schema form khách hàng (dùng chung màn thêm / sửa điểm bán + hộp sửa nhanh).
 /// Hiện bản cache NGAY (app phải chạy offline, mạng chậm không treo màn), rồi khi có mạng tải bản
@@ -828,6 +830,30 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       if (payload['coords'] != null) {
         payload.remove('lat');
         payload.remove('lng');
+      }
+
+      // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG ô — có mạng thì đổi ra token ngay; mất mạng thì chép vào thư
+      // mục lâu dài (ảnh tạm của máy ảnh bị dọn), hàng đợi đổi ra token lúc đồng bộ.
+      for (final key in payload.keys.toList()) {
+        final v = payload[key];
+        if (v is! Map || v['photos'] is! Map) continue;
+        payload[key] = await resolveMatrixPhotos(v, (path) async {
+          if (!isOnline) {
+            return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first;
+          }
+          try {
+            final toaDo = payload['coords'] is Map ? payload['coords'] as Map : const {};
+            final res = await repo.uploadCustomerPhoto(
+              path,
+              locationName: payload['name']?.toString() ?? 'Điểm bán mới',
+              lat: (toaDo['lat'] as num?)?.toDouble(),
+              lng: (toaDo['lng'] as num?)?.toDouble(),
+            );
+            return res['token']?.toString();
+          } catch (_) {
+            return null;
+          }
+        });
       }
 
       // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)

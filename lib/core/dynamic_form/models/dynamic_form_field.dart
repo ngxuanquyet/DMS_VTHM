@@ -59,6 +59,10 @@ enum DynamicFormFieldType {
   /// (server tự tính lại và lưu)
   formula,
 
+  /// Ma trận trưng bày SOS (`display_matrix`, #24773): số đếm theo thương hiệu × loại + ảnh theo loại; danh mục ở
+  /// [DynamicFormField.matrix]. Giá trị `{counts, photos}`.
+  displayMatrix,
+
   /// Ô TRÌNH BÀY — tiêu đề phần (`heading`), cấp ở [DynamicFormField.level]; không thu giá trị
   heading,
 
@@ -167,6 +171,9 @@ enum DynamicFormFieldType {
       case 'signature':
       case 'sign':
         return DynamicFormFieldType.signature;
+
+      case 'display_matrix':
+        return DynamicFormFieldType.displayMatrix;
 
       case 'ref_erp_partner':
         return DynamicFormFieldType.erpPartner;
@@ -338,6 +345,9 @@ class DynamicFormField {
   /// tả, và gắn nó vào khúc vẽ đầu tiên của mục.
   final bool isSectionDescription;
 
+  /// Danh mục của ô ma trận trưng bày (`matrix` của schema: thương hiệu + loại đang bật); `null` với ô khác.
+  final Map? matrix;
+
   /// Ô chỉ để trình bày (tiêu đề / ghi chú) — xem [DynamicFormFieldType.isDisplayOnly].
   bool get isDisplayOnly => type.isDisplayOnly;
 
@@ -378,6 +388,7 @@ class DynamicFormField {
     this.level = 1,
     this.sectionKey,
     this.isSectionDescription = false,
+    this.matrix,
   });
 
   /// Cấp tiêu đề — luật CHUNG form điểm bán và biểu mẫu thị trường: khoá phẳng `level` (schema điểm bán) rồi
@@ -531,6 +542,7 @@ class DynamicFormField {
       badge: json['badge']?.toString(),
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
       level: headingLevelOf(json),
+      matrix: json['matrix'] is Map ? json['matrix'] as Map : null,
     );
   }
 
@@ -569,6 +581,7 @@ class DynamicFormField {
     int? level,
     String? sectionKey,
     bool? isSectionDescription,
+    Map? matrix,
   }) {
     return DynamicFormField(
       code: code ?? this.code,
@@ -604,6 +617,7 @@ class DynamicFormField {
       level: level ?? this.level,
       sectionKey: sectionKey ?? this.sectionKey,
       isSectionDescription: isSectionDescription ?? this.isSectionDescription,
+      matrix: matrix ?? this.matrix,
     );
   }
 

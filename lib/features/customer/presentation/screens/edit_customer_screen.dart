@@ -16,6 +16,8 @@ import '../../domain/entities/customer_meta_entity.dart';
 import '../screens/add_customer_screen.dart';
 import '../widgets/erp_links_form_field.dart';
 import '../viewmodels/customer_view_model.dart';
+import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
 /// Tuân theo 100% schema biểu mẫu động giống màn Thêm mới (AddCustomerScreen),
@@ -518,6 +520,18 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         if (newVal != oldVal) {
           dynamicChanges[key] = newVal;
         }
+      }
+      // Ô ma trận trưng bày (#24773): ảnh theo loại chụp mới (đường dẫn máy) ⇒ tải lên lấy token trước khi gửi.
+      for (final key in dynamicChanges.keys.toList()) {
+        dynamicChanges[key] = await resolveMatrixPhotos(dynamicChanges[key], (path) async {
+          try {
+            return (await repo.uploadCustomerPhoto(path, locationName: c.name, lat: c.lat, lng: c.lng))['token']?.toString();
+          } catch (_) {
+            // Không tải được (mất mạng ⇒ lượt sửa vào hàng đợi): chép ảnh vào thư mục lâu dài — ảnh tạm của máy ảnh bị dọn;
+            // hàng đợi đổi ra token lúc đồng bộ.
+            return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first;
+          }
+        });
       }
       if (dynamicChanges.isNotEmpty) {
         changes['data'] = dynamicChanges;

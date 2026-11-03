@@ -45,3 +45,24 @@ Iterable<String> matrixPhotoStrings(dynamic value) sync* {
     }
   }
 }
+
+/// Đổi ảnh TRÊN MÁY trong `photos` của một giá trị ô ma trận ra token bằng [upload] (giữ token sẵn có; đường xem công khai
+/// `/crm/customer-photos/public/<token>` quy về token). [upload] trả `null` ⇒ giữ đường dẫn (server sẽ báo lỗi — không lặng lẽ
+/// bỏ ảnh). Giá trị không phải ô ma trận ⇒ trả nguyên.
+Future<dynamic> resolveMatrixPhotos(dynamic value, Future<String?> Function(String path) upload) async {
+  if (value is! Map || value['photos'] is! Map) return value;
+  const congKhai = '/crm/customer-photos/public/';
+  final photos = <String, dynamic>{};
+  for (final e in (value['photos'] as Map).entries) {
+    final list = <String>[];
+    for (final item in (e.value is List ? e.value as List : const [])) {
+      var s = item.toString().trim();
+      if (s.isEmpty) continue;
+      final i = s.indexOf(congKhai);
+      if (i >= 0) s = s.substring(i + congKhai.length);
+      list.add(isUploadedPhotoToken(s) ? s : (await upload(s) ?? s));
+    }
+    if (list.isNotEmpty) photos['${e.key}'] = list;
+  }
+  return Map<String, dynamic>.from(value)..['photos'] = photos;
+}

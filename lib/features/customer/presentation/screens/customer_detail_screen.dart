@@ -28,6 +28,7 @@ import '../widgets/erp_links_form_field.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
 import '../../../../core/network/refresh_outcome.dart';
+import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   final CustomerEntity customer;
@@ -1686,7 +1687,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           padding: const EdgeInsets.only(bottom: 10.0),
           child: _buildInfoRow(
             label: label,
-            value: congThuc != null ? FormulaEvaluator.formatWith(congThuc, col!.formula) : e.value.toString(),
+            // Ô ma trận trưng bày (#24773): tóm tắt số mặt + % SOS thay cho chuỗi Map thô.
+            value: congThuc != null
+                ? FormulaEvaluator.formatWith(congThuc, col!.formula)
+                : (displayMatrixSummary(e.value) ??
+                    // Bản trên máy chưa đồng bộ chỉ có số nhập (server chưa tính tổng) — không in Map thô / đường dẫn ảnh.
+                    (e.value is Map && (e.value as Map).containsKey('counts') ? 'Đã nhập số mặt — chờ đồng bộ' : e.value.toString())),
             icon: Icons.fiber_manual_record_rounded,
             isDark: isDark,
           ),
