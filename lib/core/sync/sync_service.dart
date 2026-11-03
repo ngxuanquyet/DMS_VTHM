@@ -244,14 +244,14 @@ class SyncService {
 
   Future<bool> _flushVisitCheckoutChildren(String visitClientUuid) async {
     await waitUntilIdle();
-    if (!await _hasBlockingCheckoutChildren(visitClientUuid)) return true;
+    if (!await hasBlockingCheckoutChildren(visitClientUuid)) return true;
     await RefreshOutcome.untracked(() => _syncQueue(force: false, onlyCheckoutChildrenOf: visitClientUuid));
     await waitUntilIdle();
-    return !await _hasBlockingCheckoutChildren(visitClientUuid);
+    return !await hasBlockingCheckoutChildren(visitClientUuid);
   }
 
   /// Còn mục con chưa gửi mà VẪN giữ check-out (cùng luật hàng đợi: mục đã hỏng quá trần thì thôi giữ — [releasesCheckout]).
-  Future<bool> _hasBlockingCheckoutChildren(String visitClientUuid) async =>
+  Future<bool> hasBlockingCheckoutChildren(String visitClientUuid) async =>
       (await _db.getOpenCheckoutChildren(visitClientUuid)).any((c) => !releasesCheckout(c));
 
   /// Đẩy lệnh của các lượt viếng thăm còn chờ (check-in / check-out / huỷ + ảnh / phiếu / vật tư của chúng) TRƯỚC
@@ -331,51 +331,77 @@ class SyncService {
       final List<SyncQueueEntry> succeededEntries = [];
       var sessionRejected = false;
       var forbidden = false;
+      var totalEntries = 0;
+      var page = entries;
+      // Số mục ĐÃ thử gửi (không tính mục bị hoãn) — trần 50 mỗi lượt (§3.3 Luật 6). Mục hoãn (check-out chờ ảnh, check-in
+      // chờ lượt trước) luôn tới hạn: chỉ đọc 50 dòng đầu thì chúng lấp kín lô và mục phía sau (vd Chấm ra cuối ngày) không
+      // bao giờ được gửi (rà soát #24698 vòng 3) ⇒ trang đầy mà chưa tiêu hết trần thì đọc tiếp trang kế.
+      var attempted = 0;
+      const batchLimit = 50;
+      // Trần số trang đọc mỗi lượt: mỗi mục hoãn tốn vài truy vấn — quét cả hàng đợi dài mỗi phút là giật máy.
+      var pagesLeft = 10;
+      final paged = onlyCheckoutChildrenOf == null && !onlyVisitLifecycle;
 
-      for (final entry in entries) {
-        // Kiểm tra lại kết nối trước mỗi mục (trừ khi force)
-        if (!_ref.read(connectivityProvider).isOnline && !force) {
-          debugPrint('[SyncService] Mất mạng giữa chừng, dừng lô đồng bộ.');
-          break;
-        }
+      pages:
+      while (true) {
+        totalEntries += page.length;
+        for (final entry in page) {
+          // Kiểm tra lại kết nối trước mỗi mục (trừ khi force)
+          if (!_ref.read(connectivityProvider).isOnline && !force) {
+            debugPrint('[SyncService] Mất mạng giữa chừng, dừng lô đồng bộ.');
+            break pages;
+          }
 
-        // Lô nạp sẵn trong RAM: đã đổi người đăng nhập giữa chừng (đăng xuất → người khác vào) thì KHÔNG gửi tiếp mục
-        // của người trước bằng token người sau (#24400) — để nguyên, chờ đúng chủ.
-        if (entry.ownerUserId != _db.ownerUserId) {
-          debugPrint('[SyncService] Đã đổi người đăng nhập, dừng lô đồng bộ.');
-          break;
-        }
+          // Lô nạp sẵn trong RAM: đã đổi người đăng nhập giữa chừng (đăng xuất → người khác vào) thì KHÔNG gửi tiếp mục
+          // của người trước bằng token người sau (#24400) — để nguyên, chờ đúng chủ.
+          if (entry.ownerUserId != _db.ownerUserId) {
+            debugPrint('[SyncService] Đã đổi người đăng nhập, dừng lô đồng bộ.');
+            break pages;
+          }
 
-        // Check-out nhường ảnh / phiếu / thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
-        if (await _db.isCheckoutHeld(entry, released: releasesCheckout)) {
-          debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn ảnh/phiếu/vật tư của lượt chưa gửi.');
-          // Tính là "chưa xong" — kết quả/thông báo đồng bộ không được báo thành công khi lượt còn chưa check-out.
-          retryableCount++;
-          continue;
-        }
+          if (paged && attempted >= batchLimit) break pages;
 
-        // Check-in lượt sau nhường check-out còn chờ của lượt trước (server không mở lượt mới khi lượt cũ còn mở).
-        if (await _db.isVisitCreateHeld(entry)) {
-          debugPrint('[SyncService] Hoãn check-in #${entry.id}: check-out của lượt trước chưa gửi.');
-          retryableCount++;
-          continue;
-        }
+          // Check-out nhường ảnh / phiếu / thao tác vật tư chưa gửi của cùng lượt — để nguyên pending, vòng sau xét lại.
+          if (await _db.isCheckoutHeld(entry, released: releasesCheckout)) {
+            debugPrint('[SyncService] Hoãn check-out #${entry.id}: còn ảnh/phiếu/vật tư của lượt chưa gửi.');
+            // Tính là "chưa xong" — kết quả/thông báo đồng bộ không được báo thành công khi lượt còn chưa check-out.
+            retryableCount++;
+            continue;
+          }
 
-        final status = await _processEntry(entry, currentDeadErrors);
-        if (status == _SyncItemStatus.authBlocked) forbidden = _lastAuthBlockForbidden;
-        if (status == _SyncItemStatus.success) {
-          successCount++;
-          succeededEntries.add(entry);
-        } else if (status == _SyncItemStatus.dead) {
-          // currentDeadErrors already populated
-        } else if (status == _SyncItemStatus.retryable) {
-          retryableCount++;
-        } else if (status == _SyncItemStatus.authBlocked) {
-          retryableCount++;
-          debugPrint('[SyncService] Phiên đăng nhập không còn hiệu lực, dừng lô — các mục giữ nguyên chờ đăng nhập lại.');
-          sessionRejected = true;
-          break;
+          // Check-in lượt sau nhường check-out còn chờ của lượt trước (server không mở lượt mới khi lượt cũ còn mở).
+          if (await _db.isVisitCreateHeld(entry)) {
+            debugPrint('[SyncService] Hoãn check-in #${entry.id}: check-out của lượt trước chưa gửi.');
+            retryableCount++;
+            continue;
+          }
+
+          // Lệnh sửa điểm bán đi đúng thứ tự nhập — lệnh trước chưa xong thì lệnh sau chờ.
+          if (await _db.isCustomerUpdateHeld(entry)) {
+            retryableCount++;
+            continue;
+          }
+
+          attempted++;
+          final status = await _processEntry(entry, currentDeadErrors);
+          if (status == _SyncItemStatus.authBlocked) forbidden = _lastAuthBlockForbidden;
+          if (status == _SyncItemStatus.success) {
+            successCount++;
+            succeededEntries.add(entry);
+          } else if (status == _SyncItemStatus.dead) {
+            // currentDeadErrors already populated
+          } else if (status == _SyncItemStatus.retryable) {
+            retryableCount++;
+          } else if (status == _SyncItemStatus.authBlocked) {
+            retryableCount++;
+            debugPrint('[SyncService] Phiên đăng nhập không còn hiệu lực, dừng lô — các mục giữ nguyên chờ đăng nhập lại.');
+            sessionRejected = true;
+            break pages;
+          }
         }
+        if (!paged || page.length < batchLimit || attempted >= batchLimit || --pagesLeft <= 0) break;
+        page = await _db.getPendingQueueEntries(limit: batchLimit, force: force, afterId: page.last.id);
+        if (page.isEmpty) break;
       }
 
       // Phiên chết thật (làm mới bị từ chối / không có refresh token / bị thu quyền app): đăng xuất CƯỠNG BỨC — giữ
@@ -419,7 +445,7 @@ class SyncService {
       }
 
       return SyncResult(
-        totalEntries: entries.length,
+        totalEntries: totalEntries,
         successCount: successCount,
         deadErrors: currentDeadErrors,
         retryableCount: retryableCount,
@@ -736,10 +762,7 @@ class SyncService {
     payloadMap['client_time'] = DateTime.fromMillisecondsSinceEpoch(entry.createdAt).toIso8601String();
 
     // 3. Gửi lên API /crm/customers kèm client_uuid
-    final response = await _apiClient.post(
-      '/crm/customers',
-      data: payloadMap,
-    );
+    final response = await _postMarkingMaybeOnServer(entry, '/crm/customers', payloadMap);
 
     int? serverId;
     String? serverCode;
@@ -885,12 +908,38 @@ class SyncService {
   static int _tapWallMs(Map<String, dynamic> payload, SyncQueueEntry entry) =>
       DateTime.tryParse(payload['client_time']?.toString() ?? '')?.millisecondsSinceEpoch ?? entry.createdAt;
 
+  /// POST dòng TẠO [entry] (lượt viếng thăm / điểm bán), gắn dấu [queueMaybeOnServerKey] NGAY TRƯỚC khi gửi: hỏng giữa
+  /// chừng (quá giờ, mất phản hồi) thì huỷ lượt / xoá điểm bán không xoá thẳng dòng, lần sửa điểm bán không gộp vào nó
+  /// (#24698 lỗi 6, vòng 3). Lỗi CHẮC CHẮN server chưa ghi (chưa kết nối được; 4xx trừ 408/409/429 — kể cả 401 phiên hết
+  /// hạn) ⇒ gỡ dấu vừa gắn.
+  Future<dynamic> _postMarkingMaybeOnServer(SyncQueueEntry entry, String path, Map<String, dynamic> body,
+      {bool? alreadyMarked}) async {
+    final markedNow = !(alreadyMarked ?? queueMaybeOnServer(entry.payload));
+    if (markedNow) {
+      final stored = jsonDecode(entry.payload) as Map<String, dynamic>;
+      await _db.updatePayload(entry.id, jsonEncode({...stored, queueMaybeOnServerKey: true}));
+    }
+    try {
+      return await _apiClient.post(path, data: body);
+    } catch (e) {
+      final notWritten = (e is NetworkException && !e.mayHaveReachedServer) ||
+          (e is AppException &&
+              e is! NetworkException &&
+              e.statusCode != null &&
+              e.statusCode! >= 400 &&
+              e.statusCode! < 500 &&
+              !const {408, 409, 429}.contains(e.statusCode));
+      if (markedNow && notWritten) await _db.updatePayload(entry.id, entry.payload);
+      rethrow;
+    }
+  }
+
   /// Đồng bộ Check-in viếng thăm lên server (§3 & §9)
   Future<void> _syncCreateVisit(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
-    final markedMaybeOnServer = payload[visitMaybeOnServerKey] == true;
+    final markedMaybeOnServer = payload[queueMaybeOnServerKey] == true;
     payload.remove(openVisitCountKey);
-    payload.remove(visitMaybeOnServerKey);
+    payload.remove(queueMaybeOnServerKey);
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
 
@@ -935,15 +984,7 @@ class SyncService {
 
     // Đánh dấu "có thể đã tới server" NGAY TRƯỚC khi gửi (sau mọi bước có thể dừng mà chưa gửi, vd chờ điểm bán cha): hỏng
     // giữa chừng (quá giờ, mất phản hồi) thì huỷ lượt không được xoá thẳng dòng này nữa (#24698 lỗi 6).
-    if (!markedMaybeOnServer) {
-      final stored = jsonDecode(entry.payload) as Map<String, dynamic>;
-      await _db.updatePayload(entry.id, jsonEncode({...stored, visitMaybeOnServerKey: true}));
-    }
-
-    final response = await _apiClient.post(
-      '/dms/visits',
-      data: payload,
-    );
+    final response = await _postMarkingMaybeOnServer(entry, '/dms/visits', payload, alreadyMarked: markedMaybeOnServer);
 
     int? serverId;
     if (response is Map<String, dynamic>) {

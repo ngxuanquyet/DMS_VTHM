@@ -22,6 +22,20 @@ final visitRepositoryProvider = Provider<VisitRepository>((ref) {
   return VisitRepositoryImpl(ref.watch(visitApiServiceProvider));
 });
 
+/// Server XÁC NHẬN lượt [visit] không còn mở (không có trong danh sách lượt còn mở). Không tra được ⇒ `false` (giữ lượt).
+Future<bool> serverConfirmsVisitNotOpen(VisitRepository repo, VisitEntity visit) async {
+  if (repo is! VisitRepositoryImpl) return false;
+  try {
+    // Màn đang mở chờ kết quả này ⇒ có trần; quá trần coi như không tra được (giữ lượt).
+    final open = await repo.getOpenVisits().timeout(const Duration(seconds: 8));
+    return !open.any((v) =>
+        v.id == visit.id ||
+        (visit.clientUuid != null && visit.clientUuid!.isNotEmpty && v.clientUuid == visit.clientUuid));
+  } catch (_) {
+    return false;
+  }
+}
+
 class VisitRepositoryImpl implements VisitRepository {
   final VisitApiService _apiService;
   static const String _activeVisitKey = 'dms_active_visit_session_v1';

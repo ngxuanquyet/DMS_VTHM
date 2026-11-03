@@ -154,18 +154,13 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       // Nhắc vào/ra ca: CHỈ push của server theo ca thật (21/10/2026) — app không tự đặt lịch nhắc cục bộ nữa.
 
       // Lựa chọn địa điểm chấm công: giữ lựa chọn cũ hoặc chọn địa điểm gần nhất
-      AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
-      if (activeLoc != null) {
-        final match = config.locations.where((l) => l.id == activeLoc!.id).firstOrNull;
-        activeLoc = match ?? config.closestLocation;
-      } else {
-        activeLoc = config.closestLocation;
-      }
+      final (activeLoc, picked) = _pickLocation(config);
 
       state = state.copyWith(
         status: AttendanceStatus.loaded,
         config: config,
         selectedLocation: activeLoc,
+        locationPickedByUser: picked,
         history: history,
         latestPunch: latest,
         liveWorkDurationSeconds: workDuration,
@@ -225,26 +220,29 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         lng: position.longitude,
       );
 
-      AttendanceLocationItemEntity? activeLoc = state.selectedLocation;
-      if (activeLoc != null) {
-        final match = updatedConfig.locations.where((l) => l.id == activeLoc!.id).firstOrNull;
-        activeLoc = match ?? updatedConfig.closestLocation;
-      } else {
-        activeLoc = updatedConfig.closestLocation;
-      }
+      final (activeLoc, picked) = _pickLocation(updatedConfig);
 
       state = state.copyWith(
         config: updatedConfig,
         selectedLocation: activeLoc,
+        locationPickedByUser: picked,
       );
     } catch (e) {
       debugPrint('[AttendanceViewModel] Lỗi refresh config theo vị trí: $e');
     }
   }
 
+  /// Địa điểm chấm công sau khi tải lại [config]: giữ địa điểm người dùng TỰ chọn nếu còn trong danh sách; còn lại theo địa
+  /// điểm gần nhất (và thôi coi là tự chọn — giữ bản thay thế tự động là lại kẹt địa điểm cũ, #24698 vòng 3).
+  (AttendanceLocationItemEntity?, bool) _pickLocation(AttendanceConfigEntity config) {
+    final selected = state.locationPickedByUser ? state.selectedLocation : null;
+    final match = selected == null ? null : config.locations.where((l) => l.id == selected.id).firstOrNull;
+    return match != null ? (match, true) : (config.closestLocation, false);
+  }
+
   /// Người dùng chủ động chọn địa điểm chấm công
   void selectLocation(AttendanceLocationItemEntity location) {
-    state = state.copyWith(selectedLocation: location);
+    state = state.copyWith(selectedLocation: location, locationPickedByUser: true);
   }
 
   /// Đổi khoảng thời gian xem lịch sử (§5)
@@ -483,13 +481,13 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       try {
         final config = await getConfigUseCase(lat: position.latitude, lng: position.longitude);
         if (!mounted || seq != _todayRefreshSeq) return;
-        final selected = state.selectedLocation;
-        final match = selected == null ? null : config.locations.where((l) => l.id == selected.id).firstOrNull;
+        final (activeLoc, picked) = _pickLocation(config);
         final firstIn = config.currentToday?.firstInAt;
         final inAt = firstIn == null ? null : DateTime.tryParse(firstIn.replaceAll(' ', 'T'));
         state = state.copyWith(
           config: config,
-          selectedLocation: match ?? config.closestLocation,
+          selectedLocation: activeLoc,
+          locationPickedByUser: picked,
           liveWorkDurationSeconds:
               inAt == null ? null : math.max(0, DateTime.now().difference(inAt).inSeconds),
           workDurationAsOf: inAt == null ? null : DateTime.now(),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/database/app_database.dart' show queueMaybeOnServerKey;
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
@@ -442,7 +443,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     // 2. Khách hàng đã có trên server (id > 0)
     // Cả khách hàng do user tự tạo hay được phân công, khi đã có id > 0 thì phải gọi API cập nhật lên server
-    if (_isOnline) {
+    // Còn lệnh sửa chưa gửi xong của điểm bán này ⇒ lần sửa này cũng đi hàng đợi, đứng sau nó: PATCH thẳng rồi lệnh cũ
+    // gửi sau sẽ ĐÈ giá trị mới bằng giá trị cũ (rà soát #24698 vòng 3).
+    final uuidForQueue = clientUuid ?? _cachedCustomers.where((c) => c.id == id).firstOrNull?.clientUuid;
+    if (_isOnline && !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
       try {
         await _apiService.updateCustomer(id, changes);
       } catch (e) {
@@ -459,11 +463,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
         if (!_isNetworkError(e)) {
           rethrow;
         }
-        return await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+        final queued = await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+        unawaited(_syncService.syncQueue());
+        return queued;
       }
     } else {
-      // Khi ngoại tuyến không có mạng, đưa vào hàng đợi offline
-      return await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+      // Khi ngoại tuyến không có mạng (hoặc phải đứng sau lệnh sửa chưa gửi), đưa vào hàng đợi offline
+      final queued = await _updateCustomerOfflineQueue(id, changes, clientUuid: clientUuid);
+      if (_isOnline) unawaited(_syncService.syncQueue());
+      return queued;
     }
 
     // 3. Cập nhật trong cache RAM và CSDL SQLite cục bộ
@@ -488,7 +496,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
     if (e is SocketException || e is HttpException) return true;
     if (e is AppException) {
       if (e.statusCode == null) return true;
-      if (e.statusCode == 408 || e.statusCode == 503 || e.statusCode == 504) return true;
+      if (isTemporaryServerError(e)) return true;
     }
     final str = e.toString().toLowerCase();
     return str.contains('socketexception') ||
@@ -511,7 +519,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
     }
 
     final current = _cachedCustomers[index];
-    final effectiveUuid = clientUuid ?? current.clientUuid ?? 'server_$id';
+    // Mã rỗng ('' từ server) không phải khoá: lệnh sửa của các điểm bán khác nhau sẽ khớp nhau ⇒ dùng mã server.
+    final effectiveUuid = [clientUuid, current.clientUuid].firstWhere((u) => u != null && u.isNotEmpty,
+        orElse: () => 'server_$id')!;
     // Ảnh mới ⇒ chép vào thư mục lưu lâu dài TRƯỚC khi ghi bản trong máy và hàng đợi — hai nơi trỏ CÙNG một tệp bền
     // (thư mục tạm của camera bị dọn thì ảnh ở chi tiết điểm bán vỡ, #24698).
     if (changes['photo_tokens'] is List) {
@@ -655,8 +665,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
     };
 
     if (isOnline) {
+      var posted = false;
       try {
         final cleanPayload = await _prepareCleanCustomerPayload(data);
+        posted = true;
         final dto = await _apiService.createCustomer(cleanPayload);
 
         final serverId = dto.id > 0 ? dto.id : 0;
@@ -689,11 +701,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
           _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
           return entity;
         }
+        // Server đã trả lời 2xx mà không đọc được mã ⇒ chắc chắn đã nhận: dòng hàng đợi mang dấu như ca quá giờ.
+        data[queueMaybeOnServerKey] = true;
       } catch (e) {
         debugPrint('[CustomerRepositoryImpl] Lỗi khi tạo online ($e)');
         // 🔴 Theo spec 30/09 §7: Lỗi 4xx từ chối hẳn (validate thất bại) — TUYỆT ĐỐI không fallback sang ghi offline để
         // tránh tạo rác và làm tắc hàng đợi SyncQueue! Cùng luật phân loại với hàng đợi ([isPermanentRejection]).
         if (isPermanentRejection(e)) rethrow;
+        // Lỗi lúc GỬI tạo (không phải lúc chuẩn bị ảnh) mà không chắc chưa ra khỏi máy ⇒ server có thể đã ghi (lần sửa sau
+        // không gộp vào dòng tạo).
+        if (posted && !(e is NetworkException && !e.mayHaveReachedServer)) data[queueMaybeOnServerKey] = true;
       }
     }
 

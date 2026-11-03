@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import '../../../../core/database/app_database.dart' show queueMaybeOnServerKey;
 
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
@@ -92,6 +93,8 @@ const Set<String> kForbiddenCustomerKeys = {
   'mobiwork_id',
   'legacy_source',
   'legacy_key',
+  // Dấu nội bộ của dòng tạo trong hàng đợi — không phải ô động.
+  queueMaybeOnServerKey,
   // Nguồn cặp tỉnh/xã (#24072) — server tự đặt, đọc từ hồ sơ để hiện nhãn; gửi lên (kể cả trong `data`) là 422.
   'geo_source',
 };

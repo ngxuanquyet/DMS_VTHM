@@ -228,11 +228,13 @@ class AppDatabase extends _$AppDatabase {
   /// Lấy các mục pending có thể gửi theo thứ tự FIFO (§3.3 Luật 1 & 6)
   /// TUYỆT ĐỐI KHÔNG lấy các mục 'dead' (lỗi 4xx là hỏng vĩnh viễn, không retry).
   /// Nếu [force] = true: lấy tất cả các mục pending/sending mà không cần đợi nextAttemptAt (người dùng bấm đồng bộ thủ công).
-  Future<List<SyncQueueEntry>> getPendingQueueEntries({int limit = 50, bool force = false}) {
+  /// [afterId]: trang kế — chỉ lấy mục có id lớn hơn (lô bỏ qua mục đang bị hoãn thì đọc tiếp, không để chúng chiếm chỗ).
+  Future<List<SyncQueueEntry>> getPendingQueueEntries({int limit = 50, bool force = false, int? afterId}) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return (select(syncQueueEntries)
           ..where((tbl) =>
               isMine(tbl) &
+              (afterId != null ? tbl.id.isBiggerThanValue(afterId) : const Constant(true)) &
               (force
                   ? (tbl.state.equals('pending') | tbl.state.equals('sending'))
                   : (tbl.state.equals('pending') &
@@ -691,6 +693,30 @@ class AppDatabase extends _$AppDatabase {
     return rows.any((r) => !stuck.contains(r.parentUuid));
   }
 
+  /// Lệnh SỬA điểm bán [entry] nhường lệnh sửa NHẬP TRƯỚC của cùng điểm bán còn chờ / đang gửi: lệnh trước bị lùi lịch
+  /// (lỗi tạm) mà lệnh sau gửi trước thì lệnh trước gửi sau ĐÈ giá trị mới bằng giá trị cũ (rà soát #24698 vòng 3).
+  Future<bool> isCustomerUpdateHeld(SyncQueueEntry entry) async {
+    if (entry.entity != 'customer' || entry.op != 'update') return false;
+    return await latestUnsentCustomerUpdate(entry.serverId ?? 0, entry.clientUuid, beforeId: entry.id) != null;
+  }
+
+  /// Lệnh SỬA điểm bán [serverId] / [clientUuid] MỚI NHẤT chưa gửi xong (chờ / đang gửi) của người đang đăng nhập;
+  /// [beforeId]: chỉ xét lệnh nhập trước dòng đó. serverId 0 / mã rỗng không phải khoá (khớp nhầm điểm bán khác).
+  Future<SyncQueueEntry?> latestUnsentCustomerUpdate(int serverId, String? clientUuid, {int? beforeId}) {
+    return (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              (beforeId != null ? tbl.id.isSmallerThanValue(beforeId) : const Constant(true)) &
+              tbl.entity.equals('customer') &
+              tbl.op.equals('update') &
+              ((serverId > 0 ? tbl.serverId.equals(serverId) : const Constant(false)) |
+                  (clientUuid != null && clientUuid.isNotEmpty ? tbl.clientUuid.equals(clientUuid) : const Constant(false))) &
+              (tbl.state.equals('pending') | tbl.state.equals('sending')))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   /// Lệnh check-out / huỷ ở trạng thái [state] của lượt KHÁC, nhập trước dòng tạo lượt [entry]; [createdFromMs]: chỉ dòng
   /// tạo từ mốc đó trở đi.
   Future<List<SyncQueueEntry>> _otherVisitClosesBefore(SyncQueueEntry entry, String state, {int? createdFromMs}) {
@@ -979,9 +1005,12 @@ class AppDatabase extends _$AppDatabase {
   Future<bool> deletePendingCustomer(String clientUuid) async {
     final rows = await transaction(() async {
       final create = await findCustomerCreateRow(clientUuid);
-      // Đang gửi / đã gửi ⇒ từ chối. (Còn khe: lần gửi trước quá giờ mà server đã ghi, dòng quay về pending — chấp nhận,
-      // hiếm; đánh dấu bền cho ca đó kéo theo quá nhiều nhánh phụ, xem #24698 vòng 2.)
-      if (create != null && (create.state == 'sending' || create.state == 'done')) {
+      // Đang gửi / đã gửi / CÓ THỂ đã tới server (lần gửi trước hỏng giữa chừng — dấu [queueMaybeOnServerKey]) ⇒ từ chối:
+      // xoá thì server vẫn giữ điểm bán, lần tải sau nó quay lại.
+      if (create != null &&
+          (create.state == 'sending' ||
+              create.state == 'done' ||
+              (create.state == 'pending' && queueMaybeOnServer(create.payload)))) {
         return null;
       }
       final local = await (select(localCustomers)..where((tbl) => tbl.clientUuid.equals(clientUuid))).get();
@@ -1068,7 +1097,7 @@ class AppDatabase extends _$AppDatabase {
       // Dòng tạo 'pending' nhưng ĐÃ TỪNG gửi đi (lần trước hỏng giữa chừng / lượt trực tuyến quá giờ rồi rơi về hàng đợi):
       // server có thể đã mở lượt ⇒ coi như đang gửi, để nơi gọi xếp lệnh huỷ chờ check-in có mã rồi huỷ. Xoá thì lượt treo
       // trên server mà app không còn gì để gỡ (#24698 lỗi 6).
-      if (create != null && create.state == 'pending' && visitCreateMaybeOnServer(create.payload)) return null;
+      if (create != null && create.state == 'pending' && queueMaybeOnServer(create.payload)) return null;
       if (create?.state == 'dead') {
         // Check-in bị server TỪ CHỐI: lượt không hề có trên server ⇒ xoá trọn (cả dòng tạo dead, phiếu, mục con đã dead)
         // — để lại thì phiếu của lượt đã huỷ nổi lên "Lỗi đồng bộ" (cha dead = hết hy vọng ⇒ 410).
@@ -1153,15 +1182,15 @@ void collectFilePaths(Object? node, List<String> out) {
   }
 }
 
-/// Khoá NỘI BỘ trong payload dòng tạo lượt viếng thăm: lượt này có thể ĐÃ tới server (đã gửi ít nhất một lần, hoặc lượt
+/// Khoá NỘI BỘ trong payload dòng TẠO của hàng đợi (lượt viếng thăm, điểm bán): có thể ĐÃ tới server (đã gửi ít nhất một lần, hoặc lượt
 /// gửi trực tuyến quá giờ). Không dùng `attempts` — "Đồng bộ ngay" đặt lại nó. Bỏ khỏi payload trước khi gửi.
-const String visitMaybeOnServerKey = '_maybe_on_server';
+const String queueMaybeOnServerKey = '_maybe_on_server';
 
-/// Dòng tạo lượt có dấu [visitMaybeOnServerKey] không.
-bool visitCreateMaybeOnServer(String payload) {
+/// Dòng tạo lượt có dấu [queueMaybeOnServerKey] không.
+bool queueMaybeOnServer(String payload) {
   try {
     final map = jsonDecode(payload);
-    return map is Map && map[visitMaybeOnServerKey] == true;
+    return map is Map && map[queueMaybeOnServerKey] == true;
   } catch (_) {
     return false;
   }

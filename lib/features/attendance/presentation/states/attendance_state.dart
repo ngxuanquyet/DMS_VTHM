@@ -7,6 +7,9 @@ class AttendanceState {
   final AttendanceStatus status;
   final AttendanceConfigEntity? config;
   final AttendanceLocationItemEntity? selectedLocation;
+  /// [selectedLocation] do người dùng TỰ chọn — chỉ khi đó mới giữ qua các lần tải lại; app tự chọn thì luôn theo địa điểm
+  /// gần nhất (lần chọn đầu khi chưa có GPS là địa điểm đầu theo tên — giữ nó là chặn oan "ngoài vùng", #24698 vòng 3).
+  final bool locationPickedByUser;
   final List<AttendancePunchEntity> history;
   final AttendancePunchEntity? latestPunch;
   final int selectedDays;
@@ -31,6 +34,7 @@ class AttendanceState {
     this.status = AttendanceStatus.initial,
     this.config,
     this.selectedLocation,
+    this.locationPickedByUser = false,
     this.history = const [],
     this.latestPunch,
     this.selectedDays = 30,
@@ -108,6 +112,7 @@ class AttendanceState {
     AttendanceStatus? status,
     AttendanceConfigEntity? config,
     AttendanceLocationItemEntity? selectedLocation,
+    bool? locationPickedByUser,
     List<AttendancePunchEntity>? history,
     AttendancePunchEntity? latestPunch,
     int? selectedDays,
@@ -127,6 +132,7 @@ class AttendanceState {
       status: status ?? this.status,
       config: config ?? this.config,
       selectedLocation: selectedLocation ?? this.selectedLocation,
+      locationPickedByUser: locationPickedByUser ?? this.locationPickedByUser,
       history: history ?? this.history,
       latestPunch: latestPunch ?? this.latestPunch,
       selectedDays: selectedDays ?? this.selectedDays,

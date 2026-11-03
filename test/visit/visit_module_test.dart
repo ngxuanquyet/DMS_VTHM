@@ -1031,7 +1031,9 @@ void main() {
       expect(visitRepo.activeVisit, isNull);
     });
 
-    test('RouteViewModel clears stale activeVisit when todayVisits has loaded and server visit is missing (cancelled on server)', () async {
+    // #24698 vòng 3: chỉ SUY LUẬN từ todayVisits (không tra được danh sách lượt còn mở của server) thì KHÔNG dọn — danh sách
+    // có thể cũ (vừa check-in trực tuyến) và trước đây đã gửi lệnh huỷ nhầm lượt thật.
+    test('RouteViewModel KEEPS activeVisit missing from todayVisits when open visits could not be checked on server', () async {
       final custRepo = FakeCustomerRepository([
         const CustomerEntity(id: 101, code: 'C101', name: 'Đại lý A', address: '123 Đường 1', contactPerson: 'Người liên hệ', phone: '0901', route: 'Tuyến 1', type: 'Đại lý'),
       ]);
@@ -1062,9 +1064,8 @@ void main() {
 
       await vm.loadRouteDetail();
 
-      // Active visit stale 888 đã được dọn dẹp hoàn toàn
-      expect(vm.state.activeVisit, isNull);
-      expect(visitRepo.activeVisit, isNull);
+      expect(vm.state.activeVisit?.id, 888);
+      expect(visitRepo.activeVisit?.id, 888);
     });
 
     test('VisitEntity parses visit_result_label and visit_result_color correctly (§2 Spec 18/10/2026)', () {

@@ -161,6 +161,8 @@ class CustomerLocalDataSource {
     // Vật tư khai lúc tạo (#24526): giữ NGUYÊN thao tác (kể cả đường dẫn ảnh + `detail_photo_fields`) — SyncService đổi
     // ảnh ra token lúc gửi rồi mới dựng khuôn §2.
     if (data['materials'] is List) queuePayload['materials'] = data['materials'];
+    // Lần gửi trực tuyến vừa hỏng mà server CÓ THỂ đã ghi ⇒ mang dấu sang dòng hàng đợi (lần sửa sau không gộp vào nó).
+    if (data[queueMaybeOnServerKey] == true) queuePayload[queueMaybeOnServerKey] = true;
     if (allPhotos.isNotEmpty) {
       queuePayload['photo_tokens'] = allPhotos;
       queuePayload['photo_token'] = allPhotos.first;
@@ -610,7 +612,13 @@ class CustomerLocalDataSource {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
     final createEntry = queueEntries.firstOrNull;
-    if (createEntry != null && (createEntry.state == 'sending' || createEntry.state == 'done')) {
+    // Dòng tạo còn chờ nhưng CÓ THỂ đã tới server (đã gửi mà hỏng giữa chừng, hoặc lần tạo trực tuyến quá giờ): gửi lại
+    // cùng client_uuid thì server trả bản cũ, phần gộp mất im lặng (rà soát #24698 vòng 3). Dòng 'dead' = server đã từ
+    // chối ⇒ chưa có trên server, vẫn gộp để sửa lỗi rồi gửi lại.
+    if (createEntry != null &&
+        (createEntry.state == 'sending' ||
+            createEntry.state == 'done' ||
+            (createEntry.state == 'pending' && queueMaybeOnServer(createEntry.payload)))) {
       // Dòng tạo ĐANG gửi / ĐÃ gửi: gộp vào nó là mất phần sửa — đang gửi thì lúc xong `markDone` đè trạng thái, đã gửi
       // thì gửi lại cùng client_uuid server trả bản cũ. Xếp một lệnh SỬA riêng, chạy sau dòng tạo (lấy mã server của nó).
       await enqueueCustomerUpdate(
@@ -625,6 +633,9 @@ class CustomerLocalDataSource {
       try {
         queuePayload = jsonDecode(entry.payload) as Map<String, dynamic>;
       } catch (_) {}
+      // Dòng 'dead' = server đã TỪ CHỐI ⇒ chắc chắn chưa có trên server: bỏ dấu "có thể đã tới", không thì lần sửa kế tiếp
+      // (dòng đã về 'pending') thành lệnh SỬA riêng chờ một dòng tạo vẫn mang lỗi cũ.
+      if (entry.state == 'dead') queuePayload.remove(queueMaybeOnServerKey);
 
       // Trộn các thay đổi mới vào queuePayload
       queuePayload['name'] = name;
@@ -707,15 +718,7 @@ class CustomerLocalDataSource {
 
       // Lệnh SỬA xếp từ lần sửa trước (lúc dòng tạo đang gửi) chạy SAU dòng tạo — không phủ phần sửa mới này lên nó thì
       // nó đè giá trị CŨ lên điểm bán vừa tạo bằng giá trị mới.
-      final pendingUpdate = await (_db.select(_db.syncQueueEntries)
-            ..where((tbl) =>
-                _db.isMine(tbl) &
-                tbl.entity.equals('customer') &
-                tbl.op.equals('update') &
-                tbl.clientUuid.equals(clientUuid) &
-                tbl.state.equals('pending'))
-            ..limit(1))
-          .getSingleOrNull();
+      final pendingUpdate = await _db.latestUnsentCustomerUpdate(0, clientUuid);
       if (pendingUpdate != null) {
         await enqueueCustomerUpdate(
           serverId: pendingUpdate.serverId ?? 0,
@@ -949,6 +952,10 @@ class CustomerLocalDataSource {
     );
   }
 
+  /// Còn lệnh SỬA điểm bán [serverId] / [clientUuid] chưa gửi xong (chờ / đang gửi) của người đang đăng nhập không.
+  Future<bool> hasUnsentCustomerUpdate(int serverId, String? clientUuid) async =>
+      await _db.latestUnsentCustomerUpdate(serverId, clientUuid) != null;
+
   /// Đẩy yêu cầu cập nhật thông tin điểm bán vào hàng đợi sync_queue (op: update)
   Future<void> enqueueCustomerUpdate({
     required int serverId,
@@ -966,21 +973,14 @@ class CustomerLocalDataSource {
     }
     // Kiểm tra xem đã có mục update pending cho khách hàng này trong queue chưa — CỦA CHÍNH người đang đăng nhập (#24400):
     // gộp vào dòng của người khác là gửi bản sửa của mình dưới tên họ.
-    final existingEntries = await (_db.select(_db.syncQueueEntries)
-          ..where((tbl) =>
-              _db.isMine(tbl) &
-              tbl.entity.equals('customer') &
-              tbl.op.equals('update') &
-              // serverId 0 = "chưa có mã" (lệnh sửa xếp lúc dòng tạo đang gửi) — KHÔNG khớp theo nó, kẻo gộp phần sửa
-              // điểm bán B vào lệnh sửa của điểm bán A.
-              ((serverId > 0 ? tbl.serverId.equals(serverId) : const Constant(false)) |
-                  tbl.clientUuid.equals(clientUuid)) &
-              // CHỈ gộp vào dòng còn chờ: dòng ĐANG gửi mà gộp thêm thì lúc gửi xong `markDone` đè — phần gộp mất.
-              tbl.state.equals('pending')))
-        .get();
+    // serverId 0 = "chưa có mã" (lệnh sửa xếp lúc dòng tạo đang gửi) — KHÔNG khớp theo nó, kẻo gộp phần sửa điểm bán B vào
+    // lệnh sửa của điểm bán A.
+    final latest = await _db.latestUnsentCustomerUpdate(serverId, clientUuid);
 
-    if (existingEntries.isNotEmpty) {
-      final entry = existingEntries.first;
+    // CHỈ gộp vào lệnh sửa MỚI NHẤT chưa xong, và chỉ khi nó còn chờ: dòng ĐANG gửi mà gộp thêm thì lúc gửi xong
+    // `markDone` đè — phần gộp mất; gộp vào dòng cũ hơn một dòng khác thì dòng sau gửi sau, đè phần vừa sửa (vòng 3).
+    if (latest != null && latest.state == 'pending') {
+      final entry = latest;
       Map<String, dynamic> oldPayload = {};
       try {
         oldPayload = jsonDecode(entry.payload) as Map<String, dynamic>;

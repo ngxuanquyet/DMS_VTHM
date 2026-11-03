@@ -161,7 +161,7 @@ void main() {
     });
 
     test('dòng tạo đã từng gửi (có thể đã lên server) ⇒ KHÔNG xoá, để xếp lệnh huỷ chờ check-in', () async {
-      await create({'customer_id': 1, visitMaybeOnServerKey: true});
+      await create({'customer_id': 1, queueMaybeOnServerKey: true});
       expect(await db.deleteUnsentVisit('v1'), isFalse, reason: 'lỗi cũ: xoá ⇒ lượt treo trên server');
       expect(await db.select(db.syncQueueEntries).get(), hasLength(1));
     });
@@ -231,14 +231,14 @@ void main() {
     test('lỗi 6: không có mạng ⇒ dòng tạo KHÔNG mang dấu "có thể đã lên server"', () async {
       await checkinOffline();
       final row = (await db.select(db.syncQueueEntries).get()).single;
-      expect(visitCreateMaybeOnServer(row.payload), isFalse);
+      expect(queueMaybeOnServer(row.payload), isFalse);
     });
 
     test('lỗi 6: đã gửi trọn request rồi đứt trước khi có phản hồi ⇒ dòng tạo mang dấu', () async {
       adapter.checkinCause = const HttpException('Connection closed before full header was received');
       await checkinOffline();
       final row = (await db.select(db.syncQueueEntries).get()).single;
-      expect(visitCreateMaybeOnServer(row.payload), isTrue);
+      expect(queueMaybeOnServer(row.payload), isTrue);
     });
 
     test('lỗi 6: quá giờ chờ phản hồi ⇒ dòng tạo mang dấu, huỷ lượt không xoá thẳng', () async {
@@ -246,7 +246,7 @@ void main() {
       adapter.checkinCause = 'timed out';
       await checkinOffline();
       final row = (await db.select(db.syncQueueEntries).get()).single;
-      expect(visitCreateMaybeOnServer(row.payload), isTrue);
+      expect(queueMaybeOnServer(row.payload), isTrue);
       expect(await db.deleteUnsentVisit(row.clientUuid), isFalse);
     });
   });
@@ -284,7 +284,7 @@ void main() {
 
     final row = await db.getEntryById(visitId);
     expect(row!.lastError, isNotNull, reason: 'lô phải ĐÃ xử lý dòng lượt (dừng vì chờ cha)');
-    expect(visitCreateMaybeOnServer(row.payload), isFalse, reason: 'chưa gửi request nào ⇒ huỷ lượt phải xoá thẳng được');
+    expect(queueMaybeOnServer(row.payload), isFalse, reason: 'chưa gửi request nào ⇒ huỷ lượt phải xoá thẳng được');
   });
 
   group('lỗi 10 — sửa toạ độ điểm bán ngoại tuyến chưa gửi', () {

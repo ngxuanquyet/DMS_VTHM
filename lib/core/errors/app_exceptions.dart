@@ -109,3 +109,11 @@ bool isPermanentRejection(Object e) {
   if (c == 401 || c == 408 || c == 409 || c == 429) return false;
   return e.code != 'DMS_APP_FORBIDDEN';
 }
+
+/// Máy chủ trả lỗi TẠM (cổng / k3s đang đổi bản: 502/503/504, 408, 429): gửi lại cùng client_uuid là đúng (server khử
+/// trùng) ⇒ đường gửi trực tuyến xếp hàng như mất mạng. 500 KHÔNG tính: thường là lỗi lặp lại theo dữ liệu — xếp hàng thì
+/// thử lại mãi mà người dùng tưởng đã lưu, báo ngay để họ biết.
+bool isTemporaryServerError(Object e) {
+  if (e is! AppException) return false;
+  return const {408, 429, 502, 503, 504}.contains(e.statusCode);
+}

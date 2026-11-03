@@ -558,15 +558,23 @@ class RouteViewModel extends StateNotifier<RouteState> {
               matchingServerVisit == null &&
               saved.isCheckinToday &&
               todayVisits.isNotEmpty &&
-              !(openVisits?.any((v) => v.id == saved.id) ?? false)) {
-            // ⚠️ LƯỢT ĐÃ BỊ HUỶ TRÊN SERVER (§4.1 HUY-LUOT-VIENG-THAM-2026-09-30):
-            // Khi server trả về todayVisits thành công nhưng lượt server (saved.id > 0) biến mất hoàn toàn
-            // khỏi todayVisits, điều đó có nghĩa là lượt này đã bị huỷ trên server!
+              openVisits != null &&
+              // Ảnh chụp ban đầu còn ghi lượt là mở ⇒ giữ (vòng dưới cũng dựa vào nó), khỏi hỏi lại.
+              !openVisits.any((v) =>
+                  v.id == saved.id || ((saved.clientUuid?.isNotEmpty ?? false) && v.clientUuid == saved.clientUuid)) &&
+              // Ảnh chụp danh sách có thể cũ hơn lượt (check-in trực tuyến / lô đồng bộ đẩy check-in trong lúc đang tải) ⇒
+              // hỏi LẠI server sau khi đã đọc bản lưu: lượt đã có mã server thì danh sách mới phải có nó nếu còn mở.
+              await serverConfirmsVisitNotOpen(visitRepository!, saved) &&
+              // Trong lúc chờ, lượt đang mở có thể đã đổi (check-in mới) ⇒ chỉ dọn khi bản lưu VẪN là lượt vừa tra.
+              (await visitRepository!.getActiveVisit())?.id == saved.id) {
+            // Lượt KHÔNG CÒN MỞ trên server (huỷ hoặc đã check-out — §4.1 HUY-LUOT-VIENG-THAM-2026-09-30), server đã xác nhận:
+            // bỏ bản trong máy, KHÔNG gửi lệnh huỷ — suy luận từ danh sách có thể cũ đã từng huỷ nhầm lượt thật (#24698 vòng 3).
             debugPrint(
-              '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn trong todayVisits của server (đã bị huỷ), dọn dẹp active visit.',
+              '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn mở trên server, dọn active visit trong máy.',
             );
             await visitRepository!.clearActiveVisit();
-            await visitRepository!.cancelVisit(saved.id, clientUuid: saved.clientUuid);
+            await visitRepository!.removeLocalVisit(saved.id,
+                clientUuid: (saved.clientUuid?.isNotEmpty ?? false) ? saved.clientUuid : null);
           } else if (!saved.isCheckinToday && (saved.checkinAt?.isBefore(openStartedAt) ?? false)) {
             // Lượt NGÀY KHÁC lưu trên máy ⇒ chỉ bỏ bản lưu, KHÔNG khoá app: server chỉ chặn lượt treo cùng ngày, cron đầu
             // ngày đánh dấu "Chưa check-out" (#24701). KHÔNG gọi huỷ (huỷ là ghi lên server; lượt vẫn được tính).
@@ -1808,6 +1816,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   }
 
   bool _isNetworkError(dynamic e) {
+    // Có mã HTTP = server ĐÃ trả lời. Lỗi TẠM (5xx cổng/k3s, 408, 429) ⇒ như mất mạng: hàng đợi gửi lại cùng client_uuid,
+    // server khử trùng. Mã khác là từ chối thật — cờ mạng đang báo "offline" (sóng yếu, một lần kiểm hỏng) cũng không được
+    // biến nó thành lượt/check-out/ảnh ngoại tuyến rồi chết trong hàng đợi (rà soát #24698 vòng 3).
+    if (e is AppException && e.statusCode != null) return isTemporaryServerError(e);
     if (ref != null) {
       try {
         if (!ref!.read(connectivityProvider).isOnline) return true;
@@ -2056,8 +2068,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       // Lượt trước còn lệnh chờ gửi (check-in/check-out/huỷ làm lúc mất mạng): mở lượt mới trực tuyến trước là lệnh của
       // lượt trước bị từ chối "còn lượt mở" rồi chết, mất trọn lượt (#24698 vòng 2) ⇒ đẩy chúng trước; chưa đẩy xong thì
       // lượt mới đi hàng đợi, đứng sau lượt trước.
-      if (ref != null && ref!.read(connectivityProvider).isOnline &&
-          !await ref!.read(syncServiceProvider).flushVisitLifecycle()) {
+      // Cờ mạng báo offline (có thể báo sai — vẫn thử gửi) mà còn lệnh lượt chờ ⇒ lượt này đi hàng đợi sau chúng: gửi thẳng
+      // là bỏ qua cổng đẩy lượt trước (vòng 3).
+      if (ref != null &&
+          (ref!.read(connectivityProvider).isOnline
+              ? !await ref!.read(syncServiceProvider).flushVisitLifecycle()
+              : await ref!.read(appDatabaseProvider).hasOpenVisitLifecycleEntries())) {
         throw const NetworkException('Lượt trước còn chờ gửi — lượt này lưu ngoại tuyến, gửi sau lượt trước.');
       }
       var visit = await checkinUseCase(request);
@@ -2144,7 +2160,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             offlinePayload['is_offline_sync'] = true;
             // Lượt gửi trực tuyến vừa hỏng mà có thể đã tới server (quá giờ, đứt giữa chừng) ⇒ huỷ lượt sau này không được
             // xoá thẳng dòng tạo (#24698 lỗi 6).
-            if (_mayHaveReachedServer(e)) offlinePayload[visitMaybeOnServerKey] = true;
+            if (_mayHaveReachedServer(e)) offlinePayload[queueMaybeOnServerKey] = true;
 
             // Nếu điểm bán tạo offline (customerId <= 0), gắn customer_client_uuid vào payload
             String? offlineCustomerUuid;
@@ -2648,7 +2664,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       );
       return (true, null);
     } catch (e) {
-      if (_isNetworkError(e)) {
+      // Lỗi máy chủ (kể cả tạm) thì ảnh còn đó — báo lỗi; 404/410 = đã xoá rồi ⇒ coi như xong. Lỗi mạng (không mã) giữ cách
+      // cũ: bỏ khỏi màn, KHÔNG xếp lệnh xoá (nợ có sẵn).
+      final status = e is AppException ? e.statusCode : null;
+      if (status == 404 || status == 410 || (status == null && _isNetworkError(e))) {
         final updatedPhotos =
             state.photos.where((p) => p.id != photoId).toList();
         state = state.copyWith(
@@ -2965,8 +2984,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // hàng đợi, nơi nó đứng chờ sau các mục con của lượt ([AppDatabase.isCheckoutHeld]).
     if (state.visitId > 0 && ref != null) {
       try {
-        if (ref!.read(connectivityProvider).isOnline &&
-            !await ref!.read(syncServiceProvider).flushVisitCheckoutChildren(_sessionClientUuid)) {
+        // Cờ mạng báo offline (có thể báo sai — vẫn thử gửi) mà còn ảnh/phiếu chờ gửi ⇒ check-out đi hàng đợi, đứng sau
+        // chúng: gửi thẳng thì cổng server từ chối vì thiếu chính các mục đang chờ (rà soát #24698 vòng 3).
+        final sync = ref!.read(syncServiceProvider);
+        if (ref!.read(connectivityProvider).isOnline
+            ? !await sync.flushVisitCheckoutChildren(_sessionClientUuid)
+            : await sync.hasBlockingCheckoutChildren(_sessionClientUuid)) {
           return await _checkoutOffline(request: request, lat: lat, lng: lng);
         }
       } catch (err) {

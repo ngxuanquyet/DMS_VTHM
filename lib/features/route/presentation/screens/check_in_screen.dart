@@ -213,16 +213,38 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       // Theo §4.1 HUY-LUOT-VIENG-THAM-2026-09-30, lượt đã huỷ biến mất khỏi /dms/visits/mine
       // CHỈ với lượt của HÔM NAY: lượt treo từ hôm trước không bao giờ có trong danh sách hôm nay mà vẫn đang mở
       // (màn tuyến đưa nó lên từ danh sách lượt còn mở) — coi là đã huỷ thì nhân viên không bao giờ gỡ được nó.
-      final isStaleCancelledOnServer = todayVisits.isNotEmpty &&
+      var isStaleCancelledOnServer = todayVisits.isNotEmpty &&
           currentActive.id > 0 &&
           currentActive.isCheckinToday &&
           matchingServerVisit == null;
+      // Chỉ là SUY LUẬN từ danh sách trong máy — có thể cũ (vừa check-in trực tuyến, tuyến chưa tải lại) ⇒ hỏi lại server
+      // danh sách lượt còn mở; còn mở hoặc không hỏi được thì GIỮ lượt (rà soát #24698 vòng 3: từng huỷ nhầm lượt thật).
+      if (isStaleCancelledOnServer) {
+        final repo = ref.read(visitRepositoryProvider);
+        isStaleCancelledOnServer = await serverConfirmsVisitNotOpen(repo, currentActive);
+        if (!mounted) return; // rời màn trong lúc chờ server: chưa đụng gì, để lần mở sau xét lại
+        // Trong lúc chờ, lô đồng bộ có thể đã đổi lượt đang mở ⇒ chỉ dọn khi lượt đang mở VẪN là lượt vừa tra.
+        if (isStaleCancelledOnServer) {
+          final now = await repo.getActiveVisit();
+          // Không còn bản lưu ⇒ không có gì để đè, vẫn dọn phiên trên màn.
+          isStaleCancelledOnServer = now == null ||
+              now.id == currentActive.id ||
+              ((currentActive.clientUuid?.isNotEmpty ?? false) && now.clientUuid == currentActive.clientUuid);
+          if (!mounted) return;
+        }
+      }
 
       if ((matchingServerVisit != null && !matchingServerVisit.isOpen) || isStaleCancelledOnServer) {
         final isCancelled = isStaleCancelledOnServer || (matchingServerVisit?.isCancelled == true);
         debugPrint('[CheckInScreen] Active visit id=${currentActive.id} đã ${isCancelled ? "bị huỷ" : "hoàn tất"} trên server, giải phóng phiên stale.');
         await ref.read(visitRepositoryProvider).clearActiveVisit();
-        if (isCancelled) {
+        if (isStaleCancelledOnServer) {
+          // Server xác nhận lượt không còn mở — nhưng không nói huỷ hay đã check-out ⇒ bỏ bản trong máy (không thì lần nạp
+          // tuyến sau ghép nó lại thành lượt đang mở) rồi nạp lại tuyến lấy trạng thái thật; KHÔNG gửi lệnh huỷ.
+          await ref.read(visitRepositoryProvider).removeLocalVisit(currentActive.id,
+              clientUuid: (currentActive.clientUuid?.isNotEmpty ?? false) ? currentActive.clientUuid : null);
+          unawaited(ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true));
+        } else if (isCancelled) {
           await ref.read(visitRepositoryProvider).cancelVisit(currentActive.id, clientUuid: currentActive.clientUuid);
           ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(currentActive.id, clientUuid: currentActive.clientUuid);
         }
@@ -234,7 +256,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                isCancelled
+                isStaleCancelledOnServer
+                    ? 'Lượt viếng thăm trước đó đã kết thúc trên hệ thống. Bạn có thể bắt đầu lượt check-in mới.'
+                    : isCancelled
                     ? 'Lượt viếng thăm trước đó đã được huỷ. Bạn có thể bắt đầu lượt check-in mới.'
                     : 'Lượt viếng thăm trước đó đã hoàn tất. Bạn có thể bắt đầu lượt check-in mới.',
               ),
