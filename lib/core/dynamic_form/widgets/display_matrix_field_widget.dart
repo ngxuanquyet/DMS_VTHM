@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_typography.dart';
 import '../../widgets/form_fields/form_field_parts.dart';
+import '../../utils/rich_image_cache.dart' show richImageCacheProvider;
+import '../../widgets/note_field_widget.dart' show RichImageView;
 
 /// Một thương hiệu trong `config.matrix.brands` của ô Ma trận trưng bày (#24767).
 class DisplayMatrixBrand {
@@ -21,6 +24,8 @@ class DisplayMatrixType {
   final int decimals;
   final double faceFactor;
   final String? hint;
+  /// Token ảnh minh hoạ (rich-image) — bấm tên cột mở ảnh này cùng [hint] (chốt 04/11/2026).
+  final String? illustrationToken;
   final int minPhotos;
   final int maxPhotos;
 
@@ -31,12 +36,16 @@ class DisplayMatrixType {
     this.decimals = 0,
     this.faceFactor = 1,
     this.hint,
+    this.illustrationToken,
     this.minPhotos = 0,
     this.maxPhotos = 0,
   });
 
   /// Số ảnh tối thiểu HIỆU LỰC — không vượt tối đa (server cũng kẹp), tránh đòi ảnh khi không có nút chụp.
   int get effectiveMinPhotos => minPhotos > maxPhotos ? maxPhotos : minPhotos;
+
+  /// Có gì để mở khi bấm tên cột (ảnh minh hoạ hoặc câu hướng dẫn).
+  bool get hasGuide => (illustrationToken ?? '').isNotEmpty || (hint ?? '').trim().isNotEmpty;
 }
 
 /// Trần một ô đếm — khớp `DisplayMatrixField::MAX_COUNT` của server.
@@ -70,6 +79,9 @@ class DisplayMatrixConfig {
               decimals: i(t['decimals']).clamp(0, 2),
               faceFactor: t['face_factor'] is num ? (t['face_factor'] as num).toDouble() : double.tryParse('${t['face_factor']}') ?? 1,
               hint: t['hint']?.toString(),
+              illustrationToken: t['illustration_token'] is String && (t['illustration_token'] as String).isNotEmpty
+                  ? t['illustration_token'] as String
+                  : null,
               minPhotos: i(t['min_photos']),
               maxPhotos: i(t['max_photos']),
             ),
@@ -118,8 +130,10 @@ String fmtMatrixNumber(num n) {
 /// Phần trăm làm tròn 1 chữ số, kiểu Việt.
 String fmtMatrixPct(double p) => fmtMatrixNumber((p * 10).round() / 10);
 
-/// Ô **Ma trận trưng bày SOS** (#24767, spec `MA-TRAN-TRUNG-BAY-SOS-2026-11-03.md` §4): mỗi thương hiệu một thẻ (thẻ "của ta"
-/// đứng đầu, mở sẵn), trong thẻ là các loại trưng bày kèm đơn vị + nút ⓘ hướng dẫn đếm; tổng mặt và % SOS tự tính khi gõ.
+/// Ô **Ma trận trưng bày SOS** (#24767, spec `MA-TRAN-TRUNG-BAY-SOS-2026-11-03.md` §4) vẽ thành BẢNG (chốt 04/11/2026, theo mẫu
+/// MobiWork): dòng = thương hiệu ("của ta" đứng đầu, tô nền), cột = loại trưng bày (tên + đơn vị; bấm tên cột xem ảnh minh hoạ +
+/// hướng dẫn đếm). Cột Thương hiệu ghim trái, cột Tổng (số mặt + % SOS) ghim phải, các cột loại vuốt ngang. Nút "Phóng to" mở
+/// bảng toàn màn hình, ép xoay ngang; số gõ ở đó dùng CHUNG ô nhập với bảng trong phiếu.
 ///
 /// Phần ẢNH theo loại do màn chứa vẽ ([photoSection]) — dùng chung bộ chụp/tải ảnh của biểu mẫu thị trường.
 class DisplayMatrixFieldWidget extends StatefulWidget {
@@ -207,16 +221,36 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   State<DisplayMatrixFieldWidget> createState() => _DisplayMatrixFieldWidgetState();
 }
 
-class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> {
+/// Trạng thái NHẬP của một bảng ma trận — ô nhập, lỗi ô, số đếm — dùng cho bảng trong phiếu và màn phóng to. Mỗi màn một bộ
+/// riêng (một TextEditingController chỉ gắn MỘT ô: hai ô chung controller thì bộ gõ tiếng Việt giật con trỏ / lặp chữ).
+mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   final Map<String, TextEditingController> _ctrl = {};
 
-  /// Ô đang gõ dở/sai dạng (vd `2,5,`) — hiện lỗi NGAY dưới ô thay vì lặng lẽ bỏ số khỏi tổng.
+  /// Ô đang gõ dở/sai dạng (vd `2,5,`) — hiện lỗi NGAY dưới bảng thay vì lặng lẽ bỏ số khỏi tổng.
   final Map<String, String> _cellErr = {};
 
+  /// Số đếm hiện tại (chỉ thương hiệu/loại đang hỏi).
+  DisplayMatrixCounts _counts = const {};
+
+  DisplayMatrixConfig get _config;
+  void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged;
+
   TextEditingController _controller(String brand, String type) => _ctrl.putIfAbsent('$brand::$type', () {
-        final n = widget.counts[brand]?[type];
+        final n = _counts[brand]?[type];
         return TextEditingController(text: n == null ? '' : fmtMatrixNumber(n));
       });
+
+  /// Ghi lại chữ mọi ô theo [_counts] (số đổi từ ngoài: nạp nháp, quay về từ màn phóng to). Controller cũ bỏ đi SAU khung hình
+  /// — ô đang vẽ còn giữ nó tới lúc dựng lại.
+  void _resyncControllers() {
+    final cu = _ctrl.values.toList();
+    _ctrl.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final c in cu) {
+        c.dispose();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -227,12 +261,11 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> {
   }
 
   void _set(String brand, DisplayMatrixType type, String text) {
-    final next = <String, Map<String, num>>{for (final e in widget.counts.entries) e.key: Map.of(e.value)};
+    final next = <String, Map<String, num>>{for (final e in _counts.entries) e.key: Map.of(e.value)};
     final t = text.trim();
     final n = num.tryParse(t.replaceAll(',', '.'));
     final k = '$brand::${type.code}';
     final err = t.isEmpty ? null : (n == null ? 'Số không hợp lệ' : DisplayMatrixFieldWidget.cellError(n, type));
-    setState(() => err == null ? _cellErr.remove(k) : _cellErr[k] = err);
     if (t.isEmpty || n == null) {
       next[brand]?.remove(type.code);
       if (next[brand]?.isEmpty ?? false) next.remove(brand);
@@ -240,32 +273,156 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> {
       // Số sai luật (lẻ quá, vượt trần) VẪN ghi để bước Lưu chặn với câu lỗi — bỏ đi thì tổng tụt mà không ai biết.
       (next[brand] ??= {})[type.code] = n;
     }
-    widget.onChanged(DisplayMatrixFieldWidget.onlyAsked(next, widget.config), _cellErr.values.contains('Số không hợp lệ'));
+    final asked = DisplayMatrixFieldWidget.onlyAsked(next, _config);
+    setState(() {
+      err == null ? _cellErr.remove(k) : _cellErr[k] = err;
+      _counts = asked;
+    });
+    _onChanged(asked, _cellErr.values.contains('Số không hợp lệ'));
   }
 
-  void _showHint(DisplayMatrixType type) {
+  /// Bấm tên cột: ảnh minh hoạ + hướng dẫn đếm + quy đổi ra mặt.
+  void _showGuide(DisplayMatrixType type) {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(type.name),
-        content: Text(type.hint ?? ''),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if ((type.illustrationToken ?? '').isNotEmpty) RichImageView(token: type.illustrationToken!),
+              if ((type.hint ?? '').trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(type.hint!.trim())),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Đếm theo ${type.unit.isEmpty ? 'đơn vị' : type.unit} · 1 ${type.unit} = ${fmtMatrixNumber(type.faceFactor)} mặt',
+                  style: AppTypography.labelSmall(color: AppColors.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Đã hiểu'))],
       ),
     );
   }
 
+  /// Bảng nhập ([keyPrefix] khác nhau giữa phiếu và màn phóng to: hai bảng cùng nằm trong cây khi màn phóng to mở).
+  Widget _table({required String keyPrefix, required double cellWidth, required DisplayMatrixTotals totals}) => _MatrixTable(
+        // "Của ta" đứng đầu (đếm VTHM trước rồi lần lượt đối thủ); còn lại giữ thứ tự danh mục.
+        brands: [..._config.brands.where((b) => b.isOwn), ..._config.brands.where((b) => !b.isOwn)],
+        types: _config.types,
+        totals: totals,
+        controller: _controller,
+        cellErr: _cellErr,
+        keyPrefix: keyPrefix,
+        cellWidth: cellWidth,
+        onCell: _set,
+        onHeaderTap: _showGuide,
+      );
+
+  /// Dòng "Tổng N mặt ngành hàng · SOS của ta X%".
+  Widget _totalLine(DisplayMatrixTotals totals) => Text(
+        'Tổng ${fmtMatrixNumber(totals.facesTotal)} mặt ngành hàng'
+        '${totals.sosOwnPct == null ? '' : ' · SOS của ta ${fmtMatrixPct(totals.sosOwnPct!)}%'}',
+        style: AppTypography.bodyMedium(
+          color: Theme.of(context).brightness == Brightness.dark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+        ).copyWith(fontWeight: FontWeight.w600),
+      );
+
+  /// Câu lỗi của các ô đang sai ("VTHM · Ốp mẫu: …") — hiện dưới bảng (lỗi trong ô sẽ làm lệch chiều cao dòng).
+  List<String> get _errorLines {
+    final brands = {for (final b in _config.brands) b.code: b.name};
+    final types = {for (final t in _config.types) t.code: t.name};
+    return [
+      for (final e in _cellErr.entries) '${brands[e.key.split('::').first] ?? ''} · ${types[e.key.split('::').last] ?? ''}: ${e.value}',
+    ];
+  }
+}
+
+/// Hai bộ số đếm giống hệt nhau.
+bool _sameCounts(DisplayMatrixCounts a, DisplayMatrixCounts b) {
+  if (a.length != b.length) return false;
+  for (final e in a.entries) {
+    final o = b[e.key];
+    if (o == null || o.length != e.value.length) return false;
+    for (final c in e.value.entries) {
+      if (o[c.key] != c.value) return false;
+    }
+  }
+  return true;
+}
+
+class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> with _MatrixEditing<DisplayMatrixFieldWidget> {
+  @override
+  DisplayMatrixConfig get _config => widget.config;
+  @override
+  void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    _counts = DisplayMatrixFieldWidget.onlyAsked(widget.counts, widget.config);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchIllustrations());
+  }
+
+  @override
+  void didUpdateWidget(DisplayMatrixFieldWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final moi = DisplayMatrixFieldWidget.onlyAsked(widget.counts, widget.config);
+    // Số do CHÍNH ô này gõ quay về y hệt ⇒ giữ nguyên (ô đang gõ dở "2," không bị viết lại); khác ⇒ đổi từ ngoài, ghi lại ô.
+    if (!_sameCounts(moi, _counts)) {
+      _counts = moi;
+      _cellErr.clear();
+      _resyncControllers();
+    }
+  }
+
+  /// Tải sẵn ảnh minh hoạ vào bộ đệm khi phiếu mở (còn mạng) — tới điểm bán mất sóng vẫn xem được. Ngoài ProviderScope (test)
+  /// thì bỏ qua.
+  void _prefetchIllustrations() {
+    if (!mounted) return;
+    try {
+      final cache = ProviderScope.containerOf(context, listen: false).read(richImageCacheProvider);
+      for (final t in widget.config.types) {
+        final tok = t.illustrationToken;
+        if (tok != null && tok.isNotEmpty) cache.load(tok).ignore();
+      }
+    } catch (_) {}
+  }
+
+  /// Mở bảng toàn màn hình, ép xoay ngang; đóng thì trả về dọc rồi nhả cho máy tự xoay. Màn phóng to giữ BẢN SAO số đếm + gọi
+  /// thẳng `onChanged` của phiếu — ô trong phiếu có bị dựng lại giữa chừng thì số gõ ở màn phóng to vẫn về phiếu.
+  Future<void> _openFullscreen() async {
+    FocusScope.of(context).unfocus();
+    final nav = Navigator.of(context);
+    DisplayMatrixCounts? ketQua;
+    try {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+      ketQua = await nav.push<DisplayMatrixCounts>(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _MatrixFullscreen(config: _config, label: widget.label, counts: _counts, onChanged: _onChanged),
+      ));
+    } finally {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      await SystemChrome.setPreferredOrientations(const []);
+    }
+    if (!mounted || ketQua == null || _sameCounts(ketQua, _counts)) return;
+    setState(() {
+      _counts = ketQua!;
+      _cellErr.clear();
+      _resyncControllers();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final cfg = widget.config;
-    final totals = DisplayMatrixTotals.compute(widget.counts, cfg);
-    // Thẻ "của ta" đứng đầu (đếm VTHM trước rồi lần lượt đối thủ); còn lại giữ thứ tự danh mục.
-    final brands = [...cfg.brands.where((b) => b.isOwn), ...cfg.brands.where((b) => !b.isOwn)];
-    final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
-    String tomTat(DisplayMatrixBrand b) {
-      final pct = totals.sosOf(b.code);
-      return '${fmtMatrixNumber(totals.facesByBrand[b.code] ?? 0)} mặt${pct == null ? '' : ' · ${fmtMatrixPct(pct)}%'}';
-    }
+    final totals = DisplayMatrixTotals.compute(_counts, cfg);
+    final muted = Theme.of(context).brightness == Brightness.dark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
+    final coHuongDan = cfg.types.any((t) => t.hasGuide);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,76 +430,364 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> {
         FormFieldLabel(label: widget.label, isRequired: widget.isRequired, description: widget.description),
         const SizedBox(height: kFormLabelGap),
         if (cfg.brands.isEmpty || cfg.types.isEmpty)
-          Text('Biểu mẫu chưa có thương hiệu hoặc loại trưng bày nào — báo quản trị.', style: AppTypography.bodySmall(color: AppColors.error)),
-        for (final b in brands)
-          Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+          Text(
+            'Biểu mẫu chưa có thương hiệu hoặc loại trưng bày nào — báo quản trị.',
+            style: AppTypography.bodySmall(color: AppColors.error),
+          )
+        else ...[
+          if (coHuongDan)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('Bấm tên cột để xem ảnh minh hoạ / cách đếm', style: AppTypography.labelSmall(color: muted)),
             ),
-            elevation: 0,
-            child: ExpansionTile(
-              key: PageStorageKey('matrix_${widget.fieldCode}_${b.code}'),
-              initiallyExpanded: b.isOwn,
-              shape: const Border(),
-              title: Text(b.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              subtitle: Text(tomTat(b), style: AppTypography.labelSmall(color: muted)),
-              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          _table(keyPrefix: 'matrix', cellWidth: 104, totals: totals),
+        ],
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Row(
+            children: [
+              Expanded(child: _totalLine(totals)),
+              if (cfg.brands.isNotEmpty && cfg.types.isNotEmpty)
+                TextButton.icon(
+                  key: ValueKey('matrix_${widget.fieldCode}_fullscreen'),
+                  onPressed: _openFullscreen,
+                  icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                  label: const Text('Phóng to'),
+                ),
+            ],
+          ),
+        ),
+        for (final line in _errorLines) FormFieldErrorText(line),
+        if (widget.photoSection != null)
+          for (final t in cfg.types)
+            if (t.maxPhotos > 0) Padding(padding: const EdgeInsets.only(bottom: 8), child: widget.photoSection!(t)),
+        if (widget.errorText != null) FormFieldErrorText(widget.errorText!),
+      ],
+    );
+  }
+}
+
+/// Màn PHÓNG TO: chỉ có bảng, xoay ngang (bên mở ép hướng). Ô nhập RIÊNG, số mỗi lần gõ đi thẳng `onChanged` của phiếu; đóng
+/// thì trả bộ số cuối cho bảng trong phiếu ghi lại ô.
+class _MatrixFullscreen extends StatefulWidget {
+  final DisplayMatrixConfig config;
+  final String label;
+  final DisplayMatrixCounts counts;
+  final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
+
+  const _MatrixFullscreen({required this.config, required this.label, required this.counts, required this.onChanged});
+
+  @override
+  State<_MatrixFullscreen> createState() => _MatrixFullscreenState();
+}
+
+class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditing<_MatrixFullscreen> {
+  @override
+  DisplayMatrixConfig get _config => widget.config;
+  @override
+  void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    _counts = widget.counts;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = DisplayMatrixTotals.compute(_counts, _config);
+    return PopScope<DisplayMatrixCounts>(
+      canPop: false,
+      // Nút Back của máy cũng trả bộ số về phiếu như nút Thu nhỏ.
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.of(context).pop(_counts);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          leading: IconButton(
+            key: const ValueKey('matrix_fullscreen_close'),
+            icon: const Icon(Icons.close_fullscreen_rounded),
+            tooltip: 'Thu nhỏ',
+            onPressed: () => Navigator.of(context).pop(_counts),
+          ),
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final t in cfg.types)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(t.name, style: AppTypography.bodyMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface))),
-                        if ((t.hint ?? '').trim().isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.info_outline_rounded, size: 18),
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Cách đếm',
-                            onPressed: () => _showHint(t),
+                _table(keyPrefix: 'matrix_full', cellWidth: 128, totals: totals),
+                Padding(padding: const EdgeInsets.only(top: 6), child: _totalLine(totals)),
+                for (final line in _errorLines) FormFieldErrorText(line),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// BẢNG nhập số: cột Thương hiệu ghim trái, cột Tổng (mặt + % SOS) ghim phải, giữa là các cột loại vuốt ngang.
+///
+/// ⚠️ Chiều cao dòng CỐ ĐỊNH ở cả ba khối — ba cột dựng riêng nên dòng chỉ thẳng hàng khi cùng chiều cao; tên thương hiệu dài
+/// cắt sau 2 dòng, lỗi ô hiện dưới bảng (không trong ô).
+class _MatrixTable extends StatefulWidget {
+  final List<DisplayMatrixBrand> brands;
+  final List<DisplayMatrixType> types;
+  final DisplayMatrixTotals totals;
+  final TextEditingController Function(String brand, String type) controller;
+  final Map<String, String> cellErr;
+  final String keyPrefix;
+  final double cellWidth;
+  final void Function(String brand, DisplayMatrixType type, String text) onCell;
+  final void Function(DisplayMatrixType type) onHeaderTap;
+
+  const _MatrixTable({
+    required this.brands,
+    required this.types,
+    required this.totals,
+    required this.controller,
+    required this.cellErr,
+    required this.keyPrefix,
+    required this.cellWidth,
+    required this.onCell,
+    required this.onHeaderTap,
+  });
+
+  @override
+  State<_MatrixTable> createState() => _MatrixTableState();
+}
+
+class _MatrixTableState extends State<_MatrixTable> {
+  static const double _headH = 56;
+  static const double _rowH = 56;
+  static const double _leftW = 112;
+  static const double _rightW = 76;
+
+  final ScrollController _h = ScrollController();
+
+  @override
+  void dispose() {
+    _h.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final line = isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant;
+    final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
+    final onSurface = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
+    final headBg = isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainer;
+    final ownBg = AppColors.primaryContainer.withValues(alpha: isDark ? 0.22 : 0.16);
+    final headStyle = AppTypography.labelSmall(color: muted).copyWith(fontWeight: FontWeight.w700);
+    final w = widget;
+    // Cỡ chữ hệ thống phóng to ⇒ nới chiều cao dòng theo (dòng cố định mà chữ to thì tràn, mất % SOS).
+    final k = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final headH = _headH * (k < 1 ? 1 : k);
+    final rowH = _rowH * (k < 1 ? 1 : k);
+    return LayoutBuilder(
+      builder: (context, box) {
+        // Màn rộng (xoay ngang) mà ít cột ⇒ giãn cột loại cho kín bề ngang, khỏi khoảng trống trước cột Tổng.
+        final cellWidth = w.types.isEmpty
+            ? w.cellWidth
+            : ((box.maxWidth - _leftW - _rightW - 2) / w.types.length).clamp(w.cellWidth, double.infinity).toDouble();
+
+        Widget cell({
+          required double width,
+          required double height,
+          Color? bg,
+          required Widget child,
+          Alignment align = Alignment.centerLeft,
+        }) => Container(
+          width: width,
+          height: height,
+          alignment: align,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border(bottom: BorderSide(color: line)),
+          ),
+          child: child,
+        );
+
+        Color? rowBg(DisplayMatrixBrand b) => b.isOwn ? ownBg : null;
+
+        final left = Column(
+          children: [
+            cell(
+              width: _leftW,
+              height: headH,
+              bg: headBg,
+              child: Text('THƯƠNG HIỆU', style: headStyle),
+            ),
+            for (final b in w.brands)
+              cell(
+                width: _leftW,
+                height: rowH,
+                bg: rowBg(b),
+                child: Text(
+                  b.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMedium(color: onSurface).copyWith(fontWeight: b.isOwn ? FontWeight.w700 : FontWeight.w500),
+                ),
+              ),
+          ],
+        );
+
+        final middle = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (final t in w.types)
+                  InkWell(
+                    key: ValueKey('${w.keyPrefix}_head_${t.code}'),
+                    onTap: t.hasGuide ? () => w.onHeaderTap(t) : null,
+                    child: cell(
+                      width: cellWidth,
+                      height: headH,
+                      bg: headBg,
+                      align: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            t.name.toUpperCase(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: headStyle.copyWith(color: t.hasGuide ? AppColors.secondary : muted),
                           ),
-                        SizedBox(
-                          width: 120,
-                          child: TextField(
-                            key: ValueKey('matrix_${b.code}_${t.code}'),
-                            controller: _controller(b.code, t.code),
-                            keyboardType: TextInputType.numberWithOptions(decimal: t.decimals > 0),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(RegExp(t.decimals > 0 ? r'[0-9.,]' : r'[0-9]')),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (t.unit.isNotEmpty) Text(t.unit, style: AppTypography.labelSmall(color: muted)),
+                              if ((t.illustrationToken ?? '').isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 3),
+                                  child: Icon(Icons.image_outlined, size: 12, color: muted),
+                                )
+                              else if (t.hasGuide)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 3),
+                                  child: Icon(Icons.info_outline_rounded, size: 12, color: muted),
+                                ),
                             ],
-                            textAlign: TextAlign.right,
-                            style: formFieldTextStyle(isDark),
-                            decoration: formFieldDecoration(
-                              isDark: isDark,
-                              hintText: '0',
-                              suffixText: t.unit,
-                              errorText: _cellErr['${b.code}::${t.code}'],
-                            ),
-                            onChanged: (v) => _set(b.code, t, v),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
               ],
             ),
+            for (final b in w.brands)
+              Row(
+                children: [
+                  for (final t in w.types)
+                    cell(
+                      width: cellWidth,
+                      height: rowH,
+                      bg: rowBg(b),
+                      align: Alignment.center,
+                      child: TextField(
+                        key: ValueKey('${w.keyPrefix}_${b.code}_${t.code}'),
+                        controller: w.controller(b.code, t.code),
+                        keyboardType: TextInputType.numberWithOptions(decimal: t.decimals > 0),
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(t.decimals > 0 ? r'[0-9.,]' : r'[0-9]'))],
+                        textAlign: TextAlign.center,
+                        textInputAction: TextInputAction.next,
+                        style: formFieldTextStyle(isDark),
+                        decoration: formFieldDecoration(isDark: isDark, hintText: '0').copyWith(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          enabledBorder: w.cellErr.containsKey('${b.code}::${t.code}')
+                              ? OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: AppColors.error),
+                                )
+                              : null,
+                        ),
+                        onChanged: (v) => w.onCell(b.code, t, v),
+                      ),
+                    ),
+                ],
+              ),
+          ],
+        );
+
+        final right = Column(
+          children: [
+            cell(
+              width: _rightW,
+              height: headH,
+              bg: headBg,
+              align: Alignment.center,
+              child: Text('TỔNG', style: headStyle),
+            ),
+            for (final b in w.brands)
+              cell(
+                width: _rightW,
+                height: rowH,
+                bg: rowBg(b),
+                align: Alignment.center,
+                child: Column(
+                  key: ValueKey('${w.keyPrefix}_total_${b.code}'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      fmtMatrixNumber(w.totals.facesByBrand[b.code] ?? 0),
+                      style: AppTypography.bodyMedium(color: onSurface).copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    if (w.totals.sosOf(b.code) != null)
+                      Text('${fmtMatrixPct(w.totals.sosOf(b.code)!)}%', style: AppTypography.labelSmall(color: muted)),
+                  ],
+                ),
+              ),
+          ],
+        );
+
+        return Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: line),
+            borderRadius: BorderRadius.circular(10),
           ),
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 8),
-          child: Text(
-            'Tổng ${fmtMatrixNumber(totals.facesTotal)} mặt ngành hàng'
-            '${totals.sosOwnPct == null ? '' : ' · SOS của ta ${fmtMatrixPct(totals.sosOwnPct!)}%'}',
-            style: AppTypography.bodyMedium(color: muted).copyWith(fontWeight: FontWeight.w600),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(right: BorderSide(color: line)),
+                ),
+                child: left,
+              ),
+              Expanded(
+                child: Scrollbar(
+                  controller: _h,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _h,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: middle,
+                  ),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: line)),
+                ),
+                child: right,
+              ),
+            ],
           ),
-        ),
-        if (widget.photoSection != null)
-          for (final t in cfg.types)
-            if (t.maxPhotos > 0)
-              Padding(padding: const EdgeInsets.only(bottom: 8), child: widget.photoSection!(t)),
-        if (widget.errorText != null) FormFieldErrorText(widget.errorText!),
-      ],
+        );
+      },
     );
   }
 }

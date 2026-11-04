@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/matrix_photo_key.dart';
 import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
@@ -15,7 +16,8 @@ void main() {
         {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
       ],
       'types': [
-        {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'decimals': 0, 'face_factor': 1, 'min_photos': 1, 'max_photos': 3},
+        {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'decimals': 0, 'face_factor': 1, 'min_photos': 1, 'max_photos': 3,
+          'hint': 'Mỗi tấm lật xem được = 1 mặt'},
         {'code': 'op_mau', 'name': 'Ốp mẫu', 'unit': 'm²', 'decimals': 1, 'face_factor': 2, 'min_photos': 0, 'max_photos': 0},
       ],
     },
@@ -78,15 +80,14 @@ void main() {
     expect(displayMatrixSummary(['x']), isNull);
   });
 
-  testWidgets('thẻ "của ta" đứng đầu + mở sẵn; gõ số ⇒ tổng/SOS cập nhật; ô trống không gửi', (tester) async {
+  testWidgets('bảng: dòng "của ta" đứng đầu; gõ số ⇒ tổng/SOS cập nhật; ô trống không gửi', (tester) async {
     final key = GlobalKey<MarketFormRendererState>();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
     ));
     await tester.pumpAndSettle();
 
-    final tieuDe = tester.widgetList<ExpansionTile>(find.byType(ExpansionTile)).map((e) => (e.title as Text).data).toList();
-    expect(tieuDe, ['VTHM', 'Đối thủ A']);
+    expect(tester.getTopLeft(find.text('VTHM')).dy, lessThan(tester.getTopLeft(find.text('Đối thủ A')).dy));
 
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '6');
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '1,5');
@@ -96,7 +97,7 @@ void main() {
     // Gõ sai dạng ⇒ báo lỗi ngay dưới ô (không lặng lẽ bỏ khỏi tổng).
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '1,25');
     await tester.pump();
-    expect(find.text('tối đa 1 chữ số thập phân'), findsOneWidget);
+    expect(find.text('VTHM · Ốp mẫu: tối đa 1 chữ số thập phân'), findsOneWidget);
     expect(key.currentState!.validateAndGetAnswers(), isNull);
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '1,5');
     await tester.pump();
@@ -150,5 +151,68 @@ void main() {
     final gui = key2.currentState!.validateAndGetAnswers()!;
     expect(gui['sos']['photos'], {'ke_lat': [tok]});
     expect(gui['sos']['counts'], {'vthm': {'ke_lat': 2}});
+  });
+
+  testWidgets('cột Tổng = số mặt + % SOS từng thương hiệu; bấm tên cột có hướng dẫn ⇒ mở hướng dẫn + quy đổi', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(blocks: [o(required: false)]))),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '3');
+    await tester.enterText(find.byKey(const ValueKey('matrix_rival_ke_lat')), '2');
+    await tester.pump();
+    final tongVthm = find.byKey(const ValueKey('matrix_total_vthm'));
+    expect(find.descendant(of: tongVthm, matching: find.text('6')), findsOneWidget);
+    expect(find.descendant(of: tongVthm, matching: find.text('75%')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
+    await tester.pumpAndSettle();
+    expect(find.text('Mỗi tấm lật xem được = 1 mặt'), findsOneWidget);
+    expect(find.text('Đếm theo tấm · 1 tấm = 1 mặt'), findsOneWidget);
+    await tester.tap(find.text('Đã hiểu'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Phóng to: ép xoay ngang, gõ ở màn phóng to ⇒ về phiếu; đóng ⇒ trả hướng dọc', (tester) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    final key = GlobalKey<MarketFormRendererState>();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_sos_fullscreen')));
+    await tester.pumpAndSettle();
+    final huong = calls.where((c) => c.method == 'SystemChrome.setPreferredOrientations').map((c) => c.arguments).toList();
+    expect(huong.first, ['DeviceOrientation.landscapeLeft', 'DeviceOrientation.landscapeRight']);
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_full_vthm_op_mau')), '1,5');
+    await tester.pump();
+    expect(find.text('Tổng 3 mặt ngành hàng · SOS của ta 100%'), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('matrix_fullscreen_close')));
+    await tester.pumpAndSettle();
+
+    // Bảng trong phiếu thấy số vừa gõ (chung ô nhập) và câu trả lời có số.
+    expect(find.descendant(of: find.byKey(const ValueKey('matrix_vthm_op_mau')), matching: find.text('1,5')), findsOneWidget);
+    expect(key.currentState!.validateAndGetAnswers()!['sos']['counts'], {'vthm': {'op_mau': 1.5}});
+    final sau = calls.where((c) => c.method == 'SystemChrome.setPreferredOrientations').map((c) => c.arguments).toList();
+    expect(sau.sublist(sau.length - 2), [['DeviceOrientation.portraitUp'], <String>[]]);
+  });
+
+  testWidgets('cỡ chữ hệ thống 1,5× ⇒ bảng không tràn dòng', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+        child: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(blocks: [o(required: false)]))),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '4');
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }
