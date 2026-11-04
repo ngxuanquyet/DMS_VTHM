@@ -35,13 +35,13 @@ void main() {
 
   test('ảnh trên máy đổi ra token, giữ token + quy đường xem công khai về token, giữ counts', () async {
     final tok = 'a' * 32;
-    final out = await resolveMatrixPhotos({
+    final out = await resolveLocalPhotos({
       'counts': {'vthm': {'ke': 2}},
       'photos': {'ke': ['/tmp/x.jpg', tok, '/crm/customer-photos/public/${'b' * 32}']},
     }, (p) async => 'c' * 32);
     expect(out['photos']['ke'], ['c' * 32, tok, 'b' * 32]);
     expect(out['counts'], {'vthm': {'ke': 2}});
-    expect(await resolveMatrixPhotos('chuỗi', (p) async => null), 'chuỗi');
+    expect(await resolveLocalPhotos('chuỗi', (p) async => null), 'chuỗi');
   });
 
   testWidgets('nhập số ⇒ formData {counts, photos}; thiếu ảnh của loại có số ⇒ chặn; ô bắt buộc trống ⇒ chặn', (tester) async {

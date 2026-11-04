@@ -524,9 +524,10 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
           dynamicChanges[key] = newVal;
         }
       }
-      // Ô ma trận trưng bày (#24773): ảnh theo loại chụp mới (đường dẫn máy) ⇒ tải lên lấy token trước khi gửi.
+      // Ảnh chụp mới (đường dẫn máy) của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792) ⇒ tải lên lấy
+      // token trước khi gửi.
       for (final key in dynamicChanges.keys.toList()) {
-        dynamicChanges[key] = await resolveMatrixPhotos(dynamicChanges[key], (path) async {
+        dynamicChanges[key] = await resolveLocalPhotos(dynamicChanges[key], (path) async {
           try {
             final token = (await repo.uploadCustomerPhoto(path, locationName: c.name, lat: c.lat, lng: c.lng))['token']
                 ?.toString()
@@ -539,7 +540,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
           }
           // Không tải được / phản hồi thiếu mã ảnh: chép ảnh vào thư mục lâu dài — ảnh tạm của máy ảnh bị dọn; lượt sửa còn
           // đường dẫn ảnh trên máy thì repo đưa vào hàng đợi (không PATCH thẳng), đồng bộ đổi ra token (#24698 vòng 4, C1).
-          return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first;
+          return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn_$key')).first;
         });
       }
       if (dynamicChanges.isNotEmpty) {

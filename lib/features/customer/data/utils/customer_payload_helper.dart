@@ -1,5 +1,6 @@
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart' show queueMaybeOnServerKey;
+import '../../../../core/dynamic_form/matrix_photo_key.dart' show localPhotoPathsOf, resolveLocalPhotos;
 
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
@@ -138,6 +139,40 @@ const Set<String> kCustomerFixedKeys = {
 };
 
 class CustomerPayloadHelper {
+  /// Khoá GỐC [k] là ô ĐỘNG — không thuộc khoá cố định / cấm (đúng luật gom `data` của [buildCustomerApiPayload]); trong
+  /// `data` mọi khoá trừ khoá cấm. Ảnh mặt tiền là khoá cố định.
+  static bool _isDynamicRootKey(String k) =>
+      k != 'data' && !kCustomerFixedKeys.contains(k) && !kForbiddenCustomerKeys.contains(k);
+
+  /// Đường dẫn ảnh TRÊN MÁY trong các ô động của [source] ([localPhotoPathsOf]) — còn ⇒ chưa gửi thẳng được (đi hàng đợi).
+  static List<String> dynamicLocalPhotoPaths(Map source) => [
+        for (final e in source.entries)
+          if (_isDynamicRootKey('${e.key}')) ...localPhotoPathsOf(e.value),
+        if (source['data'] is Map)
+          for (final e in (source['data'] as Map).entries)
+            if (!kForbiddenCustomerKeys.contains('${e.key}')) ...localPhotoPathsOf(e.value),
+      ];
+
+  /// Đổi ảnh TRÊN MÁY trong các ô động của [source] bằng [upload] ([resolveLocalPhotos]): ô ma trận + ô chụp ảnh tự khai
+  /// (#24773, #24792). Ảnh mặt tiền (khoá cố định) xử lý riêng — không tải lần hai.
+  static Future<Map<String, dynamic>> resolveDynamicPhotos(
+    Map<String, dynamic> source,
+    Future<String?> Function(String path) upload,
+  ) async {
+    final out = Map<String, dynamic>.from(source);
+    for (final key in out.keys.toList()) {
+      if (_isDynamicRootKey(key)) out[key] = await resolveLocalPhotos(out[key], upload);
+    }
+    if (out['data'] is Map) {
+      final d = Map<String, dynamic>.from(out['data'] as Map);
+      for (final key in d.keys.toList()) {
+        if (!kForbiddenCustomerKeys.contains(key)) d[key] = await resolveLocalPhotos(d[key], upload);
+      }
+      out['data'] = d;
+    }
+    return out;
+  }
+
   /// Xây dựng payload chuẩn chỉ, nghiêm ngặt cho POST /crm/customers.
   /// Tuân thủ 100% hợp đồng hiện hành 30/09/2026.
   static Map<String, dynamic> buildCustomerApiPayload({

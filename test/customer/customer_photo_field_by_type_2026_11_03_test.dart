@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/core/dynamic_form/matrix_photo_key.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
+import 'package:vthm_dms/features/customer/data/utils/customer_payload_helper.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_meta_entity.dart';
 import 'package:vthm_dms/features/customer/presentation/screens/add_customer_screen.dart';
 
@@ -35,15 +37,27 @@ void main() {
     expect(typeOf('anh_quay_ke'), DynamicFormFieldType.photo);
   });
 
-  test('khoá ảnh lúc Lưu = ô ảnh của schema + khoá ảnh cứng; không đoán theo mã', () {
-    final f = buildCustomerFormFields(schema, meta: const CustomerMetaData(), routeOptions: routes, defaultRouteId: 5);
-    final codes = customerPhotoFieldCodes(f);
+  test('ảnh ô chụp ảnh tự khai nhận theo ĐƯỜNG DẪN ẢNH, không đoán theo mã ô (#24792)', () async {
+    final uploaded = <String>[];
+    Future<String?> up(String p) async {
+      uploaded.add(p);
+      return 'e' * 32;
+    }
 
-    expect(isCustomerPhotoKey('anh_quay_ke', photoCodes: codes), isTrue);
-    expect(isCustomerPhotoKey('photo_file_id', photoCodes: codes), isTrue);
-    expect(isCustomerPhotoKey('photo_token'), isTrue);
-    expect(isCustomerPhotoKey('doanh_so_gach_uoc_tinh_trd_thang', photoCodes: codes), isFalse);
-    expect(isCustomerPhotoKey('hoan_thanh_truoc', photoCodes: codes), isFalse);
-    expect(isCustomerPhotoKey('danh_gia_tiem_nang', photoCodes: codes), isFalse);
+    expect(await resolveLocalPhotos(1500000, up), 1500000);
+    expect(await resolveLocalPhotos('Tốt', up), 'Tốt');
+    expect(await resolveLocalPhotos(['a', 'b'], up), ['a', 'b']);
+    expect(await resolveLocalPhotos(['/data/x/anh.jpg', 'd' * 32, '/crm/customer-photos/public/${'c' * 32}'], up),
+        ['e' * 32, 'd' * 32, 'c' * 32]);
+    expect(uploaded, ['/data/x/anh.jpg']);
+    expect(
+      CustomerPayloadHelper.dynamicLocalPhotoPaths({
+        'anh_quay_ke': ['/data/x/a.jpg'],
+        'doanh_so': '/khong-phai-anh',
+        'photo_tokens': ['/data/x/mat_tien.jpg'], // ảnh mặt tiền — khoá cố định, xử lý riêng
+        'data': {'k': 'file:///b.png'},
+      }),
+      ['/data/x/a.jpg', 'file:///b.png'],
+    );
   });
 }

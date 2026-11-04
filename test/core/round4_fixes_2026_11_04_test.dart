@@ -205,4 +205,23 @@ void main() {
       expect(await db.countDeadSync(), 0);
     });
   });
+
+  test('#24792 lệnh SỬA chờ gửi: ảnh ô chụp ảnh tự khai đổi ra token trước khi PATCH', () async {
+    boot((o) => o.path == '/crm/customer-photos' ? (200, {'success': true, 'data': {'token': 'f' * 32}}) : null);
+    final dir = await Directory.systemTemp.createTemp('r4_');
+    addTearDown(() => dir.delete(recursive: true));
+    final f = File('${dir.path}/quay_ke.jpg')..writeAsBytesSync([1, 2, 3]);
+    final id = await enqueue('customer', 'update', 'server_77', serverId: 77, payload: jsonEncode({
+      'data': {'anh_quay_ke': [f.path, 'a' * 32], 'muc_do': ['cao']},
+    }));
+
+    await container.read(syncServiceProvider).syncQueue(force: true);
+
+    expect((await row(id)).state, 'done');
+    final patch = adapter.calls.singleWhere((c) => c.path == '/crm/customers/77');
+    expect((patch.data as Map)['data'], {
+      'anh_quay_ke': ['f' * 32, 'a' * 32],
+      'muc_do': ['cao'],
+    }, reason: 'lỗi cũ: gửi nguyên đường dẫn máy ⇒ server từ chối, lệnh sửa chết');
+  });
 }

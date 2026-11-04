@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../utils/offline_photo_store.dart';
+
 /// Khoá ảnh của MỘT loại trưng bày trong ô Ma trận trưng bày (#24767): `<mã ô>::<mã loại>`.
 ///
 /// Dùng chung giữa màn điền biểu mẫu (bộ chụp/tải ảnh theo khoá) và hàng đợi ngoại tuyến (`_local_photo_paths` — tải ảnh
@@ -61,50 +63,74 @@ Iterable<String> matrixPhotoStrings(dynamic value) sync* {
   }
 }
 
-/// Đổi ảnh TRÊN MÁY trong `photos` của một giá trị ô ma trận ra token bằng [upload] (giữ token sẵn có; đường xem công khai
-/// `/crm/customer-photos/public/<token>` quy về token). [upload] trả `null` ⇒ giữ đường dẫn (server sẽ báo lỗi — không lặng lẽ
-/// bỏ ảnh). Giá trị không phải ô ma trận ⇒ trả nguyên.
-Future<dynamic> resolveMatrixPhotos(dynamic value, Future<String?> Function(String path) upload) async {
-  if (value is! Map || value['photos'] is! Map) return value;
-  const congKhai = '/crm/customer-photos/public/';
-  final photos = <String, dynamic>{};
-  for (final e in (value['photos'] as Map).entries) {
-    final list = <String>[];
-    for (final item in (e.value is List ? e.value as List : const [])) {
-      var s = item.toString().trim();
-      if (s.isEmpty) continue;
-      final i = s.indexOf(congKhai);
-      if (i >= 0) s = s.substring(i + congKhai.length);
-      list.add(isUploadedPhotoToken(s) ? s : (await upload(s) ?? s));
-    }
-    if (list.isNotEmpty) photos['${e.key}'] = list;
-  }
-  return Map<String, dynamic>.from(value)..['photos'] = photos;
+const _congKhai = '/crm/customer-photos/public/';
+const _duoiAnh = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.gif', '.bmp'};
+
+/// Chuỗi là ĐƯỜNG DẪN ẢNH trên máy (ô ảnh của form điểm bán: ô chụp ảnh tự khai, #24792) — đường tuyệt đối / `file://`, đuôi
+/// ảnh. Đuôi ảnh để giá trị ô chọn / ô chữ (không bao giờ là đường dẫn ảnh) không bị đem đi tải lên.
+bool isLocalPhotoPath(String s) {
+  final t = s.trim().toLowerCase();
+  if (t.contains(_congKhai) || !(t.startsWith('/') || t.startsWith('file://'))) return false;
+  return _duoiAnh.any(t.endsWith);
 }
 
-/// Đường dẫn ảnh TRÊN MÁY (chưa là token) của mọi ô ma trận trong [source] — ở gốc và trong `data`. Dùng để dọn bản chép lâu
-/// dài sau khi điểm bán đã lên server.
-List<String> matrixLocalPaths(Map source) {
-  final out = <String>[];
-  void quet(Map m) {
-    for (final v in m.values) {
-      for (final s in matrixPhotoStrings(v)) {
-        if (!isUploadedPhotoToken(s) && !s.contains('/crm/customer-photos/public/')) out.add(s);
+/// Đổi ảnh TRÊN MÁY trong giá trị một ô điểm bán ra token bằng [upload]: ô ma trận (`photos.<loại>`, mọi mục chưa là token),
+/// ô ảnh (danh sách / chuỗi đường dẫn ảnh — [isLocalPhotoPath]). Token giữ nguyên; đường xem công khai
+/// `/crm/customer-photos/public/<token>` quy về token. [upload] trả `null` ⇒ giữ đường dẫn (server sẽ báo lỗi — không lặng lẽ
+/// bỏ ảnh). Giá trị khác ⇒ trả nguyên.
+Future<dynamic> resolveLocalPhotos(dynamic value, Future<String?> Function(String path) upload) async {
+  String? token(String s) {
+    final i = s.indexOf(_congKhai);
+    final t = i >= 0 ? s.substring(i + _congKhai.length) : s;
+    return isUploadedPhotoToken(t) ? t : null;
+  }
+
+  if (value is Map && value['photos'] is Map) {
+    final photos = <String, dynamic>{};
+    for (final e in (value['photos'] as Map).entries) {
+      final list = <String>[];
+      for (final item in (e.value is List ? e.value as List : const [])) {
+        final s = item.toString().trim();
+        if (s.isEmpty) continue;
+        list.add(token(s) ?? await upload(OfflinePhotoStore.toFilePath(s)) ?? s);
       }
+      if (list.isNotEmpty) photos['${e.key}'] = list;
     }
+    return Map<String, dynamic>.from(value)..['photos'] = photos;
   }
-
-  quet(source);
-  if (source['data'] is Map) quet(source['data'] as Map);
-  return out;
+  if (value is String) {
+    if (value.contains(_congKhai)) return token(value.trim()) ?? value;
+    // Ô ảnh một chuỗi ⇒ gửi DANH SÁCH token (server nhận ô ảnh dạng mảng).
+    return isLocalPhotoPath(value) ? [await upload(OfflinePhotoStore.toFilePath(value.trim())) ?? value] : value;
+  }
+  if (value is List && value.any((x) => x is String && (isLocalPhotoPath(x) || x.contains(_congKhai)))) {
+    return [
+      for (final x in value)
+        if (x is String && x.contains(_congKhai))
+          token(x.trim()) ?? x
+        else if (x is String && isLocalPhotoPath(x))
+          await upload(OfflinePhotoStore.toFilePath(x.trim())) ?? x
+        else
+          x,
+    ];
+  }
+  return value;
 }
 
-/// Xoá các bản chép ảnh ma trận trong thư mục ảnh ngoại tuyến của điểm bán (bỏ qua tệp ngoài thư mục đó / đã mất).
-Future<void> deleteOfflineMatrixPhotos(List<String> paths) async {
+/// Đường dẫn ảnh TRÊN MÁY (chưa là token) trong giá trị một ô điểm bán: ảnh ô ma trận, ô ảnh ([isLocalPhotoPath]).
+List<String> localPhotoPathsOf(dynamic value) => [
+      for (final s in matrixPhotoStrings(value))
+        if (!isUploadedPhotoToken(s) && !s.contains(_congKhai)) s,
+      if (value is String && isLocalPhotoPath(value)) value,
+      if (value is List) ...value.whereType<String>().where(isLocalPhotoPath),
+    ];
+
+/// Xoá các bản chép ảnh trong thư mục ảnh ngoại tuyến của điểm bán (bỏ qua tệp ngoài thư mục đó / đã mất).
+Future<void> deleteOfflineCustomerPhotos(List<String> paths) async {
   for (final p in paths) {
     if (!p.contains('offline_customer_photos')) continue;
     try {
-      final f = File(p);
+      final f = File(OfflinePhotoStore.toFilePath(p));
       if (await f.exists()) await f.delete();
     } catch (_) {}
   }

@@ -29,7 +29,7 @@ import '../../../route/presentation/viewmodels/route_view_model.dart';
 // Tuyến của NV dời sang route/presentation/providers — giữ export để nơi gọi cũ không đổi import.
 export '../../../route/presentation/providers/user_routes_provider.dart' show userAssignedRoutesProvider, realRouteOptions;
 import '../../../route/presentation/providers/user_routes_provider.dart';
-import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../data/utils/customer_payload_helper.dart';
 import '../../../../core/utils/offline_photo_store.dart';
 
 /// Provider lấy schema form khách hàng (dùng chung màn thêm / sửa điểm bán + hộp sửa nhanh).
@@ -184,17 +184,6 @@ const List<DynamicFormField> kScopeFieldStubs = [
 
 /// Khoá ảnh CỨNG của điểm bán (ô `photo_file_id` + các khoá gửi token) — có mặt dù schema có hay không.
 const Set<String> kCustomerPhotoKeys = {'photo_file_id', 'photo', 'photo_token', 'photo_tokens', 'photos'};
-
-/// Mã các ô ẢNH của form điểm bán — theo LOẠI Ô server gửi (`input_type: image`), không đoán theo mã.
-Set<String> customerPhotoFieldCodes(List<DynamicFormField> fields) =>
-    {for (final f in fields) if (f.type == DynamicFormFieldType.photo) f.code};
-
-/// Khoá dữ liệu là ảnh (dùng chung màn Thêm mới và Sửa): khoá ảnh cứng hoặc mã ô ảnh của schema [photoCodes].
-/// 🔴 KHÔNG đoán theo chuỗi con của mã ô: mã tiếng Việt không dấu `doanh_so_…`, `danh_gia_…`, `hoan_thanh_…` chứa
-/// "anh_" từng bị vẽ thành ô chụp ảnh và giá trị bị đem đi tải lên như ảnh lúc Lưu (03/11/2026).
-bool isCustomerPhotoKey(String key, {Set<String> photoCodes = const {}}) =>
-    kCustomerPhotoKeys.contains(key) || photoCodes.contains(key);
-
 
 /// Mã các ô ĐỘNG đang ẩn theo điều kiện `show_if` — dùng chung màn Thêm mới và Sửa (truyền vào
 /// `DynamicFormBuilder.hiddenFieldsOf`). Cùng bộ đánh giá + cùng luật ẩn theo TẦNG với biểu mẫu thị trường; biến ngữ cảnh
@@ -510,9 +499,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
-  /// Mã ô ẢNH của form đang vẽ ([customerPhotoFieldCodes]) — bước Lưu chỉ coi đúng các khoá này (+ khoá ảnh cứng) là ảnh.
-  Set<String> _photoFieldCodes = const {};
-
   /// Bước "Vật tư tại điểm" (#24526): danh mục + luật "Tạo điểm bán" (cache dùng ngoại tuyến), thao tác đã khai.
   MaterialCreateCatalog? _materialCatalog;
   bool _materialCatalogLoaded = false;
@@ -731,10 +717,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
     }
 
-    // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu)
+    // 4. Validate Ảnh điểm bán (§5: Bắt buộc chụp ảnh trước khi lưu) — ảnh MẶT TIỀN; ảnh ô chụp ảnh tự khai không thay được
+    // (#24792).
     bool hasPhoto = false;
     for (final key in formData.keys) {
-      if (isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) {
+      if (kCustomerPhotoKeys.contains(key)) {
         final val = formData[key];
         if (val is List && val.isNotEmpty) {
           hasPhoto = true;
@@ -832,16 +819,13 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         payload.remove('lng');
       }
 
-      // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG ô — chép vào thư mục lâu dài (ảnh tạm của máy ảnh bị dọn). Kho
-      // điểm bán đổi ra token khi gửi; tải lỗi giữa chừng thì cả lượt tạo rơi về hàng đợi (không bị server từ chối vì đường dẫn).
-      for (final key in payload.keys.toList()) {
-        final v = payload[key];
-        if (v is! Map || v['photos'] is! Map) continue;
-        payload[key] = await resolveMatrixPhotos(
-          v,
-          (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'matrix_$key')).first,
-        );
-      }
+      // Ảnh của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792): chép vào thư mục lâu dài (ảnh tạm của máy
+      // ảnh bị dọn). Kho điểm bán đổi ra token khi gửi; tải lỗi giữa chừng thì cả lượt tạo rơi về hàng đợi (không bị server
+      // từ chối vì đường dẫn). Ảnh mặt tiền (khoá cố định) xử lý riêng bên dưới.
+      payload.addAll(await CustomerPayloadHelper.resolveDynamicPhotos(
+        payload,
+        (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn')).first,
+      ));
 
       // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)
       if (isOnline) {
@@ -852,8 +836,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             ? (payload['coords']['lng'] as num?)?.toDouble()
             : (payload['lng'] is num ? (payload['lng'] as num).toDouble() : null);
 
+        // CHỈ ảnh mặt tiền (khoá cố định): ảnh ô chụp ảnh tự khai giữ trong ô, kho điểm bán đổi ra token (#24792).
         for (final key in payload.keys.toList()) {
-          if (!isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) continue;
+          if (!kCustomerPhotoKeys.contains(key)) continue;
 
           final val = payload[key];
           if (val is List) {
@@ -939,8 +924,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       } else {
         // 🔴 Khi offline: Gom toàn bộ ảnh vào photo_tokens và photo_token để chuẩn bị lưu SQLite & sync_queue
         final List<String> offlinePhotos = [];
+        // CHỈ ảnh mặt tiền: ảnh ô chụp ảnh tự khai gom vào đây là thành ảnh mặt tiền thừa (#24792).
         for (final key in payload.keys.toList()) {
-          if (!isCustomerPhotoKey(key, photoCodes: _photoFieldCodes)) continue;
+          if (!kCustomerPhotoKeys.contains(key)) continue;
           final val = payload[key];
           if (val is List) {
             for (final item in val) {
@@ -1295,7 +1281,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                   ? f.copyWith(isRequired: false)
                   : f)
               .toList();
-          _photoFieldCodes = customerPhotoFieldCodes(fields);
 
           if (fields.isEmpty) {
             return const Center(

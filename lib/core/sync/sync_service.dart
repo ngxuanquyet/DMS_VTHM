@@ -680,43 +680,10 @@ class SyncService {
       }
     }
 
-    // Ô ma trận trưng bày (#24773): ảnh theo loại nằm TRONG giá trị ô (gốc payload hoặc `data`) — đổi đường dẫn máy ra token;
-    // bản chép trên máy dọn ở bước 6.
-    final matrixPhotos = matrixLocalPaths(rawSource);
-    Future<String?> taiAnh(String p) => _resolvePhotoToken(p);
-    for (final key in rawSource.keys.toList()) {
-      rawSource[key] = await resolveMatrixPhotos(rawSource[key], taiAnh);
-    }
-    if (rawSource['data'] is Map) {
-      final d = Map<String, dynamic>.from(rawSource['data'] as Map);
-      for (final key in d.keys.toList()) {
-        d[key] = await resolveMatrixPhotos(d[key], taiAnh);
-      }
-      rawSource['data'] = d;
-    }
-
-    // Phân giải ảnh trong map 'data' nếu có
-    if (rawSource['data'] is Map<String, dynamic>) {
-      final dataMap = Map<String, dynamic>.from(rawSource['data'] as Map<String, dynamic>);
-      for (final key in dataMap.keys.toList()) {
-        final val = dataMap[key];
-        if (val is List) {
-          final resolvedList = <String>[];
-          for (final item in val) {
-            final strItem = item.toString().trim();
-            final token = await _resolvePhotoToken(strItem);
-            resolvedList.add(token ?? strItem);
-          }
-          dataMap[key] = resolvedList;
-        } else if (val is String && (val.endsWith('.jpg') || val.endsWith('.png') || val.endsWith('.jpeg') || val.contains('/') || val.contains(r'\'))) {
-          final token = await _resolvePhotoToken(val);
-          if (token != null) {
-            dataMap[key] = token;
-          }
-        }
-      }
-      rawSource['data'] = dataMap;
-    }
+    // Ảnh trên máy của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792), ở gốc payload hoặc `data` — đổi
+    // ra token; bản chép trên máy dọn ở bước 6.
+    final dynamicPhotos = CustomerPayloadHelper.dynamicLocalPhotoPaths(rawSource);
+    rawSource.addAll(await CustomerPayloadHelper.resolveDynamicPhotos(rawSource, _resolvePhotoToken));
 
     // Vật tư khai lúc tạo (#24526): đổi ảnh trên máy ra token NGAY lúc đồng bộ, như thao tác vật tư của lượt. Lỗi tải
     // ảnh ném ra ⇒ mục thử lại, không gửi điểm bán thiếu ảnh vật tư (bản ngoại tuyến server BỎ thao tác sai).
@@ -829,7 +796,7 @@ class SyncService {
 
     // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server (cả ảnh vật tư khai lúc tạo — vòng 3), trừ
     // tệp lệnh khác / điểm bán trong máy còn trỏ tới.
-    await _deleteOfflineCustomerPhotos([...candidatePhotos, ...materialPhotos, ...matrixPhotos], entry.id);
+    await _deleteOfflineCustomerPhotos([...candidatePhotos, ...materialPhotos, ...dynamicPhotos], entry.id);
 
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
@@ -879,23 +846,17 @@ class SyncService {
       payload['photo_tokens'] = resolved;
     }
 
-    // Ô ma trận trưng bày (#24773): ảnh theo loại chụp lúc mất mạng (đường dẫn máy) ⇒ đổi ra token trước khi PATCH; dọn bản
-    // chép trên máy sau khi PATCH xong.
-    final matrixPhotos = matrixLocalPaths(payload);
-    if (payload['data'] is Map) {
-      final d = Map<String, dynamic>.from(payload['data'] as Map);
-      for (final key in d.keys.toList()) {
-        d[key] = await resolveMatrixPhotos(d[key], _resolvePhotoToken);
-      }
-      payload['data'] = d;
-    }
+    // Ảnh ô động (ô ma trận #24773, ô chụp ảnh tự khai #24792) chụp lúc mất mạng (đường dẫn máy) ⇒ đổi ra token trước khi
+    // PATCH; dọn bản chép trên máy sau khi PATCH xong.
+    final dynamicPhotos = CustomerPayloadHelper.dynamicLocalPhotoPaths(payload);
+    payload.addAll(await CustomerPayloadHelper.resolveDynamicPhotos(payload, _resolvePhotoToken));
 
     // Lượt sửa từ HÀNG ĐỢI ngoại tuyến (#24331): server nới phép kiểm (bỏ mục `erp_link_changes` sai thay vì 4xx — 4xx làm hàng
     // đợi bỏ hẳn lần sửa, mất cả các ô khác đã sửa). Cờ RIÊNG của request — `is_offline_sync` là CỘT của điểm bán, gửi là ghi đè.
     payload['offline_queue'] = true;
     await _apiClient.patch('/crm/customers/$serverId', data: payload);
     await _db.markDone(entry.id, serverId: serverId);
-    await _deleteOfflineCustomerPhotos(matrixPhotos, entry.id);
+    await _deleteOfflineCustomerPhotos(dynamicPhotos, entry.id);
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
   }
 
@@ -906,7 +867,7 @@ class SyncService {
     final own = paths.where((p) => p.contains('offline_customer_photos')).toList();
     if (own.isEmpty) return;
     final needed = (await _db.referencedFilePaths(unfinishedOnly: true, exceptId: entryId)).map(p.basename).toSet();
-    await deleteOfflineMatrixPhotos(own.where((x) => !needed.contains(p.basename(x))).toList());
+    await deleteOfflineCustomerPhotos(own.where((x) => !needed.contains(p.basename(x))).toList());
   }
 
   /// Giờ máy LÚC BẤM (ms) của check-in/check-out — `client_time` trong payload; thiếu thì lúc xếp hàng. Lúc xếp hàng có thể

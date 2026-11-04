@@ -106,6 +106,31 @@ void main() {
     final data = adapter.created?['data'] as Map?;
     expect(data?['sos']['photos']['ke'], ['e' * 32]);
     expect(await f.exists(), isFalse);
-    expect(matrixLocalPaths({'x': {'photos': {'k': ['e' * 32, '/a/b.jpg']}}}), ['/a/b.jpg']);
+    expect(localPhotoPathsOf({'photos': {'k': ['e' * 32, '/a/b.jpg']}}), ['/a/b.jpg']);
+  });
+
+  // #24792: ô chụp ảnh do admin tự khai (input_type image, kind dynamic) — cùng đường với ảnh ô ma trận.
+  Map<String, dynamic> inputAnhTuKhai(String path) => {
+        'name': 'Điểm bán ảnh quầy kệ',
+        'region_id': 1,
+        'route_ids': [1],
+        'anh_quay_ke': [path],
+      };
+
+  test('#24792 ô chụp ảnh tự khai: tải lỗi ⇒ rơi về hàng đợi, không POST đường dẫn máy', () async {
+    adapter.uploadFails = true;
+    final f = await anh();
+    await repo.createCustomer(inputAnhTuKhai(f.path));
+    expect(adapter.created, isNull, reason: 'lỗi cũ: gửi đường dẫn máy ⇒ server 4xx, báo lỗi tạo điểm bán');
+    expect(await db.countPendingSync(), greaterThanOrEqualTo(1));
+    expect(await f.exists(), isTrue);
+  });
+
+  test('#24792 ô chụp ảnh tự khai: tải được ⇒ token trong data, không thành ảnh mặt tiền', () async {
+    final f = await anh();
+    await repo.createCustomer(inputAnhTuKhai(f.path));
+    final sent = adapter.created!;
+    expect((sent['data'] as Map)['anh_quay_ke'], ['e' * 32]);
+    expect(sent.containsKey('photo_tokens'), isFalse);
   });
 }

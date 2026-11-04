@@ -447,10 +447,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
     // Còn lệnh sửa chưa gửi xong của điểm bán này ⇒ lần sửa này cũng đi hàng đợi, đứng sau nó: PATCH thẳng rồi lệnh cũ
     // gửi sau sẽ ĐÈ giá trị mới bằng giá trị cũ (rà soát #24698 vòng 3).
     final uuidForQueue = clientUuid ?? _cachedCustomers.where((c) => c.id == id).firstOrNull?.clientUuid;
-    // Ảnh ô ma trận chưa tải được (còn đường dẫn trên máy) ⇒ hàng đợi: PATCH thẳng thì server từ chối đường dẫn, mất cả lần
-    // sửa (#24698 vòng 4, C1).
+    // Ảnh ô động chưa tải được (còn đường dẫn trên máy) ⇒ hàng đợi: PATCH thẳng thì server từ chối đường dẫn, mất cả lần
+    // sửa (#24698 vòng 4, C1; #24792).
     if (_isOnline &&
-        matrixLocalPaths(changes).isEmpty &&
+        CustomerPayloadHelper.dynamicLocalPhotoPaths(changes).isEmpty &&
         !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
       try {
         await _apiService.updateCustomer(id, changes);
@@ -681,8 +681,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
         final serverCode = dto.code.isNotEmpty ? dto.code : '';
 
         if (serverId > 0) {
-          // Ảnh ma trận đã lên server ⇒ dọn bản chép lâu dài trên máy.
-          await deleteOfflineMatrixPhotos(matrixLocalPaths(data));
+          // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) đã lên server ⇒ dọn bản chép lâu dài trên máy.
+          await deleteOfflineCustomerPhotos(CustomerPayloadHelper.dynamicLocalPhotoPaths(data));
           // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
           if (cleanPayload['materials'] is List) {
             await cacheCreatedOutletMaterials(
@@ -802,21 +802,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
       };
     }
 
-    // 1c. Ô ma trận trưng bày (#24773): ảnh theo loại trên máy ⇒ token. Lỗi tải ném [NetworkException] ⇒ createCustomer rơi về
-    // đường hàng đợi (đồng bộ tải lại), không gửi đường dẫn máy cho server từ chối cả điểm bán.
-    if (matrixLocalPaths(source).isNotEmpty) {
-      source = Map<String, dynamic>.from(source);
-      for (final key in source.keys.toList()) {
-        source[key] = await resolveMatrixPhotos(source[key], _uploadPhotoOrQueue);
-      }
-      if (source['data'] is Map) {
-        final d = Map<String, dynamic>.from(source['data'] as Map);
-        for (final key in d.keys.toList()) {
-          d[key] = await resolveMatrixPhotos(d[key], _uploadPhotoOrQueue);
-        }
-        source['data'] = d;
-      }
-    }
+    // 1c. Ảnh trên máy của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792) ⇒ token. Lỗi tải ném
+    // [NetworkException] ⇒ createCustomer rơi về đường hàng đợi (đồng bộ tải lại), không gửi đường dẫn máy cho server từ
+    // chối cả điểm bán.
+    source = await CustomerPayloadHelper.resolveDynamicPhotos(source, _uploadPhotoOrQueue);
 
     // 2. Sử dụng CustomerPayloadHelper để xây dựng payload chuẩn 25 khoá gốc
     return CustomerPayloadHelper.buildCustomerApiPayload(
