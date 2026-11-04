@@ -52,8 +52,8 @@ import '../../../../core/rules/geofence_rule_helper.dart';
 import '../../../../core/services/app_notification_service.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../travel/presentation/viewmodels/travel_view_model.dart';
-import '../../../visit/domain/entities/visit_requirements_entity.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialFlushTimeout;
+import '../../../visit/domain/entities/visit_requirements_entity.dart';
 
 /// Huỷ lượt chờ lô đồng bộ đang chạy xong tối đa bao lâu (check-in có thể đang được gửi) — quá thì xếp lệnh huỷ theo
 /// lượt cha thay vì đoán.
@@ -2683,6 +2683,66 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
   }
 
+  /// Mã tạm của ảnh đang tải trực tuyến là -mốc ms (~1,7e12) — mã dòng hàng đợi không bao giờ tới mức này.
+  static const _tempPhotoIdFloor = 1000000000000;
+
+  /// Điều kiện check-out của server CỘNG phần đã làm trên máy mà chưa lên server: ảnh đang chờ gửi (mã âm) và phiếu đã nộp
+  /// vào hàng đợi. Server chưa thấy chúng ⇒ dùng nguyên bản thì nút Check-out chặn ngay trên màn, không tới bước
+  /// [checkout] đẩy ảnh/phiếu của lượt lên trước (#24698 vòng 4, V1). Server vẫn kiểm cổng khi nhận check-out.
+  /// Chỉ tính mục CÒN gửi được: ảnh đang tải (mã tạm = -mốc ms, chưa có dòng hàng đợi) hoặc dòng hàng đợi chờ / đang gửi;
+  /// phiếu có dòng hàng đợi chờ / đang gửi của lượt này. Dòng đã gửi xong server đã đếm; dòng lỗi / đã xoá không lên nữa.
+  Future<VisitRequirementsEntity> _withLocalPending(VisitRequirementsEntity req, String vResult) async {
+    final db = ref?.read(appDatabaseProvider);
+    var pendingPhotos = 0;
+    for (final ph in state.photos.where((p) => p.id < 0)) {
+      final row = db == null ? null : await db.getEntryById(-ph.id);
+      final dangTai = row == null && -ph.id > _tempPhotoIdFloor;
+      if (dangTai || row?.state == 'pending' || row?.state == 'sending') pendingPhotos++;
+    }
+    final queuedConfigIds = <int>{};
+    if (db != null) {
+      for (final r in await (db.select(db.syncQueueEntries)
+            ..where((t) =>
+                t.entity.equals('form_submission') &
+                t.parentUuid.equals(_sessionClientUuid) &
+                (t.state.equals('pending') | t.state.equals('sending'))))
+          .get()) {
+        try {
+          final id = (jsonDecode(r.payload) as Map)['config_id'];
+          if (id is int) queuedConfigIds.add(id);
+        } catch (_) {}
+      }
+    }
+    final submittedFormIds = {
+      for (final f in state.surveyForms)
+        if (queuedConfigIds.contains(f.configId)) f.formId,
+    };
+    if (pendingPhotos == 0 && !req.missingForms.any((f) => submittedFormIds.contains(f.formId))) return req;
+
+    final isClosed = vResult == 'closed';
+    final photosMissing = math.max(0, req.photosMissing - pendingPhotos);
+    final missingForms = req.missingForms.where((f) => !submittedFormIds.contains(f.formId)).toList();
+    final blockers = List<String>.from(req.blockers);
+    if (photosMissing <= 0) {
+      blockers.removeWhere((b) => b.toLowerCase().contains('ảnh') || b.toLowerCase().contains('chụp'));
+    }
+    if (missingForms.isEmpty) {
+      blockers.removeWhere((b) => b.toLowerCase().contains('khảo sát') || b.toLowerCase().contains('biểu mẫu'));
+    }
+    // Chỉ mở cổng khi KHÔNG còn câu chặn nào của server: server có thể chặn vì điều kiện app không mô hình hoá.
+    return req.copyWith(
+      photosMissing: photosMissing,
+      missingForms: missingForms,
+      blockers: blockers,
+      satisfied: req.satisfied ||
+          ((isClosed || req.secondsRemaining <= 0) &&
+              (isClosed || missingForms.isEmpty) &&
+              photosMissing <= 0 &&
+              req.materialsOk(isClosed) &&
+              blockers.isEmpty),
+    );
+  }
+
   /// Làm mới thông tin điều kiện check-out từ server (§6) hoặc tính toán offline theo rules
   Future<void> refreshRequirements({
     String? visitResult,
@@ -2704,7 +2764,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         } else {
           _targetDoneTime = null;
         }
-        state = state.copyWith(requirements: req);
+        state = state.copyWith(requirements: await _withLocalPending(req, vResult));
         return;
       } catch (e) {
         final rawMsg = e.toString().toLowerCase();
@@ -2949,10 +3009,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       try {
         final isOnline = ref!.read(connectivityProvider).isOnline;
         if (isOnline) {
-          // Lượt gửi đang chạy thì syncQueue trả về rỗng ngay ⇒ CHỜ nó xong trước rồi mới ép gửi.
+          // Lượt gửi đang chạy thì syncQueue trả về rỗng ngay ⇒ CHỜ nó xong trước rồi mới ép gửi. Ép gửi có TRẦN thời gian:
+          // cuối ngày hàng trăm mục + sóng yếu làm nút xoay nhiều phút (#24698 vòng 4, V2) — hết trần thì lượt gửi chạy tiếp
+          // ở nền, check-out đi hàng đợi (bước 3).
           final sync = ref!.read(syncServiceProvider);
           await sync.waitUntilIdle().timeout(visitMaterialFlushTimeout, onTimeout: () {});
-          await sync.syncQueue(force: true);
+          await sync.syncQueue(force: true).timeout(visitMaterialFlushTimeout, onTimeout: () => const SyncResult());
           final db = ref!.read(appDatabaseProvider);
           final entry = await db.getEntryByClientUuid(_sessionClientUuid);
           if (entry != null && entry.serverId != null && entry.serverId! > 0) {

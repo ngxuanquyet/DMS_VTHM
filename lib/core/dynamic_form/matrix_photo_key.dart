@@ -19,17 +19,30 @@ String matrixPhotoKey(String code, String type) => '$code$kMatrixPhotoSep$type';
 /// Chuỗi ảnh là TOKEN đã tải lên (32 hex), không phải đường dẫn trên máy.
 bool isUploadedPhotoToken(String s) => s.length == 32 && !s.contains('/') && !s.contains(r'\');
 
+/// [answers] có chỗ cho khoá ảnh [key] (ô ảnh có mặt; ô ma trận có `photos.<loại>`) — chỉ những khoá này mới tải ảnh + ghi
+/// token; khoá còn lại là ảnh của ô đang ẩn / loại không chụp ảnh, bỏ qua (kể cả tệp đã mất — không làm hỏng cả phiếu).
+bool hasPhotoSlot(Map<String, dynamic> answers, String key) {
+  final m = splitMatrixPhotoKey(key);
+  if (m == null) return answers.containsKey(key);
+  final cur = answers[m.$1];
+  return cur is Map && cur['photos'] is Map && (cur['photos'] as Map).containsKey(m.$2);
+}
+
 /// Ghi danh sách token ảnh (hoặc đường dẫn) vào câu trả lời theo KHOÁ ẢNH: khoá thường ⇒ `answers[key]`; khoá ma trận ⇒
 /// `answers[<mã ô>]['photos'][<mã loại>]` (giữ nguyên `counts`).
+///
+/// CHỈ THAY danh sách đã có trong [answers] — `answers` (đã làm sạch: bỏ ô ẩn, loại không chụp ảnh) quyết ô nào được gửi,
+/// `_local_photo_paths` chỉ là nguồn tệp. Dựng mới ô vắng mặt ⇒ ô đang ẩn sống lại với `counts` rỗng, server áp hiện trạng
+/// SOS "ô trống = 0" ⇒ xoá trắng hiện trạng điểm bán (#24698 vòng 4, F1).
 void applyPhotoList(Map<String, dynamic> answers, String key, List<String> list) {
+  if (!hasPhotoSlot(answers, key)) return;
   final m = splitMatrixPhotoKey(key);
   if (m == null) {
     answers[key] = list;
     return;
   }
-  final cur = answers[m.$1];
-  final value = cur is Map ? Map<String, dynamic>.from(cur) : <String, dynamic>{'counts': <String, dynamic>{}};
-  final photos = value['photos'] is Map ? Map<String, dynamic>.from(value['photos'] as Map) : <String, dynamic>{};
+  final value = Map<String, dynamic>.from(answers[m.$1] as Map);
+  final photos = Map<String, dynamic>.from(value['photos'] as Map);
   photos[m.$2] = list;
   value['photos'] = photos;
   answers[m.$1] = value;

@@ -827,21 +827,9 @@ class SyncService {
       }
     }
 
-    // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server (cả ảnh vật tư khai lúc tạo — vòng 3)
-    if (candidatePhotos.isNotEmpty || materialPhotos.isNotEmpty) {
-      for (final p in [...candidatePhotos, ...materialPhotos]) {
-        if (p.contains('offline_customer_photos')) {
-          try {
-            final f = File(p);
-            if (await f.exists()) {
-              await f.delete();
-            }
-          } catch (_) {}
-        }
-      }
-    }
-
-    await deleteOfflineMatrixPhotos(matrixPhotos);
+    // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server (cả ảnh vật tư khai lúc tạo — vòng 3), trừ
+    // tệp lệnh khác / điểm bán trong máy còn trỏ tới.
+    await _deleteOfflineCustomerPhotos([...candidatePhotos, ...materialPhotos, ...matrixPhotos], entry.id);
 
     debugPrint('[SyncService] Đồng bộ khách hàng thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
@@ -907,8 +895,18 @@ class SyncService {
     payload['offline_queue'] = true;
     await _apiClient.patch('/crm/customers/$serverId', data: payload);
     await _db.markDone(entry.id, serverId: serverId);
-    await deleteOfflineMatrixPhotos(matrixPhotos);
+    await _deleteOfflineCustomerPhotos(matrixPhotos, entry.id);
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
+  }
+
+  /// Xoá bản chép ảnh điểm bán (`offline_customer_photos`) của dòng [entryId] vừa gửi xong — bỏ qua tệp dòng hàng đợi
+  /// khác chưa xong / điểm bán trong máy còn trỏ tới ([AppDatabase.referencedFilePaths], #24698 vòng 4, C2). Ảnh ô ma trận
+  /// thường còn trong điểm bán trong máy tới lần tải danh sách sau ⇒ để quét dọn ảnh tạm (LocalHistoryRetention) xoá.
+  Future<void> _deleteOfflineCustomerPhotos(List<String> paths, int entryId) async {
+    final own = paths.where((p) => p.contains('offline_customer_photos')).toList();
+    if (own.isEmpty) return;
+    final needed = (await _db.referencedFilePaths(unfinishedOnly: true, exceptId: entryId)).map(p.basename).toSet();
+    await deleteOfflineMatrixPhotos(own.where((x) => !needed.contains(p.basename(x))).toList());
   }
 
   /// Giờ máy LÚC BẤM (ms) của check-in/check-out — `client_time` trong payload; thiếu thì lúc xếp hàng. Lúc xếp hàng có thể
@@ -1359,6 +1357,8 @@ class SyncService {
       for (final kv in localPhotoPaths.entries) {
         final fieldCode = kv.key;
         final paths = kv.value;
+        // Ảnh của ô đang ẩn / loại không chụp ảnh: không tải, không dựng lại ô (#24698 vòng 4, F1).
+        if (!hasPhotoSlot(answers, fieldCode)) continue;
         if (paths is List) {
           final newTokens = <String>[];
           for (final p in paths) {

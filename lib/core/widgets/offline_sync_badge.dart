@@ -325,7 +325,8 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                             await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(e.clientUuid);
                           }
                         }
-                        await db.clearDeadEntries();
+                        // Lệnh đóng lượt đang giữ lượt sau không bị xoá (AppDatabase.isHoldingLaterVisit, #24698 vòng 4).
+                        if (await db.clearDeadEntries() > 0 && context.mounted) _showHeldVisitCloseNotice(context);
                       },
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
@@ -528,6 +529,17 @@ Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool i
   );
 }
 
+/// Báo lệnh check-out / huỷ lỗi không xoá được vì đang giữ lượt viếng thăm sau ([AppDatabase.isHoldingLaterVisit]).
+void _showHeldVisitCloseNotice(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Lệnh đóng lượt cũ đang giữ chỗ cho lượt viếng thăm sau — vào lượt đang mở trên tuyến để '
+          'check-out / huỷ nó, rồi mới xoá được.'),
+      duration: Duration(seconds: 5),
+    ),
+  );
+}
+
 Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntry entry, bool isDark) {
   final rawLastError = StringUtils.formatUserFriendlyError(entry.lastError);
   String cleanError = rawLastError;
@@ -655,7 +667,9 @@ Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEn
             if (entry.entity == 'customer' && entry.op == 'create') {
               await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(entry.clientUuid);
             }
-            await ref.read(appDatabaseProvider).deleteEntry(entry.id);
+            if (!await ref.read(appDatabaseProvider).deleteEntry(entry.id) && context.mounted) {
+              _showHeldVisitCloseNotice(context);
+            }
           },
         ),
       ],

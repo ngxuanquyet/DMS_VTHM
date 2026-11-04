@@ -402,9 +402,17 @@ class AppDatabase extends _$AppDatabase {
 
   /// Mọi tệp mà SQLite còn trỏ tới — hàng đợi (mọi trạng thái, mọi chủ: localPath + payload) và điểm bán trong máy
   /// (dynamicFieldsJson). Quét dọn ảnh tạm KHÔNG được xoá các tệp này.
-  Future<List<String>> referencedFilePaths() async {
+  ///
+  /// [unfinishedOnly]: chỉ dòng hàng đợi CHƯA xong, bỏ dòng [exceptId] — tệp còn CẦN sau khi dòng đó gửi xong / bị xoá
+  /// (lệnh đứng sau có thể trỏ CÙNG tệp: OfflinePhotoStore.persist giữ nguyên tệp đã nằm trong thư mục lưu ⇒ xoá là 410,
+  /// mất cả lần sửa — #24698 vòng 4, C2).
+  Future<List<String>> referencedFilePaths({bool unfinishedOnly = false, int? exceptId}) async {
     final paths = <String>[];
-    for (final row in await select(syncQueueEntries).get()) {
+    final rows = select(syncQueueEntries)
+      ..where((tbl) =>
+          (unfinishedOnly ? tbl.state.equals('done').not() : const Constant(true)) &
+          (exceptId == null ? const Constant(true) : tbl.id.equals(exceptId).not()));
+    for (final row in await rows.get()) {
       if (row.localPath != null) paths.add(row.localPath!);
       try {
         collectFilePaths(jsonDecode(row.payload), paths);
@@ -420,7 +428,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// Ảnh của các dòng hàng đợi đã xoá: localPath + đường dẫn chỉ ghi trong payload (biểu mẫu thị trường
   /// `_local_photo_paths`, ảnh điểm bán rơi về đường dẫn tạm). Giải mã payload NGOÀI transaction — không giữ khoá DB.
-  static Future<void> _deleteRowFiles(List<SyncQueueEntry> rows, List<String> customerUuids) async {
+  /// [keep]: tệp chỗ khác còn trỏ tới — không xoá.
+  static Future<void> _deleteRowFiles(List<SyncQueueEntry> rows, List<String> customerUuids,
+      {Set<String> keep = const {}}) async {
     final paths = <String>[];
     for (final row in rows) {
       if (row.localPath != null) paths.add(row.localPath!);
@@ -428,6 +438,9 @@ class AppDatabase extends _$AppDatabase {
         collectFilePaths(jsonDecode(row.payload), paths);
       } catch (_) {}
     }
+    // So theo TÊN tệp (cùng luật quét dọn ảnh tạm): một tệp có thể ghi dạng `file://…` ở dòng này, đường dẫn trần ở dòng khác.
+    final keepNames = keep.map(p.basename).toSet();
+    paths.removeWhere((x) => keepNames.contains(p.basename(x)));
     await _deleteUserFiles(paths, customerUuids);
   }
 
@@ -477,21 +490,47 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Xóa các mục dead đã được xử lý hoặc dọn dẹp — kèm tệp ảnh của chúng.
+  /// Xóa các mục dead đã được xử lý hoặc dọn dẹp — kèm tệp ảnh của chúng. Trả số mục GIỮ LẠI vì đang giữ lượt sau
+  /// ([isHoldingLaterVisit]).
   Future<int> clearDeadEntries() async {
     final rows = await (select(syncQueueEntries)..where((tbl) => isMine(tbl) & tbl.state.equals('dead'))).get();
-    if (rows.isEmpty) return 0;
-    final n = await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
-    await _deleteRowFiles(rows, const []);
-    return n;
+    final held = [for (final r in rows) if (await isHoldingLaterVisit(r)) r.id];
+    rows.removeWhere((r) => held.contains(r.id));
+    if (rows.isEmpty) return held.length;
+    await (delete(syncQueueEntries)..where((tbl) => tbl.id.isIn(rows.map((r) => r.id)))).go();
+    // Lệnh sửa điểm bán đứng sau có thể trỏ CÙNG tệp ảnh (#24698 vòng 4, C2) ⇒ giữ tệp còn được tham chiếu.
+    await _deleteRowFiles(rows, const [], keep: (await referencedFilePaths(unfinishedOnly: true)).toSet());
+    return held.length;
   }
 
-  /// Xoá một mục hàng đợi (người dùng bấm xoá mục lỗi) — kèm tệp ảnh của nó.
-  Future<void> deleteEntry(int id) async {
+  /// Xoá một mục hàng đợi (người dùng bấm xoá mục lỗi) — kèm tệp ảnh của nó. `false` = không xoá (lệnh đóng lượt đang
+  /// giữ lượt sau, [isHoldingLaterVisit]).
+  Future<bool> deleteEntry(int id) async {
     final row = await (select(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
-    if (row == null) return;
+    if (row == null) return true;
+    if (await isHoldingLaterVisit(row)) return false;
     await (delete(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).go();
-    await _deleteRowFiles([row], const []);
+    await _deleteRowFiles([row], const [], keep: (await referencedFilePaths(unfinishedOnly: true)).toSet());
+    return true;
+  }
+
+  /// Lệnh check-out / huỷ bị từ chối (dead) [row] đang cho một dòng tạo lượt SAU nó chờ không đếm trần
+  /// ([hasDeadVisitCloseBefore]) ⇒ KHÔNG cho xoá: xoá đi thì lượt sau đếm trần rồi chết sau ~2 giờ, mất trọn lượt (#24698
+  /// vòng 4, V3). Nhân viên đóng lại lượt cũ (lượt đang mở trên tuyến) hoặc qua ngày thì dòng hết giữ, xoá được.
+  Future<bool> isHoldingLaterVisit(SyncQueueEntry row) async {
+    if (row.state != 'dead' || row.entity != 'visit' || (row.op != 'checkout' && row.op != 'cancel')) return false;
+    final creates = await (select(syncQueueEntries)
+          ..where((t) =>
+              isMine(t) &
+              t.id.isBiggerThanValue(row.id) &
+              t.entity.equals('visit') &
+              t.op.equals('create') &
+              (t.state.equals('pending') | t.state.equals('sending'))))
+        .get();
+    for (final c in creates) {
+      if (await hasDeadVisitCloseBefore(c, onlyCloseId: row.id)) return true;
+    }
+    return false;
   }
 
   /// Giữ mục đã gửi bao lâu trước khi dọn: dòng done là nguồn tra clientUuid → serverId cho việc làm MUỘN sau khi gửi
@@ -770,7 +809,8 @@ class AppDatabase extends _$AppDatabase {
   /// Chỉ miễn trong CHÍNH ngày đó ([nowMs]): qua ngày thì cron đã đánh dấu lượt kia, còn STILL_OPEN là do lượt khác ⇒ đếm
   /// trần như thường (chặn trên thời gian miễn, kể cả khi lượt kia đã được đóng trực tuyến mà dòng dead còn nằm lại).
   /// Ngày so theo giờ máy (máy ở VN ⇒ trùng ngày server); lượt check-in trực tuyến không có dòng tạo ⇒ lấy ngày của lệnh đóng.
-  Future<bool> hasDeadVisitCloseBefore(SyncQueueEntry entry, {int? nowMs}) async {
+  /// [onlyCloseId]: chỉ xét đúng lệnh đóng đó ([isHoldingLaterVisit]).
+  Future<bool> hasDeadVisitCloseBefore(SyncQueueEntry entry, {int? nowMs, int? onlyCloseId}) async {
     if (entry.entity != 'visit' || entry.op != 'create') return false;
     DateTime dayOf(int ms) {
       final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -783,7 +823,7 @@ class AppDatabase extends _$AppDatabase {
     final closes = await _otherVisitClosesBefore(entry, 'dead', createdFromMs: day.millisecondsSinceEpoch);
     for (final r in closes) {
       final visitUuid = r.parentUuid;
-      if (visitUuid == null) continue;
+      if (visitUuid == null || (onlyCloseId != null && r.id != onlyCloseId)) continue;
       final create = await (select(syncQueueEntries)
             ..where((t) => isMine(t) & t.entity.equals('visit') & t.op.equals('create') & t.clientUuid.equals(visitUuid))
             ..limit(1))

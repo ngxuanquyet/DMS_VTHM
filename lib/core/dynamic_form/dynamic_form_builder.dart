@@ -68,6 +68,10 @@ class DynamicFormBuilder extends StatefulWidget {
   /// thức đọc như server (đang lưu + phần gửi). Giá trị trên form đè lên nền.
   final Map<String, dynamic> formulaBaseData;
 
+  /// Giá trị ĐANG LƯU của bản ghi (màn sửa). Ô ma trận trùng giá trị này không được gửi đi ⇒ không kiểm: số do phiếu khảo
+  /// sát áp vào hiện trạng (#24789) hoặc admin vừa nâng số ảnh tối thiểu không chặn lần sửa ô khác (#24698 vòng 4, C3).
+  final Map<String, dynamic> savedData;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -81,6 +85,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.customValidators,
     this.hiddenFieldsOf,
     this.formulaBaseData = const {},
+    this.savedData = const {},
   });
 
   @override
@@ -394,7 +399,14 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       }
 
       // Ô ma trận trưng bày: luật số + ảnh theo loại (cùng luật server).
+      // Ô ma trận trùng giá trị đang lưu ([DynamicFormBuilder.savedData]) không gửi đi ⇒ không kiểm (C3) — trừ ô đếm gõ sai
+      // dạng (số bị gỡ khỏi giá trị nên giá trị trông như chưa đổi).
       if (field.type == DynamicFormFieldType.displayMatrix) {
+        if (value != null &&
+            _matrixInvalid[field.code] != true &&
+            DisplayMatrixFieldWidget.sameValue(value, widget.savedData[field.code])) {
+          continue;
+        }
         final loi = _matrixError(field, value);
         if (loi != null) {
           newErrors[field.code] = loi;
@@ -819,7 +831,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   String? _matrixError(DynamicFormField field, dynamic value) {
     if (_matrixInvalid[field.code] == true) return '${field.label} – có ô đếm nhập sai dạng số.';
     final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
-    final counts = DisplayMatrixFieldWidget.countsOf(value);
+    // Chỉ thương hiệu/loại ĐANG hỏi — số của thương hiệu đã tắt không hiện để sửa, không gửi đi (C3).
+    final counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(value), cfg);
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '${field.label} – $cellErr';
     final photos = value is Map && value['photos'] is Map ? value['photos'] as Map : const {};

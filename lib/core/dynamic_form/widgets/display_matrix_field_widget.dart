@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_colors.dart';
@@ -183,6 +184,23 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
       });
     }
     return out;
+  }
+
+  /// Hai giá trị ô ma trận cùng NỘI DUNG — số đếm (không kể thứ tự khoá, 2 = 2.0) + ảnh từng loại. Màn sửa không gửi, form
+  /// không kiểm ô trùng giá trị đang lưu (#24698 vòng 4, C3).
+  static bool sameValue(dynamic a, dynamic b) {
+    if (identical(a, b)) return true;
+    // Chỉ giá trị dạng ô ma trận — map khác (vị trí…) không có counts/photos sẽ bị coi là "giống nhau".
+    bool laMaTran(dynamic v) => v is Map && (v.containsKey('counts') || v.containsKey('photos'));
+    if (!laMaTran(a) || !laMaTran(b)) return false;
+    if (!_sameCounts(countsOf(a), countsOf(b))) return false;
+    Map<String, List<String>> anh(Map v) => {
+          if (v['photos'] is Map)
+            for (final e in (v['photos'] as Map).entries)
+              if (e.value is List && (e.value as List).isNotEmpty) '${e.key}': [for (final x in e.value as List) '$x'],
+        };
+    final pa = anh(a), pb = anh(b);
+    return pa.length == pb.length && pa.entries.every((e) => listEquals(e.value, pb[e.key]));
   }
 
   /// Chỉ giữ thương hiệu/loại ô ĐANG hỏi — số của dòng admin đã bỏ khỏi ô không hiện để xoá, gửi lại thì server từ chối.

@@ -447,7 +447,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
     // Còn lệnh sửa chưa gửi xong của điểm bán này ⇒ lần sửa này cũng đi hàng đợi, đứng sau nó: PATCH thẳng rồi lệnh cũ
     // gửi sau sẽ ĐÈ giá trị mới bằng giá trị cũ (rà soát #24698 vòng 3).
     final uuidForQueue = clientUuid ?? _cachedCustomers.where((c) => c.id == id).firstOrNull?.clientUuid;
-    if (_isOnline && !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
+    // Ảnh ô ma trận chưa tải được (còn đường dẫn trên máy) ⇒ hàng đợi: PATCH thẳng thì server từ chối đường dẫn, mất cả lần
+    // sửa (#24698 vòng 4, C1).
+    if (_isOnline &&
+        matrixLocalPaths(changes).isEmpty &&
+        !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
       try {
         await _apiService.updateCustomer(id, changes);
       } catch (e) {

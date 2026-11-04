@@ -178,6 +178,7 @@ class FormsRepositoryImpl implements FormsRepository {
           for (final entry in submission.localPhotoPaths!.entries) {
             final fieldCode = entry.key;
             final paths = entry.value;
+            if (!hasPhotoSlot(updatedAnswers, fieldCode)) continue;
             final newTokens = <String>[];
             for (final p in paths) {
               // Ảnh đã có token mà không còn tệp trên máy (bản nháp khôi phục) — giữ nguyên.
