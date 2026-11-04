@@ -18,7 +18,6 @@ import '../widgets/erp_links_form_field.dart';
 import '../viewmodels/customer_view_model.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
-import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/utils/offline_photo_store.dart';
 
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
@@ -529,24 +528,14 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
           dynamicChanges[key] = newVal;
         }
       }
-      // Ảnh chụp mới (đường dẫn máy) của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792) ⇒ tải lên lấy
-      // token trước khi gửi.
+      // Ảnh chụp mới (đường dẫn máy) của ô động — ô ma trận trưng bày (#24773), ô chụp ảnh tự khai (#24792): chép vào thư
+      // mục lâu dài (ảnh tạm của máy ảnh bị dọn). Kho điểm bán tải lên ngay trước khi gửi thẳng; đi hàng đợi thì giữ ĐƯỜNG
+      // DẪN (không token đã tải — server dọn token không ai dùng sau 1 ngày, lệnh sửa chờ lâu sẽ chết), đồng bộ mới tải.
       for (final key in dynamicChanges.keys.toList()) {
-        dynamicChanges[key] = await resolveLocalPhotos(dynamicChanges[key], (path) async {
-          try {
-            final token = (await repo.uploadCustomerPhoto(path, locationName: c.name, lat: c.lat, lng: c.lng))['token']
-                ?.toString()
-                .trim();
-            if (token != null && token.isNotEmpty) return token;
-          } catch (e) {
-            // Máy chủ TỪ CHỐI hẳn ảnh ⇒ báo ngay (xếp hàng thì lần nào cũng bị từ chối, lần sửa chết ở hàng đợi); cùng luật
-            // tải ảnh lúc tạo điểm bán (CustomerRepositoryImpl._uploadPhotoOrQueue).
-            if (isPermanentRejection(e)) rethrow;
-          }
-          // Không tải được / phản hồi thiếu mã ảnh: chép ảnh vào thư mục lâu dài — ảnh tạm của máy ảnh bị dọn; lượt sửa còn
-          // đường dẫn ảnh trên máy thì repo đưa vào hàng đợi (không PATCH thẳng), đồng bộ đổi ra token (#24698 vòng 4, C1).
-          return (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn_$key')).first;
-        });
+        dynamicChanges[key] = await resolveLocalPhotos(
+          dynamicChanges[key],
+          (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn_$key')).first,
+        );
       }
       if (dynamicChanges.isNotEmpty) {
         changes['data'] = dynamicChanges;

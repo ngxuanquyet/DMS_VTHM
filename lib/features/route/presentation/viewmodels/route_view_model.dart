@@ -1457,10 +1457,23 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         kind: 'survey',
         customerId: customerId,
       );
+      final chuaCo = state.surveyForms.isEmpty;
       state = state.copyWith(surveyForms: forms);
       // Biểu mẫu về SAU khi check-in ngoại tuyến (hoặc khi mở lại lượt ngoại tuyến) ⇒ dựng lại cổng biểu mẫu bắt buộc.
       if (state.visitId < 0 && state.requirements != null) {
         _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
+      } else if (state.visitId > 0 && state.requirements != null && chuaCo && forms.isNotEmpty && ref != null) {
+        // Điều kiện server về TRƯỚC danh sách biểu mẫu (mở lại lượt) mà lượt còn phiếu chờ gửi ⇒ phiếu đó chưa đổi được ra
+        // mã biểu mẫu để trừ — tính lại (#24698 vòng 5).
+        final db = ref!.read(appDatabaseProvider);
+        final coPhieuCho = await (db.select(db.syncQueueEntries)
+              ..where((t) =>
+                  t.entity.equals('form_submission') &
+                  t.parentUuid.equals(_sessionClientUuid) &
+                  (t.state.equals('pending') | t.state.equals('sending')))
+              ..limit(1))
+            .getSingleOrNull();
+        if (coPhieuCho != null) unawaited(refreshRequirements());
       }
     } catch (_) {}
   }
@@ -1488,7 +1501,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       _targetDoneTime = serverRequirements.secondsRemaining > 0
           ? DateTime.now().add(Duration(seconds: serverRequirements.secondsRemaining))
           : null;
-      state = state.copyWith(requirements: serverRequirements);
+      // Cộng ảnh / phiếu còn chờ gửi trên máy như [refreshRequirements] — không thì lưu vật tư xong nút Check-out đóng lại
+      // vì "thiếu ảnh/phiếu" đang nằm trong hàng đợi (#24698 vòng 5). Ghi MỘT lần sau khi tính (không nháy cổng).
+      // Trong lúc tính mà điều kiện đã được cập nhật bản mới hơn (làm mới từ server, chụp ảnh…) ⇒ giữ bản mới đó.
+      final truoc = state.requirements;
+      unawaited(() async {
+        VisitRequirementsEntity ketQua;
+        try {
+          ketQua = await _withLocalPending(serverRequirements, state.visitResult);
+        } catch (_) {
+          ketQua = serverRequirements;
+        }
+        if (mounted && identical(state.requirements, truoc)) state = state.copyWith(requirements: ketQua);
+      }());
       return;
     }
     final req = state.requirements;

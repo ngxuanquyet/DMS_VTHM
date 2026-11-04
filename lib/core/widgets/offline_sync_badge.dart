@@ -529,13 +529,16 @@ Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool i
   );
 }
 
-/// Báo lệnh check-out / huỷ lỗi không xoá được vì đang giữ lượt viếng thăm sau ([AppDatabase.isHoldingLaterVisit]).
+/// Báo lệnh check-out / huỷ lỗi không xoá được vì đang giữ lượt viếng thăm sau ([AppDatabase.isHoldingLaterVisit]). Hộp
+/// thoại (không SnackBar): danh sách mục lỗi nằm trong bảng trượt đáy — SnackBar hiện ở trang bên dưới, bị bảng che.
 void _showHeldVisitCloseNotice(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Lệnh đóng lượt cũ đang giữ chỗ cho lượt viếng thăm sau — vào lượt đang mở trên tuyến để '
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Chưa xoá được'),
+      content: const Text('Lệnh đóng lượt cũ đang giữ chỗ cho lượt viếng thăm sau — vào lượt đang mở trên tuyến để '
           'check-out / huỷ nó, rồi mới xoá được.'),
-      duration: Duration(seconds: 5),
+      actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Đã hiểu'))],
     ),
   );
 }

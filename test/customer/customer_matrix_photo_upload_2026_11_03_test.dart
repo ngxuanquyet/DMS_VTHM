@@ -19,6 +19,7 @@ import 'package:vthm_dms/features/customer/data/services/customer_api_service.da
 class _Adapter implements HttpClientAdapter {
   bool uploadFails = false;
   Map? created;
+  Map? patched;
 
   @override
   Future<ResponseBody> fetch(RequestOptions o, Stream<List<int>>? s, Future<void>? c) async {
@@ -26,6 +27,10 @@ class _Adapter implements HttpClientAdapter {
         ResponseBody.fromString(jsonEncode(body), code, headers: {Headers.contentTypeHeader: [Headers.jsonContentType]});
     if (o.path == '/crm/customer-photos') {
       return uploadFails ? ok({'success': false, 'message': 'lỗi máy chủ'}, 500) : ok({'success': true, 'data': {'token': 'e' * 32}});
+    }
+    if (o.path.startsWith('/crm/customers/') && o.method == 'PATCH') {
+      patched = o.data is Map ? o.data as Map : null;
+      return ok({'success': true, 'data': {'id': 9001, 'changed': ['anh_quay_ke']}});
     }
     if (o.path == '/crm/customers' && o.method == 'POST') {
       created = o.data is Map ? o.data as Map : null;
@@ -132,5 +137,24 @@ void main() {
     final sent = adapter.created!;
     expect((sent['data'] as Map)['anh_quay_ke'], ['e' * 32]);
     expect(sent.containsKey('photo_tokens'), isFalse);
+  });
+
+  test('#24698 vòng 5: SỬA có mạng — ảnh ô động tải lên ngay trước PATCH; tải lỗi ⇒ hàng đợi giữ ĐƯỜNG DẪN (không token)',
+      () async {
+    final f0 = await anh();
+    await repo.createCustomer(inputAnhTuKhai(f0.path)); // điểm bán 9001 vào bộ nhớ
+    final f = await anh();
+
+    await repo.updateCustomer(id: 9001, changes: {'data': {'anh_quay_ke': [f.path]}});
+    expect((adapter.patched?['data'] as Map?)?['anh_quay_ke'], ['e' * 32]);
+
+    adapter.patched = null;
+    adapter.uploadFails = true;
+    final g = await anh();
+    await repo.updateCustomer(id: 9001, changes: {'data': {'anh_quay_ke': [g.path]}});
+    expect(adapter.patched, isNull);
+    final rows = await (db.select(db.syncQueueEntries)..where((t) => t.op.equals('update'))).get();
+    expect(jsonDecode(rows.single.payload)['data']['anh_quay_ke'], [g.path],
+        reason: 'token đã tải bị server dọn sau 1 ngày — hàng đợi phải giữ đường dẫn để đồng bộ tải lại');
   });
 }

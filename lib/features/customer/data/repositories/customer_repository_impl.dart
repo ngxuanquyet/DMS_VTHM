@@ -447,13 +447,20 @@ class CustomerRepositoryImpl implements CustomerRepository {
     // Còn lệnh sửa chưa gửi xong của điểm bán này ⇒ lần sửa này cũng đi hàng đợi, đứng sau nó: PATCH thẳng rồi lệnh cũ
     // gửi sau sẽ ĐÈ giá trị mới bằng giá trị cũ (rà soát #24698 vòng 3).
     final uuidForQueue = clientUuid ?? _cachedCustomers.where((c) => c.id == id).firstOrNull?.clientUuid;
-    // Ảnh ô động chưa tải được (còn đường dẫn trên máy) ⇒ hàng đợi: PATCH thẳng thì server từ chối đường dẫn, mất cả lần
-    // sửa (#24698 vòng 4, C1; #24792).
-    if (_isOnline &&
-        CustomerPayloadHelper.dynamicLocalPhotoPaths(changes).isEmpty &&
-        !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
+    if (_isOnline && !await _localDataSource.hasUnsentCustomerUpdate(id, uuidForQueue)) {
       try {
-        await _apiService.updateCustomer(id, changes);
+        // Ảnh ô động trên máy ⇒ tải lên ngay trước khi PATCH (bản gửi đi); lỗi tải ném [NetworkException] ⇒ hàng đợi với
+        // `changes` GỐC (đường dẫn — đồng bộ tải lại; token đã tải bị server dọn sau 1 ngày) (#24698 vòng 4–5, #24792).
+        final cur = _cachedCustomers.where((c) => c.id == id).firstOrNull;
+        final banChep = CustomerPayloadHelper.dynamicLocalPhotoPaths(changes);
+        final body = await CustomerPayloadHelper.resolveDynamicPhotos(
+          changes,
+          (path) => _uploadPhotoOrQueue(path, locationName: cur?.name, lat: cur?.lat, lng: cur?.lng),
+        );
+        await _apiService.updateCustomer(id, body);
+        changes = body;
+        // Ảnh đã lên server, bản trong máy ghi token (bước 3) ⇒ dọn bản chép lâu dài màn sửa vừa tạo.
+        await deleteOfflineCustomerPhotos(banChep);
       } catch (e) {
         // Lỗi nghiệp vụ hoặc validate từ server (4xx, trừ 408/429) -> rethrow cho UI hiển thị
         if (e is AppException &&
@@ -754,10 +761,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
   /// Tải MỘT ảnh điểm bán lúc tạo trực tuyến, trả token. Lỗi tạm (mạng / 5xx / 408 / 429 / phản hồi thiếu token) ⇒ ném
   /// [NetworkException] để createCustomer rơi về đường hàng đợi (chép ảnh vào thư mục lưu lâu dài, đồng bộ tải lại).
   /// Trước đây lỗi bị nuốt ⇒ điểm bán được tạo KHÔNG ảnh mà không báo gì (#24698). Lỗi 4xx khác ném nguyên để báo người dùng.
-  Future<String> _uploadPhotoOrQueue(String path) async {
+  Future<String> _uploadPhotoOrQueue(String path, {String? locationName, double? lat, double? lng}) async {
     Map<String, dynamic> res;
     try {
-      res = await _apiService.uploadCustomerPhoto(path);
+      res = await _apiService.uploadCustomerPhoto(path, locationName: locationName, lat: lat, lng: lng);
     } on AppException catch (e) {
       if (isPermanentRejection(e)) rethrow;
       throw const NetworkException('Tải ảnh điểm bán lỗi — lưu ngoại tuyến, gửi lại khi có mạng.');
