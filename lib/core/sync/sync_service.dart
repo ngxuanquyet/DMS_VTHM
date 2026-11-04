@@ -153,6 +153,7 @@ class SyncService {
   }
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _pollingTimer;
+  Timer? _onlineSyncTimer;
   final Random _random = Random();
   final List<SyncDeadError> _recentDeadErrors = [];
 
@@ -187,6 +188,21 @@ class SyncService {
       }
     });
 
+    // 2b. Cờ mạng của app lật về CÓ MẠNG (sau khi dò thật — lắng nghe hệ điều hành ở trên chạy TRƯỚC lúc cờ lật nên lượt đó
+    // dừng vì "không có mạng") ⇒ gửi ngay, không chờ nhịp 60s (#24698 vòng 4).
+    // Hoãn vài giây: nơi vừa thấy có mạng thường tự gọi gửi ngay (lượt chạy song song thì lời gọi đó bị bỏ qua, nơi gọi đọc
+    // kết quả rỗng) — lượt tự động chạy SAU, gặp lượt đang chạy thì tự bỏ qua.
+    try {
+      _ref.listen<bool>(connectivityProvider.select((s) => s.isOnline), (prev, next) {
+        if (prev != false || !next) return;
+        _onlineSyncTimer?.cancel();
+        _onlineSyncTimer = Timer(const Duration(seconds: 3), syncQueue);
+      });
+    } catch (e) {
+      // Provider đã bị huỷ trong lúc _init còn chờ (đăng xuất / test kết thúc) — không còn gì để nghe.
+      debugPrint('[SyncService] Không nghe được cờ mạng: $e');
+    }
+
     // 3. Chu kỳ kiểm tra định kỳ (polling nhẹ mỗi 60s cho các mục đến hạn retry)
     _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       syncQueue();
@@ -210,6 +226,7 @@ class SyncService {
   void dispose() {
     _connectivitySubscription?.cancel();
     _pollingTimer?.cancel();
+    _onlineSyncTimer?.cancel();
   }
 
   /// Kích hoạt xử lý hàng đợi đồng bộ.
@@ -1227,7 +1244,8 @@ class SyncService {
           raw.contains('đã bị hủy') ||
           raw.contains('đã hủy') ||
           raw.contains('already cancelled') ||
-          raw.contains('404') ||
+          // Mã HTTP, KHÔNG dò chuỗi '404': câu lỗi mạng mang mã tra cứu hex ngẫu nhiên có thể chứa '404' (#24698 vòng 4).
+          (e is AppException && e.statusCode == 404) ||
           raw.contains('đã check out') ||
           raw.contains('đã checkout') ||
           raw.contains('đã check-out') ||

@@ -207,6 +207,32 @@ void main() {
     expect(sau.sublist(sau.length - 2), [['DeviceOrientation.portraitUp'], <String>[]]);
   });
 
+  testWidgets('#24698 vòng 4: Phóng to còn ô sai dạng ⇒ không cho thu nhỏ; sửa lại rồi thu nhỏ ⇒ phiếu không kẹt cờ sai dạng',
+      (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    final key = GlobalKey<MarketFormRendererState>();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_sos_fullscreen')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_full_vthm_op_mau')), '2,5,');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('matrix_fullscreen_close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('matrix_full_vthm_op_mau')), findsOneWidget, reason: 'lỗi cũ: đóng được, số mất im lặng');
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_full_vthm_op_mau')), '2,5');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('matrix_fullscreen_close')));
+    await tester.pumpAndSettle();
+    expect(key.currentState!.validateAndGetAnswers()?['sos']['counts'], {'vthm': {'op_mau': 2.5}},
+        reason: 'lỗi cũ: kẹt cờ "ô đếm nhập sai dạng số", không nộp được');
+  });
+
   testWidgets('cỡ chữ hệ thống 1,5× ⇒ bảng không tràn dòng', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: MediaQuery(

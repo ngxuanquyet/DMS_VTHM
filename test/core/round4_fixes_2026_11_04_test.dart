@@ -224,4 +224,19 @@ void main() {
       'muc_do': ['cao'],
     }, reason: 'lỗi cũ: gửi nguyên đường dẫn máy ⇒ server từ chối, lệnh sửa chết');
   });
+
+  test('huỷ lượt: lỗi máy chủ có chuỗi "404" trong câu lỗi KHÔNG bị coi là đã huỷ; mã 404 thật thì có', () async {
+    boot((o) => o.path == '/dms/visits/501/cancel'
+        ? (503, {'success': false, 'message': 'Máy chủ bận (mã tra cứu ERR-NET-404A)'})
+        : o.path == '/dms/visits/502/cancel'
+            ? (404, {'success': false, 'message': 'Không tìm thấy lượt'})
+            : null);
+    final a = await enqueue('visit', 'cancel', 'huyA', payload: '{"visit_id":501}');
+    final b = await enqueue('visit', 'cancel', 'huyB', payload: '{"visit_id":502}');
+
+    await container.read(syncServiceProvider).syncQueue(force: true);
+
+    expect((await row(a)).state, 'pending', reason: 'lỗi cũ: dò chuỗi "404" ⇒ đánh dấu xong mà server chưa huỷ');
+    expect((await row(b)).state, 'done');
+  });
 }

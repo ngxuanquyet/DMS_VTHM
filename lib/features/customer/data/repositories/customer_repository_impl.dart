@@ -490,9 +490,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
       // Đồng bộ vào SQLite để dữ liệu offline luôn mới nhất
       await _localDataSource.cacheRemoteCustomers([updated]);
+      // Ô ma trận: số mặt / % SOS do SERVER tính (bản trong máy chỉ có số nhập — chi tiết hiện "chờ đồng bộ") ⇒ lấy lại bản
+      // server; lỗi thì getCustomerDetail trả bản trong máy (#24698 vòng 4).
+      final data = changes['data'];
+      if (data is Map && data.values.any((v) => v is Map && v.containsKey('counts'))) return getCustomerDetail(id);
       return updated;
     }
 
+    // PATCH đã thành công mà điểm bán không có trong bộ nhớ (mở từ thông báo / bộ nhớ vừa làm mới) ⇒ lấy bản server; báo
+    // "không tìm thấy" là người dùng tưởng lưu hỏng mà lưu lại.
+    if (id > 0) return getCustomerDetail(id);
     throw Exception('Không tìm thấy điểm bán ID: $id');
   }
 

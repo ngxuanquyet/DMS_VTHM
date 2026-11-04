@@ -151,11 +151,14 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         _formData[field.code] = existingData[field.code];
       } else if (widget.initialData.containsKey(field.code)) {
         _formData[field.code] = widget.initialData[field.code];
+        _untouchedDefaults.remove(field.code); // giá trị nạp vào là giá trị thật
       } else if (preserveExisting && existingData.containsKey(field.code)) {
         _formData[field.code] = existingData[field.code];
       } else if (field.initialValue != null) {
+        // Giá trị điền sẵn theo cấu hình là giá trị THẬT người dùng thấy và chấp nhận — gửi đi như thường.
         _formData[field.code] = field.initialValue;
       } else {
+        _untouchedDefaults.add(field.code);
         // Default fallbacks according to type
         switch (field.type) {
           case DynamicFormFieldType.multipleChoice:
@@ -168,7 +171,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             _formData[field.code] = false;
             break;
           case DynamicFormFieldType.rating:
+            // Số sao hiện đầy trên form — người dùng thấy và chấp nhận ⇒ giá trị thật, không coi là mặc định chưa đụng.
             _formData[field.code] = (field.min ?? 5).toInt();
+            _untouchedDefaults.remove(field.code);
             break;
           default:
             _formData[field.code] = null;
@@ -286,7 +291,16 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
   }
 
+  /// Mã các ô mang giá trị MẶC ĐỊNH theo loại ô (không có trong dữ liệu nạp vào, không có giá trị điền sẵn) mà người dùng
+  /// chưa đụng tới.
+  final Set<String> _untouchedDefaults = {};
+
+  /// Ô [code] đang giữ giá trị mặc định THEO LOẠI ô (ô có/không = `false`, chọn nhiều = `[]`, số sao) chứ không phải giá trị
+  /// người dùng chọn — màn sửa không gửi nó: bản ghi chưa có ô này mà gửi mặc định là ghi đè "chưa nhập" thành `false`.
+  bool isUntouchedDefault(String code) => _untouchedDefaults.contains(code);
+
   void updateFieldValue(String code, dynamic value) {
+    _untouchedDefaults.remove(code);
     setState(() {
       _formData[code] = value;
       // Clear error for this field

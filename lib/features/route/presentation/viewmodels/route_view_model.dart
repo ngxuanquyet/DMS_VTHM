@@ -3358,7 +3358,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             rawMsg.contains('đã bị hủy') ||
             rawMsg.contains('đã hủy') ||
             rawMsg.contains('already cancelled') ||
-            rawMsg.contains('404');
+            // Mã HTTP, KHÔNG dò chuỗi '404' (mã tra cứu lỗi mạng hex ngẫu nhiên có thể chứa nó — #24698 vòng 4).
+            (e is AppException && e.statusCode == 404);
 
         // Trường hợp lượt đã check-out trên máy chủ (lỗi 422: lượt viếng thăm này đã check out rồi, không hủy được nữa)
         final isAlreadyCheckedOut =

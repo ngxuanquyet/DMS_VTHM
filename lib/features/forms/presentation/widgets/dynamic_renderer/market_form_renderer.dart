@@ -1389,7 +1389,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       config: cfg,
       counts: DisplayMatrixFieldWidget.countsOf(_answers[code]),
       // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — gợi ý mờ, không điền sẵn (#24789).
-      hintCounts: _hintCountsOf(block.resolved.config),
+      hintCounts: _hintCountsOf(block.resolved.configMap),
       errorText: _errors[code],
       onChanged: (counts, invalid) {
         _matrixInvalid[code] = invalid;

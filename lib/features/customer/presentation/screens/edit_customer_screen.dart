@@ -188,6 +188,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     final current = _formKey.currentState?.getFormData() ?? _savedFormData;
     for (final entry in current.entries) {
       final key = entry.key;
+      // Ô giữ mặc định của form mà chưa đụng tới — bước Lưu không gửi (cùng luật _handleSubmit).
+      if (!_initialData.containsKey(key) && (_formKey.currentState?.isUntouchedDefault(key) ?? false)) continue;
       final val = entry.value;
       final initialVal = _initialData[key];
 
@@ -519,6 +521,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         final key = entry.key;
         final newVal = entry.value;
         final oldVal = c.dynamicFields[key];
+        // Điểm bán chưa có ô này + người dùng không đụng tới ⇒ giá trị là mặc định của form (false / [] / số sao mặc định),
+        // không gửi (#24698 vòng 3–4).
+        if (!c.dynamicFields.containsKey(key) && (_formKey.currentState?.isUntouchedDefault(key) ?? false)) continue;
         // Ô ma trận so theo nội dung: khớp cách form bỏ qua kiểm ô trùng giá trị đang lưu (C3).
         if (newVal != oldVal && !DisplayMatrixFieldWidget.sameValue(newVal, oldVal)) {
           dynamicChanges[key] = newVal;
@@ -910,7 +915,13 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                               keepFieldOrder: true,
                               initialData: _savedFormData,
                               onChanged: (data) {
-                                _savedFormData.addAll(data);
+                                // Bỏ ô còn giữ mặc định chưa đụng tới: chép vào đây (initialData) thì form dựng lại coi nó
+                                // là giá trị nạp sẵn và gửi đi (#24698 vòng 4).
+                                final f = _formKey.currentState;
+                                _savedFormData.addAll({
+                                  for (final e in data.entries)
+                                    if (f == null || !f.isUntouchedDefault(e.key)) e.key: e.value,
+                                });
                               },
                               onSubmit: _handleSubmit,
                               customFieldBuilders: {'erp_links': erpLinksFieldBuilder},

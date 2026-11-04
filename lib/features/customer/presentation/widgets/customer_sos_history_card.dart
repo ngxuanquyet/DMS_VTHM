@@ -90,6 +90,7 @@ class _CustomerSosHistoryCardState extends ConsumerState<CustomerSosHistoryCard>
       setState(() {
         _items = [for (final r in data) if (r is Map) CustomerSosHistoryItem.fromJson(r)];
         _loading = false;
+        _hidden = false; // mở lúc mất mạng (ẩn) rồi có mạng lại ⇒ hiện
       });
     } catch (_) {
       if (!mounted) return;

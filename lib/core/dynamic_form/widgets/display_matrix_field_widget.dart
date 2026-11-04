@@ -259,6 +259,9 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   DisplayMatrixCounts get _hints;
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged;
 
+  /// Còn ô gõ sai dạng số (số không vào bộ đếm).
+  bool get _hasInvalidCell => _cellErr.values.contains(_loiSaiDang);
+
   TextEditingController _controller(String brand, String type) => _ctrl.putIfAbsent('$brand::$type', () {
         final n = _counts[brand]?[type];
         return TextEditingController(text: n == null ? '' : fmtMatrixNumber(n));
@@ -289,7 +292,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
     final t = text.trim();
     final n = num.tryParse(t.replaceAll(',', '.'));
     final k = '$brand::${type.code}';
-    final err = t.isEmpty ? null : (n == null ? 'Số không hợp lệ' : DisplayMatrixFieldWidget.cellError(n, type));
+    final err = t.isEmpty ? null : (n == null ? _loiSaiDang : DisplayMatrixFieldWidget.cellError(n, type));
     if (t.isEmpty || n == null) {
       next[brand]?.remove(type.code);
       if (next[brand]?.isEmpty ?? false) next.remove(brand);
@@ -302,7 +305,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
       err == null ? _cellErr.remove(k) : _cellErr[k] = err;
       _counts = asked;
     });
-    _onChanged(asked, _cellErr.values.contains('Số không hợp lệ'));
+    _onChanged(asked, _hasInvalidCell);
   }
 
   /// Bấm tên cột: ảnh minh hoạ + hướng dẫn đếm + quy đổi ra mặt.
@@ -377,6 +380,9 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   }
 }
 
+/// Câu lỗi ô gõ sai dạng số — cũng là dấu nhận ra ô sai dạng trong `_cellErr`.
+const _loiSaiDang = 'Số không hợp lệ';
+
 /// Hai bộ số đếm giống hệt nhau.
 bool _sameCounts(DisplayMatrixCounts a, DisplayMatrixCounts b) {
   if (a.length != b.length) return false;
@@ -436,6 +442,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
     FocusScope.of(context).unfocus();
     final nav = Navigator.of(context);
     DisplayMatrixCounts? ketQua;
+    bool? baoCuoi; // cờ sai dạng màn phóng to báo phiếu lần cuối; null = không gõ gì
     try {
       await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       ketQua = await nav.push<DisplayMatrixCounts>(MaterialPageRoute(
@@ -445,19 +452,30 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
           label: widget.label,
           counts: _counts,
           hints: _hints,
-          onChanged: _onChanged,
+          onChanged: (c, invalid) {
+            baoCuoi = invalid;
+            _onChanged(c, invalid);
+          },
         ),
       ));
     } finally {
       await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       await SystemChrome.setPreferredOrientations(const []);
     }
-    if (!mounted || ketQua == null || _sameCounts(ketQua, _counts)) return;
-    setState(() {
-      _counts = ketQua!;
-      _cellErr.clear();
-      _resyncControllers();
-    });
+    // Màn phóng to bị gỡ không qua nút Thu nhỏ (ketQua null) ⇒ phiếu giữ đúng cờ nó báo lần cuối, không đụng.
+    if (!mounted || baoCuoi == null || ketQua == null) return;
+    // Màn phóng to không cho đóng khi còn ô sai dạng ⇒ bộ số trả về là số đúng. Phiếu đang giữ cờ của lần gõ cuối ở màn phóng
+    // to; báo lại theo trạng thái THẬT của bảng trong phiếu khi số đổi hoặc cờ lệch — không thì bước Lưu chặn "ô đếm nhập sai
+    // dạng số" mà không ô nào hiện lỗi (#24698 vòng 4).
+    final doiSo = !_sameCounts(ketQua, _counts);
+    if (doiSo) {
+      setState(() {
+        _counts = ketQua!;
+        _cellErr.clear();
+        _resyncControllers();
+      });
+    }
+    if (doiSo || baoCuoi != _hasInvalidCell) _onChanged(_counts, _hasInvalidCell);
   }
 
   @override
@@ -545,6 +563,18 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
     _counts = widget.counts;
   }
 
+  /// Thu nhỏ — chặn khi còn ô gõ sai dạng: số đó không nằm trong bộ số trả về, bảng trong phiếu không hiện được nó ⇒ đóng
+  /// là mất số mà không ai biết (#24698 vòng 4).
+  void _dong() {
+    if (_hasInvalidCell) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Còn ô nhập sai dạng số — sửa lại trước khi thu nhỏ.')));
+      return;
+    }
+    Navigator.of(context).pop(_counts);
+  }
+
   @override
   Widget build(BuildContext context) {
     final totals = DisplayMatrixTotals.compute(_counts, _config);
@@ -552,7 +582,7 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
       canPop: false,
       // Nút Back của máy cũng trả bộ số về phiếu như nút Thu nhỏ.
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) Navigator.of(context).pop(_counts);
+        if (!didPop) _dong();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -561,7 +591,7 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
             key: const ValueKey('matrix_fullscreen_close'),
             icon: const Icon(Icons.close_fullscreen_rounded),
             tooltip: 'Thu nhỏ',
-            onPressed: () => Navigator.of(context).pop(_counts),
+            onPressed: _dong,
           ),
         ),
         body: SafeArea(
