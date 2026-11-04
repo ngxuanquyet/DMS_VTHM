@@ -28,6 +28,7 @@ import '../widgets/erp_links_form_field.dart';
 import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
 import '../../../../core/network/refresh_outcome.dart';
+import '../widgets/customer_sos_history_card.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
@@ -518,6 +519,23 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           child: _buildSectionCard(
                             title: ref.read(stringsProvider).materialsTitle,
                             icon: Icons.inventory_2_outlined,
+                            isDark: isDark,
+                            children: [content],
+                          ),
+                        ),
+                      ),
+
+                    // 5d. Lịch sử SOS (#24789): chỉ khi hồ sơ có ô Ma trận trưng bày.
+                    if (_customer.id > 0 &&
+                        ref.watch(customerViewModelProvider.select((s) => s.dynamicColumns))
+                            .any((c) => c.inputType == 'display_matrix'))
+                      CustomerSosHistoryCard(
+                        customerId: _customer.id,
+                        sectionBuilder: (content) => Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildSectionCard(
+                            title: 'Lịch sử SOS',
+                            icon: Icons.bar_chart_rounded,
                             isDark: isDark,
                             children: [content],
                           ),

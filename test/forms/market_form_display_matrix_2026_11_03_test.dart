@@ -263,6 +263,46 @@ void main() {
     expect(khung.constraints.maxWidth, 640);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('ô cập nhật hồ sơ điểm bán: số hiện trạng hiện MỜ làm gợi ý, ô vẫn trống (#24789)', (tester) async {
+    final cfg = {
+      ...matrix,
+      'update_customer_field': 'sos_ho_so',
+    };
+    final key = GlobalKey<MarketFormRendererState>();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: MarketFormRenderer(
+            key: key,
+            blocks: [
+              MarketFormBlockEntity(
+                ref: 'sos',
+                type: 'field',
+                required: false,
+                resolved: MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+              ),
+            ],
+            customerData: const {
+              'sos_ho_so': {
+                'counts': {
+                  'vthm': {'ke_lat': 7, 'op_mau': 2.5},
+                },
+              },
+            },
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final o = tester.widget<TextField>(find.byKey(const ValueKey('matrix_vthm_ke_lat')));
+    expect(o.controller!.text, '');
+    expect(o.decoration!.hintText, '7');
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_vthm_op_mau'))).decoration!.hintText, '2,5');
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_rival_ke_lat'))).decoration!.hintText, '0');
+    // Không gõ gì ⇒ không gửi số nào (trống = 0).
+    expect(key.currentState!.validateAndGetAnswers()!['sos'], isNull);
+  });
 }
 
 /// Bộ đệm ảnh giả — không có tệp (ô ảnh hiện khung chờ), đủ để đo khung kẹp ảnh.

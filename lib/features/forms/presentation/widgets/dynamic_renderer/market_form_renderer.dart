@@ -70,6 +70,10 @@ class MarketFormRenderer extends StatefulWidget {
   /// Tuyến ưu tiên để TỰ ĐIỀN ô `ref_dms_route` (tuyến của lượt viếng thăm, rồi tuyến của điểm bán) — chỉ điền id có
   /// trong danh sách tuyến của NV.
   final List<int> defaultRouteIds;
+
+  /// `data` của hồ sơ điểm bán đang viếng thăm (ô động) — ô ma trận bật "Cập nhật hiện trạng điểm bán"
+  /// (`config.update_customer_field`) lấy số hiện trạng làm gợi ý mờ (#24789).
+  final Map<String, dynamic> customerData;
   final int defaultMaxPhotos;
   final Future<FormPhotoModel> Function(File file)? onUploadPhoto;
 
@@ -85,6 +89,7 @@ class MarketFormRenderer extends StatefulWidget {
     this.defaultCustomerAddress,
     this.lockCustomer = false,
     this.defaultRouteIds = const [],
+    this.customerData = const {},
     this.defaultMaxPhotos = 10,
     this.onUploadPhoto,
   });
@@ -134,6 +139,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Ô ma trận đang có ô đếm gõ sai dạng (vd `2,5,`) — bước Lưu chặn, không lặng lẽ bỏ số khỏi tổng.
   final Map<String, bool> _matrixInvalid = {};
+
+  /// Số hiện trạng điểm bán cho ô ma trận có ô đích `config.update_customer_field` (#24789); không có ⇒ rỗng.
+  DisplayMatrixCounts _hintCountsOf(dynamic config) {
+    final target = config is Map ? config['update_customer_field'] : null;
+    return target is String && target.isNotEmpty ? DisplayMatrixFieldWidget.countsOf(widget.customerData[target]) : const {};
+  }
 
   /// Danh mục ô ma trận đã đọc từ `config` — bất biến suốt màn điền, đọc một lần mỗi ô.
   final Map<String, DisplayMatrixConfig> _matrixCfg = {};
@@ -1377,6 +1388,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       isRequired: block.required,
       config: cfg,
       counts: DisplayMatrixFieldWidget.countsOf(_answers[code]),
+      // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — gợi ý mờ, không điền sẵn (#24789).
+      hintCounts: _hintCountsOf(block.resolved.config),
       errorText: _errors[code],
       onChanged: (counts, invalid) {
         _matrixInvalid[code] = invalid;

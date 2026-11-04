@@ -149,6 +149,10 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
   final Widget Function(DisplayMatrixType type)? photoSection;
 
+  /// Số HIỆN TRẠNG của điểm bán (ô ma trận bật "Cập nhật hiện trạng điểm bán", #24789) — hiện MỜ làm gợi ý trong ô trống;
+  /// ô vẫn trống: nhân viên phải đếm và gõ lại (trống = 0 khi nộp).
+  final DisplayMatrixCounts hintCounts;
+
   const DisplayMatrixFieldWidget({
     super.key,
     this.fieldCode = '',
@@ -160,6 +164,7 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     this.errorText,
     required this.onChanged,
     this.photoSection,
+    this.hintCounts = const {},
   });
 
   /// Đọc `counts` từ giá trị đã lưu (nháp / phiếu cũ): `{counts: {...}}`; bỏ ô không phải số.
@@ -233,6 +238,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   DisplayMatrixCounts _counts = const {};
 
   DisplayMatrixConfig get _config;
+  DisplayMatrixCounts get _hints;
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged;
 
   TextEditingController _controller(String brand, String type) => _ctrl.putIfAbsent('$brand::$type', () {
@@ -327,6 +333,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
         totals: totals,
         controller: _controller,
         cellErr: _cellErr,
+        hints: _hints,
         keyPrefix: keyPrefix,
         cellWidth: cellWidth,
         onCell: _set,
@@ -368,6 +375,8 @@ bool _sameCounts(DisplayMatrixCounts a, DisplayMatrixCounts b) {
 class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> with _MatrixEditing<DisplayMatrixFieldWidget> {
   @override
   DisplayMatrixConfig get _config => widget.config;
+  @override
+  DisplayMatrixCounts get _hints => widget.hintCounts;
   @override
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
 
@@ -413,7 +422,13 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
       await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       ketQua = await nav.push<DisplayMatrixCounts>(MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _MatrixFullscreen(config: _config, label: widget.label, counts: _counts, onChanged: _onChanged),
+        builder: (_) => _MatrixFullscreen(
+          config: _config,
+          label: widget.label,
+          counts: _counts,
+          hints: _hints,
+          onChanged: _onChanged,
+        ),
       ));
     } finally {
       await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -483,9 +498,16 @@ class _MatrixFullscreen extends StatefulWidget {
   final DisplayMatrixConfig config;
   final String label;
   final DisplayMatrixCounts counts;
+  final DisplayMatrixCounts hints;
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
 
-  const _MatrixFullscreen({required this.config, required this.label, required this.counts, required this.onChanged});
+  const _MatrixFullscreen({
+    required this.config,
+    required this.label,
+    required this.counts,
+    required this.onChanged,
+    this.hints = const {},
+  });
 
   @override
   State<_MatrixFullscreen> createState() => _MatrixFullscreenState();
@@ -494,6 +516,8 @@ class _MatrixFullscreen extends StatefulWidget {
 class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditing<_MatrixFullscreen> {
   @override
   DisplayMatrixConfig get _config => widget.config;
+  @override
+  DisplayMatrixCounts get _hints => widget.hints;
   @override
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
 
@@ -550,6 +574,9 @@ class _MatrixTable extends StatefulWidget {
   final DisplayMatrixTotals totals;
   final TextEditingController Function(String brand, String type) controller;
   final Map<String, String> cellErr;
+
+  /// Số hiện trạng làm gợi ý mờ trong ô (rỗng = gợi ý "0").
+  final DisplayMatrixCounts hints;
   final String keyPrefix;
   final double cellWidth;
   final void Function(String brand, DisplayMatrixType type, String text) onCell;
@@ -561,6 +588,7 @@ class _MatrixTable extends StatefulWidget {
     required this.totals,
     required this.controller,
     required this.cellErr,
+    this.hints = const {},
     required this.keyPrefix,
     required this.cellWidth,
     required this.onCell,
@@ -712,7 +740,10 @@ class _MatrixTableState extends State<_MatrixTable> {
                         textAlign: TextAlign.center,
                         textInputAction: TextInputAction.next,
                         style: formFieldTextStyle(isDark),
-                        decoration: formFieldDecoration(isDark: isDark, hintText: '0').copyWith(
+                        decoration: formFieldDecoration(
+                          isDark: isDark,
+                          hintText: w.hints[b.code]?[t.code] == null ? '0' : fmtMatrixNumber(w.hints[b.code]![t.code]!),
+                        ).copyWith(
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                           enabledBorder: w.cellErr.containsKey('${b.code}::${t.code}')

@@ -34,6 +34,9 @@ class MarketFormFillArgs {
   /// Tuyến để tự điền ô `ref_dms_route` theo thứ tự ưu tiên (tuyến của lượt, rồi tuyến của điểm bán).
   final List<int> routeIds;
 
+  /// Ô động của hồ sơ điểm bán (bản trên máy) — số hiện trạng làm gợi ý mờ ở ô ma trận cập nhật hồ sơ (#24789).
+  final Map<String, dynamic> customerData;
+
   const MarketFormFillArgs({
     required this.config,
     required this.kind,
@@ -47,6 +50,7 @@ class MarketFormFillArgs {
     this.lockCustomer,
     this.visitClientUuid,
     this.routeIds = const [],
+    this.customerData = const {},
   });
 
   /// Kiểm tra xem có cần cố định (khoá) trường khách hàng không
@@ -487,6 +491,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
               defaultCustomerAddress: widget.args.customerAddress,
               lockCustomer: widget.args.isCustomerLocked,
               defaultRouteIds: widget.args.routeIds,
+              customerData: widget.args.customerData,
               onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
             ),
             const SizedBox(height: 80),

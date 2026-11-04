@@ -1357,6 +1357,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                               customerContext: customerContext,
                               lockCustomer: true,
                               visitClientUuid: vm.sessionClientUuid,
+                              customerData: customer?.dynamicFields ?? const {},
                               routeIds: [
                                 if (state.visitEntity?.routeId != null) state.visitEntity!.routeId!,
                                 ...?customer?.routeIds,
