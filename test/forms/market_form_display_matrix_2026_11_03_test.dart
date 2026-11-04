@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vthm_dms/core/utils/rich_image_cache.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/dynamic_form/matrix_photo_key.dart';
@@ -215,4 +219,57 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('ảnh minh hoạ ở màn ngang ⇒ khung ảnh kẹp ≤ nửa chiều cao màn hình, không tràn', (tester) async {
+    // Ca chủ hệ thống báo 04/11: phóng to (xoay ngang) rồi bấm tên cột, ảnh minh hoạ to tràn màn hình.
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    const cfg = {
+      'matrix': {
+        'brands': [
+          {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
+        ],
+        'types': [
+          {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'face_factor': 1, 'hint': 'Đếm từng tấm', 'illustration_token': 'abcdefgh1234'},
+        ],
+      },
+    };
+    await tester.pumpWidget(ProviderScope(
+      overrides: [richImageCacheProvider.overrideWithValue(_FakeCache())],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MarketFormRenderer(blocks: [
+              MarketFormBlockEntity(
+                ref: 'sos',
+                type: 'field',
+                required: false,
+                resolved: const MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
+    await tester.pumpAndSettle();
+    final khung = tester.widget<ConstrainedBox>(find.byKey(const ValueKey('matrix_guide_image')));
+    expect(khung.constraints.maxHeight, 180);
+    expect(khung.constraints.maxWidth, 640);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// Bộ đệm ảnh giả — không có tệp (ô ảnh hiện khung chờ), đủ để đo khung kẹp ảnh.
+class _FakeCache implements RichImageCache {
+  @override
+  Future<File?> load(String token) async => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

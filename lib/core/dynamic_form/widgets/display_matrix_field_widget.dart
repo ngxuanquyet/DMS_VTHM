@@ -292,7 +292,17 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if ((type.illustrationToken ?? '').isNotEmpty) RichImageView(token: type.illustrationToken!),
+              if ((type.illustrationToken ?? '').isNotEmpty)
+                // Ảnh to/dọc mà để tự do thì phình theo bề ngang, ở màn phóng to (xoay ngang) tràn khỏi màn hình (báo 04/11/2026)
+                // ⇒ kẹp trong khung ≤ nửa chiều cao màn, giữ tỉ lệ; chụm hai ngón để xem chi tiết.
+                ConstrainedBox(
+                  key: const ValueKey('matrix_guide_image'),
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
+                    maxWidth: MediaQuery.sizeOf(ctx).width * 0.8,
+                  ),
+                  child: InteractiveViewer(maxScale: 4, child: RichImageView(token: type.illustrationToken!)),
+                ),
               if ((type.hint ?? '').trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(type.hint!.trim())),
               Padding(
                 padding: const EdgeInsets.only(top: 8),
