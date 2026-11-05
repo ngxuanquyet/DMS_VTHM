@@ -27,6 +27,20 @@ void main() {
     },
   };
 
+  // Luật "đếm phải đếm đủ" (05/11/2026): ô khác của ma trận đã đếm 0 — các ca phép tính gõ thêm một ô rồi nộp.
+  const daDemKhong = {
+    'sos': {
+      'counts': {
+        'vthm': {'ke_lat': 0},
+        'rival': {'ke_lat': 0, 'op_mau': 0},
+      },
+    },
+  };
+  const daDemDu = {
+    'vthm': {'ke_lat': 0},
+    'rival': {'ke_lat': 0, 'op_mau': 0},
+  };
+
   MarketFormBlockEntity o({bool required = true}) => MarketFormBlockEntity(
         ref: 'sos',
         type: 'field',
@@ -111,12 +125,21 @@ void main() {
     await tester.pump();
     expect(find.textContaining('Kệ lật: cần ít nhất 1 ảnh'), findsOneWidget);
 
-    // Bỏ số Kệ lật ⇒ không còn bắt ảnh; ô trống không vào câu trả lời.
+    // Bỏ số Kệ lật ⇒ không còn bắt ảnh; nhưng đếm MỘT PHẦN ⇒ chặn, báo số ô chưa đếm (05/11/2026).
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '');
+    await tester.pump();
+    expect(key.currentState!.validateAndGetAnswers(), isNull);
+    await tester.pump();
+    expect(find.textContaining('còn 3 ô chưa đếm, gõ 0 nếu không có trưng bày'), findsOneWidget);
+
+    // Gõ 0 đủ các ô còn lại ⇒ nộp được; Kệ lật số 0 không bắt ảnh.
+    for (final k in ['matrix_vthm_ke_lat', 'matrix_rival_ke_lat', 'matrix_rival_op_mau']) {
+      await tester.enterText(find.byKey(ValueKey(k)), '0');
+    }
     await tester.pump();
     final gui = key.currentState!.validateAndGetAnswers()!;
     expect(gui['sos'], {
-      'counts': {'vthm': {'op_mau': 1.5}},
+      'counts': {'vthm': {'op_mau': 1.5, 'ke_lat': 0}, 'rival': {'ke_lat': 0, 'op_mau': 0}},
       'photos': <String, List<String>>{},
     });
   });
@@ -141,7 +164,7 @@ void main() {
             blocks: [o()],
             initialAnswers: {
               'sos': {
-                'counts': {'vthm': {'ke_lat': 2}},
+                'counts': {'vthm': {'ke_lat': 2, 'op_mau': 0}, 'rival': {'ke_lat': 0, 'op_mau': 0}},
                 'photos': {'ke_lat': [tok]},
               },
             },
@@ -154,7 +177,7 @@ void main() {
     expect(key2.currentState!.getLocalPhotoPaths(), {'sos::ke_lat': [tok]});
     final gui = key2.currentState!.validateAndGetAnswers()!;
     expect(gui['sos']['photos'], {'ke_lat': [tok]});
-    expect(gui['sos']['counts'], {'vthm': {'ke_lat': 2}});
+    expect(gui['sos']['counts'], {'vthm': {'ke_lat': 2, 'op_mau': 0}, 'rival': {'ke_lat': 0, 'op_mau': 0}});
   });
 
   testWidgets('cột Tổng = số mặt + % SOS từng thương hiệu; bấm tên cột có hướng dẫn ⇒ mở hướng dẫn + quy đổi', (tester) async {
@@ -186,7 +209,11 @@ void main() {
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     final key = GlobalKey<MarketFormRendererState>();
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: MarketFormRenderer(key: key, blocks: [o(required: false)], initialAnswers: daDemKhong),
+        ),
+      ),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('matrix_sos_fullscreen')));
@@ -202,7 +229,10 @@ void main() {
 
     // Bảng trong phiếu thấy số vừa gõ (chung ô nhập) và câu trả lời có số.
     expect(find.descendant(of: find.byKey(const ValueKey('matrix_vthm_op_mau')), matching: find.text('1,5')), findsOneWidget);
-    expect(key.currentState!.validateAndGetAnswers()!['sos']['counts'], {'vthm': {'op_mau': 1.5}});
+    expect(key.currentState!.validateAndGetAnswers()!['sos']['counts'], {
+      'vthm': {...daDemDu['vthm']!, 'op_mau': 1.5},
+      'rival': daDemDu['rival'],
+    });
     final sau = calls.where((c) => c.method == 'SystemChrome.setPreferredOrientations').map((c) => c.arguments).toList();
     expect(sau.sublist(sau.length - 2), [['DeviceOrientation.portraitUp'], <String>[]]);
   });
@@ -213,7 +243,11 @@ void main() {
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     final key = GlobalKey<MarketFormRendererState>();
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: MarketFormRenderer(key: key, blocks: [o(required: false)], initialAnswers: daDemKhong),
+        ),
+      ),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('matrix_sos_fullscreen')));
@@ -229,7 +263,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('matrix_fullscreen_close')));
     await tester.pumpAndSettle();
-    expect(key.currentState!.validateAndGetAnswers()?['sos']['counts'], {'vthm': {'op_mau': 2.5}},
+    expect(key.currentState!.validateAndGetAnswers()?['sos']['counts'], {
+      'vthm': {...daDemDu['vthm']!, 'op_mau': 2.5},
+      'rival': daDemDu['rival'],
+    },
         reason: 'lỗi cũ: kẹt cờ "ô đếm nhập sai dạng số", không nộp được');
   });
 

@@ -216,6 +216,17 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     return out;
   }
 
+  /// Số ô thương hiệu × loại biểu mẫu hỏi ([cfg]) CHƯA có số — luật "đếm phải đếm đủ" (05/11/2026), cùng phạm vi server.
+  static int missingCells(DisplayMatrixCounts counts, DisplayMatrixConfig cfg) {
+    var n = 0;
+    for (final b in cfg.brands) {
+      for (final t in cfg.types) {
+        if (counts[b.code]?[t.code] == null) n++;
+      }
+    }
+    return n;
+  }
+
   /// Lỗi của số đếm theo luật server (số lẻ quá số chữ số của loại, vượt trần); hợp lệ ⇒ `null`.
   static String? countsError(DisplayMatrixCounts counts, DisplayMatrixConfig cfg) {
     final byCode = {for (final t in cfg.types) t.code: t};
