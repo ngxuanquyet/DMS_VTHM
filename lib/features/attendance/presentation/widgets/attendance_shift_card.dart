@@ -100,7 +100,7 @@ class _AttendanceShiftCardState extends ConsumerState<AttendanceShiftCard> {
           const SizedBox(height: 12),
 
           // Nội dung ca làm việc hôm nay (§8.3)
-          _buildTodayShiftContent(context, shiftSchedule, today?.punchCount ?? 0, isDark),
+          _buildTodayShiftContent(context, shiftSchedule, isDark),
 
           // Danh sách lịch tuần mở rộng (GET /attendance/mobile/shifts?days=7)
           if (_isExpandedWeek && multiShifts.isNotEmpty) ...[
@@ -127,7 +127,6 @@ class _AttendanceShiftCardState extends ConsumerState<AttendanceShiftCard> {
   Widget _buildTodayShiftContent(
     BuildContext context,
     AttendanceShiftScheduleEntity? schedule,
-    int punchCount,
     bool isDark,
   ) {
     if (schedule == null) {
@@ -192,41 +191,6 @@ class _AttendanceShiftCardState extends ConsumerState<AttendanceShiftCard> {
                 ),
               ],
             ],
-          ),
-          const SizedBox(height: 10),
-          // Hàng ghi chú chuông nhắc ca tự động (§8)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? AppColors.darkSurfaceContainer.withValues(alpha: 0.5)
-                  : AppColors.surfaceVariant.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  punchCount > 0 ? Icons.check_circle_rounded : Icons.notifications_active_outlined,
-                  size: 15,
-                  color: punchCount > 0
-                      ? AppColors.success
-                      : (isDark ? AppColors.primaryFixedDim : AppColors.primary),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    punchCount > 0
-                        ? 'Đã chấm công hôm nay • Đã tự động hủy nhắc vào ca'
-                        : 'Nhắc vào ca: 15\' trước giờ • Nhắc ra ca: Đúng giờ kết thúc',
-                    style: AppTypography.bodySmall(
-                      color: punchCount > 0
-                          ? AppColors.success
-                          : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-                    ).copyWith(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       );

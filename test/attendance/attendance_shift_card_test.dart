@@ -74,7 +74,9 @@ void main() {
       expect(find.text('Hành chính 08:00–17:30'), findsOneWidget);
       expect(find.text('08:00 – 17:30'), findsOneWidget);
       expect(find.text('Xếp tay'), findsOneWidget);
-      expect(find.textContaining('Nhắc vào ca: 15\' trước giờ'), findsOneWidget);
+      // Bỏ dòng nhắc ca trên thẻ (05/11/2026).
+      expect(find.textContaining('Nhắc vào ca'), findsNothing);
+      expect(find.textContaining('hủy nhắc vào ca'), findsNothing);
     });
 
     testWidgets('Renders day off status properly', (tester) async {
