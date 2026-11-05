@@ -1460,12 +1460,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return '$label – ${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
       }
     }
-    // 🔴 Đếm thì phải đếm ĐỦ (chủ hệ thống chốt 05/11/2026): đã nhập số hoặc chụp ảnh ⇒ mọi ô thương hiệu × loại biểu mẫu hỏi
-    // phải có số (gõ 0 nếu không có). Ô trống từng bị tính là 0 khi cập nhật hiện trạng điểm bán ⇒ xoá nhầm trưng bày.
-    if (counts.isNotEmpty || photos.isNotEmpty) {
-      final thieu = DisplayMatrixFieldWidget.missingCells(counts, cfg);
-      if (thieu > 0) return '$label – còn $thieu ô chưa đếm, gõ 0 nếu không có trưng bày.';
-    }
     return null;
   }
 
