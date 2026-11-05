@@ -309,6 +309,8 @@ class SyncService {
 
     int successCount = 0;
     int retryableCount = 0;
+    // Lô thành công chỉ gồm mục chấm công ⇒ không tải lại điểm bán/tuyến ở `finally` (xem chỗ gán).
+    bool onlyAttendance = false;
     final List<SyncDeadError> currentDeadErrors = [];
 
     try {
@@ -436,7 +438,13 @@ class SyncService {
         }
       }
 
-      if (successCount > 0) {
+      // Ảnh chấm công LUÔN đi qua hàng đợi kể cả khi có mạng ⇒ lô chỉ có ảnh chấm công là việc thường ngày, không phải
+      // "đồng bộ ngoại tuyến": không báo, không tải lại điểm bán/tuyến (chấm công không đổi chúng — 100 NV chấm buổi sáng
+      // là 100 lượt tải đủ danh sách thừa, rà soát vòng 7 #24698).
+      final onlyAttendancePhotos = succeededEntries.every((e) => e.entity == 'attendance_photo');
+      onlyAttendance = succeededEntries.every((e) => e.entity.startsWith('attendance_'));
+
+      if (successCount > 0 && !onlyAttendancePhotos) {
         try {
           final summary = SyncEntityGroupHelper.buildSummaryText(succeededEntries);
           _ref.read(appNotificationServiceProvider).notifyOfflineSyncSuccess(
@@ -492,7 +500,7 @@ class SyncService {
       // check-in là đối soát chụp danh sách cũ ⇒ coi lượt vừa mở là "đã huỷ trên server" rồi huỷ nó (#24698 vòng 2).
       // Lượt định kỳ kế tiếp / màn gọi sau thao tác lo phần làm mới.
       final targeted = onlyCheckoutChildrenOf != null || onlyVisitLifecycle;
-      if (successCount > 0 && !targeted && _ref.read(connectivityProvider).isOnline) {
+      if (successCount > 0 && !targeted && !onlyAttendance && _ref.read(connectivityProvider).isOnline) {
         try {
           _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
         } catch (_) {}

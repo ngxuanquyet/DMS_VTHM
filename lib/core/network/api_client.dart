@@ -97,9 +97,14 @@ class AuthInterceptor extends QueuedInterceptor {
 
   AuthInterceptor(this.dio, {Dio Function()? refreshDio}) : _refreshDio = refreshDio ?? _defaultRefreshDio;
 
+  // Có trần thời gian: AuthInterceptor là QueuedInterceptor — lượt làm mới treo (rớt sóng giữa chừng) thì MỌI lỗi sau đó
+  // xếp hàng chờ theo, lượt đồng bộ kẹt `_isSyncing` tới khi tắt app (rà soát vòng 7 #24698).
   static Dio _defaultRefreshDio() => Dio(
         BaseOptions(
           baseUrl: AppConstants.baseUrl,
+          connectTimeout: const Duration(milliseconds: AppConstants.connectTimeout),
+          receiveTimeout: const Duration(milliseconds: AppConstants.receiveTimeout),
+          sendTimeout: const Duration(milliseconds: AppConstants.receiveTimeout),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
