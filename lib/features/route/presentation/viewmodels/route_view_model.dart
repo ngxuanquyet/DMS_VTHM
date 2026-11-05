@@ -52,6 +52,7 @@ import '../../../../core/rules/geofence_rule_helper.dart';
 import '../../../../core/services/app_notification_service.dart';
 import '../../../notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../travel/presentation/viewmodels/travel_view_model.dart';
+import '../../../visit/data/models/visit_material_model.dart' show materialOperationFromQueuePayload;
 import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialFlushTimeout;
 import '../../../visit/domain/entities/visit_requirements_entity.dart';
 
@@ -2548,7 +2549,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final cancelledVisitId = state.visitId;
         final clientUuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
         await visitRepository.clearActiveVisit();
-        await visitRepository.cancelVisit(cancelledVisitId, clientUuid: clientUuid);
+        await visitRepository.markVisitCancelledLocally(cancelledVisitId, clientUuid: clientUuid);
         if (ref != null) {
           try {
             ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(
@@ -2742,11 +2743,27 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       for (final f in state.surveyForms)
         if (queuedConfigIds.contains(f.configId)) f.formId,
     };
-    if (pendingPhotos == 0 && !req.missingForms.any((f) => submittedFormIds.contains(f.formId))) return req;
+    // Thao tác vật tư chờ gửi: mọi thao tác (xác nhận/thêm/sửa/gỡ) đều là "đã kiểm" loại đó trong lượt
+    // ([applyMaterialOperation]) — không trừ thì làm mới điều kiện từ server đóng lại cổng ④ (#24698 vòng 6).
+    final queuedMaterialTypeIds = <int>{};
+    if (db != null && req.missingMaterials.isNotEmpty) {
+      for (final r in await db.getVisitMaterialEntries(_sessionClientUuid)) {
+        if (r.state != 'pending' && r.state != 'sending') continue;
+        final op = materialOperationFromQueuePayload(r.payload);
+        if (op != null) queuedMaterialTypeIds.add(op.materialTypeId);
+      }
+    }
+    if (pendingPhotos == 0 &&
+        !req.missingForms.any((f) => submittedFormIds.contains(f.formId)) &&
+        !req.missingMaterials.any((m) => queuedMaterialTypeIds.contains(m.materialTypeId))) {
+      return req;
+    }
 
     final isClosed = vResult == 'closed';
     final photosMissing = math.max(0, req.photosMissing - pendingPhotos);
     final missingForms = req.missingForms.where((f) => !submittedFormIds.contains(f.formId)).toList();
+    final missingMaterials =
+        req.missingMaterials.where((m) => !queuedMaterialTypeIds.contains(m.materialTypeId)).toList();
     final blockers = List<String>.from(req.blockers);
     if (photosMissing <= 0) {
       blockers.removeWhere((b) => b.toLowerCase().contains('ảnh') || b.toLowerCase().contains('chụp'));
@@ -2754,16 +2771,21 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     if (missingForms.isEmpty) {
       blockers.removeWhere((b) => b.toLowerCase().contains('khảo sát') || b.toLowerCase().contains('biểu mẫu'));
     }
+    if (missingMaterials.isEmpty) {
+      // Đúng câu cổng ④ của server (CheckoutRequirements) — không xoá câu khác có chữ "vật tư".
+      blockers.removeWhere((b) => b.toLowerCase().contains('kiểm vật tư') || b.toLowerCase().contains('materials not checked'));
+    }
     // Chỉ mở cổng khi KHÔNG còn câu chặn nào của server: server có thể chặn vì điều kiện app không mô hình hoá.
     return req.copyWith(
       photosMissing: photosMissing,
       missingForms: missingForms,
+      missingMaterials: missingMaterials,
       blockers: blockers,
       satisfied: req.satisfied ||
           ((isClosed || req.secondsRemaining <= 0) &&
               (isClosed || missingForms.isEmpty) &&
               photosMissing <= 0 &&
-              req.materialsOk(isClosed) &&
+              (isClosed || missingMaterials.isEmpty) &&
               blockers.isEmpty),
     );
   }
@@ -2801,7 +2823,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           final cId = state.visitId;
           final uuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
           await visitRepository.clearActiveVisit();
-          await visitRepository.cancelVisit(cId, clientUuid: uuid);
+          await visitRepository.markVisitCancelledLocally(cId, clientUuid: uuid);
           if (ref != null) {
             try {
               ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(cId, clientUuid: uuid);
@@ -3127,7 +3149,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         _visitTimer?.cancel();
         stopGeofenceWatcher();
         await visitRepository.clearActiveVisit();
-        await visitRepository.cancelVisit(state.visitId, clientUuid: _sessionClientUuid);
+        await visitRepository.markVisitCancelledLocally(state.visitId, clientUuid: _sessionClientUuid);
         if (ref != null) {
           try {
             ref!.read(routeViewModelProvider.notifier).markVisitCancelledLocally(
@@ -3356,6 +3378,15 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     if (effectiveVisitId > 0) {
       try {
         await cancelVisitUseCase(effectiveVisitId, clientUuid: clientUuid);
+        // Lượt đang mở của màn này — dọn không điều kiện (bản lưu có thể còn id/uuid tạm, kho chỉ dọn khi khớp). Server đã
+        // huỷ (clearActiveVisit tự nuốt lỗi ghi máy). Báo tuyến ngay (không chờ lượt nạp tuyến — mạng yếu thì
+        // tuyến còn giữ lượt "đang mở").
+        await visitRepository.clearActiveVisit();
+        try {
+          ref
+            ?..read(routeViewModelProvider.notifier).markVisitCancelledLocally(effectiveVisitId, clientUuid: clientUuid)
+            ..read(routeViewModelProvider.notifier).setActiveVisit(null);
+        } catch (_) {}
 
         // Huỷ thành công trên server: dọn dẹp các queue pending liên quan (như upload ảnh dở)
         if (ref != null) {
@@ -3364,12 +3395,6 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             await db.deletePendingVisitQueue(clientUuid);
           } catch (_) {}
         }
-
-        await visitRepository.clearActiveVisit();
-        await visitRepository.cancelVisit(
-          effectiveVisitId,
-          clientUuid: clientUuid,
-        );
 
         _visitTimer?.cancel();
         resetSession();
@@ -3422,10 +3447,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           }
           await visitRepository.clearActiveVisit();
           if (isAlreadyCancelled) {
-            await visitRepository.cancelVisit(
-              effectiveVisitId,
-              clientUuid: clientUuid,
-            );
+            // Server đã báo huỷ/404 ⇒ chỉ ghi trong máy; gọi lại API huỷ nằm trong catch sẽ ném ra (404 lần hai) ⇒ hộp
+            // xoay ở màn check-in kẹt (#24698 vòng 6).
+            try {
+              await visitRepository.markVisitCancelledLocally(
+                effectiveVisitId,
+                clientUuid: clientUuid,
+              );
+            } catch (_) {}
           }
           _visitTimer?.cancel();
           stopGeofenceWatcher();
@@ -3480,19 +3509,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
           await visitRepository.clearActiveVisit();
           try {
-            final all = await visitRepository.getAllLocalVisits();
-            final idx = all.indexWhere(
-              (v) =>
-                  v.id == effectiveVisitId ||
-                  (v.clientUuid != null && v.clientUuid == clientUuid),
-            );
-            if (idx >= 0) {
-              final updated = all[idx].copyWith(
-                cancelledAt: DateTime.now(),
-                cancelledAtRaw: DateTime.now().toIso8601String(),
-              );
-              await visitRepository.saveLocalVisit(updated);
-            }
+            await visitRepository.markVisitCancelledLocally(effectiveVisitId, clientUuid: clientUuid);
           } catch (_) {}
 
           _visitTimer?.cancel();

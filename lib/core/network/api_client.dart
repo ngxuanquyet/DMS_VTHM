@@ -71,16 +71,22 @@ class ServerTimeInterceptor extends Interceptor {
   }
 }
 
+/// Phản hồi "tài khoản bị thu quyền app DMS" (spec 15/10/2026): mã DMS_APP_FORBIDDEN, hoặc 403 kèm câu của máy chủ — MỘT
+/// luật cho cả làm mới phiên lẫn ánh xạ lỗi thường.
+bool isDmsForbiddenResponse(int? status, String? code, String? message) =>
+    code == 'DMS_APP_FORBIDDEN' || (status == 403 && (message?.contains('chưa được cấp quyền dùng app DMS') ?? false));
+
 class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;
 
-  /// Gọi khi máy chủ TỪ CHỐI phiên làm mới (phiên đã xoá; trừ ca bị thu quyền app — nơi gọi nhận DmsAppForbiddenException)
-  /// — để màn hình về đăng nhập thay vì mọi thao tác trực tuyến báo 401 mãi (#24698 vòng 3). AuthViewModel gắn.
-  static void Function()? onSessionRejected;
+  /// Gọi khi máy chủ TỪ CHỐI phiên làm mới (phiên đã xoá) — để màn hình về đăng nhập thay vì mọi thao tác trực tuyến báo
+  /// 401 mãi (#24698 vòng 3). AuthViewModel gắn. [message] = lý do hiện ở màn đăng nhập (null ⇒ "hết phiên"); bị thu quyền
+  /// app cũng phải về đăng nhập — phiên đã xoá, ở lại thì lượt chấm sau 401 xếp hàng và báo "Đã ghi nhận" oan (vòng 6).
+  static void Function([String? message])? onSessionRejected;
 
-  static void _notifySessionRejected() {
+  static void _notifySessionRejected([String? message]) {
     try {
-      onSessionRejected?.call();
+      onSessionRejected?.call(message);
     } catch (e) {
       debugPrint('[AuthInterceptor] Không báo được phiên bị từ chối: $e');
     }
@@ -161,16 +167,17 @@ class AuthInterceptor extends QueuedInterceptor {
 
           final resData = refreshErr.response?.data;
           final errCode = resData is Map ? resData['code']?.toString() : null;
-          final isDmsForbidden = refreshStatus == 403 || errCode == 'DMS_APP_FORBIDDEN';
+          // Bị thu quyền app CHỈ khi server nói đúng mã (AuthController luôn gửi) — 403 trang HTML của proxy/WAF không phải
+          // thu quyền: coi là phiên bị từ chối thường (chấm công vẫn xếp hàng, không báo "chưa được cấp quyền") (#24698 vòng 6).
+          final serverMsg = resData is Map ? resData['message']?.toString() : null;
+          final isDmsForbidden = isDmsForbiddenResponse(refreshStatus, errCode, serverMsg);
+          final msg = serverMsg ?? const DmsAppForbiddenException().message;
 
-          // Máy chủ TỪ CHỐI phiên làm mới (4xx) -> Clear session
+          // Máy chủ TỪ CHỐI phiên làm mới (4xx) -> Clear session, về đăng nhập (bị thu quyền: kèm đúng lý do).
           await _clearSession(prefs);
-          // Bị thu quyền app: nơi gọi nhận DmsAppForbiddenException và báo đúng lý do — đừng đăng xuất kèm câu "hết phiên".
-          if (!isDmsForbidden) _notifySessionRejected();
+          _notifySessionRejected(isDmsForbidden ? msg : null);
 
           if (isDmsForbidden) {
-            final msg = (resData is Map ? resData['message']?.toString() : null) ??
-                'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.';
             return handler.reject(
               DioException(
                 requestOptions: err.requestOptions,
@@ -435,8 +442,7 @@ class ApiClient {
       }
 
       // Xử lý mã lỗi 403 DMS_APP_FORBIDDEN theo spec 15/10/2026
-      if (errCode == 'DMS_APP_FORBIDDEN' ||
-          (statusCode == 403 && (message?.contains('chưa được cấp quyền dùng app DMS') ?? false))) {
+      if (isDmsForbiddenResponse(statusCode, errCode, message)) {
         return DmsAppForbiddenException(
           message ?? 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
           errorId,

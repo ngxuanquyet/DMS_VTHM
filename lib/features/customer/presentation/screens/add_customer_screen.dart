@@ -499,6 +499,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
+  /// Ảnh máy ảnh → bản chép lâu dài: form lỗi 4xx mở lâu thì ảnh tạm của máy ảnh bị dọn; lưu lại không chép thêm bản mới.
+  final Map<String, String> _banChepAnh = {};
+
+  Future<String> _anhLauDai(String path) =>
+      OfflinePhotoStore.persistOnce(_banChepAnh, path, dirName: 'offline_customer_photos', prefix: 'front');
+
   /// Bước "Vật tư tại điểm" (#24526): danh mục + luật "Tạo điểm bán" (cache dùng ngoại tuyến), thao tác đã khai.
   MaterialCreateCatalog? _materialCatalog;
   bool _materialCatalogLoaded = false;
@@ -779,7 +785,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final repo = ref.read(customerRepositoryProvider);
       final isOnline = ref.read(connectivityProvider).isOnline;
 
       // Chuẩn bị payload dữ liệu submit
@@ -827,15 +832,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
         (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn')).first,
       ));
 
-      // 🔴 Upload ảnh lên /crm/customer-photos lấy token khi có mạng (spec mục 2, 3, 6)
+      // Ảnh mặt tiền: chuẩn hoá về `photo_tokens`, GIỮ đường dẫn ảnh trên máy — kho điểm bán tải lên ngay trước khi gửi
+      // thẳng; gửi lỗi thì hàng đợi giữ đường dẫn (token tải sẵn ở đây bị server dọn sau 1 ngày ⇒ lượt tạo chờ lâu chết,
+      // #24698 vòng 6).
       if (isOnline) {
-        final photoLat = payload['coords'] is Map
-            ? (payload['coords']['lat'] as num?)?.toDouble()
-            : (payload['lat'] is num ? (payload['lat'] as num).toDouble() : null);
-        final photoLng = payload['coords'] is Map
-            ? (payload['coords']['lng'] as num?)?.toDouble()
-            : (payload['lng'] is num ? (payload['lng'] as num).toDouble() : null);
-
         // CHỈ ảnh mặt tiền (khoá cố định): ảnh ô chụp ảnh tự khai giữ trong ô, kho điểm bán đổi ra token (#24792).
         for (final key in payload.keys.toList()) {
           if (!kCustomerPhotoKeys.contains(key)) continue;
@@ -846,25 +846,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             for (final item in val) {
               final itemStr = item.toString().trim();
               if (itemStr.isNotEmpty) {
-                if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
-                  tokens.add(itemStr);
-                } else {
-                  try {
-                    final uploadRes = await repo.uploadCustomerPhoto(
-                      itemStr,
-                      locationName: payload['name']?.toString() ?? 'Điểm bán mới',
-                      lat: photoLat,
-                      lng: photoLng,
-                    );
-                    if (uploadRes['token'] != null) {
-                      tokens.add(uploadRes['token'].toString());
-                    } else {
-                      tokens.add(itemStr);
-                    }
-                  } catch (_) {
-                    tokens.add(itemStr);
-                  }
-                }
+                tokens.add(await _anhLauDai(itemStr));
               }
             }
             if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
@@ -879,44 +861,18 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
             }
           } else if (val is String && val.trim().isNotEmpty) {
             final valStr = val.trim();
-            if (valStr.length == 32 && !valStr.contains('/') && !valStr.contains(r'\')) {
-              // Đã là token 32-hex
+            // Token 32-hex hoặc đường dẫn ảnh trên máy.
+            if ((valStr.length == 32 && !valStr.contains('/') && !valStr.contains(r'\')) ||
+                valStr.endsWith('.jpg') || valStr.endsWith('.png') || valStr.endsWith('.jpeg') ||
+                valStr.contains('/') || valStr.contains(r'\')) {
+              final anh = await _anhLauDai(valStr);
               if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
-                payload['photo_tokens'] = [valStr];
-                payload['photo_token'] = valStr;
+                payload['photo_tokens'] = [anh];
+                payload['photo_token'] = anh;
                 payload.remove('photo_file_id');
                 payload.remove('photo');
               } else {
-                payload[key] = [valStr];
-              }
-            } else if (valStr.endsWith('.jpg') || valStr.endsWith('.png') || valStr.endsWith('.jpeg') || valStr.contains('/') || valStr.contains(r'\')) {
-              try {
-                final uploadRes = await repo.uploadCustomerPhoto(
-                  valStr,
-                  locationName: payload['name']?.toString() ?? 'Điểm bán mới',
-                  lat: photoLat,
-                  lng: photoLng,
-                );
-                if (uploadRes['token'] != null) {
-                  final token = uploadRes['token'].toString();
-                  if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
-                    payload['photo_tokens'] = [token];
-                    payload['photo_token'] = token;
-                    payload.remove('photo_file_id');
-                    payload.remove('photo');
-                  } else {
-                    payload[key] = [token];
-                  }
-                }
-              } catch (_) {
-                if (key == 'photo' || key == 'photo_file_id' || key == 'photo_token') {
-                  payload['photo_tokens'] = [valStr];
-                  payload['photo_token'] = valStr;
-                  payload.remove('photo_file_id');
-                  payload.remove('photo');
-                } else {
-                  payload[key] = [valStr];
-                }
+                payload[key] = [anh];
               }
             }
           }

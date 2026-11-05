@@ -429,7 +429,8 @@ class SyncService {
       // lần gửi lại sau khi làm mới THÀNH CÔNG thì phiên vẫn sống: chỉ dừng lô, đăng xuất là thu hồi oan token mới.
       if (sessionRejected && (forbidden || await sessionCleared())) {
         try {
-          await _ref.read(authViewModelProvider.notifier).forceLogoutSessionRejected();
+          await _ref.read(authViewModelProvider.notifier).forceLogoutSessionRejected(
+              forbidden ? const DmsAppForbiddenException().message : null);
         } catch (e) {
           debugPrint('[SyncService] Không đăng xuất cưỡng bức được: $e');
         }

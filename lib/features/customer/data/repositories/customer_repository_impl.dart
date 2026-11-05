@@ -25,6 +25,7 @@ import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 
 final customerApiServiceProvider = Provider<CustomerApiService>((ref) {
   return CustomerApiService(ref.read(apiClientProvider));
@@ -453,10 +454,21 @@ class CustomerRepositoryImpl implements CustomerRepository {
         // `changes` GỐC (đường dẫn — đồng bộ tải lại; token đã tải bị server dọn sau 1 ngày) (#24698 vòng 4–5, #24792).
         final cur = _cachedCustomers.where((c) => c.id == id).firstOrNull;
         final banChep = CustomerPayloadHelper.dynamicLocalPhotoPaths(changes);
-        final body = await CustomerPayloadHelper.resolveDynamicPhotos(
-          changes,
-          (path) => _uploadPhotoOrQueue(path, locationName: cur?.name, lat: cur?.lat, lng: cur?.lng),
-        );
+        Future<String> taiAnh(String path) =>
+            _uploadPhotoOrQueue(path, locationName: cur?.name, lat: cur?.lat, lng: cur?.lng);
+        final body = await CustomerPayloadHelper.resolveDynamicPhotos(changes, taiAnh);
+        // Ảnh mặt tiền: màn sửa giữ đường dẫn ảnh trên máy (#24698 vòng 6) ⇒ tải ở đây, cùng luật lỗi với ảnh ô động.
+        // Chỉ tệp CÒN trên máy (kể cả iOS đổi thư mục app); tệp đã mất giữ nguyên chuỗi như trước (không đẩy cả lần sửa
+        // xuống hàng đợi để chết 410). Bản chép của màn sửa KHÔNG dọn ở đây — tệp có thể còn dòng hàng đợi khác trỏ tới.
+        if (body['photo_tokens'] is List) {
+          final anh = <String>[];
+          for (final raw in body['photo_tokens'] as List) {
+            final p = raw.toString().trim();
+            final tep = _isLocalFile(p) ? await OfflinePhotoStore.existingFile(p) : null;
+            anh.add(tep != null ? await taiAnh(tep.path) : p);
+          }
+          body['photo_tokens'] = anh;
+        }
         await _apiService.updateCustomer(id, body);
         changes = body;
         // Ảnh đã lên server, bản trong máy ghi token (bước 3) ⇒ dọn bản chép lâu dài màn sửa vừa tạo.
@@ -509,6 +521,11 @@ class CustomerRepositoryImpl implements CustomerRepository {
     if (id > 0) return getCustomerDetail(id);
     throw Exception('Không tìm thấy điểm bán ID: $id');
   }
+
+  /// Đường dẫn ảnh TRÊN MÁY (cần tải lên) — đường tuyệt đối hoặc `file://`; token / URL / đường xem trên server giữ nguyên.
+  /// KHÔNG dùng CustomerEntity.isLocalFilePath: nó nhận cả URL `https://` (chứa ':/') và chuỗi có 'cache'/'tmp'.
+  static bool _isLocalFile(String s) =>
+      (s.startsWith('/') || s.startsWith('file://')) && !s.contains('/crm/customer-photos/');
 
   bool _isNetworkError(dynamic e) {
     if (!_isOnline) return true;
@@ -695,8 +712,13 @@ class CustomerRepositoryImpl implements CustomerRepository {
         final serverCode = dto.code.isNotEmpty ? dto.code : '';
 
         if (serverId > 0) {
-          // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) đã lên server ⇒ dọn bản chép lâu dài trên máy.
-          await deleteOfflineCustomerPhotos(CustomerPayloadHelper.dynamicLocalPhotoPaths(data));
+          // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) + ảnh mặt tiền màn tạo vừa chép đã lên server ⇒ dọn bản chép lâu
+          // dài trên máy (điểm bán mới — không dòng hàng đợi nào khác trỏ tới).
+          await deleteOfflineCustomerPhotos([
+            ...CustomerPayloadHelper.dynamicLocalPhotoPaths(data),
+            for (final k in const ['photo_tokens', 'photos'])
+              if (data[k] is List) ...(data[k] as List).map((e) => '$e'),
+          ]);
           // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
           if (cleanPayload['materials'] is List) {
             await cacheCreatedOutletMaterials(
@@ -779,9 +801,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
   }
 
   Future<Map<String, dynamic>> _prepareCleanCustomerPayload(Map<String, dynamic> data) async {
-    // 1. Tải ảnh lên server để lấy token nếu đang là đường dẫn cục bộ
+    // 1. Tải ảnh lên server để lấy token nếu đang là đường dẫn cục bộ (kèm tên + toạ độ điểm bán như màn tạo trước đây).
+    final coords = data['coords'];
+    double? toaDo(String k) => double.tryParse('${coords is Map ? coords[k] : data[k]}');
+    Future<String> taiAnh(String path) => _uploadPhotoOrQueue(OfflinePhotoStore.toFilePath(path),
+        locationName: data['name']?.toString() ?? 'Điểm bán mới', lat: toaDo('lat'), lng: toaDo('lng'));
     final resolvedTokens = <String>[];
-    final rawTokens = data['photo_tokens'] ?? data['photo_token'] ?? data['photo_file_id'] ?? data['photo'];
+    // `photos`: ô ảnh mặt tiền mã 'photos' — màn tạo giữ đường dẫn, không đọc là mất ảnh im lặng (#24698 vòng 6).
+    final rawTokens =
+        data['photo_tokens'] ?? data['photo_token'] ?? data['photo_file_id'] ?? data['photo'] ?? data['photos'];
     if (rawTokens is List) {
       for (final item in rawTokens) {
         final itemStr = item.toString().trim();
@@ -789,7 +817,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
           resolvedTokens.add(itemStr);
         } else {
-          resolvedTokens.add(await _uploadPhotoOrQueue(itemStr));
+          resolvedTokens.add(await taiAnh(itemStr));
         }
       }
     } else if (rawTokens != null) {
@@ -798,7 +826,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         if (itemStr.length == 32 && !itemStr.contains('/') && !itemStr.contains(r'\')) {
           resolvedTokens.add(itemStr);
         } else {
-          resolvedTokens.add(await _uploadPhotoOrQueue(itemStr));
+          resolvedTokens.add(await taiAnh(itemStr));
         }
       }
     }

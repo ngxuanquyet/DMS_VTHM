@@ -117,6 +117,11 @@ class FakeVisitRepository implements VisitRepository {
   }
 
   @override
+  Future<void> markVisitCancelledLocally(int visitId, {String? clientUuid}) async {
+    activeVisit = null;
+  }
+
+  @override
   Future<void> removeLocalVisit(int visitId, {String? clientUuid}) async {}
 
   @override

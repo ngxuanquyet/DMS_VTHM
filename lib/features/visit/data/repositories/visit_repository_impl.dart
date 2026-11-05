@@ -159,22 +159,35 @@ class VisitRepositoryImpl implements VisitRepository {
 
   @override
   Future<void> cancelVisit(int visitId, {String? clientUuid}) async {
+    // Server từ chối (500/403/mất mạng) ⇒ ném ra, KHÔNG gắn "đã huỷ" trong máy: lượt còn mở trên server mà máy ghi huỷ thì
+    // bản server không đè lại được, lượt sau gặp STILL_OPEN tới trần (#24698 vòng 6).
+    if (visitId > 0) {
+      await _apiService.cancelVisit(visitId);
+    }
     try {
-      if (visitId > 0) {
-        await _apiService.cancelVisit(visitId);
-      }
-    } finally {
-      await clearActiveVisit();
-      final all = await getAllLocalVisits();
-      final idx = all.indexWhere((v) =>
-          v.id == visitId || (clientUuid != null && v.clientUuid == clientUuid));
-      if (idx >= 0) {
-        final updated = all[idx].copyWith(
-          cancelledAt: DateTime.now(),
-          cancelledAtRaw: DateTime.now().toIso8601String(),
-        );
-        await saveLocalVisit(updated);
-      }
+      await markVisitCancelledLocally(visitId, clientUuid: clientUuid);
+    } catch (e) {
+      // Server đã huỷ — lỗi ghi máy không được thành "huỷ thất bại" (lần nạp tuyến sau lấy trạng thái server).
+      debugPrint('[VisitRepo] Lỗi ghi huỷ lượt trong máy: $e');
+    }
+  }
+
+  @override
+  Future<void> markVisitCancelledLocally(int visitId, {String? clientUuid}) async {
+    // Khớp theo mã server (>0) hoặc client_uuid khác rỗng — id 0 / uuid rỗng khớp nhầm lượt khác.
+    final uuid = (clientUuid?.isNotEmpty ?? false) ? clientUuid : null;
+    bool laLuotNay(VisitEntity v) => (visitId > 0 && v.id == visitId) || (uuid != null && v.clientUuid == uuid);
+    // Chỉ dọn lượt đang mở khi CHÍNH là lượt này — lệnh huỷ lượt A tới muộn không được xoá lượt B đang mở.
+    final active = await getActiveVisit();
+    if (active != null && laLuotNay(active)) await clearActiveVisit();
+    final all = await getAllLocalVisits();
+    final idx = all.indexWhere(laLuotNay);
+    if (idx >= 0) {
+      final updated = all[idx].copyWith(
+        cancelledAt: DateTime.now(),
+        cancelledAtRaw: DateTime.now().toIso8601String(),
+      );
+      await saveLocalVisit(updated);
     }
   }
 

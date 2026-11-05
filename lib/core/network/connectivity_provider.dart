@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../constants/app_constants.dart';
 import '../router/app_router.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -65,8 +66,11 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
 
     if (!isTest) {
       WidgetsBinding.instance.addObserver(this);
+      // Đang có mạng thì 15 s mới dò lại (mỗi lần dò mở một kết nối TCP tới API); mất mạng thì dò mỗi 5 s để bắt có lại sớm.
+      var tick = 0;
       _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (mounted && !_isInBackground) {
+        tick++;
+        if (mounted && !_isInBackground && (!state.isOnline || tick % 3 == 0)) {
           checkConnectivity();
         }
       });
@@ -136,40 +140,34 @@ class ConnectivityNotifier extends StateNotifier<ConnectivityState>
   Future<bool> _pingInternet() async {
     if (_isInBackground) return state.isOnline;
 
-    bool canReach = await _checkDnsLookup();
+    bool canReach = await _canOpenConnection();
     if (!canReach && !_isInBackground) {
       // Thử lại lần 2 sau 1 giây trước khi kết luận mất mạng
       await Future.delayed(const Duration(milliseconds: 1000));
       if (_isInBackground || !mounted) return state.isOnline;
-      canReach = await _checkDnsLookup();
+      canReach = await _canOpenConnection();
     }
     return canReach;
   }
 
-  Future<bool> _checkDnsLookup() async {
-    try {
-      final result = await InternetAddress.lookup('api-app.vthmgroup.vn')
-          .timeout(const Duration(milliseconds: 3000));
-      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        return true;
-      }
-    } catch (_) {}
-
-    try {
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(milliseconds: 3000));
-      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        return true;
-      }
-    } catch (_) {}
-
-    try {
-      final result = await InternetAddress.lookup('8.8.8.8')
-          .timeout(const Duration(milliseconds: 2500));
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } catch (_) {
-      return false;
+  /// Mở thử kết nối TCP — tra DNS thôi KHÔNG đủ: hệ điều hành trả tên đã nhớ đệm, còn IP số (8.8.8.8) thì trả ngay
+  /// mà không cần mạng ⇒ có sóng không có data vẫn báo "có mạng", thao tác chờ hết giờ mới rơi hàng đợi (#24698 vòng 6).
+  Future<bool> _canOpenConnection() async {
+    final api = Uri.parse(AppConstants.baseUrl);
+    for (final (host, port) in [(api.host, api.port), ('google.com', 443)]) {
+      try {
+        // Trần bọc NGOÀI: `timeout` của Socket.connect không tính bước tra DNS (resolver hệ thống treo tới vài chục giây).
+        final ketNoi = Socket.connect(host, port, timeout: const Duration(milliseconds: 3000));
+        try {
+          (await ketNoi.timeout(const Duration(milliseconds: 3000))).destroy();
+          return true;
+        } on TimeoutException {
+          // Bỏ chờ nhưng kết nối vẫn có thể thành sau đó ⇒ đóng khi nó tới, không rò socket.
+          unawaited(ketNoi.then((s) => s.destroy(), onError: (_) {}));
+        }
+      } catch (_) {}
     }
+    return false;
   }
 
   bool _isOnSplashScreen() {

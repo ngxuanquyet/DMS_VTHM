@@ -49,6 +49,19 @@ class OfflinePhotoStore {
     }
   }
 
+  /// Như [persist] cho MỘT ảnh, nhớ bản chép trong [memo] (ảnh gốc → bản chép): form lưu lại sau lỗi không chép thêm bản
+  /// mới; chép hỏng (trả nguyên) không nhớ để lần sau thử lại.
+  static int _dem = 0;
+
+  static Future<String> persistOnce(Map<String, String> memo, String path,
+      {required String dirName, required String prefix}) async {
+    final daChep = memo[path];
+    if (daChep != null && File(daChep).existsSync()) return daChep;
+    final out = (await persist([path], dirName: dirName, prefix: prefix)).first;
+    if (out != path) memo[path] = out;
+    return out;
+  }
+
   /// Bản lưu lâu dài của từng ảnh trong [paths], cùng thứ tự: token ảnh (32 hex), tệp đã nằm trong [dirName], tệp không
   /// còn ⇒ giữ nguyên; tệp khác ⇒ chép vào `Documents/<dirName>/<prefix>_<mốc>_<i>.<ext>` (giữ dấu "đã đóng watermark"
   /// — [PhotoWatermarkHelper.keepMarkerName] — không thì lúc gửi bị đóng thêm lớp thứ hai). Lỗi ⇒ trả nguyên [paths].
@@ -58,7 +71,8 @@ class OfflinePhotoStore {
       final docs = (await getApplicationDocumentsDirectory()).path;
       final dir = Directory(p.join(docs, dirName));
       if (!await dir.exists()) await dir.create(recursive: true);
-      final stamp = DateTime.now().microsecondsSinceEpoch;
+      // Mốc + số đếm trong phiên: nhiều lần gọi một ảnh ([persistOnce]) trùng mốc micro giây không được đè tệp của nhau.
+      final stamp = '${DateTime.now().microsecondsSinceEpoch}${_dem++}';
       final out = <String>[];
       for (var i = 0; i < paths.length; i++) {
         final raw = paths[i];

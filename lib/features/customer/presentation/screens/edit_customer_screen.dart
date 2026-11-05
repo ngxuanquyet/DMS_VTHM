@@ -74,6 +74,8 @@ class EditCustomerScreen extends ConsumerStatefulWidget {
 class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
   final Map<String, dynamic> _savedFormData = {};
+  /// Ảnh máy ảnh → bản chép lâu dài đã tạo: lưu lại sau lỗi 4xx không chép thêm bản mới.
+  final Map<String, String> _banChepAnh = {};
   late Map<String, dynamic> _initialData;
 
   /// Người dùng đã bấm "Xác nhận đúng" cho cặp tỉnh/xã đang mang nhãn "suy từ địa chỉ cũ" (#24072).
@@ -336,7 +338,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final repo = ref.read(customerRepositoryProvider);
       final c = widget.customer;
       final changes = <String, dynamic>{};
 
@@ -490,17 +491,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
             final idx = pTrim.indexOf('/crm/customer-photos/public/');
             tokens.add(pTrim.substring(idx + '/crm/customer-photos/public/'.length));
           } else {
-            // Local file -> upload lên server để lấy token
-            try {
-              final uploadRes = await repo.uploadCustomerPhoto(pTrim);
-              if (uploadRes['token'] != null) {
-                tokens.add(uploadRes['token'].toString());
-              } else {
-                tokens.add(pTrim);
-              }
-            } catch (e) {
-              tokens.add(pTrim);
-            }
+            // Ảnh trên máy: chép vào thư mục lâu dài (ảnh tạm của máy ảnh bị dọn — form lỗi 4xx mở lâu vẫn còn ảnh) rồi GIỮ
+            // đường dẫn — kho điểm bán tải lên ngay trước khi gửi thẳng; đi hàng đợi thì đồng bộ mới tải (token tải sẵn ở đây
+            // bị server dọn sau 1 ngày ⇒ lệnh sửa chờ lâu chết, #24698 vòng 6).
+            tokens.add(await OfflinePhotoStore.persistOnce(_banChepAnh, pTrim,
+                dirName: 'offline_customer_photos', prefix: 'front'));
           }
         }
         changes['photo_tokens'] = tokens;

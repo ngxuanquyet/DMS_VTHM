@@ -89,8 +89,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
     if (ref != null) AuthInterceptor.onSessionRejected = _onSessionRejected;
   }
 
-  void _onSessionRejected() {
-    if (mounted) unawaited(forceLogoutSessionRejected());
+  void _onSessionRejected([String? forbiddenMessage]) {
+    if (mounted) unawaited(forceLogoutSessionRejected(forbiddenMessage));
   }
 
   @override
@@ -312,15 +312,20 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
   /// Đăng xuất CƯỠNG BỨC khi lô đồng bộ thấy phiên đã chết (401 sau khi làm mới thất bại / bị thu quyền app) — GIỮ
   /// nguyên hàng đợi (không `requireCleared`): đúng người đăng nhập lại là gửi tiếp. Đưa về màn đăng nhập kèm câu báo.
-  Future<void> forceLogoutSessionRejected() {
+  /// [forbiddenMessage] = câu "bị thu quyền app" (null ⇒ phiên hết hạn). Nhiều nơi báo cùng lúc dùng chung một lượt — câu
+  /// thu quyền tới sau vẫn được dùng (không để câu "hết phiên" của lời báo đầu che mất).
+  Future<void> forceLogoutSessionRejected([String? forbiddenMessage]) {
+    _forbiddenMessage ??= forbiddenMessage;
     // Một lượt cưỡng bức một lúc: hook của interceptor + lô đồng bộ cùng báo một sự kiện; lời gọi đăng xuất lên máy chủ
     // nhận 401 cũng gọi hook lần nữa — tất cả dùng chung lượt đang chạy.
     return _forceRun ??= _forceLogout().whenComplete(() {
       _forceRun = null;
+      _forbiddenMessage = null;
     });
   }
 
   Future<void>? _forceRun;
+  String? _forbiddenMessage;
 
   Future<void> _forceLogout() async {
     // Đang có lượt đăng xuất (vd người dùng tự đăng xuất) ⇒ chờ nó; xong mà đã ra khỏi phiên thì thôi — không chồng câu
@@ -341,7 +346,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
     state = state.copyWith(
       status: AuthStatus.error,
-      errorMessage: 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để gửi tiếp dữ liệu đang chờ đồng bộ.',
+      errorMessage:
+          _forbiddenMessage ?? 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để gửi tiếp dữ liệu đang chờ đồng bộ.',
+      errorCode: _forbiddenMessage != null ? 'DMS_APP_FORBIDDEN (403)' : null,
     );
     // Router không tự chuyển theo trạng thái đăng nhập (chỉ màn Hồ sơ / Splash tự `go('/login')`) ⇒ tự đưa về màn đăng
     // nhập — màn đó hiện câu báo ở trên.

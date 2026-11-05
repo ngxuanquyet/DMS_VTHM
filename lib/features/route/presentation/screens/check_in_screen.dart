@@ -37,6 +37,7 @@ import '../widgets/visit_exit_options_dialog.dart';
 import '../../../forms/presentation/screens/market_form_fill_screen.dart';
 import '../../../forms/presentation/widgets/market_form_card.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
+import '../../../../core/utils/string_utils.dart';
 import '../../domain/entities/route_entity.dart';
 import '../../../visit/presentation/widgets/customer_visit_history_widget.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart';
@@ -245,7 +246,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               clientUuid: (currentActive.clientUuid?.isNotEmpty ?? false) ? currentActive.clientUuid : null);
           unawaited(ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true));
         } else if (isCancelled) {
-          await ref.read(visitRepositoryProvider).cancelVisit(currentActive.id, clientUuid: currentActive.clientUuid);
+          await ref.read(visitRepositoryProvider).markVisitCancelledLocally(currentActive.id, clientUuid: currentActive.clientUuid);
           ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(currentActive.id, clientUuid: currentActive.clientUuid);
         }
         ref.read(routeViewModelProvider.notifier).setActiveVisit(null);
@@ -410,8 +411,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       if (!fraudCheck.isAllowed) {
         setState(() => _isCheckingIn = false);
         final currentState = ref.read(checkInViewModelProvider);
+        String? thongBao = 'Đã hủy lượt check-in.';
+        var mauThongBao = AppColors.error;
         if (currentState.visitId != 0) {
-          await ref.read(checkInViewModelProvider.notifier).cancelVisit();
+          // Server từ chối huỷ ⇒ lượt còn mở (máy không còn tự ghi "đã huỷ"): vẫn rời màn (check-in bị chặn), báo lỗi thật
+          // — lượt hiện lại ở tuyến để huỷ / check-out. Thành công kèm câu (vd đã check-out trước đó) ⇒ hiện câu đó.
+          final (ok, cau) = await _cancelOrReport();
+          thongBao = ok ? (cau ?? thongBao) : null;
+          if (ok && cau != null) mauThongBao = AppColors.success;
         } else {
           ref.read(checkInViewModelProvider.notifier).resetSession();
           await ref.read(visitRepositoryProvider).clearActiveVisit();
@@ -419,12 +426,12 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         }
         if (mounted) {
           ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đã hủy lượt check-in.'),
-              backgroundColor: AppColors.error,
+          if (thongBao != null) ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(thongBao),
+              backgroundColor: mauThongBao,
               behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 3),
             ),
           );
           _safePop();
@@ -587,7 +594,11 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
               Navigator.of(ctx).pop();
               final currentState = ref.read(checkInViewModelProvider);
               if (currentState.visitId != 0) {
-                await ref.read(checkInViewModelProvider.notifier).cancelVisit();
+                // Huỷ không được ⇒ đã báo lỗi; vẫn rời màn như trước, lượt còn mở hiện lại ở tuyến.
+                final (ok, cau) = await _cancelOrReport();
+                if (!mounted) return;
+                if (ok && cau != null) AppSnackBar.showSuccess(context, cau);
+                ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
               } else {
                 ref.read(checkInViewModelProvider.notifier).resetSession();
                 await ref.read(visitRepositoryProvider).clearActiveVisit();
@@ -694,7 +705,14 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         ),
       );
 
-      final (success, errorMsg) = await vm.cancelVisit();
+      // Lỗi ném ra ngoài VM (ghi bộ nhớ máy…) vẫn phải đóng hộp xoay — barrierDismissible:false, iOS không có nút back.
+      bool success;
+      String? errorMsg;
+      try {
+        (success, errorMsg) = await vm.cancelVisit();
+      } catch (e) {
+        (success, errorMsg) = (false, StringUtils.formatUserFriendlyError(e));
+      }
 
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop(); // pop loading
@@ -725,6 +743,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         AppSnackBar.showError(context, errorMsg);
       }
     }
+  }
+
+  /// Huỷ lượt của màn; không huỷ được (server từ chối / lỗi ghi máy) ⇒ báo lỗi, trả `(false, null)`. Thành công trả câu
+  /// riêng của VM nếu có (vd lượt đã check-out trước đó).
+  Future<(bool, String?)> _cancelOrReport() async {
+    try {
+      final (ok, cau) = await ref.read(checkInViewModelProvider.notifier).cancelVisit();
+      if (ok) return (true, cau);
+    } catch (_) {}
+    if (mounted) AppSnackBar.showError(context, 'Không huỷ được lượt check-in — lượt vẫn mở, xử lý lại ở tuyến.');
+    return (false, null);
   }
 
   Future<void> _handleExit() async {

@@ -145,6 +145,11 @@ class FakeVisitRepository implements VisitRepository {
     activeVisit = null;
   }
   @override
+  Future<void> markVisitCancelledLocally(int visitId, {String? clientUuid}) async {
+    activeVisit = null;
+  }
+
+  @override
   Future<void> removeLocalVisit(int visitId, {String? clientUuid}) async {
     todayVisits.removeWhere((v) => v.id == visitId || (clientUuid != null && v.clientUuid == clientUuid));
     if (activeVisit?.id == visitId || (clientUuid != null && activeVisit?.clientUuid == clientUuid)) {
@@ -1017,8 +1022,12 @@ void main() {
         'ServerException: Lượt viếng thăm này đã bị huỷ, không nhận thêm ảnh được. (code: 422)',
       );
 
+      // Tệp THẬT: uploadPhoto coi tệp không còn trên máy là "người dùng đã xoá ảnh" (trả 'Ảnh đã bị xoá.') — File('dummy.jpg')
+      // không tồn tại làm test đỏ mà không chạm tới nhánh huỷ lượt cần kiểm.
+      final tmp = await Directory.systemTemp.createTemp('closed_store_');
+      addTearDown(() => tmp.delete(recursive: true));
       final (success, errorMsg) = await vm.uploadPhoto(
-        File('dummy.jpg'),
+        File('${tmp.path}/dummy.jpg')..writeAsBytesSync([1, 2, 3]),
         photoType: 'closed_store',
       );
 

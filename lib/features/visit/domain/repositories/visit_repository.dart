@@ -46,6 +46,9 @@ abstract class VisitRepository {
   /// Huỷ lượt viếng thăm (§3.4 HUY-LUOT-VIENG-THAM-2026-09-30)
   Future<void> cancelVisit(int visitId, {String? clientUuid});
 
+  /// Ghi lượt "đã huỷ" trong máy KHÔNG gọi server — khi server đã báo lượt bị huỷ (gọi lại API chỉ thêm một lần lỗi mạng).
+  Future<void> markVisitCancelledLocally(int visitId, {String? clientUuid});
+
   /// Xoá lượt viếng thăm khỏi bộ nhớ máy (khi huỷ lượt offline chưa đồng bộ)
   Future<void> removeLocalVisit(int visitId, {String? clientUuid});
 
