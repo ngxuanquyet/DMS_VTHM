@@ -114,12 +114,9 @@ class CustomerLocalDataSource {
       extractFrom(dyn['photo_file_id']);
       extractFrom(dyn['photo']);
       extractFrom(dyn['photos']);
-      for (final entry in dyn.entries) {
-        final k = entry.key.toString().toLowerCase();
-        if (k.contains('photo') || k.contains('anh') || k.contains('image')) {
-          extractFrom(entry.value);
-        }
-      }
+      // 🔴 KHÔNG gom thêm ô động theo chuỗi con của mã (`anh`/`photo`/`image`): `doanh_so`, `thanh_pho`, `chi_nhanh`… từng bị
+      // coi là ảnh mặt tiền ⇒ điểm bán tạo ngoại tuyến hiện ô ảnh hỏng, và ảnh của ô chụp ảnh tự khai bị gửi nhầm làm ảnh
+      // mặt tiền. Ảnh ô động đi đường riêng theo giá trị ([CustomerPayloadHelper.dynamicLocalPhotoPaths]) — rà soát 05/11/2026.
     }
 
     final List<String> existingTokens = [];

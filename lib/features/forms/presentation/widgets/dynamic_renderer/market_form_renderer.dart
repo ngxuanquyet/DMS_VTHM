@@ -735,22 +735,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     bool isDark,
   ) {
     final type = block.resolved.inputType.toLowerCase();
-    final code = block.resolved.code.toLowerCase();
 
     if (type == 'formula') return _buildFormulaField(block, isDark);
 
-    // Tự động nhận diện trường Địa chỉ / Vị trí / GPS từ schema API (Bỏ fix cứng)
-    if (type == 'location' ||
-        type == 'address' ||
-        type == 'dia_chi' ||
-        type == 'gps' ||
-        code == 'address' ||
-        code == 'dia_chi' ||
-        code == 'dia_chi_giao_dich' ||
-        code == 'location') {
-      return _buildLocationField(block, isDark);
-    }
-
+    // 🔴 Vẽ theo LOẠI Ô server gửi, KHÔNG đoán theo mã ô: ô chữ mã `dia_chi…`/`address` từng bị vẽ thành ô Lấy vị trí ⇒ giá
+    // trị thành object {address, lat, lng} mà server đòi chuỗi (rà soát loại ô 05/11/2026, cùng họ lỗi ô ảnh 03/11).
     switch (type) {
       case 'heading':
         return HeadingFieldWidget(

@@ -133,6 +133,22 @@ void main() {
     container.dispose();
   });
 
+  test('createCustomerOffline KHÔNG coi ô động mã chứa "anh"/"photo" là ảnh mặt tiền (rà soát 05/11/2026)', () async {
+    await localDataSource.createCustomerOffline({
+      'name': 'Điểm bán ô động',
+      'region_id': 10,
+      'route_ids': [1],
+      'data': {'doanh_so_thang': '5000000', 'thanh_pho': 'Hà Nội', 'ghi_chu_photo': 'mặt tiền hẹp'},
+    });
+
+    final dyn = jsonDecode((await db.getAllLocalCustomers()).first.dynamicFieldsJson) as Map<String, dynamic>;
+    expect(dyn['photo_tokens'], isNull);
+    expect(dyn['photo_url'], isNull);
+    final queuePayload =
+        jsonDecode((await db.getPendingQueueEntries(limit: 10, force: true)).first.payload) as Map<String, dynamic>;
+    expect(queuePayload['photo_tokens'], isNull);
+  });
+
   test('createCustomerOffline preserves photo paths in entity, SQLite and sync queue', () async {
     final inputData = {
       'name': 'Đại lý Bia Ngoại Tuyến',
