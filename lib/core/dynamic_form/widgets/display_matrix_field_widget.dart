@@ -824,17 +824,28 @@ class _MatrixTableState extends State<_MatrixTable> {
                 height: rowH,
                 bg: rowBg(b),
                 align: Alignment.center,
-                child: Column(
-                  key: ValueKey('${w.keyPrefix}_total_${b.code}'),
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      fmtMatrixNumber(w.totals.facesByBrand[b.code] ?? 0),
-                      style: AppTypography.bodyMedium(color: onSurface).copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    if (w.totals.sosOf(b.code) != null)
-                      Text('${fmtMatrixPct(w.totals.sosOf(b.code)!)}%', style: AppTypography.labelSmall(color: muted)),
-                  ],
+                // Số dài (gõ nhiều chữ số) ⇒ thu nhỏ chữ cho vừa ô, không xuống dòng — xuống dòng làm % SOS tràn sang dòng dưới.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    key: ValueKey('${w.keyPrefix}_total_${b.code}'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        fmtMatrixNumber(w.totals.facesByBrand[b.code] ?? 0),
+                        maxLines: 1,
+                        softWrap: false,
+                        style: AppTypography.bodyMedium(color: onSurface).copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      if (w.totals.sosOf(b.code) != null)
+                        Text(
+                          '${fmtMatrixPct(w.totals.sosOf(b.code)!)}%',
+                          maxLines: 1,
+                          softWrap: false,
+                          style: AppTypography.labelSmall(color: muted),
+                        ),
+                    ],
+                  ),
                 ),
               ),
           ],

@@ -246,6 +246,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('gõ số rất dài ⇒ số mặt + % SOS thu nhỏ trong ô Tổng, không tràn sang dòng dưới (05/11/2026)', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(blocks: [o(required: false)]))),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '123456789012345');
+    await tester.enterText(find.byKey(const ValueKey('matrix_rival_ke_lat')), '987654321098765');
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    for (final b in ['rival', 'vthm']) {
+      final total = find.byKey(ValueKey('matrix_total_$b'));
+      // Ô Tổng của dòng = Container cha gần nhất của khối số; mọi chữ trong khối phải nằm gọn trong ô đó.
+      final cellRect = tester.getRect(find.ancestor(of: total, matching: find.byType(Container)).first);
+      for (final t in tester.widgetList<Text>(find.descendant(of: total, matching: find.byType(Text)))) {
+        final r = tester.getRect(find.byWidget(t));
+        expect(cellRect.top <= r.top && r.bottom <= cellRect.bottom, isTrue, reason: '"${t.data}" của $b tràn khỏi ô Tổng');
+        expect(cellRect.left <= r.left && r.right <= cellRect.right, isTrue, reason: '"${t.data}" của $b tràn ngang');
+      }
+    }
+  });
+
   testWidgets('ảnh minh hoạ ở màn ngang ⇒ khung ảnh kẹp ≤ nửa chiều cao màn hình, không tràn', (tester) async {
     // Ca chủ hệ thống báo 04/11: phóng to (xoay ngang) rồi bấm tên cột, ảnh minh hoạ to tràn màn hình.
     tester.view.physicalSize = const Size(800, 360);
