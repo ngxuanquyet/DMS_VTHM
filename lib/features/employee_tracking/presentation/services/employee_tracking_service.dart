@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/services/app_notification_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../data/datasources/employee_tracking_api_service.dart';
 import '../../data/datasources/employee_tracking_local_storage.dart';
@@ -20,12 +19,10 @@ final employeeTrackingProvider =
     StateNotifierProvider<EmployeeTrackingNotifier, EmployeeTrackingState>((ref) {
   final apiService = ref.watch(employeeTrackingApiServiceProvider);
   final storage = ref.watch(employeeTrackingLocalStorageProvider);
-  final notifService = ref.watch(appNotificationServiceProvider);
 
   final notifier = EmployeeTrackingNotifier(
     apiService: apiService,
     storage: storage,
-    notifService: notifService,
   );
   return notifier;
 });
@@ -34,7 +31,6 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     with WidgetsBindingObserver {
   final EmployeeTrackingApiService _apiService;
   final EmployeeTrackingLocalStorage _storage;
-  final AppNotificationService _notifService;
 
   Timer? _periodicTimer;
   StreamSubscription<Position>? _positionStreamSubscription;
@@ -45,14 +41,11 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
   EmployeeTrackingNotifier({
     required EmployeeTrackingApiService apiService,
     required EmployeeTrackingLocalStorage storage,
-    required AppNotificationService notifService,
   })  : // ignore: prefer_initializing_formals
         // ignore: prefer_initializing_formals
         _apiService = apiService,
         // ignore: prefer_initializing_formals
         _storage = storage,
-        // ignore: prefer_initializing_formals
-        _notifService = notifService,
         super(const EmployeeTrackingState()) {
     WidgetsBinding.instance.addObserver(this);
   }
@@ -375,7 +368,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     }
   }
 
-  /// Xử lý lệnh "Xin vị trí ngay" theo đúng 3 bước bắt buộc trong §3
+  /// Xử lý lệnh "Xin vị trí ngay": lấy GPS một lần rồi gửi `source: requested` (§3 — bỏ bước thông báo, chốt 05/11/2026)
   Future<void> handlePendingRequest(LocationPendingRequestModel request) async {
     // Tránh xử lý trùng lặp cùng 1 request_id
     if (_lastHandledRequestId == request.id && !request.isOpen) {
@@ -392,30 +385,10 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     _lastHandledRequestId = request.id;
     state = state.copyWith(activePendingRequest: request);
 
-    // =========================================================================
-    // BƯỚC 1: Hiện thông báo cho nhân viên (§3)
-    // "{requested_by} đã yêu cầu vị trí của bạn" + reason nếu có
-    // =========================================================================
-    final reasonText = (request.reason != null && request.reason!.isNotEmpty)
-        ? '\nLý do: ${request.reason}'
-        : '';
-    final message = '${request.requestedBy} đã yêu cầu vị trí của bạn.$reasonText';
-
-    try {
-      await _notifService.sendNotification(
-        id: request.id,
-        title: 'Yêu cầu vị trí từ quản lý',
-        message: message,
-        type: 'location_request',
-        category: 'work',
-        showSystemTray: true,
-      );
-    } catch (e) {
-      debugPrint('[EmployeeTracking] Lỗi hiện thông báo: $e');
-    }
+    // Không hiện thông báo cho nhân viên — app trả vị trí lặng lẽ (chủ hệ thống chốt 05/11/2026).
 
     // =========================================================================
-    // BƯỚC 2: Lấy GPS một lần
+    // BƯỚC 1: Lấy GPS một lần
     // =========================================================================
     Position? pos = await _getCurrentPosition();
     if (pos == null) {
@@ -425,7 +398,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     _lastKnownPosition = pos;
 
     // =========================================================================
-    // BƯỚC 3: POST /dms/locations/ping với source: "requested" và request_id
+    // BƯỚC 2: POST /dms/locations/ping với source: "requested" và request_id
     // =========================================================================
     final point = LocationPingPointModel.create(
       lat: pos.latitude,
