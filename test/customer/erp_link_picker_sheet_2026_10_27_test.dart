@@ -4,11 +4,11 @@ import 'package:vthm_dms/core/services/erp_catalog_service.dart';
 import 'package:vthm_dms/core/services/erp_link_request_service.dart';
 import 'package:vthm_dms/features/customer/presentation/widgets/erp_link_picker_sheet.dart';
 
-/// Khung "Điểm bán liên quan khách ERP nào?" (#24327): chọn nhiều khách, mỗi khách một vai theo kênh, chính khách tối đa một,
-/// bắt buộc ≥1 khách hoặc tick "Chưa xác định NPP" khi tạo.
+/// Khung "Điểm bán liên quan khách ERP nào?" (#24327): chọn NHIỀU nhà phân phối, không còn vai (chủ hệ thống bỏ 05/11/2026);
+/// chỉ khách thuộc kênh danh mục cho phép.
 void main() {
   final catalog = ErpCatalog.fromJson({
-    'roles': {'owner': [], 'showroom': [1], 'c2': [1]},
+    'channels': [],
     'items': [
       {'code': '01380001', 'name': 'NPP Hoàng Long', 'address': 'Hà Nội', 'channel_id': 1, 'channel_name': 'Kênh phân phối'},
       {'code': '02700019', 'name': 'Cửa hàng Minh Phát', 'address': 'Tây Ninh', 'channel_id': 2, 'channel_name': 'Kênh bán lẻ'},
@@ -39,7 +39,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('tạo: gợi ý SĐT ⇒ chính khách; tìm thêm NPP ⇒ C2; chính khách khoá ở khách thứ hai; xác nhận trả đủ', (tester) async {
+  testWidgets('tạo: chọn gợi ý SĐT + tìm thêm NPP ⇒ chọn được 2 NPP, không có ô vai, payload không có role', (tester) async {
     ErpLinkPickResult? kq;
     await moKhung(tester, ErpLinkPickerSheet(catalog: catalog, suggestions: goiY), (v) => kq = v);
 
@@ -47,7 +47,6 @@ void main() {
     await tester.tap(find.byKey(const Key('erp-link-02700019')));
     await tester.pumpAndSettle();
     expect(find.text('Đã chọn (1)'), findsOneWidget);
-    expect(find.text('Quan hệ với NPP:'), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('erp-link-search')), 'hoang long');
     await tester.pump(const Duration(milliseconds: 300));
@@ -60,24 +59,21 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('erp-link-01380001')));
     await tester.pumpAndSettle();
-
-    final seg = tester.widget<SegmentedButton<String>>(find.byKey(const Key('erp-link-role-01380001')));
-    expect(seg.selected, {ErpLinkRole.c2});
-    expect(seg.segments.firstWhere((s) => s.value == ErpLinkRole.owner).enabled, isFalse, reason: 'đã có chính khách');
-    final segBanLe = tester.widget<SegmentedButton<String>>(find.byKey(const Key('erp-link-role-02700019')));
-    expect(segBanLe.segments.map((s) => s.value), [ErpLinkRole.owner], reason: 'kênh bán lẻ chỉ làm chính khách');
+    expect(find.text('Đã chọn (2)'), findsOneWidget);
+    expect(find.byType(SegmentedButton<String>), findsNothing, reason: 'bỏ vai 05/11/2026');
+    expect(find.text('Quan hệ với NPP:'), findsNothing);
 
     await tester.tap(find.byKey(const Key('erp-link-confirm')));
     await tester.pumpAndSettle();
     expect(kq?.picks.map((p) => p.toPayload()).toList(), [
-      {'code': '02700019', 'role': 'owner', 'match_reason': 'phone'},
-      {'code': '01380001', 'role': 'c2', 'match_reason': 'manual'},
+      {'code': '02700019', 'match_reason': 'phone'},
+      {'code': '01380001', 'match_reason': 'manual'},
     ]);
   });
 
-  testWidgets('gợi ý khách thuộc kênh không vai nào nối được (bán lẻ) bị ẩn', (tester) async {
+  testWidgets('danh mục chỉ cho kênh phân phối: gợi ý + kết quả tìm khách kênh bán lẻ bị ẩn', (tester) async {
     final chiPhanPhoi = ErpCatalog.fromJson({
-      'roles': {'owner': [1], 'showroom': [1], 'c2': [1]},
+      'channels': [1],
       'items': [
         {'code': '01380001', 'name': 'NPP Hoàng Long', 'address': 'Hà Nội', 'channel_id': 1, 'channel_name': 'Kênh phân phối'},
       ],
@@ -89,6 +85,11 @@ void main() {
     await moKhung(tester, ErpLinkPickerSheet(catalog: chiPhanPhoi, suggestions: goiY2), (_) {});
     expect(find.byKey(const Key('erp-link-02700019')), findsNothing);
     expect(find.byKey(const Key('erp-link-01380001')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('erp-link-search')), 'minh phat');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Kết quả tìm (0)'), findsOneWidget);
   });
 
   testWidgets('bỏ hết khách đã chọn vẫn xác nhận được (trả danh sách rỗng); không có ô tick trong khung', (tester) async {
@@ -96,7 +97,7 @@ void main() {
     await moKhung(
       tester,
       ErpLinkPickerSheet(catalog: catalog, initial: [
-        ErpLinkPick(code: '01380001', name: 'NPP Hoàng Long', role: ErpLinkRole.c2, matchReason: 'manual', channelId: 1),
+        ErpLinkPick(code: '01380001', name: 'NPP Hoàng Long', matchReason: 'manual', channelId: 1),
       ]),
       (v) => kq = v,
     );
@@ -108,22 +109,13 @@ void main() {
     expect(kq?.picks, isEmpty);
   });
 
-  testWidgets('ẩn khách đã nối/đề xuất, chính khách khoá khi điểm bán đã có', (tester) async {
-    await moKhung(
-      tester,
-      ErpLinkPickerSheet(catalog: catalog, ownerTaken: true, excludeCodes: const {'01380001'}),
-      (_) {},
-    );
+  testWidgets('ẩn khách đã nối/đề xuất cho điểm bán', (tester) async {
+    await moKhung(tester, ErpLinkPickerSheet(catalog: catalog, excludeCodes: const {'01380001'}), (_) {});
     await tester.enterText(find.byKey(const Key('erp-link-search')), 'npp hoang');
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('erp-link-01380001')), findsNothing);
     expect(find.byKey(const Key('erp-link-01380002')), findsOneWidget);
-
-    await tester.enterText(find.byKey(const Key('erp-link-search')), 'minh phat');
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pumpAndSettle();
-    expect(find.text('Kênh không được nối'), findsOneWidget, reason: 'khách bán lẻ chỉ làm chính khách mà điểm bán đã có ⇒ mờ');
   });
 
   testWidgets('chưa có danh mục trên máy (mất mạng từ lần đầu): ô tìm khoá', (tester) async {

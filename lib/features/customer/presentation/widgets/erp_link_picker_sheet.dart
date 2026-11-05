@@ -7,7 +7,7 @@ import '../../../../core/services/erp_link_request_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 
-/// Một khách ERP NV đã chọn ở bước nối, kèm vai.
+/// Một khách ERP (nhà phân phối) NV đã chọn ở bước nối.
 class ErpLinkPick {
   final String code;
   final String name;
@@ -17,12 +17,10 @@ class ErpLinkPick {
 
   /// `phone` · `tax_code` · `name_address` (từ gợi ý) hoặc `manual` (tự tìm).
   final String matchReason;
-  String role;
 
   ErpLinkPick({
     required this.code,
     required this.name,
-    required this.role,
     required this.matchReason,
     this.address,
     this.channelId,
@@ -32,26 +30,25 @@ class ErpLinkPick {
   ErpLinkPick copy() => ErpLinkPick(
         code: code,
         name: name,
-        role: role,
         matchReason: matchReason,
         address: address,
         channelId: channelId,
         channelName: channelName,
       );
 
-  /// Một mục của `erp_links` gửi kèm khi tạo điểm bán.
-  Map<String, dynamic> toPayload() => {'code': code, 'role': role, 'match_reason': matchReason};
+  /// Một mục của `erp_links` gửi kèm khi tạo điểm bán — không có vai (bỏ 05/11/2026).
+  Map<String, dynamic> toPayload() => {'code': code, 'match_reason': matchReason};
 }
 
-/// Kết quả khung chọn: các khách ERP đã chọn kèm vai (có thể rỗng — NV bỏ hết khách đã chọn).
+/// Kết quả khung chọn: các khách ERP đã chọn (có thể rỗng — NV bỏ hết khách đã chọn).
 class ErpLinkPickResult {
   final List<ErpLinkPick> picks;
 
   const ErpLinkPickResult({required this.picks});
 }
 
-/// Khung chọn khách ERP cho ô "Khách hàng ERP" (#24327, #24331, spec DIEM-BAN-KHACH-ERP §11–§12) — chọn NHIỀU khách, mỗi khách
-/// một vai Chính khách / Showroom / Đại lý C2 (chính khách tối đa một; vai chỉ hiện nếu kênh của khách được phép). Thẻ gợi ý
+/// Khung chọn khách ERP cho ô "Khách hàng ERP" (#24327, #24331, spec DIEM-BAN-KHACH-ERP §11–§12) — chọn NHIỀU nhà phân phối
+/// điểm bán thuộc về (không còn vai — chủ hệ thống bỏ 05/11/2026); chỉ khách thuộc kênh danh mục cho phép. Thẻ gợi ý
 /// (theo SĐT/MST/tên, khi có mạng; dự phòng theo tên trên máy) + ô tìm trên danh mục lưu máy (chạy cả khi mất mạng).
 /// Ô tick "Chưa xác định NPP" nằm ở ô trong form, không ở đây. Đóng khung ⇒ `pop(null)` (giữ nguyên lựa chọn cũ).
 class ErpLinkPickerSheet extends StatefulWidget {
@@ -59,9 +56,6 @@ class ErpLinkPickerSheet extends StatefulWidget {
   final ErpCatalog? catalog;
   final List<ErpLinkSuggestion> suggestions;
   final List<ErpLinkPick> initial;
-
-  /// Điểm bán đã có chính khách (mối nối hoặc đề xuất chờ) ⇒ không chọn thêm vai chính khách.
-  final bool ownerTaken;
 
   /// Khách đã nối / đã đề xuất cho điểm bán này — không hiện lại.
   final Set<String> excludeCodes;
@@ -71,7 +65,6 @@ class ErpLinkPickerSheet extends StatefulWidget {
     required this.catalog,
     this.suggestions = const [],
     this.initial = const [],
-    this.ownerTaken = false,
     this.excludeCodes = const {},
   });
 
@@ -110,21 +103,8 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
     setState(() {}); // cập nhật nút xoá chữ
   }
 
-  bool get _coChinhKhach => widget.ownerTaken || _chon.any((p) => p.role == ErpLinkRole.owner);
-
-  /// Vai khách thuộc kênh [channelId] được nối; danh mục chưa có ⇒ mọi vai (server kiểm lại).
-  List<String> _vaiDuoc(int? channelId) => widget.catalog?.rolesFor(channelId) ?? ErpLinkRole.all;
-
-  /// Vai mặc định khi thêm: gợi ý khớp SĐT/MST ⇒ chính khách (nếu còn trống); còn lại ưu tiên C2 → Showroom → Chính khách.
-  String? _vaiMacDinh(int? channelId, {required bool tuGoiY}) {
-    final duoc = _vaiDuoc(channelId).where((r) => r != ErpLinkRole.owner || !_coChinhKhach).toList();
-    if (duoc.isEmpty) return null;
-    if (tuGoiY && duoc.contains(ErpLinkRole.owner)) return ErpLinkRole.owner;
-    for (final r in const [ErpLinkRole.c2, ErpLinkRole.showroom, ErpLinkRole.owner]) {
-      if (duoc.contains(r)) return r;
-    }
-    return duoc.first;
-  }
+  /// Khách thuộc kênh [channelId] có nối được không; danh mục chưa có ⇒ cho qua (server kiểm lại).
+  bool _kenhDuoc(int? channelId) => widget.catalog?.allowsChannel(channelId) ?? true;
 
   void _them(ErpLinkPick p) => setState(() => _chon.add(p));
 
@@ -138,8 +118,8 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
     final chuPhu = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
     final daChon = _chon.map((p) => p.code).toSet();
     final an = {...daChon, ...widget.excludeCodes};
-    // Gợi ý từ server cũ / bản lưu có thể còn khách thuộc kênh không vai nào được nối (vd Kênh bán lẻ) — ẩn, không cho chọn.
-    final goiY = widget.suggestions.where((s) => !an.contains(s.code) && _vaiDuoc(s.channelId).isNotEmpty).toList();
+    // Gợi ý từ server có thể còn khách thuộc kênh không được nối (vd Kênh bán lẻ) — ẩn, không cho chọn.
+    final goiY = widget.suggestions.where((s) => !an.contains(s.code) && _kenhDuoc(s.channelId)).toList();
     final ketQua = _ketQua.where((i) => !an.contains(i.code)).toList();
     final trungDaChon = _ketQua.length - ketQua.length;
     final dangTim = _daTim.length >= 2;
@@ -163,7 +143,7 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  'Chọn khách hàng và vai của điểm bán với từng khách hàng — quản lý sẽ duyệt mối nối.',
+                  'Chọn các nhà phân phối điểm bán lấy hàng (chọn được nhiều) — quản lý sẽ duyệt mối nối.',
                   style: AppTypography.bodySmall(color: chuPhu),
                 ),
               ),
@@ -199,16 +179,13 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                   children: [
-                    // Đã chọn luôn ở ĐẦU — NV thấy ngay mình đã chọn những ai và chỉnh vai, không phải cuộn qua danh sách lọc dài
+                    // Đã chọn luôn ở ĐẦU — NV thấy ngay mình đã chọn những ai, không phải cuộn qua danh sách lọc dài
                     // (chủ hệ thống yêu cầu 28/10/2026). Sau đó: kết quả tìm khi đang tìm, gợi ý khi không tìm.
                     if (_chon.isNotEmpty) ...[
                       _TieuDeNhom(icon: Icons.check_circle_rounded, text: 'Đã chọn (${_chon.length})', color: AppColors.success),
                       for (final p in _chon)
                         _TheDaChon(
                           pick: p,
-                          vaiDuoc: _vaiDuoc(p.channelId),
-                          chinhKhachKhoa: _coChinhKhach && p.role != ErpLinkRole.owner,
-                          onVai: (r) => setState(() => p.role = r),
                           onBo: () => _bo(p.code),
                         ),
                     ],
@@ -231,14 +208,12 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                             channelName: i.channelName,
                             nhan: null,
                             goiY: false,
-                            vaiThem: _vaiMacDinh(i.channelId, tuGoiY: false),
-                            onThem: (vai) => _them(ErpLinkPick(
+                            onThem: () => _them(ErpLinkPick(
                               code: i.code,
                               name: i.name,
                               address: i.address,
                               channelId: i.channelId,
                               channelName: i.channelName,
-                              role: vai,
                               matchReason: 'manual',
                             )),
                           ),
@@ -270,14 +245,12 @@ class _ErpLinkPickerSheetState extends State<ErpLinkPickerSheet> {
                               _ => AppColors.warning,
                             },
                             goiY: true,
-                            vaiThem: _vaiMacDinh(s.channelId, tuGoiY: s.matchReason != 'name_address'),
-                            onThem: (vai) => _them(ErpLinkPick(
+                            onThem: () => _them(ErpLinkPick(
                               code: s.code,
                               name: s.name,
                               address: s.address,
                               channelId: s.channelId,
                               channelName: s.channelName,
-                              role: vai,
                               matchReason: s.matchReason.isEmpty ? 'manual' : s.matchReason,
                             )),
                           ),
@@ -447,8 +420,7 @@ class _Khung extends StatelessWidget {
       );
 }
 
-/// Thẻ khách CHƯA chọn (gợi ý viền màu chủ đạo, kết quả tìm viền xám). Bấm thẻ ⇒ thêm với vai mặc định; khách không vai nào
-/// được phép (kênh không khớp) ⇒ thẻ mờ, không thêm được.
+/// Thẻ khách CHƯA chọn (gợi ý viền màu chủ đạo, kết quả tìm viền xám). Bấm thẻ ⇒ thêm vào danh sách đã chọn.
 class _TheKhach extends StatelessWidget {
   final String name;
   final String code;
@@ -457,17 +429,13 @@ class _TheKhach extends StatelessWidget {
   final String? nhan;
   final Color? mauNhan;
   final bool goiY;
-
-  /// Vai sẽ gán khi bấm thêm; `null` = kênh của khách không vai nào được phép.
-  final String? vaiThem;
-  final ValueChanged<String> onThem;
+  final VoidCallback onThem;
 
   const _TheKhach({
     super.key,
     required this.name,
     required this.code,
     required this.goiY,
-    required this.vaiThem,
     required this.onThem,
     this.address,
     this.channelName,
@@ -479,113 +447,68 @@ class _TheKhach extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final chuPhu = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
-    final duoc = vaiThem != null;
-    return Opacity(
-      opacity: duoc ? 1 : 0.5,
-      child: _Khung(
-        vien: goiY ? AppColors.primary.withValues(alpha: 0.45) : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-        nen: goiY
-            ? AppColors.primary.withValues(alpha: isDark ? 0.12 : 0.05)
-            : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
-        onTap: duoc ? () => onThem(vaiThem!) : null,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _ThanThe(
-                name: name,
-                code: code,
-                address: address,
-                channelName: channelName,
-                nhan: duoc ? nhan : 'Kênh không được nối',
-                mauNhan: duoc ? mauNhan : AppColors.error,
-                mauChinh: goiY ? AppColors.primary : chuPhu,
-              ),
+    return _Khung(
+      vien: goiY ? AppColors.primary.withValues(alpha: 0.45) : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+      nen: goiY
+          ? AppColors.primary.withValues(alpha: isDark ? 0.12 : 0.05)
+          : (isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLowest),
+      onTap: onThem,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _ThanThe(
+              name: name,
+              code: code,
+              address: address,
+              channelName: channelName,
+              nhan: nhan,
+              mauNhan: mauNhan,
+              mauChinh: goiY ? AppColors.primary : chuPhu,
             ),
-            if (duoc)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Icon(Icons.add_circle_outline_rounded, color: goiY ? AppColors.primary : chuPhu),
-              ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Icon(Icons.add_circle_outline_rounded, color: goiY ? AppColors.primary : chuPhu),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Thẻ khách ĐÃ chọn: viền xanh lá, nút chọn vai (chỉ vai kênh cho phép; chính khách khoá khi đã có), nút bỏ.
+/// Thẻ khách ĐÃ chọn: viền xanh lá, nút bỏ.
 class _TheDaChon extends StatelessWidget {
   final ErpLinkPick pick;
-  final List<String> vaiDuoc;
-  final bool chinhKhachKhoa;
-  final ValueChanged<String> onVai;
   final VoidCallback onBo;
 
-  const _TheDaChon({
-    required this.pick,
-    required this.vaiDuoc,
-    required this.chinhKhachKhoa,
-    required this.onVai,
-    required this.onBo,
-  });
+  const _TheDaChon({required this.pick, required this.onBo});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final chuPhu = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
-    // Vai đang giữ luôn hiện, kể cả khi danh mục mới không còn cho phép (server sẽ báo).
-    final segs = ErpLinkRole.all.where((r) => vaiDuoc.contains(r) || r == pick.role).toList();
     return _Khung(
       vien: AppColors.success.withValues(alpha: 0.6),
       nen: AppColors.success.withValues(alpha: isDark ? 0.12 : 0.06),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _ThanThe(
-                  name: pick.name,
-                  code: pick.code,
-                  address: pick.address,
-                  channelName: pick.channelName,
-                  mauChinh: AppColors.success,
-                ),
-              ),
-              IconButton(
-                key: Key('erp-link-remove-${pick.code}'),
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Bỏ chọn',
-                icon: Icon(Icons.close_rounded, color: chuPhu),
-                onPressed: onBo,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Cùng cách gọi với thẻ trên form: vai là quan hệ của điểm bán với khách ERP (28/10/2026).
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text('Quan hệ với NPP:', style: AppTypography.bodySmall(color: chuPhu)),
-          ),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<String>(
-              key: Key('erp-link-role-${pick.code}'),
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: [
-                for (final r in segs)
-                  ButtonSegment(
-                    value: r,
-                    label: Text(ErpLinkRole.label(r), style: const TextStyle(fontSize: 12.5)),
-                    enabled: !(r == ErpLinkRole.owner && chinhKhachKhoa),
-                  ),
-              ],
-              selected: {pick.role},
-              onSelectionChanged: (v) => onVai(v.first),
+          Expanded(
+            child: _ThanThe(
+              name: pick.name,
+              code: pick.code,
+              address: pick.address,
+              channelName: pick.channelName,
+              mauChinh: AppColors.success,
             ),
+          ),
+          IconButton(
+            key: Key('erp-link-remove-${pick.code}'),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Bỏ chọn',
+            icon: Icon(Icons.close_rounded, color: chuPhu),
+            onPressed: onBo,
           ),
         ],
       ),

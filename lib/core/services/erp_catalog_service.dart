@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../network/api_client.dart';
 import '../utils/string_utils.dart';
-import 'erp_link_request_service.dart';
 
 /// Một khách ERP trong danh mục tải về máy (`GET /crm/customer-erp-link-requests/catalog`, #24327). Không có SĐT/MST.
 class ErpCatalogItem {
@@ -18,7 +17,7 @@ class ErpCatalogItem {
   final String? shortName;
   final String? address;
 
-  /// Kênh bán hàng Bravo (`sales_channel.id`) — quyết vai nào chọn được khách này.
+  /// Kênh bán hàng Bravo (`sales_channel.id`) — chỉ khách thuộc [ErpCatalog.channels] mới nối được.
   final int? channelId;
   final String? channelName;
 
@@ -53,40 +52,32 @@ class ErpCatalogItem {
       };
 }
 
-/// Danh mục khách ERP + bộ kênh của từng vai (`owner`/`showroom`/`c2`; danh sách rỗng = mọi kênh).
+/// Danh mục khách ERP + bộ kênh được nối ([channels]; rỗng = mọi kênh). Bản lưu máy đời cũ (khoá `roles`, trước khi bỏ vai
+/// 05/11/2026) không có `channels` ⇒ coi như mọi kênh, lượt tải lại kế tiếp thay bản mới.
 class ErpCatalog {
-  final Map<String, List<int>> roles;
+  final List<int> channels;
   final List<ErpCatalogItem> items;
   final Map<String, ErpCatalogItem> _byCode;
 
-  ErpCatalog({required this.roles, required this.items}) : _byCode = {for (final i in items) i.code: i};
+  ErpCatalog({required this.channels, required this.items}) : _byCode = {for (final i in items) i.code: i};
 
-  factory ErpCatalog.fromJson(Map<String, dynamic> data) {
-    final rawRoles = data['roles'] is Map ? Map<String, dynamic>.from(data['roles'] as Map) : const <String, dynamic>{};
-    return ErpCatalog(
-      roles: {
-        for (final role in ErpLinkRole.all)
-          role: rawRoles[role] is List
-              ? (rawRoles[role] as List).map((e) => int.tryParse(e.toString())).whereType<int>().toList()
-              : const <int>[],
-      },
-      items: data['items'] is List
-          ? (data['items'] as List)
-              .whereType<Map>()
-              .map((e) => ErpCatalogItem.fromJson(Map<String, dynamic>.from(e)))
-              .where((i) => i.code.isNotEmpty)
-              .toList()
-          : const [],
-    );
-  }
+  factory ErpCatalog.fromJson(Map<String, dynamic> data) => ErpCatalog(
+        channels: data['channels'] is List
+            ? (data['channels'] as List).map((e) => int.tryParse(e.toString())).whereType<int>().toList()
+            : const [],
+        items: data['items'] is List
+            ? (data['items'] as List)
+                .whereType<Map>()
+                .map((e) => ErpCatalogItem.fromJson(Map<String, dynamic>.from(e)))
+                .where((i) => i.code.isNotEmpty)
+                .toList()
+            : const [],
+      );
 
   ErpCatalogItem? byCode(String code) => _byCode[code];
 
-  /// Các vai một khách thuộc kênh [channelId] được nối — theo thứ tự [ErpLinkRole.all]. Không có trong danh mục ⇒ không vai nào.
-  List<String> rolesFor(int? channelId) => [
-        for (final role in ErpLinkRole.all)
-          if ((roles[role] ?? const []).isEmpty || (channelId != null && roles[role]!.contains(channelId))) role,
-      ];
+  /// Khách thuộc kênh [channelId] có được nối không — [channels] rỗng ⇒ mọi kênh; có danh sách mà khách không rõ kênh ⇒ không.
+  bool allowsChannel(int? channelId) => channels.isEmpty || (channelId != null && channels.contains(channelId));
 
   /// Từ chung của tên cửa hàng/pháp nhân — không dùng để so khi gợi ý theo tên (mọi khách đều có "cửa hàng", "công ty").
   static const Set<String> _tuChung = {
@@ -95,7 +86,7 @@ class ErpCatalog {
   };
 
   /// Gợi ý theo TÊN điểm bán ngay trên máy — dự phòng khi máy chủ không gợi ý được (mất mạng, quá hạn): khách có tên chứa
-  /// nhiều từ "riêng" (bỏ [_tuChung]) của tên điểm bán nhất; phải khớp ≥ một nửa số từ riêng. Tên toàn từ chung ⇒ rỗng.
+  /// nhiều từ "riêng" (bỏ [_tuChung]) của tên điểm bán nhất, chỉ trong kênh được nối; phải khớp ≥ một nửa số từ riêng. Tên toàn từ chung ⇒ rỗng.
   List<ErpCatalogItem> suggestByName(String? storeName, {int limit = 8}) {
     final tu = StringUtils.toUnaccentedLower(storeName ?? '')
         .split(RegExp(r'[^a-z0-9]+'))
@@ -105,6 +96,7 @@ class ErpCatalog {
     final can = (tu.length / 2).ceil();
     final diem = <ErpCatalogItem, int>{};
     for (final i in items) {
+      if (!allowsChannel(i.channelId)) continue;
       final ten = StringUtils.toUnaccentedLower(i.name).split(RegExp(r'[^a-z0-9]+')).toSet();
       final khop = tu.where(ten.contains).length;
       if (khop >= can) diem[i] = khop;
@@ -117,12 +109,13 @@ class ErpCatalog {
     return kq.take(limit).toList();
   }
 
-  /// Tìm trên máy theo tên/mã/tên viết tắt/địa chỉ, gõ không dấu được; từ 2 ký tự; khớp đầu tên/mã xếp trước.
+  /// Tìm trên máy theo tên/mã/tên viết tắt/địa chỉ (chỉ khách thuộc kênh được nối), gõ không dấu được; từ 2 ký tự; khớp đầu
+  /// tên/mã xếp trước.
   List<ErpCatalogItem> search(String query, {int limit = 30}) {
     final q = StringUtils.toUnaccentedLower(query).trim();
     if (q.length < 2) return const [];
     final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    final hits = items.where((i) => words.every(i._haystack.contains)).toList();
+    final hits = items.where((i) => allowsChannel(i.channelId) && words.every(i._haystack.contains)).toList();
     int rank(ErpCatalogItem i) {
       if (i.code.toLowerCase() == q) return 0;
       if (i.code.toLowerCase().startsWith(q) || StringUtils.toUnaccentedLower(i.name).startsWith(q)) return 1;
@@ -154,7 +147,7 @@ class ErpCatalogService {
   static Future<ErpCatalog?>? _loading;
   static DateTime? _checkedAt;
 
-  /// Hỏi lại server sau 1 giờ — admin đổi kênh theo vai hoặc Bravo thêm khách thì app thấy trong ngày.
+  /// Hỏi lại server sau 1 giờ — admin đổi kênh được nối hoặc Bravo thêm khách thì app thấy trong ngày.
   static const _recheckAfter = Duration(hours: 1);
 
   static const _fileName = 'erp_catalog.json';
@@ -236,7 +229,7 @@ class ErpCatalogService {
       final f = await _file();
       final tmp = File('${f.path}.tmp');
       final payload = {
-        'roles': catalog.roles,
+        'channels': catalog.channels,
         'items': catalog.items.map((i) => i.toJson()).toList(),
       };
       await tmp.writeAsString(await Isolate.run(() => jsonEncode(payload)));

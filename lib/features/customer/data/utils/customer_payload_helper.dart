@@ -297,17 +297,16 @@ class CustomerPayloadHelper {
     final territory = sourceData['territory_code']?.toString().trim() ?? '';
     if (territory.isNotEmpty) payload['territory_code'] = territory;
 
-    // 7c. Bước nối khách ERP (#24327): `[{code, role, match_reason}]` + cờ "Chưa xác định NPP". Chỉ gửi khi màn tạo có chạy
+    // 7c. Bước nối khách ERP (#24327): `[{code, match_reason}]` (không còn vai — bỏ 05/11/2026) + cờ "Chưa xác định NPP". Chỉ gửi khi màn tạo có chạy
     // bước nối (khoá có mặt) — server chỉ bắt buộc khi thấy khoá `erp_links`.
     if (sourceData.containsKey('erp_links')) {
       final raw = sourceData['erp_links'];
       payload['erp_links'] = raw is List
           ? raw
               .whereType<Map>()
-              .where((m) => (m['code']?.toString().trim() ?? '').isNotEmpty && m['role'] != null)
+              .where((m) => (m['code']?.toString().trim() ?? '').isNotEmpty)
               .map((m) => {
                     'code': m['code'].toString().trim(),
-                    'role': m['role'].toString(),
                     if (m['match_reason'] != null) 'match_reason': m['match_reason'].toString(),
                   })
               .toList()

@@ -1,29 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/api_client.dart';
 
-/// Vai trò của điểm bán với khách ERP trên đề xuất nối — khớp `ErpLinkRole` phía server.
-class ErpLinkRole {
-  /// Điểm bán CHÍNH LÀ khách ERP đó.
-  static const String owner = 'owner';
-
-  /// Điểm bán là đại lý cấp 2 lấy hàng của khách ERP (nhà phân phối).
-  static const String c2 = 'c2';
-
-  /// Điểm bán là showroom của khách ERP.
-  static const String showroom = 'showroom';
-
-  /// Mọi vai — thứ tự hiện trên nút chọn vai.
-  static const List<String> all = [owner, showroom, c2];
-
-  /// Nhãn tiếng Việt của vai.
-  static String label(String role) => switch (role) {
-        owner => 'Chính khách hàng',
-        showroom => 'Showroom',
-        c2 => 'Đại lý C2',
-        _ => role,
-      };
-}
-
 /// Một khách ERP trùng/gần trùng với điểm bán đang tạo (`GET /crm/customer-erp-link-requests/suggest`).
 /// Server KHÔNG trả SĐT/MST của khách ERP — chỉ mã, tên, địa chỉ, kênh và lý do khớp.
 class ErpLinkSuggestion {
@@ -32,7 +9,7 @@ class ErpLinkSuggestion {
   final String name;
   final String? address;
 
-  /// Kênh bán hàng Bravo — quyết vai nào chọn được khách này (#24327).
+  /// Kênh bán hàng Bravo — chỉ khách thuộc kênh danh mục cho phép mới nối được (#24327).
   final int? channelId;
   final String? channelName;
 
@@ -67,10 +44,10 @@ class ErpLinkSuggestion {
       );
 }
 
-/// Loại đề xuất nối — khớp `ErpLinkRequestAction` phía server (#24331).
+/// Loại đề xuất nối — khớp `ErpLinkRequestAction` phía server (#24331). Không còn "đổi vai": mối nối chỉ ghi điểm bán thuộc
+/// NPP nào (chủ hệ thống bỏ vai 05/11/2026).
 class ErpLinkAction {
   static const String add = 'add';
-  static const String changeRole = 'change_role';
   static const String remove = 'remove';
 }
 
@@ -83,33 +60,21 @@ class ErpLinkState {
   final int? channelId;
   final String? channelName;
 
-  /// Vai SAU khi sửa (gỡ nối: vai đang bị gỡ); với mối nối đã duyệt: vai hiện tại.
-  final String role;
-  final String roleLabel;
-
   /// Loại đề xuất ([ErpLinkAction]); `null` với mối nối đã duyệt.
   final String? action;
   final String? actionLabel;
-
-  /// Vai TRƯỚC khi sửa (đổi vai / gỡ nối).
-  final String? beforeRole;
-  final String? beforeRoleLabel;
 
   /// Lý do quản lý từ chối.
   final String? decisionNote;
 
   const ErpLinkState({
     required this.code,
-    required this.role,
-    required this.roleLabel,
     this.id,
     this.name,
     this.channelId,
     this.channelName,
     this.action,
     this.actionLabel,
-    this.beforeRole,
-    this.beforeRoleLabel,
     this.decisionNote,
   });
 
@@ -119,12 +84,8 @@ class ErpLinkState {
         name: json['name']?.toString(),
         channelId: (json['channel_id'] as num?)?.toInt(),
         channelName: json['channel_name']?.toString(),
-        role: json['role']?.toString() ?? '',
-        roleLabel: json['role_label']?.toString() ?? '',
         action: json['action']?.toString(),
         actionLabel: json['action_label']?.toString(),
-        beforeRole: json['before_role']?.toString(),
-        beforeRoleLabel: json['before_role_label']?.toString(),
         decisionNote: json['decision_note']?.toString(),
       );
 }
@@ -138,11 +99,6 @@ class ErpLinkStateOfStore {
   final bool unknown;
 
   const ErpLinkStateOfStore({required this.links, required this.pending, required this.unknown, this.rejected = const []});
-
-  /// Điểm bán đã có chính khách (mối nối hoặc đề xuất chờ cho ra chính khách) — không thêm vai đó nữa.
-  bool get ownerTaken =>
-      links.any((l) => l.role == ErpLinkRole.owner) ||
-      pending.any((l) => l.action != ErpLinkAction.remove && l.role == ErpLinkRole.owner);
 
   /// Khách đã nối / đang có đề xuất chờ — không thêm lại, không sửa thêm cho tới khi duyệt xong.
   Set<String> get codes => {...links.map((l) => l.code), ...pending.map((l) => l.code)};

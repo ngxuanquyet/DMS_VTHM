@@ -13,19 +13,18 @@ import 'erp_link_picker_sheet.dart';
 /// Giá trị của ô "Khách hàng ERP" (`erp_links`, #24331) trong form điểm bán — lưu trong dữ liệu form dưới dạng map JSON.
 ///
 /// - [customerId] > 0: form SỬA / màn chi tiết của điểm bán đã có (đọc mối nối hiện có từ server).
-/// - [add]: khách thêm mới (tạo + sửa) · [changeRole]: mã ⇒ vai mới của mối nối đang có · [remove]: mã xin gỡ (chỉ sửa).
+/// - [add]: khách thêm mới (tạo + sửa) · [remove]: mã xin gỡ (chỉ sửa). Không còn vai / đổi vai (bỏ 05/11/2026) — giá trị
+///   form lưu máy đời cũ còn khoá `role` / `change_role` thì bỏ qua.
 /// - [unknown]: "Chưa xác định NPP" (chỉ tạo).
 class ErpLinksValue {
   final int? customerId;
   final List<ErpLinkPick> add;
-  final Map<String, String> changeRole;
   final Set<String> remove;
   final bool unknown;
 
   const ErpLinksValue({
     this.customerId,
     this.add = const [],
-    this.changeRole = const {},
     this.remove = const {},
     this.unknown = false,
   });
@@ -45,14 +44,10 @@ class ErpLinksValue {
                 address: x['address']?.toString(),
                 channelId: (x['channel_id'] as num?)?.toInt(),
                 channelName: x['channel_name']?.toString(),
-                role: x['role']?.toString() ?? ErpLinkRole.c2,
                 matchReason: x['match_reason']?.toString() ?? 'manual',
               );
             }).where((p) => p.code.isNotEmpty).toList()
           : const [],
-      changeRole: m['change_role'] is Map
-          ? Map<String, dynamic>.from(m['change_role'] as Map).map((k, v) => MapEntry(k, v.toString()))
-          : const {},
       remove: m['remove'] is List ? (m['remove'] as List).map((e) => e.toString()).toSet() : const {},
       unknown: m['unknown'] == true,
     );
@@ -67,20 +62,16 @@ class ErpLinksValue {
                   'address': p.address,
                   'channel_id': p.channelId,
                   'channel_name': p.channelName,
-                  'role': p.role,
                   'match_reason': p.matchReason,
                 })
             .toList(),
-        'change_role': changeRole,
         'remove': remove.toList(),
         'unknown': unknown,
       };
 
-  ErpLinksValue copyWith({List<ErpLinkPick>? add, Map<String, String>? changeRole, Set<String>? remove, bool? unknown}) =>
-      ErpLinksValue(
+  ErpLinksValue copyWith({List<ErpLinkPick>? add, Set<String>? remove, bool? unknown}) => ErpLinksValue(
         customerId: customerId,
         add: add ?? this.add,
-        changeRole: changeRole ?? this.changeRole,
         remove: remove ?? this.remove,
         unknown: unknown ?? this.unknown,
       );
@@ -89,7 +80,7 @@ class ErpLinksValue {
   bool get satisfiesRequired => add.isNotEmpty || unknown;
 
   /// Có thay đổi cần gửi (sửa / màn chi tiết).
-  bool get hasChanges => add.isNotEmpty || changeRole.isNotEmpty || remove.isNotEmpty;
+  bool get hasChanges => add.isNotEmpty || remove.isNotEmpty;
 
   /// `erp_links` gửi kèm khi TẠO điểm bán.
   List<Map<String, dynamic>> createLinks() => add.map((p) => p.toPayload()).toList();
@@ -97,7 +88,6 @@ class ErpLinksValue {
   /// `erp_link_changes` gửi kèm khi SỬA — mỗi mục một đề xuất.
   List<Map<String, dynamic>> editChanges() => [
         for (final p in add) {'action': ErpLinkAction.add, ...p.toPayload()},
-        for (final e in changeRole.entries) {'code': e.key, 'action': ErpLinkAction.changeRole, 'role': e.value},
         for (final c in remove) {'code': c, 'action': ErpLinkAction.remove},
       ];
 }
@@ -106,7 +96,7 @@ class ErpLinksValue {
 ///
 /// Tạo: danh sách khách thêm mới + nút "+ Thêm khách hàng" (khung chọn: gợi ý theo tên/SĐT/địa chỉ đang nhập + tìm trên danh mục
 /// lưu máy) + ô tick "Chưa xác định NPP". Sửa / chi tiết: thêm mối nối hiện có (Đã duyệt), đề xuất chờ duyệt, đề xuất bị từ chối
-/// kèm lý do; mối nối đã duyệt có "Đổi vai" / "Gỡ nối". Mọi thay đổi là ĐỀ XUẤT chờ quản lý duyệt — NV không huỷ được đề xuất.
+/// kèm lý do; mối nối đã duyệt có "Gỡ nối". Mọi thay đổi là ĐỀ XUẤT chờ quản lý duyệt — NV không huỷ được đề xuất.
 class ErpLinksFormField extends ConsumerStatefulWidget {
   final String label;
   final bool isRequired;
@@ -181,8 +171,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
     }
     if (!mounted) return;
     final v = widget.value;
-    final chinhKhachCu = (state?.ownerTaken ?? false) ||
-        v.changeRole.values.contains(ErpLinkRole.owner);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final kq = await showModalBottomSheet<ErpLinkPickResult>(
       context: context,
@@ -193,7 +181,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
         catalog: catalog,
         suggestions: goiY,
         initial: v.add,
-        ownerTaken: chinhKhachCu,
         excludeCodes: state?.codes ?? const {},
       ),
     );
@@ -201,11 +188,9 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
     _doi(v.copyWith(add: kq.picks, unknown: kq.picks.isEmpty ? v.unknown : false));
   }
 
-  /// Đổi vai / gỡ một mối nối đã duyệt — ghi vào thay đổi chờ gửi.
-  Future<void> _sua(ErpLinkState link, ErpCatalog? catalog, bool chinhKhachKhac) async {
+  /// Xin gỡ / giữ nguyên một mối nối đã duyệt — ghi vào thay đổi chờ gửi.
+  Future<void> _sua(ErpLinkState link) async {
     final v = widget.value;
-    final dangDoi = v.changeRole[link.code];
-    final duoc = catalog?.rolesFor(link.channelId) ?? ErpLinkRole.all;
     final chon = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -217,23 +202,13 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text('${link.name ?? link.code} (${link.code})', style: AppTypography.titleMedium()),
             ),
-            for (final r in ErpLinkRole.all)
-              if (r != link.role)
-                ListTile(
-                  key: Key('erp-link-change-${link.code}-$r'),
-                  leading: const Icon(Icons.swap_horiz_rounded),
-                  title: Text('Đổi vai thành ${ErpLinkRole.label(r)}'),
-                  enabled: duoc.contains(r) && !(r == ErpLinkRole.owner && chinhKhachKhac),
-                  subtitle: duoc.contains(r) ? null : const Text('Kênh của khách hàng không được nối vai này'),
-                  onTap: () => Navigator.pop(ctx, r),
-                ),
             ListTile(
               key: Key('erp-link-remove-existing-${link.code}'),
               leading: const Icon(Icons.link_off_rounded, color: AppColors.error),
               title: const Text('Xin gỡ mối nối', style: TextStyle(color: AppColors.error)),
               onTap: () => Navigator.pop(ctx, '__remove'),
             ),
-            if (dangDoi != null || v.remove.contains(link.code))
+            if (v.remove.contains(link.code))
               ListTile(
                 leading: const Icon(Icons.undo_rounded),
                 title: const Text('Giữ nguyên (bỏ thay đổi)'),
@@ -244,14 +219,9 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
       ),
     );
     if (chon == null) return;
-    final doi = Map<String, String>.from(v.changeRole)..remove(link.code);
     final go = Set<String>.from(v.remove)..remove(link.code);
-    if (chon == '__remove') {
-      go.add(link.code);
-    } else if (chon != '__keep') {
-      doi[link.code] = chon;
-    }
-    _doi(v.copyWith(changeRole: doi, remove: go));
+    if (chon == '__remove') go.add(link.code);
+    _doi(v.copyWith(remove: go));
   }
 
   @override
@@ -262,11 +232,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
     final v = widget.value;
 
     Widget than(ErpLinkStateOfStore? state, {String? loiTai, bool dangTai = false}) {
-      final catalog = ErpCatalogService.memory;
-      final chinhKhachTheoLink = (state?.links ?? const <ErpLinkState>[])
-          .where((l) => !v.remove.contains(l.code) && (v.changeRole[l.code] ?? l.role) == ErpLinkRole.owner)
-          .map((l) => l.code)
-          .toSet();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -278,30 +243,21 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               ten: l.name ?? l.code,
               ma: l.code,
               kenh: l.channelName,
-              vai: l.roleLabel,
               nhan: (state?.pending.any((p) => p.code == l.code) ?? false)
                   ? 'Đã duyệt · đang có đề xuất chờ duyệt'
                   : v.remove.contains(l.code)
                   ? 'Sẽ xin gỡ nối'
-                  : v.changeRole.containsKey(l.code)
-                      ? 'Sẽ đổi vai: ${l.roleLabel} → ${ErpLinkRole.label(v.changeRole[l.code]!)}'
-                      : 'Đã duyệt',
-              mau: v.remove.contains(l.code)
-                  ? AppColors.error
-                  : v.changeRole.containsKey(l.code)
-                      ? AppColors.secondary
-                      : AppColors.success,
+                  : 'Đã duyệt',
+              mau: v.remove.contains(l.code) ? AppColors.error : AppColors.success,
               // Đang có đề xuất chờ cho khách này ⇒ khoá sửa tới khi quản lý quyết (một cặp chỉ một đề xuất chờ).
-              onSua: (state?.pending.any((p) => p.code == l.code) ?? false) ? null : () => _sua(l, catalog, chinhKhachTheoLink.any((c) => c != l.code) || (state?.pending.any((p) => p.action != ErpLinkAction.remove && p.role == ErpLinkRole.owner) ?? false) || v.add.any((p) => p.role == ErpLinkRole.owner)),
+              onSua: (state?.pending.any((p) => p.code == l.code) ?? false) ? null : () => _sua(l),
             ),
           for (final p in state?.pending ?? const <ErpLinkState>[])
             _TheTrangThai(
               ten: p.name ?? p.code,
               ma: p.code,
               kenh: p.channelName,
-              vai: p.roleLabel,
               nhan: switch (p.action) {
-                ErpLinkAction.changeRole => 'Chờ duyệt · đổi vai ${p.beforeRoleLabel ?? ''} → ${p.roleLabel}',
                 ErpLinkAction.remove => 'Chờ duyệt · gỡ nối',
                 _ => 'Chờ duyệt · thêm khách hàng',
               },
@@ -312,7 +268,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               ten: r.name ?? r.code,
               ma: r.code,
               kenh: r.channelName,
-              vai: r.roleLabel,
               nhan: 'Đã từ chối · ${r.actionLabel ?? ''}${r.decisionNote != null && r.decisionNote!.isNotEmpty ? ' — ${r.decisionNote}' : ''}',
               mau: AppColors.error,
             ),
@@ -322,7 +277,6 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
               ten: p.name.isEmpty ? p.code : p.name,
               ma: p.code,
               kenh: p.channelName,
-              vai: ErpLinkRole.label(p.role),
               // Form TẠO: không gắn nhãn (chủ hệ thống bỏ chữ "Sẽ đề xuất khi lưu" 28/10/2026); form sửa vẫn báo sẽ đề xuất thêm.
               nhan: _id == null ? null : 'Sẽ đề xuất thêm',
               // Thay đổi CHƯA gửi: màu phụ (xanh dương), tách khỏi "Đã duyệt" (xanh lá).
@@ -388,8 +342,8 @@ class _ErpLinksFormFieldState extends ConsumerState<ErpLinksFormField> {
   }
 }
 
-/// Mục "Khách hàng ERP" trên MÀN CHI TIẾT điểm bán (#24331): mối nối đã duyệt / chờ duyệt / bị từ chối + sửa ngay tại chỗ (đổi vai,
-/// xin gỡ, thêm khách) — nút "Gửi đề xuất" gửi `erp_link_changes` (mỗi thay đổi một đề xuất chờ duyệt). Cần mạng.
+/// Mục "Khách hàng ERP" trên MÀN CHI TIẾT điểm bán (#24331): mối nối đã duyệt / chờ duyệt / bị từ chối + sửa ngay tại chỗ (xin
+/// gỡ, thêm khách) — nút "Gửi đề xuất" gửi `erp_link_changes` (mỗi thay đổi một đề xuất chờ duyệt). Cần mạng.
 class ErpLinksDetailCard extends ConsumerStatefulWidget {
   /// `crm_customer.id` trên server (> 0).
   final int customerId;
@@ -480,12 +434,11 @@ class _Ghi extends StatelessWidget {
       );
 }
 
-/// Thẻ một khách ERP: tên, mã · kênh · vai, nhãn trạng thái màu; nút sửa (mối nối đã duyệt) hoặc bỏ (khách thêm mới).
+/// Thẻ một khách ERP: tên, mã · kênh, nhãn trạng thái màu; nút sửa (mối nối đã duyệt) hoặc bỏ (khách thêm mới).
 class _TheTrangThai extends StatelessWidget {
   final String ten;
   final String ma;
   final String? kenh;
-  final String vai;
 
   /// Nhãn trạng thái; `null` ⇒ không vẽ nhãn.
   final String? nhan;
@@ -497,7 +450,6 @@ class _TheTrangThai extends StatelessWidget {
     super.key,
     required this.ten,
     required this.ma,
-    required this.vai,
     required this.mau,
     this.nhan,
     this.kenh,
@@ -532,26 +484,6 @@ class _TheTrangThai extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text([ma, if (kenh != null && kenh!.isNotEmpty) kenh!].join(' · '),
                     style: AppTypography.bodySmall(color: chuPhu)),
-                // Vai là của ĐIỂM BÁN với khách ERP, không phải của khách ERP ⇒ dòng riêng "Quan hệ với NPP" (chủ hệ thống chốt
-                // 28/10/2026 — luôn ghi "NPP", kể cả khách kênh bán lẻ, cùng cách gọi với ô "Chưa xác định NPP").
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Icon(Icons.link_rounded, size: 14, color: AppColors.primary),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(text: 'Quan hệ với NPP: ', style: AppTypography.bodySmall(color: chuPhu)),
-                          TextSpan(
-                            text: vai,
-                            style: AppTypography.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ]),
-                      ),
-                    ),
-                  ],
-                ),
                 if (nhan != null) ...[
                   const SizedBox(height: 4),
                   Container(
@@ -567,7 +499,7 @@ class _TheTrangThai extends StatelessWidget {
             ),
           ),
           if (onSua != null)
-            IconButton(tooltip: 'Đổi vai / gỡ nối', icon: Icon(Icons.edit_rounded, color: chuPhu), onPressed: onSua),
+            IconButton(tooltip: 'Gỡ nối', icon: Icon(Icons.edit_rounded, color: chuPhu), onPressed: onSua),
           if (onBo != null)
             IconButton(tooltip: 'Bỏ', icon: Icon(Icons.close_rounded, color: chuPhu), onPressed: onBo),
         ],
