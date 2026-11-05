@@ -138,7 +138,8 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
                 _buildFilterChip('CUST', 'Điểm bán'),
                 _buildFilterChip('ATTEND', 'Chấm công'),
                 _buildFilterChip('LOC', 'Vị trí'),
-                _buildFilterChip('NET', 'Mạng / Timeout'),
+                _buildFilterChip('NET', 'Mất mạng'),
+                _buildFilterChip('SLOW', 'Máy chủ chậm'),
                 _buildFilterChip('SYS', 'Hệ thống'),
               ],
             ),
@@ -212,7 +213,7 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
     final isForbidden = item.statusCode == 403;
 
     Color badgeColor = AppColors.error;
-    if (item.module == 'NET') badgeColor = Colors.orange;
+    if (item.module == 'NET' || item.module == 'SLOW') badgeColor = Colors.orange;
     if (isForbidden) badgeColor = Colors.purple;
     if (is5xx) badgeColor = Colors.red.shade900;
 
@@ -514,7 +515,7 @@ class _ErrorLogScreenState extends State<ErrorLogScreen> {
   /// Trạng thái gửi lỗi về máy chủ — tách "của tài khoản khác" khỏi "đang chờ" để không tưởng việc gửi bị hỏng.
   String _uploadState(ErrorRecord item) {
     if (item.sentToServer) return 'Có';
-    if (!ErrorTrackerService.shouldUpload(item)) return 'Không gửi (401/404)';
+    if (!ErrorTrackerService.shouldUpload(item)) return 'Không gửi (401/404/mất mạng)';
     final owner = item.ownerAccountKey;
     if (owner != null && owner != ErrorTrackerService.instance.currentOwnerKey) {
       return 'Chờ chính chủ đăng nhập (TK $owner)';

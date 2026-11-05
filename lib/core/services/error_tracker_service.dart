@@ -110,11 +110,13 @@ class ErrorTrackerService {
 
   /// Nhận diện phân hệ từ đường dẫn endpoint hoặc loại lỗi
   String detectModule(String? path, {DioExceptionType? dioType}) {
-    if (dioType == DioExceptionType.connectionTimeout ||
-        dioType == DioExceptionType.receiveTimeout ||
-        dioType == DioExceptionType.sendTimeout ||
-        dioType == DioExceptionType.connectionError) {
+    // NET = request chưa tới được máy chủ (mất sóng, không kết nối được) — không gửi lên máy chủ ([shouldUpload]).
+    // SLOW = đã gửi đi mà máy chủ trả lời quá chậm — dấu hiệu máy chủ quá tải, vẫn gửi.
+    if (dioType == DioExceptionType.connectionTimeout || dioType == DioExceptionType.connectionError) {
       return 'NET';
+    }
+    if (dioType == DioExceptionType.receiveTimeout || dioType == DioExceptionType.sendTimeout) {
+      return 'SLOW';
     }
     if (path == null || path.isEmpty) return 'SYS';
 
@@ -146,7 +148,7 @@ class ErrorTrackerService {
   }) {
     final path = dioError.requestOptions.path;
     final statusCode = dioError.response?.statusCode;
-    final module = detectModule(path, dioType: dioError.type);
+    final module = dioError.error is SocketException ? 'NET' : detectModule(path, dioType: dioError.type);
     final errorId = generateErrorId(module, statusCode);
 
     // Trích xuất server code và message
@@ -270,9 +272,11 @@ class ErrorTrackerService {
   /// Lỗi có cần gửi lên máy chủ không.
   ///
   /// Bỏ 401 (hết phiên — luồng làm mới token tự xử lý) và 404 (không phải sự cố máy chủ hay sập app); lỗi của chính
-  /// lời gọi gửi lỗi cũng bỏ, không thì gửi hỏng sinh lỗi mới để gửi, vòng lặp không dừng.
+  /// lời gọi gửi lỗi cũng bỏ, không thì gửi hỏng sinh lỗi mới để gửi, vòng lặp không dừng. Lỗi mất mạng thuần (NET, không
+  /// mã HTTP) là chuyện thường ngày của app ngoại tuyến, chỉ giữ trong máy (chủ hệ thống chốt 05/11/2026).
   static bool shouldUpload(ErrorRecord record) {
     if (record.statusCode == 404 || record.statusCode == 401) return false;
+    if (record.module == 'NET' && record.statusCode == null) return false;
     if (record.endpoint?.contains('/dms/client-errors') ?? false) return false;
     return true;
   }

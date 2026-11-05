@@ -39,6 +39,10 @@ void main() {
       );
       expect(
         service.detectModule(null, dioType: DioExceptionType.receiveTimeout),
+        equals('SLOW'),
+      );
+      expect(
+        service.detectModule('/any/path', dioType: DioExceptionType.connectionError),
         equals('NET'),
       );
     });
@@ -119,6 +123,11 @@ void main() {
       expect(ErrorTrackerService.shouldUpload(r(401, 'https://api-app.vthmgroup.vn/dms/visits')), isFalse);
       expect(ErrorTrackerService.shouldUpload(r(404, 'https://api-app.vthmgroup.vn/dms/visits')), isFalse);
       expect(ErrorTrackerService.shouldUpload(r(500, 'https://api-app.vthmgroup.vn/dms/client-errors')), isFalse);
+
+      // Mất mạng thuần (NET, không mã HTTP) chỉ giữ trong máy; máy chủ chậm (SLOW) vẫn gửi.
+      ErrorRecord m(String module) => ErrorRecord(id: 'Y', timestamp: DateTime(2026), module: module, message: 'm');
+      expect(ErrorTrackerService.shouldUpload(m('NET')), isFalse);
+      expect(ErrorTrackerService.shouldUpload(m('SLOW')), isTrue);
     });
 
     test('4c. isQueuedFor chỉ gửi lỗi của chính người đăng nhập (hoặc lỗi trước đăng nhập)', () {
