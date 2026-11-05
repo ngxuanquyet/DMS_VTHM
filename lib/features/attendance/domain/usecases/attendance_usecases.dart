@@ -23,6 +23,7 @@ class PunchAttendanceUseCase {
     double? accuracyM,
     bool? isMockLocation,
     String? clientUuid,
+    int? geofenceId,
   }) {
     return _repository.punch(
       lat: lat,
@@ -30,6 +31,7 @@ class PunchAttendanceUseCase {
       accuracyM: accuracyM,
       isMockLocation: isMockLocation,
       clientUuid: clientUuid,
+      geofenceId: geofenceId,
     );
   }
 }

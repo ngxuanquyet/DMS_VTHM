@@ -12,6 +12,7 @@ abstract class AttendanceRepository {
     double? accuracyM,
     bool? isMockLocation,
     String? clientUuid,
+    int? geofenceId,
   });
 
   /// Tải ảnh camera cho lượt chấm (§4)

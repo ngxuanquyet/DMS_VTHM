@@ -240,6 +240,11 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     return match != null ? (match, true) : (config.closestLocation, false);
   }
 
+  /// Địa điểm gửi lên khi chấm: CHỈ khi người dùng TỰ chọn. Địa điểm app tự chọn theo khoảng cách không gửi — server
+  /// tự dò (đứng trong điểm bán kính nào ghi điểm đó, ngoài hết mới rơi về "Mọi nơi"); gửi nó là biến lựa chọn tự động
+  /// thành ràng buộc và chặn oan người ngoài văn phòng của nhóm có "Mọi nơi".
+  int? get _chosenGeofenceId => state.locationPickedByUser ? state.selectedLocation?.id : null;
+
   /// Người dùng chủ động chọn địa điểm chấm công
   void selectLocation(AttendanceLocationItemEntity location) {
     state = state.copyWith(selectedLocation: location, locationPickedByUser: true);
@@ -278,6 +283,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         accuracyM: position.accuracy,
         isMockLocation: position.isMocked,
         clientUuid: clickUuid,
+        geofenceId: _chosenGeofenceId,
       );
 
       final msg = punchResult.duplicate
@@ -352,6 +358,7 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         accuracyM: position.accuracy,
         isMockLocation: position.isMocked,
         clientUuid: clickUuid,
+        geofenceId: _chosenGeofenceId,
       );
 
       // Từ đây lượt chấm đã có (server hoặc hàng đợi): lỗi ở bước sau mà người dùng bấm lại ⇒ cùng lượt.

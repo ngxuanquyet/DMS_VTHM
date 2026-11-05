@@ -82,6 +82,14 @@ void main() {
       await expectLater(repo.punch(lat: 21, lng: 105.8, clientUuid: 'dd'), throwsA(isA<AppException>()));
     });
 
+    test('lượt có địa điểm TỰ chọn vào hàng đợi KHÔNG mang geofence_id (chọn sai ⇒ 422 ⇒ mục chết, mất lượt)', () async {
+      final repo =
+          AttendanceRepositoryImpl(AttendanceApiService(_FailingApiClient(const ServerException('x', 503))), database: db);
+      await repo.punch(lat: 21, lng: 105.8, clientUuid: 'gf', geofenceId: 7);
+      final row = await db.getEntryByClientUuid('gf');
+      expect((jsonDecode(row!.payload) as Map).containsKey('geofence_id'), isFalse);
+    });
+
     test('bấm lại CÙNG client_uuid (lần trước lưu ảnh lỗi) không xếp thêm dòng', () async {
       final repo =
           AttendanceRepositoryImpl(AttendanceApiService(_FailingApiClient(const ServerException('x', 503))), database: db);

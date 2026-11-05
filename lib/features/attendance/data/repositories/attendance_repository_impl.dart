@@ -137,6 +137,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     double? accuracyM,
     bool? isMockLocation,
     String? clientUuid,
+    int? geofenceId,
   }) async {
     // 🔴 QUY TẮC §3: client_uuid SINH LÚC NGƯỜI DÙNG BẤM, KHÔNG PHẢI LÚC GỬI
     final finalUuid = clientUuid ?? const Uuid().v4();
@@ -163,6 +164,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       isMockLocation: isMockLocation == true ? '1' : '0',
       isRootedDevice: '0',
       deviceInfo: deviceInfo,
+      geofenceId: geofenceId,
     );
 
     if (_isOnline) {
@@ -214,7 +216,9 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           entity: 'attendance_punch',
           op: 'create',
           clientUuid: finalUuid,
-          payload: jsonEncode(requestModel.toJson()),
+          // Bỏ `geofence_id`: chọn sai địa điểm ⇒ server 422 ⇒ mục hàng đợi chết, mất lượt người dùng đã thấy "đã chấm".
+          // Lượt ngoại tuyến để server tự dò theo toạ độ (05/11/2026).
+          payload: jsonEncode(requestModel.toJson()..remove('geofence_id')),
           createdAt: nowMs,
           // Mốc LÚC BẤM — lần gửi trực tuyến vừa hỏng có thể đã chờ quá giờ ~30s.
           createdElapsed: SystemClock.monotonicMsAt(now),

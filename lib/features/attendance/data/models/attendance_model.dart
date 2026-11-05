@@ -570,6 +570,9 @@ class AttendancePunchRequestModel {
   final String? isMockLocation;
   final String? isRootedDevice;
   final Map<String, dynamic>? deviceInfo;
+  /// Địa điểm người dùng CHỌN (`att_geofence.id`); null = server tự dò theo toạ độ. Chọn điểm bán kính mà đứng
+  /// ngoài ⇒ server từ chối 422 (chốt 05/11/2026).
+  final int? geofenceId;
 
   const AttendancePunchRequestModel({
     required this.clientUuid,
@@ -580,6 +583,7 @@ class AttendancePunchRequestModel {
     this.isMockLocation,
     this.isRootedDevice,
     this.deviceInfo,
+    this.geofenceId,
   });
 
   Map<String, dynamic> toJson() {
@@ -593,6 +597,7 @@ class AttendancePunchRequestModel {
     if (isMockLocation != null) map['is_mock_location'] = isMockLocation;
     if (isRootedDevice != null) map['is_rooted_device'] = isRootedDevice;
     if (deviceInfo != null) map['device_info'] = deviceInfo;
+    if (geofenceId != null) map['geofence_id'] = geofenceId;
     return map;
   }
 }
