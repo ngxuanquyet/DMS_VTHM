@@ -3,6 +3,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_snackbar.dart';
 import 'choice_other.dart';
 import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
@@ -527,12 +528,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         await widget.onSubmit!(_visibleFormData());
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng hoàn thành các trường thông tin bắt buộc (*).'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Vui lòng hoàn thành các trường thông tin bắt buộc (*).');
     }
   }
 

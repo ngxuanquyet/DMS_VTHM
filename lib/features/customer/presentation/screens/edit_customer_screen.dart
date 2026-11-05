@@ -280,12 +280,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       if (isValid) {
         _handleSubmit(_formKey.currentState!.getFormData());
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Vui lòng hoàn thành các trường thông tin bắt buộc (*).'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showInvalid(context, 'Vui lòng hoàn thành các trường thông tin bắt buộc (*).');
       }
     }
   }
@@ -296,24 +291,14 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
     // 1. Validate Tên điểm bán
     if (formData['name'] == null || formData['name'].toString().trim().isEmpty) {
       _formKey.currentState?.focusField('name');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tên điểm bán là bắt buộc.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Tên điểm bán là bắt buộc.');
       return;
     }
 
     // 2. Validate Khu vực
     if (formData['region_id'] == null || formData['region_id'].toString().trim().isEmpty) {
       _formKey.currentState?.focusField('region_id');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng chọn khu vực quản lý (Region).'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Vui lòng chọn khu vực quản lý (Region).');
       return;
     }
 

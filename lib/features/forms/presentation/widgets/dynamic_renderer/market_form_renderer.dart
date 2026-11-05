@@ -102,6 +102,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, dynamic> _answers = {};
   final Map<String, String> _errors = {};
   final Map<String, TextEditingController> _textControllers = {};
+
+  /// Khoá + FocusNode theo mã ô — nộp còn lỗi thì cuộn tới ô lỗi ĐẦU TIÊN, ô gõ chữ/số thì focus luôn.
+  final Map<String, GlobalKey> _blockKeys = {};
+  final Map<String, FocusNode> _focusNodes = {};
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
 
@@ -169,6 +173,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   void dispose() {
     for (final c in _textControllers.values) {
       c.dispose();
+    }
+    for (final n in _focusNodes.values) {
+      n.dispose();
     }
     super.dispose();
   }
@@ -622,6 +629,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     });
 
     if (newErrors.isNotEmpty) {
+      _focusBlock(newErrors.keys.first);
       return null;
     }
 
@@ -676,6 +684,28 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     widget.onChanged?.call(_answers);
   }
 
+  FocusNode _focusNodeOf(String code) => _focusNodes.putIfAbsent(code, FocusNode.new);
+
+  /// Cuộn tới ô [code]; ô gõ chữ/số thì focus luôn (bật bàn phím). Ô khác KHÔNG cất bàn phím: ô đang gõ (vd ô số ma
+  /// trận) ghi giá trị khi mất focus ⇒ xoá luôn lỗi vừa báo.
+  void _focusBlock(String code) {
+    final node = _focusNodes[code];
+    if (node != null && node.context != null && node.canRequestFocus) {
+      node.requestFocus();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _blockKeys[code]?.currentContext;
+      if (target != null && target.mounted) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.15,
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -690,7 +720,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           // đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
           key: ValueKey('block_${block.resolved.code}'),
           padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-          child: _buildBlock(context, block, isDark),
+          child: KeyedSubtree(
+            key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
+            child: _buildBlock(context, block, isDark),
+          ),
         );
       }).toList(),
     );
@@ -955,6 +988,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          focusNode: isLocked ? null : _focusNodeOf(code),
           readOnly: isLocked,
           maxLines: isMultiline ? 4 : 1,
           minLines: isMultiline ? 3 : 1,
@@ -1028,6 +1062,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: 8),
         TextFormField(
           initialValue: initial,
+          focusNode: isLocked ? null : _focusNodeOf(code),
           readOnly: isLocked,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: AppTypography.bodyMedium(

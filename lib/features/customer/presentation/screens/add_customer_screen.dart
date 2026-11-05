@@ -664,24 +664,14 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // 1. Validate Tên điểm bán (§5)
     if (formData['name'] == null || formData['name'].toString().trim().isEmpty) {
       _formKey.currentState?.focusField('name');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tên điểm bán là bắt buộc.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Tên điểm bán là bắt buộc.');
       return;
     }
 
     // 2. Validate Khu vực (§5)
     if (formData['region_id'] == null || formData['region_id'].toString().trim().isEmpty) {
       _formKey.currentState?.focusField('region_id');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng chọn khu vực quản lý (Region).'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Vui lòng chọn khu vực quản lý (Region).');
       return;
     }
 
@@ -708,14 +698,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       // Danh sách tuyến rỗng có thể do lần mở màn đang mất mạng ⇒ tải lại để lần bấm sau dùng được.
       if (userRoutes.isEmpty) ref.invalidate(userAssignedRoutesProvider);
       _formKey.currentState?.focusField('route_ids');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(userRoutes.isEmpty
-              // Không dựng tuyến giả (#24698 vòng 3) ⇒ máy chưa có danh sách tuyến thì phải có mạng một lần để tải.
-              ? 'Máy chưa có danh sách tuyến của bạn. Kết nối mạng để tải danh sách tuyến rồi tạo điểm bán.'
-              : 'Hãy chọn ít nhất một tuyến bán hàng cho điểm bán mới.'),
-          backgroundColor: AppColors.error,
-        ),
+      AppSnackBar.showInvalid(
+        context,
+        userRoutes.isEmpty
+            // Không dựng tuyến giả (#24698 vòng 3) ⇒ máy chưa có danh sách tuyến thì phải có mạng một lần để tải.
+            ? 'Máy chưa có danh sách tuyến của bạn. Kết nối mạng để tải danh sách tuyến rồi tạo điểm bán.'
+            : 'Hãy chọn ít nhất một tuyến bán hàng cho điểm bán mới.',
       );
       return;
     }
@@ -761,12 +749,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     }
     if (!hasPhoto) {
       _formKey.currentState?.focusField('photo_file_id');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng chụp ảnh điểm bán trước khi lưu.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Vui lòng chụp ảnh điểm bán trước khi lưu.');
       return;
     }
 
@@ -795,11 +778,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       _materialOps.values,
     );
     if (missingMaterials.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ref.read(stringsProvider).createMaterialsMissing(missingMaterials.map((t) => t.name).join(', '))),
-          backgroundColor: AppColors.error,
-        ),
+      AppSnackBar.showInvalid(
+        context,
+        ref.read(stringsProvider).createMaterialsMissing(missingMaterials.map((t) => t.name).join(', ')),
       );
       return;
     }
@@ -1444,12 +1425,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                                     if (isValid) {
                                       _handleSubmit(_formKey.currentState!.getFormData());
                                     } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Vui lòng hoàn thành các trường thông tin bắt buộc (*).'),
-                                          backgroundColor: AppColors.error,
-                                        ),
-                                      );
+                                      AppSnackBar.showInvalid(context, 'Vui lòng hoàn thành các trường thông tin bắt buộc (*).');
                                     }
                                   }
                                 },

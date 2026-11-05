@@ -202,12 +202,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
   Future<void> _handleSubmit() async {
     final answers = _rendererKey.currentState?.validateAndGetAnswers();
     if (answers == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showInvalid(context, 'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.');
       return;
     }
 

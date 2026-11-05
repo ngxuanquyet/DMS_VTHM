@@ -174,6 +174,12 @@ class AppSnackBar {
     _showOn(messenger, message, const Color(0xFFF59E0B), Icons.cloud_off_rounded, duration);
   }
 
+  /// Báo biểu mẫu chưa hợp lệ khi bấm Lưu/Nộp (thiếu ô bắt buộc…). Bấm liên tục chỉ THAY thông báo đang hiện — SnackBar
+  /// thô của `ScaffoldMessenger` xếp hàng nên mỗi lần bấm lại hiện thêm một cái nối đuôi.
+  static void showInvalid(BuildContext context, String message) {
+    _showOn(ScaffoldMessenger.of(context), message, AppColors.error, Icons.error_outline_rounded, const Duration(seconds: 3));
+  }
+
   static void _showOn(
     ScaffoldMessengerState messenger,
     String message,
