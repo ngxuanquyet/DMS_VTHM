@@ -517,12 +517,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final addrVal = val['address']?.toString();
 
         final inputType = block.resolved.inputType.toLowerCase();
-        final isPureAddressField = inputType == 'address' ||
-            inputType == 'dia_chi' ||
-            code == 'address' ||
-            code == 'dia_chi' ||
-            code == 'dia_chi_giao_dich' ||
-            label.toLowerCase().contains('địa chỉ');
+        // Theo LOẠI Ô, không theo mã/nhãn: ô `location` server luôn đòi toạ độ (05/11/2026).
+        final isPureAddressField = inputType == 'address' || inputType == 'dia_chi';
 
         // Chỉ có address hoặc chỉ một nửa toạ độ
         if (latVal == null || lngVal == null) {
@@ -964,12 +960,6 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final initial = _answers[code]?.toString() ?? '';
     final controller = _getController(code, initial);
 
-    final isPhone = !isMultiline && (code.toLowerCase().contains('phone') ||
-        code.toLowerCase().contains('dien_thoai') ||
-        code.toLowerCase().contains('sdt') ||
-        block.resolved.label.toLowerCase().contains('điện thoại') ||
-        block.resolved.label.toLowerCase().contains('sđt'));
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -983,7 +973,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           minLines: isMultiline ? 3 : 1,
           keyboardType: isMultiline
               ? TextInputType.multiline
-              : (isPhone ? TextInputType.phone : TextInputType.text),
+              : TextInputType.text,
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
           ),

@@ -43,36 +43,15 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
   List<GoongPrediction> _suggestions = [];
   bool _isSearchingSuggestions = false;
 
-  bool get _isAddressField =>
-      widget.field.code == 'address' ||
-      widget.field.code == 'delivery_address' ||
-      widget.field.label.toLowerCase().contains('địa chỉ');
+  // 🔴 Chỉ CỘT CỨNG địa chỉ của điểm bán (mã cố định server) — ô động không đoán theo nhãn/mã (chủ hệ thống chốt 05/11/2026:
+  // vẽ theo LOẠI TRƯỜNG, không theo tên).
+  bool get _isAddressField => widget.field.code == 'address' || widget.field.code == 'delivery_address';
 
-  bool get _isPhoneField {
-    final code = widget.field.code.toLowerCase();
-    final label = widget.field.label.toLowerCase();
-    return code == 'phone' ||
-        code == 'sdt' ||
-        code == 'tel' ||
-        code == 'telephone' ||
-        code == 'mobile' ||
-        code == 'contact_phone' ||
-        code.contains('phone') ||
-        code.contains('dien_thoai') ||
-        code.contains('so_dien_thoai') ||
-        label.contains('điện thoại') ||
-        label.contains('sđt') ||
-        label.contains('số điện thoại') ||
-        label.contains('phone');
-  }
+  // Cột cứng SĐT / email của điểm bán (mã cố định server). Ô động có nhãn "Loại điện thoại"… từng bị khoá chỉ gõ số — không
+  // đoán theo nhãn/mã nữa (05/11/2026).
+  bool get _isPhoneField => widget.field.code == 'phone';
 
-  bool get _isEmailField {
-    final code = widget.field.code.toLowerCase();
-    final label = widget.field.label.toLowerCase();
-    return code == 'email' ||
-        code.contains('email') ||
-        label.contains('email');
-  }
+  bool get _isEmailField => widget.field.code == 'email';
 
   @override
   void initState() {

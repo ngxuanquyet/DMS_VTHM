@@ -433,10 +433,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
       // 2. Kiểm tra trường Vị trí GPS / Địa chỉ
       if (field.type == DynamicFormFieldType.location) {
-        final isPureAddress = (field.code == 'address' ||
-            field.code == 'delivery_address' ||
-            field.code.contains('dia_chi') ||
-            field.label.toLowerCase().contains('địa chỉ')) && !field.isCoordsField;
+        // Chỉ CỘT CỨNG địa chỉ (mã cố định) được bỏ toạ độ; ô động loại `location` luôn cần toạ độ như server đòi — không
+        // đoán theo nhãn/mã (05/11/2026).
+        final isPureAddress = (field.code == 'address' || field.code == 'delivery_address') && !field.isCoordsField;
 
         if (value is Map) {
           final latVal = value['lat'];

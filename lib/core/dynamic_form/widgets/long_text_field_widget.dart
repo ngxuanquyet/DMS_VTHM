@@ -42,10 +42,9 @@ class _DynamicLongTextFieldWidgetState extends State<DynamicLongTextFieldWidget>
   List<GoongPrediction> _suggestions = [];
   bool _isSearchingSuggestions = false;
 
-  bool get _isAddressField =>
-      widget.field.code == 'address' ||
-      widget.field.code == 'delivery_address' ||
-      widget.field.label.toLowerCase().contains('địa chỉ');
+  // 🔴 Chỉ CỘT CỨNG địa chỉ của điểm bán (mã cố định server) — ô động không đoán theo nhãn/mã (chủ hệ thống chốt 05/11/2026:
+  // vẽ theo LOẠI TRƯỜNG, không theo tên).
+  bool get _isAddressField => widget.field.code == 'address' || widget.field.code == 'delivery_address';
 
   @override
   void initState() {

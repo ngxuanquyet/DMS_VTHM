@@ -76,6 +76,23 @@ void main() {
       final textField = tester.widget<TextField>(find.byType(TextField));
       expect(textField.keyboardType, TextInputType.text);
       expect(find.byIcon(Icons.edit_note_rounded), findsOneWidget);
+
+      // Ô ĐỘNG có nhãn nhắc tới điện thoại vẫn là ô chữ thường — vẽ theo loại ô, không theo nhãn/mã (05/11/2026).
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DynamicTextFieldWidget(
+              field: const DynamicFormField(code: 'loai_dien_thoai', label: 'Loại điện thoại', type: DynamicFormFieldType.text),
+              value: 'iPhone',
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final oDong = tester.widget<TextField>(find.byType(TextField));
+      expect(oDong.keyboardType, TextInputType.text);
+      expect(oDong.inputFormatters, isNull);
     });
   });
 

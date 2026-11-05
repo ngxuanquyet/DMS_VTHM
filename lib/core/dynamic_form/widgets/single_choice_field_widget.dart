@@ -108,9 +108,7 @@ class DynamicSingleChoiceFieldWidget extends StatelessWidget {
         field.choiceDisplay == 'dropdown' ||
         field.catalog == 'route' ||
         field.source == 'dropdown' ||
-        field.badge == 'Danh sách chọn' ||
-        field.code.startsWith('nhan_') ||
-        field.code == 'khach_hang_vthm';
+        field.badge == 'Danh sách chọn';
 
     if (isDropdown) {
       return DynamicFormFieldWrapper(
