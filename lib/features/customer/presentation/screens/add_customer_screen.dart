@@ -215,6 +215,15 @@ Set<String> customerHiddenFieldCodes(
   return {for (final e in vis.entries) if (!e.value) e.key};
 }
 
+/// Form TẠO điểm bán có bước khai vật tư không — theo ô ảo "Vật tư tại điểm" ở Cấu hình trường điểm bán (MẶC ĐỊNH ẨN,
+/// chốt 05/11/2026): có ô trong schema mới có bước vật tư. Schema không mang cờ `materials_fields` (bản lưu máy từ app cũ)
+/// cũng coi là ẩn — server mới mặc định không đòi, giữ bước cũ thì app chặn oan khi tạo ngoại tuyến.
+bool customerCreateMaterialsEnabled(Map<String, dynamic>? schemaData) {
+  final data = schemaData?['data'];
+  if (data is! Map || data['materials_fields'] != true) return false;
+  return (data['fields'] as List? ?? const []).any((f) => f is Map && f['code'] == 'materials');
+}
+
 /// Dựng danh sách ô form điểm bán từ schema Cấu hình trường — DÙNG CHUNG màn Thêm mới và Sửa (chủ hệ thống 23/10/2026:
 /// form sửa = form tạo, không đắp thêm khoá dữ liệu như erp_linked, created_by_name… thành ô).
 ///
@@ -247,6 +256,8 @@ List<DynamicFormField> buildCustomerFormFields(
 
   // Spec 20/10/2026 (§3): Loại bỏ ô chọn Kênh cũ (channel_id / crm_channel)
   fields.removeWhere((f) => f.code == 'channel_id' || f.code == 'crm_channel');
+  // Ô ảo "Vật tư tại điểm" chỉ là công tắc bước vật tư ([customerCreateMaterialsEnabled]) — không vẽ thành ô nhập.
+  fields.removeWhere((f) => f.code == 'materials');
 
   if (c != null) {
     fields.removeWhere((f) => f.code == 'own_channel_ids' || f.code == 'territory_code');
@@ -514,10 +525,17 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadMaterialCatalog();
+    // Sau khung đầu: schema đã có sẵn (provider đang sống) thì tải ngay; chưa có thì bộ nghe schema trong build() lo.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadMaterialCatalog();
+    });
   }
 
   Future<void> _loadMaterialCatalog() async {
+    // Ô "Vật tư tại điểm" đang ẩn ⇒ không có bước vật tư, khỏi tải danh mục. Schema chưa có giá trị (lúc mở màn) ⇒ chờ:
+    // bộ nghe schema trong build() tải khi giá trị đầu cho biết có bước vật tư.
+    final schema = ref.read(customerFormSchemaProvider).valueOrNull;
+    if (schema == null || !customerCreateMaterialsEnabled(schema)) return;
     final res = await ref.read(visitMaterialRepositoryProvider).loadCreateCatalog();
     if (!mounted) return;
     setState(() {
@@ -557,8 +575,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   static const _materialAxisKeys = ['customer_type_id', 'region_id', 'own_channel_ids', 'territory_code'];
 
 
+  /// Bước khai vật tư lúc tạo có bật không ([customerCreateMaterialsEnabled]).
+  bool get _vatTuKhiTao => customerCreateMaterialsEnabled(ref.read(customerFormSchemaProvider).valueOrNull);
+
   bool _hasUserInput() {
-    if (_materialOps.isNotEmpty) return true;
+    if (_vatTuKhiTao && _materialOps.isNotEmpty) return true;
     if (_formKey.currentState != null) {
       final data = _formKey.currentState!.getFormData();
       for (final entry in data.entries) {
@@ -752,7 +773,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // 5. Vật tư bắt buộc (#24526): chặn TRƯỚC khi gửi / xếp hàng — server không chặn lượt tạo từ hàng đợi ngoại tuyến.
     // Khai số lượng 0 ("không có") vẫn tính là đã khai.
     // Danh mục chưa tải được mà đang có mạng ⇒ thử tải lại ngay (không thì server trả 400 mãi mà không có chỗ khai).
-    if (_materialCatalog == null && !_materialsForbidden && ref.read(connectivityProvider).isOnline) {
+    final vatTuKhiTao = _vatTuKhiTao;
+    if (vatTuKhiTao && _materialCatalog == null && !_materialsForbidden && ref.read(connectivityProvider).isOnline) {
       // Khoá nút Lưu TRONG lúc chờ mạng: không thì bấm lần hai lọt qua chốt `_isSubmitting` ở đầu hàm ⇒ hai POST tạo
       // điểm bán (đường trực tuyến không có client_uuid sinh sẵn) ⇒ điểm bán trùng.
       setState(() => _isSubmitting = true);
@@ -763,7 +785,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
       if (!mounted) return;
     }
-    final missingMaterials = missingCreateMaterials(
+    final missingMaterials = !vatTuKhiTao ? const <OutletMaterialType>[] : missingCreateMaterials(
       _requiredMaterialTypes(
         formData,
         // Đúng giá trị SẼ GỬI: giữ nguyên giá trị điền sẵn thì app không gửi kênh/tuyến ⇒ server lấp mặc định.
@@ -814,7 +836,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       payload['route_ids'] = finalRouteIds;
 
       // Vật tư khai lúc tạo: thao tác thô (ảnh có thể còn là đường dẫn) — đổi ảnh ra token ở bước gửi / đồng bộ.
-      if (_materialOps.isNotEmpty) {
+      if (vatTuKhiTao && _materialOps.isNotEmpty) {
         payload['materials'] = _materialOps.values.map((o) => o.toJson()).toList();
       }
 
@@ -998,6 +1020,14 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Schema mới bật ô "Vật tư tại điểm" (bản lưu máy đang ẩn ⇒ lúc mở màn đã bỏ tải danh mục) ⇒ tải danh mục vật tư.
+    ref.listen(customerFormSchemaProvider, (prev, next) {
+      final moi = next.valueOrNull;
+      if (moi == null || !customerCreateMaterialsEnabled(moi) || _materialCatalog != null) return;
+      final cu = prev?.valueOrNull;
+      // Giá trị ĐẦU của schema, hoặc schema mới vừa bật ô.
+      if (cu == null || !customerCreateMaterialsEnabled(cu)) _loadMaterialCatalog();
+    });
     // Có mạng lại mà chưa có danh mục vật tư ⇒ tải lại để mở mục khai.
     ref.listen(connectivityProvider, (prev, next) {
       if (next.isOnline && !(prev?.isOnline ?? false) && _materialCatalog == null && !_materialsForbidden) {
@@ -1312,7 +1342,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           customValidators: {'erp_links': erpLinksCreateValidator},
                           hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data),
                         ),
-                        if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
+                        if (!customerCreateMaterialsEnabled(schemaData))
+                          const SizedBox.shrink()
+                        else if (!_materialsForbidden && _materialCatalog != null && _materialCatalog!.types.isNotEmpty)
                           OutletCreateMaterialsSection(
                             catalog: _materialCatalog!,
                             requiredTypes: () {

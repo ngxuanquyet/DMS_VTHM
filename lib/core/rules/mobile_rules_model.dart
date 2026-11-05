@@ -10,6 +10,10 @@ class VisitRules {
   final String routeScope;
   final int autoCloseAfterHours;
 
+  /// Công tắc "Cập nhật vật tư khi viếng thăm" (`materials_enabled`) — tắt thì màn check-in không có mục Vật tư và
+  /// check-out không đòi vật tư. Server cũ không gửi ⇒ coi như bật (giữ hành vi trước).
+  final bool materialsEnabled;
+
   const VisitRules({
     this.requireGeofence = true,
     this.defaultRadiusM = 100,
@@ -19,6 +23,7 @@ class VisitRules {
     this.closedMinPhotos = 1,
     this.routeScope = 'assigned',
     this.autoCloseAfterHours = 0,
+    this.materialsEnabled = true,
   });
 
   factory VisitRules.fromJson(Map<String, dynamic> json) {
@@ -34,6 +39,7 @@ class VisitRules {
       routeScope: json['route_scope']?.toString() ?? 'assigned',
       autoCloseAfterHours:
           (json['auto_close_after_hours'] as num?)?.toInt() ?? 0,
+      materialsEnabled: json['materials_enabled'] as bool? ?? true,
     );
   }
 
@@ -46,6 +52,7 @@ class VisitRules {
         'closed_min_photos': closedMinPhotos,
         'route_scope': routeScope,
         'auto_close_after_hours': autoCloseAfterHours,
+        'materials_enabled': materialsEnabled,
       };
 }
 

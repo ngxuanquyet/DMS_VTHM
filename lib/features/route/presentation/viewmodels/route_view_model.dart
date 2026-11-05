@@ -1260,7 +1260,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         : (state.visitId < 0 ? _offlineMissingForms() : (currentReq?.missingForms ?? <MissingFormEntity>[]));
 
     // Giữ danh sách cả khi đóng cửa (chỉ không tính vào satisfied) — đổi lại "mở cửa" lúc ngoại tuyến không mất cổng ④.
-    final missingMaterials = currentReq?.missingMaterials ?? <MissingMaterialEntity>[];
+    // Công tắc "Cập nhật vật tư khi viếng thăm" tắt ⇒ không có cổng ④.
+    final missingMaterials = rules.visit.materialsEnabled
+        ? (currentReq?.missingMaterials ?? <MissingMaterialEntity>[])
+        : <MissingMaterialEntity>[];
 
     final isTimeOk = isClosed || isNewPendingStore || currentSec <= 0;
     final isFormsOk = isClosed || missingForms.isEmpty;

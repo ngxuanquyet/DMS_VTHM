@@ -60,6 +60,13 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   /// 403 khi nạp vật tư ⇒ tài khoản không có quyền vật tư, ẩn mục Vật tư (#24522).
   bool _materialsForbidden = false;
 
+  /// Ẩn mục Vật tư: không có quyền, hoặc công tắc "Cập nhật vật tư khi viếng thăm" đang tắt (luật di động, có bản lưu
+  /// dùng ngoại tuyến).
+  bool get _materialsHidden => _materialsForbidden || !_materialsOn;
+
+  /// Công tắc "Cập nhật vật tư khi viếng thăm" — MỘT chỗ đọc cho mục Vật tư, bước nạp và cổng ④ khi check-out.
+  bool get _materialsOn => ref.read(mobileRulesProvider).visit.materialsEnabled;
+
   /// Chưa có danh sách vật tư bắt buộc của CHÍNH điểm bán (chưa từng tải, hoặc chỉ có danh mục của điểm bán khác) ⇒
   /// không biết cổng ④ đòi gì: hỏi lại trước khi check-out, KHÔNG chặn cứng (luật theo loại điểm bán). Đặt lại khi
   /// GET vật tư sau đó thành công.
@@ -110,6 +117,15 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     final state = ref.read(checkInViewModelProvider);
     if (state.visitId == 0) return;
     final vm = ref.read(checkInViewModelProvider.notifier);
+    if (!_materialsOn) {
+      // Công tắc tắt: không nạp, không có cổng ④ (server cũng không đòi) — dọn luôn trạng thái lần nạp trước.
+      setState(() {
+        _materialsUnknown = false;
+        _requiredMaterialCount = null;
+      });
+      vm.applyMaterialRequirements(const []);
+      return;
+    }
     final res = await ref.read(visitMaterialRepositoryProvider).load(
           visitId: state.visitId,
           customerId: _effectiveCustomerId(state),
@@ -1829,6 +1845,12 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     ref.listen<int>(checkInViewModelProvider.select((s) => s.visitId), (prev, next) {
       if (next > 0 && (prev ?? 0) <= 0) _prefetchMaterials();
     });
+    // Công tắc vật tư đổi (luật di động tải xong sau khi vào màn / admin vừa bật-tắt) ⇒ vẽ lại + tính lại cổng ④: luật mặc
+    // định lúc chưa tải là BẬT nên bản đã nạp có thể mang loại bắt buộc của lượt đang tắt.
+    ref.listen<bool>(mobileRulesProvider.select((r) => r.visit.materialsEnabled), (prev, next) {
+      if (prev != next) _prefetchMaterials();
+    });
+    ref.watch(mobileRulesProvider.select((r) => r.visit.materialsEnabled));
     final state = ref.watch(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
     final strings = ref.watch(stringsProvider);
@@ -2591,7 +2613,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                               const SizedBox(height: 12),
 
                               // Task: Vật tư tại điểm bán (#24522) — cổng check-out ④
-                              if (isOpenVisit && !_materialsForbidden) ...[
+                              if (isOpenVisit && !_materialsHidden) ...[
                                 _buildTaskCard(
                                   context: context,
                                   isDark: isDark,
@@ -2743,7 +2765,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                   }
 
                                   // Ưu tiên 4: VẬT TƯ BẮT BUỘC (#24522) — server đã có câu trong blockers
-                                  if (!isClosed && req != null && req.missingMaterials.isNotEmpty) {
+                                  if (!isClosed &&
+                                      _materialsOn &&
+                                      req != null &&
+                                      req.missingMaterials.isNotEmpty) {
                                     _showBlockersDialog(
                                       [
                                         strings.materialsCheckoutBlocked(
@@ -2762,7 +2787,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                   }
                                   if (!isClosed &&
                                       _materialsUnknown &&
-                                      !_materialsForbidden &&
+                                      !_materialsHidden &&
                                       !await _confirmCheckoutWithoutMaterialList()) {
                                     return;
                                   }
@@ -2859,7 +2884,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       distanceMeters: checkoutDistanceM,
                                       // Chỉ khi cổng ④ THẬT SỰ đã xét (có requirements, không còn thiếu) — không có req thì
                                       // cổng bị bỏ qua, ghi "Đạt" là nói sai.
-                                      materialRow: _materialsForbidden ||
+                                      materialRow: _materialsHidden ||
                                               _materialsUnknown ||
                                               _requiredMaterialCount == null ||
                                               req == null ||
