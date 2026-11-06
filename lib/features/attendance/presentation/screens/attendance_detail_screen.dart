@@ -44,6 +44,7 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(attendanceViewModelProvider.notifier).forgetPickedLocation();
       _initGpsAndConfig();
     });
   }

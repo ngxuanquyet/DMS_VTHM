@@ -219,6 +219,12 @@ class VisitEntity {
     return l.year == n.year && l.month == n.month && l.day == n.day;
   }
 
+  /// Lượt NGÀY CŨ đã có mã server: không còn là "lượt đang mở" trong máy ở BẤT KỲ cửa nào (khôi phục, chặn check-in) — cron
+  /// đầu ngày đánh dấu "Chưa check-out" (#24701); mở lại rồi check-out là xoá dấu đó, thời lượng thổi lên hàng chục giờ
+  /// (#24894, rà soát #24698 vòng 8). Lượt chưa có mã (id ≤ 0) KHÔNG thuộc nhóm này — vẫn chặn (chủ hệ thống chốt 06/11/2026).
+  /// Không rõ giờ check-in ⇒ KHÔNG coi là ngày cũ (không đủ căn cứ bỏ lượt đang mở).
+  bool get isPastDayServerVisit => id > 0 && checkinAt != null && !isCheckinToday;
+
   /// Đã hoàn thành check-out (lượt "Tạo điểm bán" tính là đã hoàn tất)
   bool get isCompleted => (checkoutAt != null || isNewOutlet) && cancelledAt == null;
 

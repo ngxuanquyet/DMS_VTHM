@@ -880,6 +880,14 @@ class SyncService {
     // Lượt sửa từ HÀNG ĐỢI ngoại tuyến (#24331): server nới phép kiểm (bỏ mục `erp_link_changes` sai thay vì 4xx — 4xx làm hàng
     // đợi bỏ hẳn lần sửa, mất cả các ô khác đã sửa). Cờ RIÊNG của request — `is_offline_sync` là CỘT của điểm bán, gửi là ghi đè.
     payload['offline_queue'] = true;
+    // Giờ bấm thật (§9.1): server dựng mốc đo ô ma trận SOS — số đo sau thắng, như phiếu khảo sát (#24698 vòng 8). Không
+    // gửi `client_boot_id`: form sửa điểm bán từ chối khoá lạ.
+    final queuedSec = SystemClock.calculateQueuedSeconds(
+      createdElapsedMs: entry.createdElapsed,
+      entryBootId: entry.bootId,
+    );
+    if (queuedSec != null) payload['queued_seconds'] = queuedSec;
+    payload['client_time'] = DateTime.fromMillisecondsSinceEpoch(entry.createdAt).toIso8601String();
     await _apiClient.patch('/crm/customers/$serverId', data: payload);
     await _db.markDone(entry.id, serverId: serverId);
     await _deleteOfflineCustomerPhotos(dynamicPhotos, entry.id);

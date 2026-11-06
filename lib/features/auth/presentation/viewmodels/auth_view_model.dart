@@ -28,6 +28,7 @@ import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../customer/presentation/viewmodels/rejected_read_status_notifier.dart';
+import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../states/auth_state.dart';
 
 final authApiServiceProvider = Provider<AuthApiService>((ref) {
@@ -372,6 +373,14 @@ class AuthViewModel extends StateNotifier<AuthState> {
     // Có người đăng nhập ⇒ dọn lịch sử lưu trong máy quá 60 ngày (một lần mỗi lần mở app). CHỜ xong — chạy trước khi
     // state thành authenticated tức trước lần tải dữ liệu đầu, không bị repository ghi đè; chỉ là xử lý JSON, nhanh.
     if (userId != null) {
+      final id = int.tryParse(userId);
+      if (id != null) {
+        try {
+          await VisitRepositoryImpl.switchLocalOwner(id);
+        } catch (e) {
+          debugPrint('[AuthViewModel] Không đổi được chủ bộ đệm lượt viếng thăm: $e');
+        }
+      }
       try {
         await LocalHistoryRetention.runOnce();
       } catch (e) {
@@ -400,6 +409,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
     r.invalidate(travelViewModelProvider);
     r.invalidate(visitReportViewModelProvider);
     r.invalidate(checkInViewModelProvider);
+    // Lượt đang mở / danh sách lượt hôm nay của người trước (#24698 vòng 8).
+    r.invalidate(routeViewModelProvider);
     r.invalidate(positionDeclarationViewModelProvider);
     // Lịch sử / giờ vào hôm nay của người đăng nhập trước.
     r.invalidate(attendanceViewModelProvider);

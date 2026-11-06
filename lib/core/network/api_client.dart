@@ -148,12 +148,22 @@ class AuthInterceptor extends QueuedInterceptor {
 
       if (refreshToken != null && refreshToken.isNotEmpty) {
         final refreshDio = _refreshDio();
-        final Response<dynamic> refreshRes;
+        Response<dynamic> refreshRes;
         try {
-          refreshRes = await refreshDio.post(
-            '/auth/refresh',
-            data: {'refresh_token': refreshToken},
-          );
+          try {
+            refreshRes = await refreshDio.post(
+              '/auth/refresh',
+              data: {'refresh_token': refreshToken},
+            );
+          } on DioException catch (e) {
+            // Hết giờ CHỜ PHẢN HỒI: server có thể đã xoay token xong mà app không nhận ⇒ token cũ chỉ còn dùng được trong cửa
+            // replay (mặc định 60 s); để tới lần thử sau là 401, bị đăng xuất. Gửi lại NGAY một lần (#24698 vòng 8).
+            if (e.type != DioExceptionType.receiveTimeout) rethrow;
+            refreshRes = await refreshDio.post(
+              '/auth/refresh',
+              data: {'refresh_token': refreshToken},
+            );
+          }
         } on DioException catch (refreshErr) {
           final refreshStatus = refreshErr.response?.statusCode;
           // Mất mạng / quá giờ / quá tải / máy chủ lỗi lúc xin phiên mới ⇒ phiên CHƯA chắc đã hết: GIỮ phiên, trả lỗi

@@ -1024,12 +1024,19 @@ class CustomerLocalDataSource {
 
     // CHỈ gộp vào lệnh sửa MỚI NHẤT chưa xong, và chỉ khi nó còn chờ: dòng ĐANG gửi mà gộp thêm thì lúc gửi xong
     // `markDone` đè — phần gộp mất; gộp vào dòng cũ hơn một dòng khác thì dòng sau gửi sau, đè phần vừa sửa (vòng 3).
-    if (latest != null && latest.state == 'pending') {
-      final entry = latest;
-      Map<String, dynamic> oldPayload = {};
+    // Lệnh có ô ma trận SOS KHÔNG gộp (#24698 vòng 8): server lấy giờ bấm của dòng làm mốc đo ô ma trận — dòng gộp chỉ có MỘT
+    // mốc, sai với một trong hai lần sửa (phiếu khảo sát nộp giữa hai lần thì hoặc bị số cũ đè, hoặc đè mất số mới). Xoá trắng
+    // ô (null) có thể là ô ma trận ⇒ cũng không gộp.
+    bool coMaTran(Map<String, dynamic> p) => p['data'] is Map &&
+        (p['data'] as Map).values.any((v) => v == null || (v is Map && v.containsKey('counts')));
+    Map<String, dynamic> oldPayload = {};
+    if (latest != null) {
       try {
-        oldPayload = jsonDecode(entry.payload) as Map<String, dynamic>;
+        oldPayload = jsonDecode(latest.payload) as Map<String, dynamic>;
       } catch (_) {}
+    }
+    if (latest != null && latest.state == 'pending' && !coMaTran(oldPayload) && !coMaTran(changes)) {
+      final entry = latest;
       final merged = {...oldPayload, ...changes};
       // `data` (ô động) chỉ mang các ô ĐÃ ĐỔI của từng lần sửa ⇒ gộp theo ô, không để lần sau đè mất ô của lần trước.
       if (oldPayload['data'] is Map && changes['data'] is Map) {

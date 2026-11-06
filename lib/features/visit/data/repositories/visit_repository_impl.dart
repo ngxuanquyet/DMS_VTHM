@@ -42,8 +42,36 @@ class VisitRepositoryImpl implements VisitRepository {
   final VisitApiService _apiService;
   static const String _activeVisitKey = 'dms_active_visit_session_v1';
   static const String _visitsListKey = 'dms_visits_local_cache_v2';
+  static const String _ownerKey = 'dms_visits_local_owner';
 
   VisitRepositoryImpl(this._apiService);
+
+  /// Lượt đang mở + bộ đệm lượt trong máy là của MỘT tài khoản (#24698 vòng 8): tài khoản khác đăng nhập ⇒ cất bản của người
+  /// trước sang khoá riêng `<khoá>_u<id>` (lượt ngoại tuyến chưa gửi của họ còn nguyên khi họ vào lại), lấy lại bản đã cất
+  /// của người mới. Máy chưa ghi chủ (bản app cũ) ⇒ giao cho người đăng nhập đầu tiên, như hàng đợi. Dọn ảnh tạm quét MỌI
+  /// khoá nên ảnh mà bản cất trỏ tới không bị xoá.
+  static Future<void> switchLocalOwner(int userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final previous = prefs.getInt(_ownerKey);
+    if (previous != null && previous != userId) {
+      for (final key in const [_activeVisitKey, _visitsListKey]) {
+        final mine = prefs.getString(key);
+        if (mine != null) {
+          await prefs.setString('${key}_u$previous', mine);
+        } else {
+          await prefs.remove('${key}_u$previous');
+        }
+        final stashed = prefs.getString('${key}_u$userId');
+        if (stashed != null) {
+          await prefs.setString(key, stashed);
+          await prefs.remove('${key}_u$userId');
+        } else {
+          await prefs.remove(key);
+        }
+      }
+    }
+    await prefs.setInt(_ownerKey, userId);
+  }
 
   /// Lượt CÒN MỞ trên server, KHÔNG giới hạn ngày (lượt treo từ hôm trước vẫn chặn mọi check-in mới). Lỗi mạng ném ra —
   /// nơi gọi coi là "không tra được", không kết luận gì.

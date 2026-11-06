@@ -192,7 +192,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     // Kiểm tra xem có phiên viếng thăm khác đang mở không (§3 Luật 3)
     // Áp dụng cả khi online lẫn offline
     final currentState = ref.read(checkInViewModelProvider);
-    VisitEntity? activeVisit = currentState.visitId != 0 && currentState.visitEntity?.isOpen == true
+    VisitEntity? activeVisit = currentState.visitId != 0 &&
+            currentState.visitEntity?.isOpen == true &&
+            !currentState.visitEntity!.isPastDayServerVisit
         ? currentState.visitEntity
         : null;
 
@@ -209,7 +211,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     if (activeVisit == null) {
       try {
         final routeActive = ref.read(routeViewModelProvider).activeVisit;
-        if (routeActive != null && routeActive.isOpen) {
+        if (routeActive != null && routeActive.isOpen && !routeActive.isPastDayServerVisit) {
           activeVisit = routeActive;
         }
       } catch (_) {}
@@ -230,8 +232,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       // Theo §4.1 HUY-LUOT-VIENG-THAM-2026-09-30, lượt đã huỷ biến mất khỏi /dms/visits/mine
       // CHỈ với lượt của HÔM NAY: lượt treo từ hôm trước không bao giờ có trong danh sách hôm nay mà vẫn đang mở
       // (màn tuyến đưa nó lên từ danh sách lượt còn mở) — coi là đã huỷ thì nhân viên không bao giờ gỡ được nó.
-      var isStaleCancelledOnServer = todayVisits.isNotEmpty &&
-          currentActive.id > 0 &&
+      // Danh sách hôm nay RỖNG vẫn phải xét: lượt duy nhất hôm nay huỷ ở máy khác không còn trong danh sách nào (#24895);
+      // hỏi lại server ngay dưới mới dọn.
+      var isStaleCancelledOnServer = currentActive.id > 0 &&
           currentActive.isCheckinToday &&
           matchingServerVisit == null;
       // Chỉ là SUY LUẬN từ danh sách trong máy — có thể cũ (vừa check-in trực tuyến, tuyến chưa tải lại) ⇒ hỏi lại server
@@ -377,14 +380,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   Future<void> _checkinIfNeeded() async {
     var state = ref.read(checkInViewModelProvider);
-    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) return; // Đã có phiên hợp lệ (cả online lẫn offline)
+    // Đã có phiên hợp lệ (cả online lẫn offline). Lượt ngày cũ đã có mã server không tính (#24894).
+    bool coPhienMo(CheckInState s) =>
+        s.visitId != 0 && s.visitEntity != null && s.visitEntity!.isOpen && !s.visitEntity!.isPastDayServerVisit;
+    if (coPhienMo(state)) return;
 
     if (state.checkinData == null) {
       await ref.read(checkInViewModelProvider.notifier).loadCheckinData();
       state = ref.read(checkInViewModelProvider);
     }
 
-    if (state.visitId != 0 && state.visitEntity != null && state.visitEntity!.isOpen) return;
+    if (coPhienMo(state)) return;
 
     final customer = state.customer is CustomerEntity ? (state.customer as CustomerEntity) : null;
     final customerId = customer?.id ??
@@ -393,7 +399,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     // Kiểm tra bản ghi active visit lưu trữ cục bộ để chặn offline (§3 Luật 3)
     try {
       final savedActive = await ref.read(visitRepositoryProvider).getActiveVisit();
-      if (savedActive != null && savedActive.isOpen) {
+      if (savedActive != null && savedActive.isOpen && !savedActive.isPastDayServerVisit) {
         if (!savedActive.isAtCustomer(
             customerId, customerClientUuidOf(state.customer) ?? customerClientUuidOf(widget.dealer?.customer))) {
           _showCheckinErrorDialog('Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.');

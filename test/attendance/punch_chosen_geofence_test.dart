@@ -95,6 +95,15 @@ void main() {
     expect(repo.sent, [null]);
   });
 
+  test('mở lại màn chấm công ⇒ bỏ địa điểm tự chọn lần trước, không gửi id (chốt 06/11/2026, #24698 vòng 8)', () async {
+    vm.selectLocation(vm.state.config!.locations.last);
+    vm.forgetPickedLocation();
+    expect(vm.state.locationPickedByUser, isFalse);
+    expect(vm.state.selectedLocation?.id, 1, reason: 'về địa điểm gần nhất');
+    await vm.punch(position: _pos(), addToHistory: false);
+    expect(repo.sent, [null], reason: 'lỗi cũ: lựa chọn buổi sáng còn gửi buổi chiều ⇒ server chặn 422 khi đứng ngoài nó');
+  });
+
   test('payload gửi lên (kể cả hàng đợi ngoại tuyến) mang geofence_id', () {
     const req = AttendancePunchRequestModel(clientUuid: 'u', lat: 1, lng: 2, geofenceId: 7);
     expect(req.toJson()['geofence_id'], 7);

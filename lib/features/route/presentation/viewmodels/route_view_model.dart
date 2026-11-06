@@ -1611,6 +1611,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       tasks: const [],
     );
 
+    // State (VM sống qua đêm) còn giữ lượt NGÀY CŨ đã có mã ⇒ bỏ cả phiên (uuid mới): giữ lại thì check-in mới gửi uuid của
+    // lượt cũ, server chống gửi trùng trả lại chính lượt hôm qua (#24894, #24698 vòng 8).
+    if (state.visitEntity?.isPastDayServerVisit ?? false) resetSession();
+
     // Nếu đang có một lượt viếng thăm khác đang mở, không được ghi đè phiên bằng điểm bán mới
     final newCUuid = customerClientUuidOf(dealer.customer);
     if (state.visitId != 0 &&
@@ -1652,8 +1656,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final now = DateTime.now();
     final localTime = _formatTimeHHmmss(now);
 
-    // Kiểm tra nếu dealer đã có lượt viếng thăm đang mở (§2.3)
-    VisitEntity? existingVisit = (dealer.visit != null && dealer.visit!.isOpen)
+    // Kiểm tra nếu dealer đã có lượt viếng thăm đang mở (§2.3). Lượt NGÀY CŨ đã có mã không tính — tuyến sống qua đêm vẫn gắn
+    // nó vào điểm bán; nhận lại là dựng phiên bằng uuid hôm qua (#24894, #24698 vòng 8).
+    VisitEntity? existingVisit = (dealer.visit != null && dealer.visit!.isOpen && !dealer.visit!.isPastDayServerVisit)
         ? dealer.visit
         : null;
     if (existingVisit == null && ref != null && newCId != null) {
@@ -1661,6 +1666,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         final routeActive = ref!.read(routeViewModelProvider).activeVisit;
         if (routeActive != null &&
             routeActive.isOpen &&
+            !routeActive.isPastDayServerVisit &&
             routeActive.isAtCustomer(newCId, newCUuid)) {
           existingVisit = routeActive;
         }
@@ -1753,6 +1759,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   /// Phục hồi phiên viếng thăm đang mở từ SharedPreferences (hữu ích khi mở app lại offline hoặc vào lại điểm bán)
   /// [forCustomerId] + [forCustomerClientUuid]: chỉ khôi phục lượt ở ĐÚNG điểm bán đó ([VisitEntity.isAtCustomer]).
   Future<bool> restoreActiveVisitIfAvailable([int? forCustomerId, String? forCustomerClientUuid]) async {
+    if (state.visitEntity?.isPastDayServerVisit ?? false) resetSession(); // xem [initCheckinWithDealer]
     if (state.visitId != 0 &&
         state.visitEntity != null &&
         state.visitEntity!.isOpen) {
@@ -1788,7 +1795,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     int? token;
     try {
       final saved = await visitRepository.getActiveVisit();
-      if (saved != null && saved.isOpen) {
+      if (saved != null && saved.isOpen && !saved.isPastDayServerVisit) {
         if (forCustomerId != null && !saved.isAtCustomer(forCustomerId, forCustomerClientUuid)) {
           return false;
         }
@@ -2004,7 +2011,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // Chặn cả online và offline nếu đang có một lượt viếng thăm khác chưa đóng (§3 Luật 3)
     if (state.visitId != 0 &&
         state.visitEntity != null &&
-        state.visitEntity!.isOpen) {
+        state.visitEntity!.isOpen &&
+        !state.visitEntity!.isPastDayServerVisit) {
       if (!state.visitEntity!.isAtCustomer(customerId, customerClientUuid)) {
         return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
       }
@@ -2015,7 +2023,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
     try {
       final savedActive = await visitRepository.getActiveVisit();
-      if (savedActive != null && savedActive.isOpen) {
+      if (savedActive != null && savedActive.isOpen && !savedActive.isPastDayServerVisit) {
         if (!savedActive.isAtCustomer(customerId, customerClientUuid)) {
           return 'Bạn còn một lượt viếng thăm tại điểm bán khác chưa check-out. Hãy đóng lượt đó trước khi mở lượt mới.';
         }

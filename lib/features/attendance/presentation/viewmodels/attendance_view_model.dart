@@ -250,6 +250,16 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     state = state.copyWith(selectedLocation: location, locationPickedByUser: true);
   }
 
+  /// Bỏ địa điểm người dùng tự chọn — gọi mỗi lần MỞ màn chấm công (chủ hệ thống chốt 06/11/2026, #24698 vòng 8). VM sống
+  /// suốt phiên (Trang chủ giữ) ⇒ lựa chọn buổi sáng còn gửi `geofence_id` buổi chiều, server chặn 422 khi đứng ngoài nó.
+  void forgetPickedLocation() {
+    if (!state.locationPickedByUser) return;
+    state = state.copyWith(
+      selectedLocation: state.config?.closestLocation ?? state.selectedLocation,
+      locationPickedByUser: false,
+    );
+  }
+
   /// Đổi khoảng thời gian xem lịch sử (§5)
   Future<void> setHistoryDays(int days) async {
     state = state.copyWith(selectedDays: days);

@@ -142,9 +142,11 @@ class RouteDealerTimeline extends ConsumerWidget {
     // 0.1. Kiểm tra phiên viếng thăm đang mở (§3 Luật 3)
     final checkInState = ref.read(checkInViewModelProvider);
     final routeState = ref.read(routeViewModelProvider);
-    VisitEntity? activeVisit = checkInState.visitId != 0 && checkInState.visitEntity?.isOpen == true
+    // Lượt ngày cũ đã có mã server không tính (#24894).
+    bool dangMo(VisitEntity? v) => v != null && v.isOpen && !v.isPastDayServerVisit;
+    VisitEntity? activeVisit = checkInState.visitId != 0 && dangMo(checkInState.visitEntity)
         ? checkInState.visitEntity
-        : (routeState.activeVisit?.isOpen == true ? routeState.activeVisit : null);
+        : (dangMo(routeState.activeVisit) ? routeState.activeVisit : null);
 
     if (activeVisit == null) {
       try {
