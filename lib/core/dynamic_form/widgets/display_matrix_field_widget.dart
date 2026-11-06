@@ -150,8 +150,9 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
   final Widget Function(DisplayMatrixType type)? photoSection;
 
-  /// Số HIỆN TRẠNG của điểm bán (ô ma trận bật "Cập nhật hiện trạng điểm bán", #24789) — hiện MỜ làm gợi ý trong ô trống;
-  /// ô vẫn trống: nhân viên phải đếm và gõ lại (trống = 0 khi nộp).
+  /// Số HIỆN TRẠNG của điểm bán (ô ma trận bật "Cập nhật hiện trạng điểm bán", #24789) — chủ hệ thống chốt 06/11/2026: ô
+  /// CHƯA SỬA hiện số này như số thật, Tổng / % SOS tính trên cả ma trận; nhưng [onChanged] chỉ mang ô ĐÃ GÕ — ô không sửa
+  /// giữ số trên server (luật 05/11), số trong máy có thể cũ hơn server, gửi lại là đè số mới. Ô bị xoá trống hiện mờ số này.
   final DisplayMatrixCounts hintCounts;
 
   const DisplayMatrixFieldWidget({
@@ -201,6 +202,14 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
         };
     final pa = anh(a), pb = anh(b);
     return pa.length == pb.length && pa.entries.every((e) => listEquals(e.value, pb[e.key]));
+  }
+
+  /// Số dùng để tính Tổng / % SOS: ô đã gõ lấy số gõ, ô trống lấy [hints] (số hiện trạng — ô trống giữ số cũ khi nộp).
+  static DisplayMatrixCounts withHints(DisplayMatrixCounts counts, DisplayMatrixCounts hints) {
+    if (hints.isEmpty) return counts;
+    final out = <String, Map<String, num>>{for (final e in hints.entries) e.key: Map.of(e.value)};
+    counts.forEach((b, row) => (out[b] ??= {}).addAll(row));
+    return out;
   }
 
   /// Chỉ giữ thương hiệu/loại ô ĐANG hỏi — số của dòng admin đã bỏ khỏi ô không hiện để xoá, gửi lại thì server từ chối.
@@ -263,7 +272,8 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   bool get _hasInvalidCell => _cellErr.values.contains(_loiSaiDang);
 
   TextEditingController _controller(String brand, String type) => _ctrl.putIfAbsent('$brand::$type', () {
-        final n = _counts[brand]?[type];
+        // Ô chưa gõ hiện số hiện trạng ([DisplayMatrixFieldWidget.hintCounts]) như số thật — chỉ để xem, không vào [_counts].
+        final n = _counts[brand]?[type] ?? _hints[brand]?[type];
         return TextEditingController(text: n == null ? '' : fmtMatrixNumber(n));
       });
 
@@ -481,7 +491,8 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    final totals = DisplayMatrixTotals.compute(_counts, cfg);
+    final totals = DisplayMatrixTotals.compute(
+        DisplayMatrixFieldWidget.withHints(_counts, DisplayMatrixFieldWidget.onlyAsked(_hints, cfg)), cfg);
     final muted = Theme.of(context).brightness == Brightness.dark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
     final coHuongDan = cfg.types.any((t) => t.hasGuide);
 
@@ -577,7 +588,8 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
 
   @override
   Widget build(BuildContext context) {
-    final totals = DisplayMatrixTotals.compute(_counts, _config);
+    final totals = DisplayMatrixTotals.compute(
+        DisplayMatrixFieldWidget.withHints(_counts, DisplayMatrixFieldWidget.onlyAsked(_hints, _config)), _config);
     return PopScope<DisplayMatrixCounts>(
       canPop: false,
       // Nút Back của máy cũng trả bộ số về phiếu như nút Thu nhỏ.

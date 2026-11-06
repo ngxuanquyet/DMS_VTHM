@@ -312,11 +312,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ô cập nhật hồ sơ điểm bán: số hiện trạng hiện MỜ làm gợi ý, ô vẫn trống (#24789)', (tester) async {
-    final cfg = {
-      ...matrix,
-      'update_customer_field': 'sos_ho_so',
-    };
+  Map<String, dynamic> cfgHoSo({int minPhotos = 0}) => {
+        'matrix': {
+          'brands': [
+            {'code': 'rival', 'name': 'Đối thủ A', 'is_own': false},
+            {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
+          ],
+          'types': [
+            {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'decimals': 0, 'face_factor': 1, 'min_photos': minPhotos,
+              'max_photos': 3},
+            {'code': 'op_mau', 'name': 'Ốp mẫu', 'unit': 'm²', 'decimals': 1, 'face_factor': 2, 'min_photos': 0, 'max_photos': 0},
+          ],
+        },
+        'update_customer_field': 'sos_ho_so',
+      };
+
+  Future<GlobalKey<MarketFormRendererState>> moPhieuHoSo(WidgetTester tester, {bool required = false, int minPhotos = 0}) async {
     final key = GlobalKey<MarketFormRendererState>();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -327,14 +338,17 @@ void main() {
               MarketFormBlockEntity(
                 ref: 'sos',
                 type: 'field',
-                required: false,
-                resolved: MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+                required: required,
+                resolved: MarketFormResolvedEntity(
+                    code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfgHoSo(minPhotos: minPhotos)),
               ),
             ],
             customerData: const {
               'sos_ho_so': {
                 'counts': {
                   'vthm': {'ke_lat': 7, 'op_mau': 2.5},
+                  'rival': {'ke_lat': 4},
+                  'da_bo': {'ke_lat': 9},
                 },
               },
             },
@@ -343,13 +357,107 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    final o = tester.widget<TextField>(find.byKey(const ValueKey('matrix_vthm_ke_lat')));
-    expect(o.controller!.text, '');
-    expect(o.decoration!.hintText, '7');
-    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_vthm_op_mau'))).decoration!.hintText, '2,5');
-    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_rival_ke_lat'))).decoration!.hintText, '0');
-    // Không gõ gì ⇒ không gửi số nào (trống = 0).
-    expect(key.currentState!.validateAndGetAnswers()!['sos'], isNull);
+    return key;
+  }
+
+  testWidgets('ô cập nhật hồ sơ điểm bán: hiện ĐỦ số hiện trạng, % SOS tính cả ma trận, sửa một số ⇒ % đổi theo; chỉ gửi ô '
+      'đã sửa (chốt 06/11/2026)', (tester) async {
+    final key = await moPhieuHoSo(tester, minPhotos: 1);
+    String o(String b, String t) => tester.widget<TextField>(find.byKey(ValueKey('matrix_${b}_$t'))).controller!.text;
+    expect(o('vthm', 'ke_lat'), '7', reason: 'lỗi cũ: ô trống, chỉ hiện mờ ⇒ % SOS không tính số cũ');
+    expect(o('vthm', 'op_mau'), '2,5');
+    expect(o('rival', 'ke_lat'), '4');
+    // 7 + 2,5×2 = 12 mặt của ta, 4 mặt đối thủ ⇒ 75%.
+    expect(find.text('Tổng 16 mặt ngành hàng · SOS của ta 75%'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '0,5');
+    await tester.pump();
+    expect(find.text('Tổng 12 mặt ngành hàng · SOS của ta 66,7%'), findsOneWidget);
+
+    // Xoá trống một ô ⇒ ô hiện mờ số cũ và VẪN tính bằng số đó (khi nộp ô trống giữ số cũ của hồ sơ).
+    await tester.enterText(find.byKey(const ValueKey('matrix_rival_ke_lat')), '');
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_rival_ke_lat'))).decoration!.hintText, '4');
+    expect(find.text('Tổng 12 mặt ngành hàng · SOS của ta 66,7%'), findsOneWidget);
+
+    // Chỉ gửi ô đã sửa — ô không sửa giữ số trên server (số trong máy có thể cũ); loại không sửa không bị bắt ảnh.
+    expect(key.currentState!.validateAndGetAnswers()!['sos'], {
+      'counts': {
+        'vthm': {'op_mau': 0.5},
+      },
+      'photos': <String, List<String>>{},
+    });
+  });
+
+  testWidgets('ô BẮT BUỘC không sửa ô nào ⇒ coi là xác nhận, gửi cả ma trận đang hiện (chốt 06/11/2026)', (tester) async {
+    final key = await moPhieuHoSo(tester, required: true);
+    expect(key.currentState!.validateAndGetAnswers()!['sos'], {
+      'counts': {
+        'vthm': {'ke_lat': 7, 'op_mau': 2.5},
+        'rival': {'ke_lat': 4},
+      },
+      'photos': <String, List<String>>{},
+    }, reason: 'không bị chặn "không được để trống" khi bảng đang hiện đủ số; thương hiệu đã bỏ không gửi');
+  });
+
+  testWidgets('ô BẮT BUỘC: lượt nộp hỏng vì ô KHÁC không biến cả ma trận số cũ thành "đã sửa"', (tester) async {
+    // Kệ lật cần 1 ảnh ⇒ xác nhận cả ma trận (có kệ lật > 0) bị chặn vì thiếu ảnh.
+    final key = await moPhieuHoSo(tester, required: true, minPhotos: 1);
+    expect(key.currentState!.validateAndGetAnswers(), isNull);
+    await tester.pump();
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '0,5');
+    await tester.pump();
+    expect(key.currentState!.validateAndGetAnswers()!['sos'], {
+      'counts': {
+        'vthm': {'op_mau': 0.5},
+      },
+      'photos': <String, List<String>>{},
+    }, reason: 'lỗi: lượt nộp hỏng ghi số xác nhận vào câu trả lời ⇒ sửa thêm một ô là gửi cả ma trận số cũ');
+  });
+
+  testWidgets('màn sửa hồ sơ điểm bán: hiện đủ số đang lưu, sửa một số ⇒ % SOS đổi theo', (tester) async {
+    final cfg = DisplayMatrixConfig.fromConfig(matrix);
+    DisplayMatrixCounts so = {
+      'vthm': {'ke_lat': 6},
+      'rival': {'ke_lat': 2},
+    };
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: StatefulBuilder(
+            builder: (context, setState) => DisplayMatrixFieldWidget(
+              label: 'SOS',
+              config: cfg,
+              counts: so,
+              onChanged: (c, _) => setState(() => so = c),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('matrix_vthm_ke_lat'))).controller!.text, '6');
+    expect(find.text('Tổng 8 mặt ngành hàng · SOS của ta 75%'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '2');
+    await tester.pump();
+    expect(find.text('Tổng 4 mặt ngành hàng · SOS của ta 50%'), findsOneWidget);
+  });
+
+  test('withHints: ô đã gõ thắng, ô trống lấy số hiện trạng', () {
+    expect(
+      DisplayMatrixFieldWidget.withHints({
+        'vthm': {'a': 0},
+      }, {
+        'vthm': {'a': 5, 'b': 2},
+        'rival': {'a': 1},
+      }),
+      {
+        'vthm': {'a': 0, 'b': 2},
+        'rival': {'a': 1},
+      },
+    );
   });
 }
 

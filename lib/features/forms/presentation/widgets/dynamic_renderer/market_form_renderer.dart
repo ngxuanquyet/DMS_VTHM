@@ -72,7 +72,7 @@ class MarketFormRenderer extends StatefulWidget {
   final List<int> defaultRouteIds;
 
   /// `data` của hồ sơ điểm bán đang viếng thăm (ô động) — ô ma trận bật "Cập nhật hiện trạng điểm bán"
-  /// (`config.update_customer_field`) lấy số hiện trạng làm gợi ý mờ (#24789).
+  /// (`config.update_customer_field`) hiện số hiện trạng ở ô chưa sửa, % SOS tính cả ma trận (#24789, chốt 06/11/2026).
   final Map<String, dynamic> customerData;
   final int defaultMaxPhotos;
   final Future<FormPhotoModel> Function(File file)? onUploadPhoto;
@@ -143,6 +143,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Ô ma trận đang có ô đếm gõ sai dạng (vd `2,5,`) — bước Lưu chặn, không lặng lẽ bỏ số khỏi tổng.
   final Map<String, bool> _matrixInvalid = {};
+
+  /// Câu trả lời "xác nhận" của ô ma trận bắt buộc chưa sửa ô nào (lượt nộp đang xét) — xem [_syncMatrixAnswer].
+  final Map<String, dynamic> _matrixConfirm = {};
 
   /// Số hiện trạng điểm bán cho ô ma trận có ô đích `config.update_customer_field` (#24789); không có ⇒ rỗng.
   DisplayMatrixCounts _hintCountsOf(dynamic config) {
@@ -448,6 +451,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     }
 
     _recomputeVisibility();
+    _matrixConfirm.clear();
     final Map<String, String> newErrors = {};
 
     for (final block in widget.blocks) {
@@ -642,7 +646,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     // Làm sạch: Bỏ các trường rỗng, ô trình bày, và ô đang ẩn (§5, §9)
     return MarketFormSubmissionModel.sanitizeAnswers(
-      _answers,
+      _matrixConfirm.isEmpty ? _answers : {..._answers, ..._matrixConfirm},
       presentationCodes: _presentationCodes,
       allowedCodes: visibleCodes,
       imageCodes: imageCodes,
@@ -1402,7 +1406,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       isRequired: block.required,
       config: cfg,
       counts: DisplayMatrixFieldWidget.countsOf(_answers[code]),
-      // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — gợi ý mờ, không điền sẵn (#24789).
+      // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — ô chưa sửa hiện số này, Tổng / % SOS tính cả
+      // ma trận; câu trả lời chỉ mang ô đã sửa (chốt 06/11/2026).
       hintCounts: _hintCountsOf(block.resolved.configMap),
       errorText: _errors[code],
       onChanged: (counts, invalid) {
@@ -1430,7 +1435,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   String? _syncMatrixAnswer(MarketFormBlockEntity block, {bool validate = false}) {
     final code = block.resolved.code;
     final cfg = _matrixOf(block);
-    final counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_answers[code]), cfg);
+    var counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_answers[code]), cfg);
     final photos = <String, List<String>>{};
     for (final t in cfg.types) {
       // Loại không chụp ảnh (max 0): ảnh còn sót của bản nháp cũ không gửi — server từ chối "không nhận ảnh".
@@ -1447,6 +1452,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       _answers[code] = {'counts': counts, 'photos': photos};
     }
     if (!validate) return null;
+
+    // Ô BẮT BUỘC, nhân viên không sửa ô nào nhưng bảng đang hiện số hiện trạng ⇒ coi là XÁC NHẬN số đó, gửi cả ma trận đang
+    // hiện (chủ hệ thống chốt 06/11/2026). Để riêng ở [_matrixConfirm], chỉ vào câu gửi khi CẢ phiếu hợp lệ: ghi vào
+    // [_answers] thì lượt nộp hỏng vì ô khác biến cả ma trận số cũ thành "đã sửa" — sửa thêm một ô là gửi số cũ đè số mới.
+    if (block.required && counts.isEmpty) {
+      counts = DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg);
+      if (counts.isNotEmpty) _matrixConfirm[code] = {'counts': counts, 'photos': photos};
+    }
 
     final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
     if (block.required && counts.isEmpty && photos.isEmpty) return '$label không được để trống.';
