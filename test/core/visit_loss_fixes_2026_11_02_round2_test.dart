@@ -317,14 +317,19 @@ void main() {
   });
 
   // M2 (lượt vắt qua nửa đêm bị bỏ khỏi máy) — KIỂM CHỨNG LÀ BÁO NHẦM: getVisitsByDate(hôm nay) luôn ghép lượt đang mở
-  // lưu trên máy vào danh sách hôm nay ⇒ nhánh bỏ bản lưu "ngày khác" không tới được. Test giữ hành vi đó.
+  // lưu trên máy vào danh sách hôm nay ⇒ nhánh bỏ bản lưu "ngày khác" không tới được. Test giữ hành vi đó. Lượt đã lên
+  // server thì server phải còn trả nó là mở — server không còn thì tuyến dọn (stale_saved_visit_not_open_test.dart).
   final yesterday = DateTime.now().subtract(const Duration(days: 1));
   for (final (label, saved) in [
     ('đã lên server', VisitEntity(id: 700, customerId: 20, clientUuid: 'v7', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String())),
     ('chưa gửi (id ≤ 0)', VisitEntity(id: -5, customerId: 20, clientUuid: 'v8', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String())),
   ]) {
     test('M2 lượt check-in hôm qua còn mở ($label) vẫn còn sau khi nạp tuyến', () async {
-      boot((o) => (200, {'success': true, 'data': <dynamic>[], 'meta': {'total': 0, 'currentPage': 1, 'pageCount': 1}}));
+      boot((o) => (200, {
+            'success': true,
+            'data': saved.id > 0 && o.uri.toString().contains('open_only=1') ? [saved.toJson()] : <dynamic>[],
+            'meta': {'total': 0, 'currentPage': 1, 'pageCount': 1},
+          }));
       await container.read(visitRepositoryProvider).saveActiveVisit(saved);
       // Provider autoDispose — giữ sống suốt lượt nạp.
       final sub = container.listen(routeViewModelProvider, (_, __) {});

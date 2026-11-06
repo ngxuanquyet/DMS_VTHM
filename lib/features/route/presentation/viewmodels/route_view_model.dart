@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -524,6 +525,37 @@ class RouteViewModel extends StateNotifier<RouteState> {
         activeVisit = v;
         break;
       }
+    }
+
+    // getVisitsByDate(hôm nay) ghép bản lưu "lượt đang mở" trong máy vào danh sách hôm nay, KỂ CẢ lượt ngày cũ ⇒ lượt ngày
+    // cũ đã có mã server mà server XÁC NHẬN không còn mở (huỷ/đóng ở máy khác, cron "Chưa check-out") thì bỏ bản lưu. Không thì sáng hôm sau nó hiện "đang
+    // mở", đồng hồ đếm từ hôm trước (06/11/2026, lượt #48474). Chỉ lượt NGÀY CŨ (danh sách hôm nay của server không bao giờ
+    // chứa nó ⇒ chắc chắn là bản lưu). Ảnh chụp openVisits thiếu thì hỏi LẠI server mới kết luận: lượt ngoại tuyến hôm qua
+    // có thể vừa được đồng bộ (nhận mã) trong lúc tải. Lượt chưa có mã giữ nguyên — bỏ là mất lượt.
+    final picked = activeVisit;
+    if (picked != null &&
+        picked.id > 0 &&
+        picked.checkinAt != null &&
+        !picked.isCheckinToday &&
+        picked.visitDate != DateFormat('yyyy-MM-dd').format(openStartedAt) &&
+        visitRepository != null &&
+        openVisits != null &&
+        !openVisits.any((v) =>
+            v.id == picked.id || ((picked.clientUuid?.isNotEmpty ?? false) && v.clientUuid == picked.clientUuid)) &&
+        await serverConfirmsVisitNotOpen(visitRepository!, picked)) {
+      debugPrint('[RouteViewModel] Lượt viếng thăm id=${picked.id} (ngày cũ) không còn mở trên server, dọn bản lưu trong máy.');
+      final pickedUuid = (picked.clientUuid?.isNotEmpty ?? false) ? picked.clientUuid : null;
+      try {
+        // CHỈ bỏ bản lưu "đang mở", và chỉ khi VẪN là lượt vừa tra (trong lúc chờ có thể đã check-in lượt mới). Bản trong
+        // danh sách lượt trên máy GIỮ — lượt đã check-out / "Chưa check-out" hôm qua vẫn là lượt thật của lịch sử ngoại tuyến.
+        if ((await visitRepository!.getActiveVisit())?.id == picked.id) await visitRepository!.clearActiveVisit();
+      } catch (e) {
+        debugPrint('[RouteViewModel] Lỗi dọn bản lưu lượt id=${picked.id}: $e');
+      }
+      todayVisits = todayVisits
+          .where((v) => v.id != picked.id && (pickedUuid == null || v.clientUuid != pickedUuid))
+          .toList();
+      activeVisit = todayVisits.where((v) => v.isOpen && !v.isCancelled).firstOrNull;
     }
 
     // Nếu không có lượt mở từ API (ví dụ đang offline hoặc lỗi mạng),
