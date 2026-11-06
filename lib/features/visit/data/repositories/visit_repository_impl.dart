@@ -22,15 +22,17 @@ final visitRepositoryProvider = Provider<VisitRepository>((ref) {
   return VisitRepositoryImpl(ref.watch(visitApiServiceProvider));
 });
 
+/// [a] và [b] là CÙNG một lượt: cùng mã (khác 0 — 0 là "chưa có mã"), hoặc cùng `client_uuid` khác rỗng.
+bool isSameVisit(VisitEntity a, VisitEntity b) =>
+    (a.id != 0 && a.id == b.id) || ((a.clientUuid?.isNotEmpty ?? false) && a.clientUuid == b.clientUuid);
+
 /// Server XÁC NHẬN lượt [visit] không còn mở (không có trong danh sách lượt còn mở). Không tra được ⇒ `false` (giữ lượt).
 Future<bool> serverConfirmsVisitNotOpen(VisitRepository repo, VisitEntity visit) async {
   if (repo is! VisitRepositoryImpl) return false;
   try {
     // Màn đang mở chờ kết quả này ⇒ có trần; quá trần coi như không tra được (giữ lượt).
     final open = await repo.getOpenVisits().timeout(const Duration(seconds: 8));
-    return !open.any((v) =>
-        v.id == visit.id ||
-        (visit.clientUuid != null && visit.clientUuid!.isNotEmpty && v.clientUuid == visit.clientUuid));
+    return !open.any((v) => isSameVisit(v, visit));
   } catch (_) {
     return false;
   }
@@ -56,9 +58,10 @@ class VisitRepositoryImpl implements VisitRepository {
   Future<List<VisitEntity>> getVisitsByDate(DateTime date, {bool forceRefresh = false}) async {
     final dateStr = DateFormat('yyyy-MM-dd').format(date);
 
-    // Đồng bộ từ API khi có mạng
+    // Đồng bộ từ API khi có mạng. `null` = không tải được ⇒ chỉ còn dữ liệu máy, không kết luận gì từ việc server thiếu lượt.
+    List<VisitEntity>? remote;
     try {
-      final remote = await _apiService.getMyVisits(
+      remote = await _apiService.getMyVisits(
         dateFrom: dateStr,
         dateTo: dateStr,
         perPage: 100,
@@ -82,11 +85,52 @@ class VisitRepositoryImpl implements VisitRepository {
       return false;
     }).toList();
 
-    // Nếu là ngày hôm nay, ghép thêm lượt active nếu chưa nằm trong danh sách
+    // Server bỏ lượt ĐÃ HUỶ khỏi danh sách (VisitSearch) ⇒ lượt đã có mã đang "mở" trong máy mà danh sách tải được không có
+    // = nghi huỷ ở máy khác (#24895). Thiếu chưa đủ kết luận (vừa check-in sau ảnh chụp, danh sách bị cắt trang) ⇒ hỏi lại
+    // danh sách lượt CÒN MỞ một lần: không có ⇒ bỏ bản sao khỏi bộ đệm máy (mất mạng sau đó nó không hiện lại) — KHÔNG ghi
+    // "đã huỷ": đó là suy luận, ghi huỷ thì bản server về sau không đè được (saveLocalVisits); đoán sai thì lần tải sau server
+    // trả lại. Bản lưu "đang mở" để tuyến xử lý (_loadTodayVisits). Có hoặc không tra được ⇒ giữ.
+    final serverList = remote;
+    if (serverList != null) {
+      final suspects =
+          matching.where((v) => v.id > 0 && v.isOpen && !serverList.any((r) => isSameVisit(r, v))).toList();
+      if (suspects.isNotEmpty) {
+        List<VisitEntity>? open;
+        try {
+          open = await getOpenVisits().timeout(const Duration(seconds: 8));
+        } catch (e) {
+          debugPrint('[VisitRepo] Không tra được lượt còn mở: $e');
+        }
+        if (open != null) {
+          // Bộ đệm đọc TRƯỚC lần hỏi lại (tới 8 giây) ⇒ đọc lại ngay trước khi xoá: lượt vừa check-out trong lúc chờ thì
+          // giữ bản mới, không xoá lượt thật.
+          final fresh = await getAllLocalVisits();
+          for (final v in suspects) {
+            if (open.any((o) => isSameVisit(o, v))) continue;
+            final idx = matching.indexOf(v);
+            final now = fresh.where((x) => isSameVisit(x, v)).firstOrNull;
+            if (now != null && !now.isOpen) {
+              matching[idx] = now;
+              continue;
+            }
+            await removeLocalVisit(v.id, clientUuid: (v.clientUuid?.isNotEmpty ?? false) ? v.clientUuid : null);
+            matching.removeAt(idx);
+          }
+        }
+      }
+    }
+
+    // Ngày hôm nay: ghép lượt đang mở lưu trong máy nếu chưa có trong danh sách — CHỈ lượt chưa có mã (ngoại tuyến chưa gửi;
+    // bỏ là mất lượt), hoặc lượt check-in HÔM NAY khi không tải được server. Lượt ngày cũ đã có mã KHÔNG ghép: không giữ làm
+    // lượt đang mở, cron đầu ngày đánh dấu "Chưa check-out" (chủ hệ thống chốt #24894, 06/11/2026). Ghép bừa từng làm lượt đã
+    // huỷ hôm trước hiện "đang mở" sáng hôm sau, đồng hồ đếm từ hôm trước (#24893).
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
     if (dateStr == todayStr) {
       final active = await getActiveVisit();
-      if (active != null && active.isOpen && !matching.any((v) => v.id == active.id)) {
+      if (active != null &&
+          active.isOpen &&
+          (active.id <= 0 || (remote == null && active.isCheckinToday)) &&
+          !matching.any((v) => isSameVisit(v, active))) {
         matching.insert(0, active);
       }
     }

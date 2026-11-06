@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -54,13 +55,15 @@ class FakeDioAdapter implements HttpClientAdapter {
     });
 
     if (options.path == '/dms/visits' && options.method == 'POST') {
+      final now = DateTime.now();
       final res = {
         'success': true,
         'data': {
           'id': 88801,
           'customer_id': 101,
-          'checkin_at': '2026-10-12 09:00:00+07',
-          'visit_date': '2026-10-12',
+          // Check-in HÔM NAY: lượt ngày cũ đã có mã không được giữ làm lượt đang mở (#24894) — ngày cứng sẽ trôi thành ngày cũ.
+          'checkin_at': now.toIso8601String(),
+          'visit_date': DateFormat('yyyy-MM-dd').format(now),
         },
         'message': 'Check-in thành công',
       };

@@ -11,14 +11,16 @@ import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_repository_impl.dart';
+import 'package:vthm_dms/features/visit/data/services/visit_api_service.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 import 'package:vthm_dms/features/visit/domain/usecases/visit_usecases.dart';
 
 import '../route_filter_day_of_week_test.dart' show MockCustomerRepository, FakeGetRouteDetailUseCase;
 
-/// Sự cố 06/11/2026: lượt #48474 check-in 05/11 14:18, huỷ trên server 16:29 — sáng hôm sau mở app vẫn hiện "đang mở",
-/// đồng hồ 21:40. Bản lưu "lượt đang mở" trong máy bị `getVisitsByDate` ghép vào danh sách lượt hôm nay ⇒ tuyến chọn nó
-/// làm lượt đang mở và bỏ qua bước dọn bản lưu.
+/// Sự cố 06/11/2026 (#24893): lượt #48474 check-in 05/11 14:18, huỷ trên server 16:29 — sáng hôm sau mở app vẫn hiện
+/// "đang mở", đồng hồ 21:40. Bản lưu "lượt đang mở" trong máy bị `getVisitsByDate` ghép vào danh sách lượt hôm nay ⇒ tuyến
+/// chọn nó làm lượt đang mở và bỏ qua bước dọn bản lưu. Kèm #24894 (lượt ngày cũ không giữ) và #24895 (lượt hôm nay huỷ ở
+/// máy khác).
 
 class _Adapter implements HttpClientAdapter {
   final (int, Map<String, dynamic>)? Function(RequestOptions o) handler;
@@ -57,11 +59,13 @@ void main() {
   Future<RouteViewModel> load(VisitEntity saved, {List<Map<String, dynamic>> serverVisits = const [],
       bool serverDown = false,
       List<Map<String, dynamic>> Function(int openCall)? openOnly,
-      bool settleFirst = false}) async {
+      bool settleFirst = false,
+      List<VisitEntity> cached = const []}) async {
     var openCalls = 0;
     SharedPreferences.setMockInitialValues({
       'vthm_user_data': '{"id":1}',
       if (!settleFirst) _activeKey: jsonEncode(saved.toJson()),
+      if (cached.isNotEmpty) 'dms_visits_local_cache_v2': jsonEncode(cached.map((v) => v.toJson()).toList()),
     });
     final db = AppDatabase(NativeDatabase.memory(), 1);
     addTearDown(db.close);
@@ -124,27 +128,51 @@ void main() {
     expect(await savedRaw(), isNull);
   });
 
-  test('lượt hôm qua CÒN MỞ trên server (vắt qua nửa đêm) ⇒ giữ', () async {
+  // #24894 (chủ hệ thống chốt 06/11/2026): lượt NGÀY CŨ đã có mã KHÔNG giữ làm lượt đang mở — cron đánh dấu "Chưa check-out".
+  test('lượt hôm qua CÒN MỞ trên server (vắt qua nửa đêm) ⇒ không giữ làm lượt đang mở (#24894)', () async {
     final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(minutes: 10));
     final v = visit(700, yesterday);
     final vm = await load(v, serverVisits: [v.toJson()]);
-    expect(vm.state.activeVisit?.id, 700);
-    expect(await savedRaw(), isNotNull);
+    expect(vm.state.activeVisit, isNull);
+    expect(await savedRaw(), isNull);
   });
 
-  test('lượt ngoại tuyến hôm qua vừa được đồng bộ trong lúc tải (ảnh chụp lượt mở chưa có) ⇒ hỏi lại server, giữ', () async {
-    final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(hours: 1));
-    final v = visit(9001, yesterday);
-    // Ảnh chụp (lần 1) chưa thấy, lần hỏi lại (lần 2) đã thấy ⇒ phải giữ. Code chỉ tin ảnh chụp thì dọn ⇒ test đỏ.
-    final vm = await load(v, settleFirst: true, openOnly: (n) => n <= 1 ? <Map<String, dynamic>>[] : [v.toJson()]);
-    expect(vm.state.activeVisit?.id, 9001);
-    expect(await savedRaw(), isNotNull);
-  });
-
-  test('lượt hôm qua, server không tra được ⇒ giữ (không kết luận từ lỗi mạng)', () async {
+  test('lượt hôm qua, server không tra được ⇒ cũng không giữ (#24894)', () async {
     final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(hours: 10));
     final vm = await load(visit(48474, yesterday), serverDown: true);
-    expect(vm.state.activeVisit?.id, 48474);
+    expect(vm.state.activeVisit, isNull);
+  });
+
+  test('lượt ngoại tuyến hôm qua chưa lên server (id âm) ⇒ giữ — bỏ là mất lượt', () async {
+    final yesterday = DateTime(now.year, now.month, now.day).subtract(const Duration(minutes: 10));
+    final vm = await load(visit(-7, yesterday));
+    expect(vm.state.activeVisit?.id, -7);
+    expect(await savedRaw(), isNotNull);
+  });
+
+  // #24895: lượt HÔM NAY huỷ ở máy khác — server bỏ lượt đã huỷ khỏi mọi danh sách.
+  test('lượt hôm nay đã huỷ ở máy khác (server không trả) ⇒ không hiện đang mở, bản lưu bị dọn (#24895)', () async {
+    final v = visit(501, startOfToday);
+    final vm = await load(v, cached: [v]);
+    expect(vm.state.activeVisit, isNull, reason: 'lỗi cũ: bản lưu ghép vào danh sách hôm nay');
+    expect(vm.state.todayVisits.where((x) => x.id == 501), isEmpty);
+    expect(await savedRaw(), isNull);
+  });
+
+  test('bản "mở" chỉ còn trong bộ đệm lượt của máy (không có bản lưu đang mở) ⇒ không vào danh sách hôm nay (#24895)', () async {
+    final v = visit(502, startOfToday);
+    // Bản lưu hỏng (không mã, không điểm bán) ⇒ getActiveVisit coi như không có.
+    final vm = await load(const VisitEntity(id: 0, customerId: 0), cached: [v]);
+    expect(vm.state.todayVisits.where((x) => x.id == 502), isEmpty);
+    expect(vm.state.activeVisit?.id, isNot(502));
+  });
+
+  test('vừa check-in, ảnh chụp server chưa có lượt ⇒ hỏi lại server, giữ (không dọn nhầm)', () async {
+    final v = visit(503, startOfToday);
+    // Danh sách hôm nay + ảnh chụp lượt mở (lần 1) chưa thấy, lần hỏi lại (lần 2) đã thấy.
+    final vm = await load(v, settleFirst: true, openOnly: (n) => n <= 1 ? <Map<String, dynamic>>[] : [v.toJson()]);
+    expect(vm.state.activeVisit?.id, 503);
+    expect(await savedRaw(), isNotNull);
   });
 
   test('lượt hôm nay còn mở trên server ⇒ vẫn là lượt đang mở', () async {
@@ -156,7 +184,8 @@ void main() {
   });
 
   test('không tra được server ⇒ giữ lượt hôm nay trong máy', () async {
-    final vm = await load(visit(501, startOfToday), serverDown: true);
+    final v = visit(501, startOfToday);
+    final vm = await load(v, serverDown: true, cached: [v]);
     expect(vm.state.activeVisit?.id, 501);
     expect(await savedRaw(), isNotNull);
   });
@@ -164,5 +193,42 @@ void main() {
   test('lượt ngoại tuyến chưa lên server (id âm) ⇒ giữ dù server trả rỗng', () async {
     final vm = await load(visit(-5, startOfToday));
     expect(vm.state.activeVisit?.id, -5);
+  });
+
+  group('getVisitsByDate — lượt trong máy mà danh sách server thiếu (#24895)', () {
+    late bool down;
+    late List<Map<String, dynamic>> open;
+    late VisitRepositoryImpl repo;
+
+    Future<void> boot(List<VisitEntity> cached) async {
+      down = false;
+      open = [];
+      SharedPreferences.setMockInitialValues({
+        'vthm_user_data': '{"id":1}',
+        'dms_visits_local_cache_v2': jsonEncode(cached.map((v) => v.toJson()).toList()),
+      });
+      final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))
+        ..httpClientAdapter = _Adapter((o) {
+          if (down) return (500, {'success': false, 'message': 'x'});
+          if (o.uri.toString().contains('open_only=1')) return (200, {'success': true, 'data': open});
+          return null; // danh sách theo ngày: rỗng
+        });
+      repo = VisitRepositoryImpl(VisitApiService(ApiClient(dio)));
+    }
+
+    test('server xác nhận không còn mở ⇒ bỏ bản sao khỏi bộ đệm (KHÔNG ghi huỷ — là suy luận) — mất mạng sau đó KHÔNG hiện lại là đang mở', () async {
+      await boot([visit(502, startOfToday)]);
+      expect((await repo.getVisitsByDate(now)).where((v) => v.isOpen), isEmpty);
+      down = true;
+      expect((await repo.getVisitsByDate(now)).where((v) => v.isOpen), isEmpty,
+          reason: 'lỗi: chỉ ẩn khi có mạng, bộ đệm còn bản "mở"');
+    });
+
+    test('danh sách theo ngày thiếu (vừa check-in / cắt trang) mà lượt còn mở ⇒ giữ', () async {
+      final v = visit(503, startOfToday);
+      await boot([v]);
+      open = [v.toJson()];
+      expect((await repo.getVisitsByDate(now)).map((x) => x.id), contains(503));
+    });
   });
 }

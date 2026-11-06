@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -527,37 +526,6 @@ class RouteViewModel extends StateNotifier<RouteState> {
       }
     }
 
-    // getVisitsByDate(hôm nay) ghép bản lưu "lượt đang mở" trong máy vào danh sách hôm nay, KỂ CẢ lượt ngày cũ ⇒ lượt ngày
-    // cũ đã có mã server mà server XÁC NHẬN không còn mở (huỷ/đóng ở máy khác, cron "Chưa check-out") thì bỏ bản lưu. Không thì sáng hôm sau nó hiện "đang
-    // mở", đồng hồ đếm từ hôm trước (06/11/2026, lượt #48474). Chỉ lượt NGÀY CŨ (danh sách hôm nay của server không bao giờ
-    // chứa nó ⇒ chắc chắn là bản lưu). Ảnh chụp openVisits thiếu thì hỏi LẠI server mới kết luận: lượt ngoại tuyến hôm qua
-    // có thể vừa được đồng bộ (nhận mã) trong lúc tải. Lượt chưa có mã giữ nguyên — bỏ là mất lượt.
-    final picked = activeVisit;
-    if (picked != null &&
-        picked.id > 0 &&
-        picked.checkinAt != null &&
-        !picked.isCheckinToday &&
-        picked.visitDate != DateFormat('yyyy-MM-dd').format(openStartedAt) &&
-        visitRepository != null &&
-        openVisits != null &&
-        !openVisits.any((v) =>
-            v.id == picked.id || ((picked.clientUuid?.isNotEmpty ?? false) && v.clientUuid == picked.clientUuid)) &&
-        await serverConfirmsVisitNotOpen(visitRepository!, picked)) {
-      debugPrint('[RouteViewModel] Lượt viếng thăm id=${picked.id} (ngày cũ) không còn mở trên server, dọn bản lưu trong máy.');
-      final pickedUuid = (picked.clientUuid?.isNotEmpty ?? false) ? picked.clientUuid : null;
-      try {
-        // CHỈ bỏ bản lưu "đang mở", và chỉ khi VẪN là lượt vừa tra (trong lúc chờ có thể đã check-in lượt mới). Bản trong
-        // danh sách lượt trên máy GIỮ — lượt đã check-out / "Chưa check-out" hôm qua vẫn là lượt thật của lịch sử ngoại tuyến.
-        if ((await visitRepository!.getActiveVisit())?.id == picked.id) await visitRepository!.clearActiveVisit();
-      } catch (e) {
-        debugPrint('[RouteViewModel] Lỗi dọn bản lưu lượt id=${picked.id}: $e');
-      }
-      todayVisits = todayVisits
-          .where((v) => v.id != picked.id && (pickedUuid == null || v.clientUuid != pickedUuid))
-          .toList();
-      activeVisit = todayVisits.where((v) => v.isOpen && !v.isCancelled).firstOrNull;
-    }
-
     // Nếu không có lượt mở từ API (ví dụ đang offline hoặc lỗi mạng),
     // kiểm tra bản ghi active visit lưu trữ cục bộ trong SharedPreferences
     if (activeVisit == null && visitRepository != null) {
@@ -587,24 +555,36 @@ class RouteViewModel extends StateNotifier<RouteState> {
           } else if (saved.id > 0 &&
               matchingServerVisit == null &&
               saved.isCheckinToday &&
-              todayVisits.isNotEmpty &&
+              // Danh sách hôm nay RỖNG vẫn phải tới đây: lượt huỷ ở máy khác không còn trong danh sách nào (#24895); hỏi lại
+              // server ngay dưới mới dọn.
               openVisits != null &&
               // Ảnh chụp ban đầu còn ghi lượt là mở ⇒ giữ (vòng dưới cũng dựa vào nó), khỏi hỏi lại.
-              !openVisits.any((v) =>
-                  v.id == saved.id || ((saved.clientUuid?.isNotEmpty ?? false) && v.clientUuid == saved.clientUuid)) &&
+              !openVisits.any((v) => isSameVisit(saved, v)) &&
               // Ảnh chụp danh sách có thể cũ hơn lượt (check-in trực tuyến / lô đồng bộ đẩy check-in trong lúc đang tải) ⇒
               // hỏi LẠI server sau khi đã đọc bản lưu: lượt đã có mã server thì danh sách mới phải có nó nếu còn mở.
-              await serverConfirmsVisitNotOpen(visitRepository!, saved) &&
-              // Trong lúc chờ, lượt đang mở có thể đã đổi (check-in mới) ⇒ chỉ dọn khi bản lưu VẪN là lượt vừa tra.
-              (await visitRepository!.getActiveVisit())?.id == saved.id) {
+              await serverConfirmsVisitNotOpen(visitRepository!, saved)) {
             // Lượt KHÔNG CÒN MỞ trên server (huỷ hoặc đã check-out — §4.1 HUY-LUOT-VIENG-THAM-2026-09-30), server đã xác nhận:
             // bỏ bản trong máy, KHÔNG gửi lệnh huỷ — suy luận từ danh sách có thể cũ đã từng huỷ nhầm lượt thật (#24698 vòng 3).
-            debugPrint(
-              '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn mở trên server, dọn active visit trong máy.',
-            );
-            await visitRepository!.clearActiveVisit();
-            await visitRepository!.removeLocalVisit(saved.id,
-                clientUuid: (saved.clientUuid?.isNotEmpty ?? false) ? saved.clientUuid : null);
+            // Trong lúc chờ, bản lưu có thể đã đổi: lượt nạp song song vừa dọn nó, hoặc vừa check-in lượt mới ⇒ chỉ dọn khi
+            // VẪN là lượt vừa tra; đã đổi thì nhận bản lưu mới — KHÔNG quay lại đặt lượt server vừa xác nhận là đã đóng.
+            final current = await visitRepository!.getActiveVisit();
+            if (current?.id == saved.id) {
+              debugPrint(
+                '[RouteViewModel] Lượt viếng thăm id=${saved.id} không còn mở trên server, dọn active visit trong máy.',
+              );
+              await visitRepository!.clearActiveVisit();
+              await visitRepository!.removeLocalVisit(saved.id,
+                  clientUuid: (saved.clientUuid?.isNotEmpty ?? false) ? saved.clientUuid : null);
+            } else if (current != null &&
+                current.isOpen &&
+                current.isCheckinToday &&
+                !pendingCancelVisitIds.contains(current.id) &&
+                !pendingCheckoutVisitIds.contains(current.id) &&
+                !(current.clientUuid != null &&
+                    (pendingCancelUuids.contains(current.clientUuid) ||
+                        pendingCheckoutUuids.contains(current.clientUuid)))) {
+              activeVisit = current;
+            }
           } else if (!saved.isCheckinToday && (saved.checkinAt?.isBefore(openStartedAt) ?? false)) {
             // Lượt NGÀY KHÁC lưu trên máy ⇒ chỉ bỏ bản lưu, KHÔNG khoá app: server chỉ chặn lượt treo cùng ngày, cron đầu
             // ngày đánh dấu "Chưa check-out" (#24701). KHÔNG gọi huỷ (huỷ là ghi lên server; lượt vẫn được tính).

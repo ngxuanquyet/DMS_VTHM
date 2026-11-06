@@ -316,15 +316,15 @@ void main() {
     expect(await repo.getActiveVisit(), isNull);
   });
 
-  // M2 (lượt vắt qua nửa đêm bị bỏ khỏi máy) — KIỂM CHỨNG LÀ BÁO NHẦM: getVisitsByDate(hôm nay) luôn ghép lượt đang mở
-  // lưu trên máy vào danh sách hôm nay ⇒ nhánh bỏ bản lưu "ngày khác" không tới được. Test giữ hành vi đó. Lượt đã lên
-  // server thì server phải còn trả nó là mở — server không còn thì tuyến dọn (stale_saved_visit_not_open_test.dart).
+  // M2 (lượt vắt qua nửa đêm bị bỏ khỏi máy): lượt CHƯA gửi (id ≤ 0) phải còn — bỏ là mất lượt. Lượt ĐÃ lên server thì
+  // KHÔNG giữ làm lượt đang mở dù server còn mở: cron đầu ngày đánh dấu "Chưa check-out" (chủ hệ thống chốt #24894,
+  // 06/11/2026 — trước đó getVisitsByDate ghép mọi bản lưu nên lượt hôm qua còn khoá app).
   final yesterday = DateTime.now().subtract(const Duration(days: 1));
-  for (final (label, saved) in [
-    ('đã lên server', VisitEntity(id: 700, customerId: 20, clientUuid: 'v7', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String())),
-    ('chưa gửi (id ≤ 0)', VisitEntity(id: -5, customerId: 20, clientUuid: 'v8', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String())),
+  for (final (label, saved, kept) in [
+    ('đã lên server ⇒ bỏ', VisitEntity(id: 700, customerId: 20, clientUuid: 'v7', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String()), false),
+    ('chưa gửi (id ≤ 0) ⇒ giữ', VisitEntity(id: -5, customerId: 20, clientUuid: 'v8', checkinAt: yesterday, checkinAtRaw: yesterday.toIso8601String()), true),
   ]) {
-    test('M2 lượt check-in hôm qua còn mở ($label) vẫn còn sau khi nạp tuyến', () async {
+    test('M2 lượt check-in hôm qua còn mở ($label) sau khi nạp tuyến', () async {
       boot((o) => (200, {
             'success': true,
             'data': saved.id > 0 && o.uri.toString().contains('open_only=1') ? [saved.toJson()] : <dynamic>[],
@@ -334,8 +334,8 @@ void main() {
       // Provider autoDispose — giữ sống suốt lượt nạp.
       final sub = container.listen(routeViewModelProvider, (_, __) {});
       await container.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
-      expect((await container.read(visitRepositoryProvider).getActiveVisit())?.clientUuid, saved.clientUuid);
-      expect(container.read(routeViewModelProvider).activeVisit?.clientUuid, saved.clientUuid);
+      expect((await container.read(visitRepositoryProvider).getActiveVisit())?.clientUuid, kept ? saved.clientUuid : null);
+      expect(container.read(routeViewModelProvider).activeVisit?.clientUuid, kept ? saved.clientUuid : null);
       sub.close();
     });
   }
