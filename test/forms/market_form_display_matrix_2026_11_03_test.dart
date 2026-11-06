@@ -312,6 +312,98 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('ảnh minh hoạ: đọc illustration_tokens (06/11/2026), server cũ chỉ có illustration_token ⇒ một ảnh', () {
+    expect(DisplayMatrixType.tokensOf({'illustration_tokens': ['a1', '', 3, 'b2'], 'illustration_token': 'x'}), ['a1', 'b2']);
+    expect(DisplayMatrixType.tokensOf({'illustration_token': 'x'}), ['x']);
+    expect(DisplayMatrixType.tokensOf({'illustration_token': ''}), isEmpty);
+    expect(DisplayMatrixType.tokensOf({}), isEmpty);
+  });
+
+  testWidgets('nhiều ảnh minh hoạ: vuốt xem từng ảnh, đếm "i/n", dải thumbnail bấm để nhảy (06/11/2026)', (tester) async {
+    const cfg = {
+      'matrix': {
+        'brands': [
+          {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
+        ],
+        'types': [
+          {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'face_factor': 1, 'illustration_tokens': ['anh1aaaa', 'anh2bbbb', 'anh3cccc']},
+        ],
+      },
+    };
+    await tester.pumpWidget(ProviderScope(
+      overrides: [richImageCacheProvider.overrideWithValue(_FakeCache())],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MarketFormRenderer(blocks: [
+              MarketFormBlockEntity(
+                ref: 'sos',
+                type: 'field',
+                required: false,
+                resolved: const MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'PageView trong hộp thoại không được hỏi bề ngang nội tại');
+    expect(find.text('1/3'), findsOneWidget);
+    expect(find.byKey(const ValueKey('matrix_guide_thumb_2')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('matrix_guide_thumb_2')));
+    await tester.pumpAndSettle();
+    expect(find.text('3/3'), findsOneWidget);
+
+    await tester.fling(find.byKey(const ValueKey('matrix_guide_pages')), const Offset(300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('2/3'), findsOneWidget);
+  });
+
+  testWidgets('nhiều ảnh minh hoạ ở màn rất thấp (< 280px) ⇒ không lỗi kẹp kích thước', (tester) async {
+    tester.view.physicalSize = const Size(600, 240);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    const cfg = {
+      'matrix': {
+        'brands': [
+          {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
+        ],
+        'types': [
+          {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'face_factor': 1, 'illustration_tokens': ['anh1aaaa', 'anh2bbbb']},
+        ],
+      },
+    };
+    await tester.pumpWidget(ProviderScope(
+      overrides: [richImageCacheProvider.overrideWithValue(_FakeCache())],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MarketFormRenderer(blocks: [
+              MarketFormBlockEntity(
+                ref: 'sos',
+                type: 'field',
+                required: false,
+                resolved: const MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'lỗi: clamp(140, 0,5 × cao) ném lỗi khi cận dưới > cận trên');
+    expect(find.text('1/2'), findsOneWidget);
+  });
+
   Map<String, dynamic> cfgHoSo({int minPhotos = 0}) => {
         'matrix': {
           'brands': [

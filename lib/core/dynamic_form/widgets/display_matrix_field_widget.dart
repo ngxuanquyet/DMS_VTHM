@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
@@ -25,8 +28,9 @@ class DisplayMatrixType {
   final int decimals;
   final double faceFactor;
   final String? hint;
-  /// Token ảnh minh hoạ (rich-image) — bấm tên cột mở ảnh này cùng [hint] (chốt 04/11/2026).
-  final String? illustrationToken;
+  /// Token ảnh minh hoạ (rich-image) theo thứ tự hiện — bấm tên cột mở ảnh cùng [hint] (chốt 04/11/2026); nhiều ảnh thì vuốt
+  /// xem từng ảnh, có dải thumbnail (06/11/2026).
+  final List<String> illustrationTokens;
   final int minPhotos;
   final int maxPhotos;
 
@@ -37,7 +41,7 @@ class DisplayMatrixType {
     this.decimals = 0,
     this.faceFactor = 1,
     this.hint,
-    this.illustrationToken,
+    this.illustrationTokens = const [],
     this.minPhotos = 0,
     this.maxPhotos = 0,
   });
@@ -46,7 +50,15 @@ class DisplayMatrixType {
   int get effectiveMinPhotos => minPhotos > maxPhotos ? maxPhotos : minPhotos;
 
   /// Có gì để mở khi bấm tên cột (ảnh minh hoạ hoặc câu hướng dẫn).
-  bool get hasGuide => (illustrationToken ?? '').isNotEmpty || (hint ?? '').trim().isNotEmpty;
+  bool get hasGuide => illustrationTokens.isNotEmpty || (hint ?? '').trim().isNotEmpty;
+
+  /// Đọc danh sách ảnh: `illustration_tokens` (server từ 06/11/2026), thiếu thì `illustration_token` một ảnh (server cũ).
+  static List<String> tokensOf(Map t) {
+    final list = t['illustration_tokens'];
+    if (list is List) return [for (final x in list) if (x is String && x.isNotEmpty) x];
+    final one = t['illustration_token'];
+    return one is String && one.isNotEmpty ? [one] : const [];
+  }
 }
 
 /// Trần một ô đếm — khớp `DisplayMatrixField::MAX_COUNT` của server.
@@ -80,9 +92,7 @@ class DisplayMatrixConfig {
               decimals: i(t['decimals']).clamp(0, 2),
               faceFactor: t['face_factor'] is num ? (t['face_factor'] as num).toDouble() : double.tryParse('${t['face_factor']}') ?? 1,
               hint: t['hint']?.toString(),
-              illustrationToken: t['illustration_token'] is String && (t['illustration_token'] as String).isNotEmpty
-                  ? t['illustration_token'] as String
-                  : null,
+              illustrationTokens: DisplayMatrixType.tokensOf(t),
               minPhotos: i(t['min_photos']),
               maxPhotos: i(t['max_photos']),
             ),
@@ -329,7 +339,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if ((type.illustrationToken ?? '').isNotEmpty)
+              if (type.illustrationTokens.isNotEmpty)
                 // Ảnh to/dọc mà để tự do thì phình theo bề ngang, ở màn phóng to (xoay ngang) tràn khỏi màn hình (báo 04/11/2026)
                 // ⇒ kẹp trong khung ≤ nửa chiều cao màn, giữ tỉ lệ; chụm hai ngón để xem chi tiết.
                 ConstrainedBox(
@@ -338,7 +348,16 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
                     maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
                     maxWidth: MediaQuery.sizeOf(ctx).width * 0.8,
                   ),
-                  child: InteractiveViewer(maxScale: 4, child: RichImageView(token: type.illustrationToken!)),
+                  child: type.illustrationTokens.length == 1
+                      ? InteractiveViewer(maxScale: 4, child: RichImageView(token: type.illustrationTokens.first))
+                      : _IllustrationGallery(
+                          tokens: type.illustrationTokens,
+                          width: MediaQuery.sizeOf(ctx).width * 0.8,
+                          // Chừa chỗ khung hộp thoại (tiêu đề, nút, lề) + câu hướng dẫn: màn ngang ~380px mà lấy nửa màn thì
+                          // dải thumbnail + hướng dẫn trôi khỏi tầm nhìn (đo ảnh chụp 06/11/2026).
+                          height: (MediaQuery.sizeOf(ctx).height - 270)
+                              .clamp(math.min(140.0, MediaQuery.sizeOf(ctx).height * 0.5), MediaQuery.sizeOf(ctx).height * 0.5),
+                        ),
                 ),
               if ((type.hint ?? '').trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(type.hint!.trim())),
               Padding(
@@ -440,8 +459,9 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
     try {
       final cache = ProviderScope.containerOf(context, listen: false).read(richImageCacheProvider);
       for (final t in widget.config.types) {
-        final tok = t.illustrationToken;
-        if (tok != null && tok.isNotEmpty) cache.load(tok).ignore();
+        for (final tok in t.illustrationTokens) {
+          cache.load(tok).ignore();
+        }
       }
     } catch (_) {}
   }
@@ -765,7 +785,7 @@ class _MatrixTableState extends State<_MatrixTable> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (t.unit.isNotEmpty) Text(t.unit, style: AppTypography.labelSmall(color: muted)),
-                              if ((t.illustrationToken ?? '').isNotEmpty)
+                              if (t.illustrationTokens.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(left: 3),
                                   child: Icon(Icons.image_outlined, size: 12, color: muted),
@@ -921,4 +941,182 @@ String? displayMatrixSummary(dynamic value) {
   final total = totals['faces_total'] is num ? totals['faces_total'] as num : 0;
   lines.add('Tổng ${fmtMatrixNumber(total)} mặt ngành hàng');
   return lines.join('\n');
+}
+
+/// Nhiều ảnh minh hoạ (06/11/2026): vuốt ngang xem từng ảnh, góc trên ghi "2/3", dải thumbnail bên dưới (ảnh đang xem có viền,
+/// bấm để nhảy tới) — người dùng biết là có nhiều ảnh. Chụm hai ngón phóng to; đang phóng to thì khoá vuốt trang để kéo xem.
+/// Kích thước CỐ ĐỊNH ([width] × [height]): hộp thoại đo bề ngang nội tại, PageView không trả lời được câu đó.
+class _IllustrationGallery extends StatefulWidget {
+  final List<String> tokens;
+  final double width;
+  final double height;
+
+  const _IllustrationGallery({required this.tokens, required this.width, required this.height});
+
+  @override
+  State<_IllustrationGallery> createState() => _IllustrationGalleryState();
+}
+
+class _IllustrationGalleryState extends State<_IllustrationGallery> {
+  static const double _thumb = 44;
+  final _page = PageController();
+  final _thumbs = ScrollController();
+  int _index = 0;
+  bool _zoomed = false;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    _thumbs.dispose();
+    super.dispose();
+  }
+
+  /// Vuốt sang ảnh nằm ngoài dải thumbnail đang thấy ⇒ cuộn dải cho viền chọn hiện ra.
+  void _revealThumb(int i) {
+    if (!_thumbs.hasClients) return;
+    final p = _thumbs.position;
+    final target = (i * (_thumb + 6) - (p.viewportDimension - _thumb) / 2).clamp(0.0, p.maxScrollExtent);
+    _thumbs.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+  }
+
+  void _goTo(int i) {
+    _page.animateToPage(i, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Ảnh chiếm trọn khung, dải thumbnail CHỒNG lên đáy ảnh (nền mờ): xếp riêng bên dưới thì ở màn ngang hoặc hộp thoại cao
+    // thêm, cắt mất dải thumbnail + câu hướng dẫn, hoặc ảnh chỉ còn ~50px (đo ảnh chụp 06/11/2026).
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: PageView.builder(
+              key: const ValueKey('matrix_guide_pages'),
+              controller: _page,
+              physics: _zoomed ? const NeverScrollableScrollPhysics() : null,
+              itemCount: widget.tokens.length,
+              onPageChanged: (i) {
+                setState(() {
+                  _index = i;
+                  _zoomed = false;
+                });
+                _revealThumb(i);
+              },
+              itemBuilder: (_, i) => _ZoomableImage(
+                token: widget.tokens[i],
+                onZoomChanged: (z) {
+                  if (z != _zoomed) setState(() => _zoomed = z);
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+              child: Text(
+                '${_index + 1}/${widget.tokens.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _thumb + 8,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
+              child: ListView.separated(
+                controller: _thumbs,
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.tokens.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) => GestureDetector(
+                  key: ValueKey('matrix_guide_thumb_$i'),
+                  onTap: () => _goTo(i),
+                  child: Container(
+                    width: _thumb,
+                    height: _thumb,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: i == _index ? AppColors.primary : Colors.white, width: 2),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: _ThumbImage(token: widget.tokens[i]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Một trang ảnh trong [_IllustrationGallery] — chụm phóng to; báo lên khi đang phóng to (khoá vuốt trang).
+class _ZoomableImage extends StatefulWidget {
+  final String token;
+  final ValueChanged<bool> onZoomChanged;
+
+  const _ZoomableImage({required this.token, required this.onZoomChanged});
+
+  @override
+  State<_ZoomableImage> createState() => _ZoomableImageState();
+}
+
+class _ZoomableImageState extends State<_ZoomableImage> {
+  final _ctrl = TransformationController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => InteractiveViewer(
+        transformationController: _ctrl,
+        maxScale: 4,
+        onInteractionEnd: (_) => widget.onZoomChanged(_ctrl.value.getMaxScaleOnAxis() > 1.01),
+        child: Center(child: RichImageView(token: widget.token)),
+      );
+}
+
+/// Ảnh thumbnail (lấp đầy ô, cắt mép) từ bộ đệm ảnh rich-image — dùng chung bộ đệm ngoại tuyến với [RichImageView].
+class _ThumbImage extends ConsumerStatefulWidget {
+  final String token;
+
+  const _ThumbImage({required this.token});
+
+  @override
+  ConsumerState<_ThumbImage> createState() => _ThumbImageState();
+}
+
+class _ThumbImageState extends ConsumerState<_ThumbImage> {
+  late final Future<File?> _file = ref.read(richImageCacheProvider).load(widget.token).catchError((_) => null);
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<File?>(
+        future: _file,
+        builder: (_, snap) {
+          final f = snap.data;
+          if (f == null) {
+            return ColoredBox(
+              color: Colors.grey.shade300,
+              child: Icon(Icons.image_outlined, size: 18, color: Colors.grey.shade600),
+            );
+          }
+          return Image.file(f, fit: BoxFit.cover, cacheWidth: 160, errorBuilder: (_, __, ___) => const SizedBox.shrink());
+        },
+      );
 }
