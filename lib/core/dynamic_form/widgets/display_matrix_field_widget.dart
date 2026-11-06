@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -351,7 +352,8 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
                       ? InteractiveViewer(maxScale: 4, child: RichImageView(token: type.illustrationTokens.first))
                       : _IllustrationGallery(
                           tokens: type.illustrationTokens,
-                          width: MediaQuery.sizeOf(ctx).width * 0.8,
+                          // Bề ngang nội dung hộp thoại: màn dọc hẹp hơn 80% màn (lề hộp thoại 40 + đệm 24 mỗi bên).
+                          width: math.max(80.0, math.min(MediaQuery.sizeOf(ctx).width * 0.8, MediaQuery.sizeOf(ctx).width - 128)),
                           // Chừa chỗ khung hộp thoại (tiêu đề, nút, lề) + câu hướng dẫn: màn ngang ~380px mà lấy nửa màn thì
                           // câu hướng dẫn trôi khỏi tầm nhìn (đo ảnh chụp 06/11/2026).
                           height: (MediaQuery.sizeOf(ctx).height - 270)
@@ -944,8 +946,10 @@ String? displayMatrixSummary(dynamic value) {
 
 /// Nhiều ảnh minh hoạ (06/11/2026): vuốt ngang xem từng ảnh, góc trên ghi "2/3" — người dùng biết là có nhiều ảnh (chủ hệ
 /// thống bỏ dải thumbnail cùng ngày). Chụm hai ngón phóng to; đang phóng to thì khoá vuốt trang để kéo xem.
-/// Kích thước CỐ ĐỊNH ([width] × [height]): hộp thoại đo bề ngang nội tại, PageView không trả lời được câu đó.
-class _IllustrationGallery extends StatefulWidget {
+/// Bề ngang CỐ ĐỊNH ([width]): hộp thoại đo bề ngang nội tại, PageView không trả lời được câu đó. Chiều cao CO theo ảnh (ảnh
+/// cao nhất, không vượt [height]) — khung cố định nửa màn thì ảnh lơ lửng giữa khoảng trống, câu hướng dẫn bị đẩy xa (chủ hệ
+/// thống 06/11/2026: "đẩy text lên").
+class _IllustrationGallery extends ConsumerStatefulWidget {
   final List<String> tokens;
   final double width;
   final double height;
@@ -953,13 +957,43 @@ class _IllustrationGallery extends StatefulWidget {
   const _IllustrationGallery({required this.tokens, required this.width, required this.height});
 
   @override
-  State<_IllustrationGallery> createState() => _IllustrationGalleryState();
+  ConsumerState<_IllustrationGallery> createState() => _IllustrationGalleryState();
 }
 
-class _IllustrationGalleryState extends State<_IllustrationGallery> {
+class _IllustrationGalleryState extends ConsumerState<_IllustrationGallery> {
   final _page = PageController();
   int _index = 0;
   bool _zoomed = false;
+
+  /// Tỉ lệ rộng/cao NHỎ nhất (ảnh "cao" nhất) trong các ảnh đọc được; `null` = chưa đọc xong ⇒ tạm dùng trần [height].
+  double? _minAspect;
+
+  @override
+  void initState() {
+    super.initState();
+    _measure();
+  }
+
+  /// Đọc kích thước ảnh từ PHẦN ĐẦU tệp (ImageDescriptor — không giải mã cả ảnh) — ảnh đã có trong bộ đệm nhờ tải trước.
+  Future<void> _measure() async {
+    final cache = ref.read(richImageCacheProvider);
+    double? min;
+    for (final token in widget.tokens) {
+      try {
+        final file = await cache.load(token);
+        if (file == null) continue;
+        final buf = await ui.ImmutableBuffer.fromUint8List(await file.readAsBytes());
+        final desc = await ui.ImageDescriptor.encoded(buf);
+        if (desc.width > 0 && desc.height > 0) {
+          final a = desc.width / desc.height;
+          if (min == null || a < min) min = a;
+        }
+        desc.dispose();
+        buf.dispose();
+      } catch (_) {}
+    }
+    if (mounted && min != null) setState(() => _minAspect = min);
+  }
 
   @override
   void dispose() {
@@ -969,43 +1003,47 @@ class _IllustrationGalleryState extends State<_IllustrationGallery> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: widget.width,
-      height: widget.height,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: PageView.builder(
-              key: const ValueKey('matrix_guide_pages'),
-              controller: _page,
-              physics: _zoomed ? const NeverScrollableScrollPhysics() : null,
-              itemCount: widget.tokens.length,
-              onPageChanged: (i) => setState(() {
-                _index = i;
-                _zoomed = false;
-              }),
-              itemBuilder: (_, i) => _ZoomableImage(
-                token: widget.tokens[i],
-                onZoomChanged: (z) {
-                  if (z != _zoomed) setState(() => _zoomed = z);
-                },
-              ),
+    // KHÔNG LayoutBuilder: hộp thoại hỏi kích thước nội tại, LayoutBuilder không trả lời được ⇒ tính từ [width] (nơi gọi đưa bề
+    // ngang thật của nội dung hộp thoại); +8 = lề dọc của RichImageView.
+    final a = _minAspect;
+    final h = a == null ? widget.height : math.min(widget.height, widget.width / a + 8);
+    return SizedBox(key: const ValueKey('matrix_guide_gallery'), width: widget.width, height: h, child: _pages());
+  }
+
+  Widget _pages() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: PageView.builder(
+            key: const ValueKey('matrix_guide_pages'),
+            controller: _page,
+            physics: _zoomed ? const NeverScrollableScrollPhysics() : null,
+            itemCount: widget.tokens.length,
+            onPageChanged: (i) => setState(() {
+              _index = i;
+              _zoomed = false;
+            }),
+            itemBuilder: (_, i) => _ZoomableImage(
+              token: widget.tokens[i],
+              onZoomChanged: (z) {
+                if (z != _zoomed) setState(() => _zoomed = z);
+              },
             ),
           ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
-              child: Text(
-                '${_index + 1}/${widget.tokens.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
+        ),
+        Positioned(
+          top: 6,
+          right: 6,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+            child: Text(
+              '${_index + 1}/${widget.tokens.length}',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -365,6 +366,66 @@ void main() {
     expect(find.text('2/3'), findsOneWidget);
   });
 
+  testWidgets('nhiều ảnh minh hoạ: khung CO theo ảnh cao nhất, câu hướng dẫn ngay dưới ảnh (06/11/2026 "đẩy text lên")',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 780);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final dir = Directory.systemTemp.createTempSync('sos_anh_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    // Đọc tệp phải chạy ở thời gian THẬT (vùng thời gian giả của flutter_test không bao giờ hoàn tất I/O).
+    await tester.runAsync(() async {
+      for (final (ten, w, h) in [('ngang', 600, 400), ('cao', 600, 450)]) {
+        final rec = ui.PictureRecorder();
+        Canvas(rec).drawRect(Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()), Paint()..color = Colors.red);
+        final img = await rec.endRecording().toImage(w, h);
+        final png = await img.toByteData(format: ui.ImageByteFormat.png);
+        File('${dir.path}/$ten.png').writeAsBytesSync(png!.buffer.asUint8List());
+      }
+    });
+    const cfg = {
+      'matrix': {
+        'brands': [
+          {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
+        ],
+        'types': [
+          {'code': 'ke_lat', 'name': 'Kệ lật', 'unit': 'tấm', 'face_factor': 1, 'illustration_tokens': ['ngang', 'cao']},
+        ],
+      },
+    };
+    await tester.runAsync(() async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [richImageCacheProvider.overrideWithValue(_DirCache(dir))],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(blocks: [
+                MarketFormBlockEntity(
+                  ref: 'sos',
+                  type: 'field',
+                  required: false,
+                  resolved: const MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
+      await tester.pump(const Duration(milliseconds: 300));
+      await Future<void>.delayed(const Duration(seconds: 1));
+    });
+    await tester.pump();
+    final khung = tester.getSize(find.byKey(const ValueKey('matrix_guide_gallery')));
+    // Rộng 400 − 128 = 272; ảnh cao nhất 4:3 ⇒ 272 × 3/4 + 8 = 212 (trần nửa màn 390).
+    expect(khung.width, 272);
+    expect(khung.height, closeTo(212, 0.5), reason: 'lỗi cũ: khung cố định nửa màn (390) ⇒ khoảng trống lớn trên câu hướng dẫn');
+  });
+
   testWidgets('nhiều ảnh minh hoạ ở màn rất thấp (< 280px) ⇒ không lỗi kẹp kích thước', (tester) async {
     tester.view.physicalSize = const Size(600, 240);
     tester.view.devicePixelRatio = 1.0;
@@ -553,6 +614,18 @@ void main() {
       },
     );
   });
+}
+
+/// Bộ đệm ảnh đọc tệp `<token>.png` trong [dir].
+class _DirCache implements RichImageCache {
+  final Directory dir;
+  _DirCache(this.dir);
+
+  @override
+  Future<File?> load(String token) async => File('${dir.path}/$token.png');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// Bộ đệm ảnh giả — không có tệp (ô ảnh hiện khung chờ), đủ để đo khung kẹp ảnh.
