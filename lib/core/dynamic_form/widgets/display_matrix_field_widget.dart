@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -29,7 +28,7 @@ class DisplayMatrixType {
   final double faceFactor;
   final String? hint;
   /// Token ảnh minh hoạ (rich-image) theo thứ tự hiện — bấm tên cột mở ảnh cùng [hint] (chốt 04/11/2026); nhiều ảnh thì vuốt
-  /// xem từng ảnh, có dải thumbnail (06/11/2026).
+  /// xem từng ảnh, góc trên ghi "i/n" (06/11/2026).
   final List<String> illustrationTokens;
   final int minPhotos;
   final int maxPhotos;
@@ -354,7 +353,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
                           tokens: type.illustrationTokens,
                           width: MediaQuery.sizeOf(ctx).width * 0.8,
                           // Chừa chỗ khung hộp thoại (tiêu đề, nút, lề) + câu hướng dẫn: màn ngang ~380px mà lấy nửa màn thì
-                          // dải thumbnail + hướng dẫn trôi khỏi tầm nhìn (đo ảnh chụp 06/11/2026).
+                          // câu hướng dẫn trôi khỏi tầm nhìn (đo ảnh chụp 06/11/2026).
                           height: (MediaQuery.sizeOf(ctx).height - 270)
                               .clamp(math.min(140.0, MediaQuery.sizeOf(ctx).height * 0.5), MediaQuery.sizeOf(ctx).height * 0.5),
                         ),
@@ -943,8 +942,8 @@ String? displayMatrixSummary(dynamic value) {
   return lines.join('\n');
 }
 
-/// Nhiều ảnh minh hoạ (06/11/2026): vuốt ngang xem từng ảnh, góc trên ghi "2/3", dải thumbnail bên dưới (ảnh đang xem có viền,
-/// bấm để nhảy tới) — người dùng biết là có nhiều ảnh. Chụm hai ngón phóng to; đang phóng to thì khoá vuốt trang để kéo xem.
+/// Nhiều ảnh minh hoạ (06/11/2026): vuốt ngang xem từng ảnh, góc trên ghi "2/3" — người dùng biết là có nhiều ảnh (chủ hệ
+/// thống bỏ dải thumbnail cùng ngày). Chụm hai ngón phóng to; đang phóng to thì khoá vuốt trang để kéo xem.
 /// Kích thước CỐ ĐỊNH ([width] × [height]): hộp thoại đo bề ngang nội tại, PageView không trả lời được câu đó.
 class _IllustrationGallery extends StatefulWidget {
   final List<String> tokens;
@@ -958,35 +957,18 @@ class _IllustrationGallery extends StatefulWidget {
 }
 
 class _IllustrationGalleryState extends State<_IllustrationGallery> {
-  static const double _thumb = 44;
   final _page = PageController();
-  final _thumbs = ScrollController();
   int _index = 0;
   bool _zoomed = false;
 
   @override
   void dispose() {
     _page.dispose();
-    _thumbs.dispose();
     super.dispose();
-  }
-
-  /// Vuốt sang ảnh nằm ngoài dải thumbnail đang thấy ⇒ cuộn dải cho viền chọn hiện ra.
-  void _revealThumb(int i) {
-    if (!_thumbs.hasClients) return;
-    final p = _thumbs.position;
-    final target = (i * (_thumb + 6) - (p.viewportDimension - _thumb) / 2).clamp(0.0, p.maxScrollExtent);
-    _thumbs.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-  }
-
-  void _goTo(int i) {
-    _page.animateToPage(i, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Ảnh chiếm trọn khung, dải thumbnail CHỒNG lên đáy ảnh (nền mờ): xếp riêng bên dưới thì ở màn ngang hoặc hộp thoại cao
-    // thêm, cắt mất dải thumbnail + câu hướng dẫn, hoặc ảnh chỉ còn ~50px (đo ảnh chụp 06/11/2026).
     return SizedBox(
       width: widget.width,
       height: widget.height,
@@ -998,13 +980,10 @@ class _IllustrationGalleryState extends State<_IllustrationGallery> {
               controller: _page,
               physics: _zoomed ? const NeverScrollableScrollPhysics() : null,
               itemCount: widget.tokens.length,
-              onPageChanged: (i) {
-                setState(() {
-                  _index = i;
-                  _zoomed = false;
-                });
-                _revealThumb(i);
-              },
+              onPageChanged: (i) => setState(() {
+                _index = i;
+                _zoomed = false;
+              }),
               itemBuilder: (_, i) => _ZoomableImage(
                 token: widget.tokens[i],
                 onZoomChanged: (z) {
@@ -1022,38 +1001,6 @@ class _IllustrationGalleryState extends State<_IllustrationGallery> {
               child: Text(
                 '${_index + 1}/${widget.tokens.length}',
                 style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: _thumb + 8,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-              child: ListView.separated(
-                controller: _thumbs,
-                scrollDirection: Axis.horizontal,
-                itemCount: widget.tokens.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 6),
-                itemBuilder: (_, i) => GestureDetector(
-                  key: ValueKey('matrix_guide_thumb_$i'),
-                  onTap: () => _goTo(i),
-                  child: Container(
-                    width: _thumb,
-                    height: _thumb,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: i == _index ? AppColors.primary : Colors.white, width: 2),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: _ThumbImage(token: widget.tokens[i]),
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
@@ -1089,34 +1036,5 @@ class _ZoomableImageState extends State<_ZoomableImage> {
         maxScale: 4,
         onInteractionEnd: (_) => widget.onZoomChanged(_ctrl.value.getMaxScaleOnAxis() > 1.01),
         child: Center(child: RichImageView(token: widget.token)),
-      );
-}
-
-/// Ảnh thumbnail (lấp đầy ô, cắt mép) từ bộ đệm ảnh rich-image — dùng chung bộ đệm ngoại tuyến với [RichImageView].
-class _ThumbImage extends ConsumerStatefulWidget {
-  final String token;
-
-  const _ThumbImage({required this.token});
-
-  @override
-  ConsumerState<_ThumbImage> createState() => _ThumbImageState();
-}
-
-class _ThumbImageState extends ConsumerState<_ThumbImage> {
-  late final Future<File?> _file = ref.read(richImageCacheProvider).load(widget.token).catchError((_) => null);
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<File?>(
-        future: _file,
-        builder: (_, snap) {
-          final f = snap.data;
-          if (f == null) {
-            return ColoredBox(
-              color: Colors.grey.shade300,
-              child: Icon(Icons.image_outlined, size: 18, color: Colors.grey.shade600),
-            );
-          }
-          return Image.file(f, fit: BoxFit.cover, cacheWidth: 160, errorBuilder: (_, __, ___) => const SizedBox.shrink());
-        },
       );
 }

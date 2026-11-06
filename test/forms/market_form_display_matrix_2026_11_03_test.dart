@@ -319,7 +319,7 @@ void main() {
     expect(DisplayMatrixType.tokensOf({}), isEmpty);
   });
 
-  testWidgets('nhiều ảnh minh hoạ: vuốt xem từng ảnh, đếm "i/n", dải thumbnail bấm để nhảy (06/11/2026)', (tester) async {
+  testWidgets('nhiều ảnh minh hoạ: vuốt xem từng ảnh, đếm "i/n" (06/11/2026; bỏ dải thumbnail cùng ngày)', (tester) async {
     const cfg = {
       'matrix': {
         'brands': [
@@ -352,9 +352,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull, reason: 'PageView trong hộp thoại không được hỏi bề ngang nội tại');
     expect(find.text('1/3'), findsOneWidget);
-    expect(find.byKey(const ValueKey('matrix_guide_thumb_2')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('matrix_guide_thumb_2')));
+    await tester.fling(find.byKey(const ValueKey('matrix_guide_pages')), const Offset(-300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('2/3'), findsOneWidget);
+    await tester.fling(find.byKey(const ValueKey('matrix_guide_pages')), const Offset(-300, 0), 1000);
     await tester.pumpAndSettle();
     expect(find.text('3/3'), findsOneWidget);
 
