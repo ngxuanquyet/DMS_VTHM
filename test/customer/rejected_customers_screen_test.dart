@@ -157,6 +157,38 @@ void main() {
       expect(find.text('Xem chi tiết điểm bán'), findsOneWidget);
     });
 
+    testWidgets('1b. Lượt đã huỷ không hiện trong "lượt viếng thăm đi kèm"', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Lượt 48489 (07/11/2026): check-in rồi huỷ — server có cancelled_at, không checkout_at.
+      final cancelledVisit = VisitEntity(
+        id: 48489,
+        customerId: 89187,
+        customerCode: '08650170',
+        customerName: 'Đại lý Thành Hậu (Từ chối)',
+        customerApprovalStatus: 'rejected',
+        checkinAt: DateTime(2026, 10, 15, 11, 12),
+        cancelledAt: DateTime(2026, 10, 15, 11, 15),
+        visitResult: 'visited',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            customerRepositoryProvider.overrideWithValue(MockCustomerRepository([rejectedCustomer])),
+            routeApiServiceProvider.overrideWithValue(MockRouteApiService()),
+            visitRepositoryProvider.overrideWithValue(MockVisitRepository([attachedVisit, cancelledVisit])),
+          ],
+          child: const MaterialApp(home: RejectedCustomersScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('LƯỢT VIẾNG THĂM ĐI KÈM (1)'), findsOneWidget);
+      expect(find.text('Đang mở'), findsNothing);
+    });
+
     testWidgets('2. Displays empty state when there are no rejected customers',
         (tester) async {
       const approvedCustomer = CustomerEntity(

@@ -72,7 +72,8 @@ class _RejectedCustomersScreenState
         mergedMap[key] = v;
       }
 
-      final list = mergedMap.values.toList()
+      // Lượt đã huỷ không tính báo cáo ⇒ không phải "lượt đi kèm"; giữ lại thì hiện "Đang mở" vì không có checkout_at.
+      final list = mergedMap.values.where((v) => !v.isCancelled).toList()
         ..sort((a, b) {
           final aTime = a.checkinAt ?? DateTime.fromMillisecondsSinceEpoch(0);
           final bTime = b.checkinAt ?? DateTime.fromMillisecondsSinceEpoch(0);
