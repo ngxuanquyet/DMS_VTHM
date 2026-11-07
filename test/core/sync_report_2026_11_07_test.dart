@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +19,7 @@ class _FakeConnectivity extends ConnectivityNotifier {
   Future<bool> checkConnectivity() async => true;
 }
 
-/// Màn "Báo cáo gửi dữ liệu" (07/11/2026): nhật ký mục đã gửi giữ 30 ngày, ghi lúc markDone.
+/// Màn "Báo cáo gửi dữ liệu" (07/11/2026): nhật ký mục đã gửi giữ 60 ngày, tự xoá khi quá hạn, ghi lúc markDone.
 void main() {
   group('Nhật ký đã gửi (SyncSentLogs)', () {
     late AppDatabase db;
@@ -94,18 +96,37 @@ void main() {
       expect(await logs(), hasLength(1), reason: '8h của ngày cũ nhất vẫn giữ dù lúc dọn là 15h');
     });
 
-    test('dọn nhật ký quá 30 ngày, giữ phần còn hạn', () async {
+    test('hạn giữ 60 ngày: ngày 59 còn, ngày 61 tự xoá (của MỌI tài khoản)', () async {
+      expect(AppDatabase.sentLogRetention, const Duration(days: 60));
       await db.setOwner(1);
-      await db.markDone(await enqueue('old'));
+      await db.markDone(await enqueue('d61'));
+      await db.markDone(await enqueue('d59'));
+      await db.markDone(await enqueue('other-d61', owner: 2));
       await db.markDone(await enqueue('new'));
       final now = DateTime.now();
-      await db.customStatement(
-        "UPDATE sync_sent_logs SET sent_at = ${now.subtract(const Duration(days: 31)).millisecondsSinceEpoch} "
-        "WHERE client_uuid = 'old'",
-      );
+      int ago(int days) => now.subtract(Duration(days: days)).millisecondsSinceEpoch;
+      await db.customStatement("UPDATE sync_sent_logs SET sent_at = ${ago(61)} WHERE client_uuid IN ('d61', 'other-d61')");
+      await db.customStatement("UPDATE sync_sent_logs SET sent_at = ${ago(59)} WHERE client_uuid = 'd59'");
 
       await db.purgeDoneEntries(now: now);
-      expect((await logs()).map((l) => l.clientUuid), ['new']);
+      expect((await logs()).map((l) => l.clientUuid).toSet(), {'new', 'd59'});
+      final all = await db.customSelect('SELECT client_uuid FROM sync_sent_logs').get();
+      expect(all.map((r) => r.read<String>('client_uuid')), isNot(contains('other-d61')));
+    });
+
+    test('nhật ký chỉ giữ trường màn báo cáo đọc — không toạ độ / câu trả lời', () async {
+      await db.setOwner(1);
+      final id = await db.enqueue(SyncQueueEntriesCompanion.insert(
+        entity: 'form_submission',
+        op: 'create',
+        clientUuid: 'f-1',
+        payload: '{"title":"Khảo sát","lat":10.1,"lng":106.2,"answers":{"q1":"bí mật"},"form_code":"KS1"}',
+        createdAt: 1,
+        createdElapsed: 0,
+        bootId: 'b',
+      ));
+      await db.markDone(id);
+      expect(jsonDecode((await logs()).single.payload), {'title': 'Khảo sát', 'form_code': 'KS1'});
     });
   });
 
@@ -131,7 +152,7 @@ void main() {
       raw.execute(
         "INSERT INTO sync_queue_entries (entity, op, client_uuid, payload, state, next_attempt_at, created_at, "
         "created_elapsed, boot_id, server_id, owner_user_id) VALUES "
-        "('visit', 'create', 'v-done', '{}', 'done', 5000, 1000, 0, 'b', 42, 7), "
+        "('visit', 'create', 'v-done', '{\"dealer_name\":\"ĐL A\",\"lat\":1}', 'done', 5000, 1000, 0, 'b', 42, 7), "
         "('visit', 'create', 'v-pending', '{}', 'pending', NULL, 1000, 0, 'b', NULL, 7)",
       );
       raw.execute('PRAGMA user_version = 6');
@@ -143,6 +164,7 @@ void main() {
     expect(rows.map((l) => l.clientUuid), ['v-done']);
     expect(rows.single.sentAt, 5000);
     expect(rows.single.serverId, 42);
+    expect(jsonDecode(rows.single.payload), {'dealer_name': 'ĐL A'});
   });
 
   group('Màn Báo cáo gửi dữ liệu', () {

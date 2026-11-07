@@ -35,7 +35,8 @@ class SyncQueueEntries extends Table {
 /// Nhật ký mục ĐÃ GỬI lên máy chủ — nguồn màn "Báo cáo gửi dữ liệu" (nhân viên tự soát dữ liệu trong ngày đã lên hết
 /// chưa). Dòng hàng đợi `done` chỉ giữ [AppDatabase.doneRetention] nên chép riêng ra đây lúc [AppDatabase.markDone], giữ
 /// [AppDatabase.sentLogRetention]. Cột trùng nghĩa cột hàng đợi để màn báo cáo gom nhóm bằng cùng
-/// [SyncEntityGroupHelper]; chỉ ghi thông tin, KHÔNG giữ tệp ảnh.
+/// [SyncEntityGroupHelper]; chỉ ghi thông tin, KHÔNG giữ tệp ảnh. `payload` chỉ giữ các trường màn báo cáo đọc
+/// ([AppDatabase.sentLogPayloadKeys]) — không mang toạ độ / câu trả lời biểu mẫu suốt hạn giữ.
 class SyncSentLogs extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get queueId => integer()(); // id dòng hàng đợi đã gửi — một dòng hàng đợi chỉ ghi một lần
@@ -141,11 +142,33 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(syncSentLogs);
             await _createSentLogIndex();
             // Mục đã gửi còn trong hàng đợi (≤ doneRetention) vào nhật ký luôn — báo cáo hôm nay/hôm qua không trống sau nâng cấp.
-            await customStatement(
-              'INSERT INTO sync_sent_logs (queue_id, entity, op, client_uuid, parent_uuid, payload, created_at, sent_at, '
-              'server_id, owner_user_id) SELECT id, entity, op, client_uuid, parent_uuid, payload, created_at, '
-              "COALESCE(next_attempt_at, created_at), server_id, owner_user_id FROM sync_queue_entries WHERE state = 'done'",
-            );
+            // customSelect chọn ĐÚNG cột của schema 7 — select typed dùng định nghĩa bảng MỚI NHẤT, schema sau thêm cột hàng
+            // đợi thì máy nâng thẳng từ < 7 vỡ "no such column" ở bước này.
+            final done = await customSelect(
+              'SELECT id, entity, op, client_uuid, parent_uuid, payload, next_attempt_at, created_at, server_id, '
+              "owner_user_id FROM sync_queue_entries WHERE state = 'done'",
+            ).get();
+            for (final r in done) {
+              final createdAt = r.read<int>('created_at');
+              await into(syncSentLogs).insert(_sentLogOf(
+                SyncQueueEntry(
+                  id: r.read<int>('id'),
+                  entity: r.read<String>('entity'),
+                  op: r.read<String>('op'),
+                  clientUuid: r.read<String>('client_uuid'),
+                  parentUuid: r.readNullable<String>('parent_uuid'),
+                  payload: r.read<String>('payload'),
+                  state: 'done',
+                  attempts: 0,
+                  createdAt: createdAt,
+                  createdElapsed: 0,
+                  bootId: '',
+                  serverId: r.readNullable<int>('server_id'),
+                  ownerUserId: r.readNullable<int>('owner_user_id'),
+                ),
+                sentAt: r.readNullable<int>('next_attempt_at') ?? createdAt,
+              ));
+            }
           }
         },
       );
@@ -343,18 +366,7 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) => t.queueId.equals(id))
           ..limit(1)).getSingleOrNull();
         if (updated > 0 && logged == null) {
-          await into(syncSentLogs).insert(SyncSentLogsCompanion.insert(
-            queueId: id,
-            entity: row.entity,
-            op: row.op,
-            clientUuid: row.clientUuid,
-            parentUuid: Value(row.parentUuid),
-            payload: row.payload,
-            createdAt: row.createdAt,
-            sentAt: sentAt,
-            serverId: Value(serverId ?? row.serverId),
-            ownerUserId: Value(row.ownerUserId),
-          ));
+          await into(syncSentLogs).insert(_sentLogOf(row, sentAt: sentAt, serverId: serverId));
         }
         return updated > 0;
       });
@@ -602,8 +614,37 @@ class AppDatabase extends _$AppDatabase {
   static const doneRetention = Duration(days: 2);
 
   /// Giữ nhật ký đã gửi ([SyncSentLogs]) bao lâu — màn "Báo cáo gửi dữ liệu" xem lại được chừng ấy ngày (chủ hệ thống
-  /// chốt 30 ngày, 07/11/2026). Chỉ là thông tin chữ, không giữ tệp ảnh.
-  static const sentLogRetention = Duration(days: 30);
+  /// chốt 60 ngày, 07/11/2026). Chỉ là thông tin chữ, không giữ tệp ảnh; quá hạn tự xoá ở [purgeDoneEntries].
+  static const sentLogRetention = Duration(days: 60);
+
+  /// Trường payload mà [SyncEntityGroupHelper] đọc để đặt tên nhóm — nhật ký chỉ giữ chừng này.
+  static const sentLogPayloadKeys = {'dealer_name', 'visit_id', 'name', 'address', 'route', 'title', 'form_code', 'reason_name'};
+
+  /// Dòng nhật ký đã gửi của một dòng hàng đợi: payload gọt còn [sentLogPayloadKeys] (hỏng JSON ⇒ `{}`).
+  static SyncSentLogsCompanion _sentLogOf(SyncQueueEntry row, {required int sentAt, int? serverId}) {
+    var payload = '{}';
+    try {
+      final decoded = jsonDecode(row.payload);
+      if (decoded is Map<String, dynamic>) {
+        payload = jsonEncode({
+          for (final e in decoded.entries)
+            if (sentLogPayloadKeys.contains(e.key) && e.value != null) e.key: e.value,
+        });
+      }
+    } catch (_) {}
+    return SyncSentLogsCompanion.insert(
+      queueId: row.id,
+      entity: row.entity,
+      op: row.op,
+      clientUuid: row.clientUuid,
+      parentUuid: Value(row.parentUuid),
+      payload: payload,
+      createdAt: row.createdAt,
+      sentAt: sentAt,
+      serverId: Value(serverId ?? row.serverId),
+      ownerUserId: Value(row.ownerUserId),
+    );
+  }
 
   /// Dọn mục ĐÃ GỬI XONG (done) của người đang đăng nhập quá [doneRetention] — hàng đợi không phình mãi. CHỈ xoá dòng:
   /// tệp ảnh của chúng có thể còn được lịch sử trong máy hiển thị (lịch sử chấm công trỏ url = đường dẫn máy) — để
