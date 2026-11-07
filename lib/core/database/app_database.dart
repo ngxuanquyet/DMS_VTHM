@@ -32,6 +32,24 @@ class SyncQueueEntries extends Table {
   IntColumn get ownerUserId => integer().nullable()();
 }
 
+/// Nhật ký mục ĐÃ GỬI lên máy chủ — nguồn màn "Báo cáo gửi dữ liệu" (nhân viên tự soát dữ liệu trong ngày đã lên hết
+/// chưa). Dòng hàng đợi `done` chỉ giữ [AppDatabase.doneRetention] nên chép riêng ra đây lúc [AppDatabase.markDone], giữ
+/// [AppDatabase.sentLogRetention]. Cột trùng nghĩa cột hàng đợi để màn báo cáo gom nhóm bằng cùng
+/// [SyncEntityGroupHelper]; chỉ ghi thông tin, KHÔNG giữ tệp ảnh.
+class SyncSentLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get queueId => integer()(); // id dòng hàng đợi đã gửi — một dòng hàng đợi chỉ ghi một lần
+  TextColumn get entity => text()();
+  TextColumn get op => text()();
+  TextColumn get clientUuid => text()();
+  TextColumn get parentUuid => text().nullable()();
+  TextColumn get payload => text()();
+  IntColumn get createdAt => integer()(); // epoch ms lúc nhập (đồng hồ máy)
+  IntColumn get sentAt => integer()(); // epoch ms lúc máy chủ nhận xong
+  IntColumn get serverId => integer().nullable()();
+  IntColumn get ownerUserId => integer().nullable()();
+}
+
 /// Bảng lưu trữ khách hàng ngoại tuyến trên SQLite (§7 SPEC-DONG-BO-OFFLINE-2026-09-15.md)
 class LocalCustomers extends Table {
   IntColumn get id => integer().nullable()(); // ID trên server
@@ -70,7 +88,7 @@ class LocalCustomers extends Table {
   Set<Column> get primaryKey => {clientUuid};
 }
 
-@DriftDatabase(tables: [SyncQueueEntries, LocalCustomers])
+@DriftDatabase(tables: [SyncQueueEntries, LocalCustomers, SyncSentLogs])
 class AppDatabase extends _$AppDatabase {
   /// [ownerUserId]: người đang đăng nhập ban đầu (test dựng DB trong bộ nhớ); app đặt qua [setOwner].
   AppDatabase([QueryExecutor? e, int? ownerUserId])
@@ -78,7 +96,7 @@ class AppDatabase extends _$AppDatabase {
         super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -87,6 +105,7 @@ class AppDatabase extends _$AppDatabase {
           await _createCustomerIndexes();
           await _createQueueIndexes();
           await _createCustomerOwnerIndex();
+          await _createSentLogIndex();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -118,6 +137,16 @@ class AppDatabase extends _$AppDatabase {
               "WHERE sync_status = 'error' AND approval_status = 'rejected'",
             );
           }
+          if (from < 7) {
+            await m.createTable(syncSentLogs);
+            await _createSentLogIndex();
+            // Mục đã gửi còn trong hàng đợi (≤ doneRetention) vào nhật ký luôn — báo cáo hôm nay/hôm qua không trống sau nâng cấp.
+            await customStatement(
+              'INSERT INTO sync_sent_logs (queue_id, entity, op, client_uuid, parent_uuid, payload, created_at, sent_at, '
+              'server_id, owner_user_id) SELECT id, entity, op, client_uuid, parent_uuid, payload, created_at, '
+              "COALESCE(next_attempt_at, created_at), server_id, owner_user_id FROM sync_queue_entries WHERE state = 'done'",
+            );
+          }
         },
       );
 
@@ -144,6 +173,13 @@ class AppDatabase extends _$AppDatabase {
     );
     await customStatement('CREATE INDEX IF NOT EXISTS idx_sync_queue_client_uuid ON sync_queue_entries (client_uuid)');
     await customStatement('CREATE INDEX IF NOT EXISTS idx_sync_queue_parent_uuid ON sync_queue_entries (parent_uuid)');
+  }
+
+  /// Index nhật ký đã gửi: màn báo cáo lọc theo chủ + khoảng ngày gửi — schema 7.
+  Future<void> _createSentLogIndex() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sync_sent_logs_owner_sent ON sync_sent_logs (owner_user_id, sent_at)',
+    );
   }
 
   /// Người đang đăng nhập (usr_user.id) — AuthViewModel đặt lúc đăng nhập/khôi phục phiên, xoá lúc đăng xuất.
@@ -177,6 +213,9 @@ class AppDatabase extends _$AppDatabase {
       await transaction(() async {
         await (update(syncQueueEntries)..where((t) => t.ownerUserId.equals(_legacyOwner)))
             .write(SyncQueueEntriesCompanion(ownerUserId: Value(userId)));
+        // Nhật ký đã gửi chép từ dòng bản cũ lúc nâng cấp schema 7 cũng mang -1 ⇒ giao cùng người.
+        await (update(syncSentLogs)..where((t) => t.ownerUserId.equals(_legacyOwner)))
+            .write(SyncSentLogsCompanion(ownerUserId: Value(userId)));
         // Điểm bán: dòng bản cũ (-1) như hàng đợi; dòng vô chủ (NULL — ghi khi chưa ai đăng nhập trong lần chạy) chỉ nhận
         // phần ĐÃ đồng bộ (bộ đệm): dòng chờ gửi vô chủ đi cùng dòng hàng đợi vô chủ, hàng đợi không giao nó cho ai.
         await (update(localCustomers)
@@ -285,17 +324,40 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Đánh dấu mục đã gửi thành công (§3.2, §4.3)
-  Future<bool> markDone(int id, {int? serverId}) async {
-    final updated = await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).write(
-      SyncQueueEntriesCompanion(
-        state: const Value('done'),
-        serverId: Value(serverId),
-        // Dòng done không còn lịch thử lại ⇒ dùng cột này ghi LÚC GỬI XONG cho [purgeDoneEntries].
-        nextAttemptAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
-    return updated > 0;
-  }
+  /// Lần đầu chuyển sang done thì chép vào nhật ký đã gửi ([SyncSentLogs]) trong CÙNG transaction.
+  Future<bool> markDone(int id, {int? serverId}) => transaction(() async {
+        final row = await getEntryById(id);
+        if (row == null) return false;
+        final sentAt = DateTime.now().millisecondsSinceEpoch;
+        final updated = await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).write(
+          SyncQueueEntriesCompanion(
+            state: const Value('done'),
+            serverId: Value(serverId),
+            // Dòng done không còn lịch thử lại ⇒ dùng cột này ghi LÚC GỬI XONG cho [purgeDoneEntries].
+            nextAttemptAt: Value(sentAt),
+          ),
+        );
+        // Chặn trùng theo queue_id (không chỉ theo state): mục đã done mà bị lùi về pending (lỗi SAU markDone) gửi lại thì
+        // vẫn chỉ một dòng nhật ký.
+        final logged = await (select(syncSentLogs)
+          ..where((t) => t.queueId.equals(id))
+          ..limit(1)).getSingleOrNull();
+        if (updated > 0 && logged == null) {
+          await into(syncSentLogs).insert(SyncSentLogsCompanion.insert(
+            queueId: id,
+            entity: row.entity,
+            op: row.op,
+            clientUuid: row.clientUuid,
+            parentUuid: Value(row.parentUuid),
+            payload: row.payload,
+            createdAt: row.createdAt,
+            sentAt: sentAt,
+            serverId: Value(serverId ?? row.serverId),
+            ownerUserId: Value(row.ownerUserId),
+          ));
+        }
+        return updated > 0;
+      });
 
   /// Đánh dấu mục bị lỗi vĩnh viễn (4xx, 403, 422, INVALID) -> chuyển sang 'dead' (§3.2, §3.3 Luật 1)
   Future<bool> markDead(int id, String error) async {
@@ -391,6 +453,7 @@ class AppDatabase extends _$AppDatabase {
       customerUuids.addAll((await c.map((r) => r.read(localCustomers.clientUuid)).get()).whereType<String>());
       await (delete(syncQueueEntries)..where(isMine)).go();
       await (delete(localCustomers)..where(isMyCustomer)).go();
+      await (delete(syncSentLogs)..where((t) => _ownedByMe(t.ownerUserId))).go();
       return true;
     });
     if (cleared) {
@@ -538,6 +601,10 @@ class AppDatabase extends _$AppDatabase {
   /// hiển thị tới khi tải lại từ máy chủ.
   static const doneRetention = Duration(days: 2);
 
+  /// Giữ nhật ký đã gửi ([SyncSentLogs]) bao lâu — màn "Báo cáo gửi dữ liệu" xem lại được chừng ấy ngày (chủ hệ thống
+  /// chốt 30 ngày, 07/11/2026). Chỉ là thông tin chữ, không giữ tệp ảnh.
+  static const sentLogRetention = Duration(days: 30);
+
   /// Dọn mục ĐÃ GỬI XONG (done) của người đang đăng nhập quá [doneRetention] — hàng đợi không phình mãi. CHỈ xoá dòng:
   /// tệp ảnh của chúng có thể còn được lịch sử trong máy hiển thị (lịch sử chấm công trỏ url = đường dẫn máy) — để
   /// LocalHistoryRetention.sweepPhotoFiles dọn khi không còn chỗ lưu nào trỏ tới. Giữ dòng cha còn mục con chưa xong (chờ/đang gửi/lỗi):
@@ -558,6 +625,11 @@ class AppDatabase extends _$AppDatabase {
                 t.clientUuid.isNotInQuery(unfinishedParents)))
           .get());
       if (rows.isNotEmpty) await (delete(syncQueueEntries)..where((t) => t.id.isIn(rows.map((r) => r.id)))).go();
+      // Nhật ký đã gửi quá hạn: dọn của MỌI tài khoản theo thời gian — người lâu không đăng nhập lại cũng không phình mãi.
+      // Cắt theo 0h — màn báo cáo cho lùi tới đúng ngày này, cắt giữa ngày thì ngày cũ nhất hiện thiếu (tưởng chưa gửi).
+      final n = now ?? DateTime.now();
+      final logCutoff = DateTime(n.year, n.month, n.day).subtract(sentLogRetention).millisecondsSinceEpoch;
+      await (delete(syncSentLogs)..where((t) => t.sentAt.isSmallerThanValue(logCutoff))).go();
     });
     return rows.length;
   }
@@ -858,6 +930,14 @@ class AppDatabase extends _$AppDatabase {
     return (select(syncQueueEntries)
           ..where((tbl) => isMine(tbl) & (tbl.state.equals('pending') | tbl.state.equals('sending')))
           ..orderBy([(tbl) => OrderingTerm.asc(tbl.id)]))
+        .watch();
+  }
+
+  /// Stream nhật ký đã gửi của người đang đăng nhập từ [fromMs] (epoch ms) — mới nhất trước.
+  Stream<List<SyncSentLog>> watchSentLogs({required int fromMs}) {
+    return (select(syncSentLogs)
+          ..where((t) => _ownedByMe(t.ownerUserId) & t.sentAt.isBiggerOrEqualValue(fromMs))
+          ..orderBy([(t) => OrderingTerm.desc(t.sentAt), (t) => OrderingTerm.desc(t.id)]))
         .watch();
   }
 

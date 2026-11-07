@@ -37,3 +37,11 @@ final deadQueueEntriesProvider =
   return db.watchDeadQueueEntries();
 });
 
+
+/// Nhật ký đã gửi của người đang đăng nhập trong [AppDatabase.sentLogRetention] gần nhất (màn Báo cáo gửi dữ liệu).
+final sentLogsProvider = StreamProvider.autoDispose<List<SyncSentLog>>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  final now = DateTime.now();
+  final from = DateTime(now.year, now.month, now.day).subtract(AppDatabase.sentLogRetention);
+  return db.watchSentLogs(fromMs: from.millisecondsSinceEpoch);
+});

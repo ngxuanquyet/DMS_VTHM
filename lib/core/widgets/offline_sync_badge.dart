@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/database_provider.dart';
 import '../network/connectivity_provider.dart';
+import '../screens/sync_report_screen.dart';
 import '../sync/sync_entity_group.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_colors.dart';
@@ -78,7 +79,7 @@ class OfflineSyncBadge extends ConsumerWidget {
             : '$displayPendingCount chờ');
 
     return InkWell(
-      onTap: () => showOfflineSyncModal(context),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SyncReportScreen())),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -215,7 +216,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
               Row(
                 children: [
                   Expanded(
-                    child: _SyncStatBox(
+                    child: SyncStatBox(
                       title: 'Đang chờ gửi',
                       count: '$displayPendingCount',
                       color: const Color(0xFF3B82F6),
@@ -225,7 +226,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _SyncStatBox(
+                    child: SyncStatBox(
                       title: 'Lỗi đồng bộ',
                       count: '$deadCount',
                       color: deadCount > 0 ? const Color(0xFFE11D48) : const Color(0xFF10B981),
@@ -263,7 +264,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                       ? ListView.builder(
                           shrinkWrap: true,
                           itemCount: groupedPending.length,
-                          itemBuilder: (ctx, idx) => _buildGroupedEntryTile(ctx, groupedPending[idx], isDark),
+                          itemBuilder: (ctx, idx) => buildGroupedSyncEntryTile(ctx, groupedPending[idx], isDark),
                         )
                       : Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -317,17 +318,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFE11D48)),
                     ),
                     TextButton(
-                      onPressed: () async {
-                        final db = ref.read(appDatabaseProvider);
-                        for (final e in deadEntries) {
-                          // CHỈ dòng TẠO lỗi mới bỏ cả điểm bán chờ; lệnh SỬA lỗi thì chỉ bỏ chính lệnh đó (bên dưới).
-                          if (e.entity == 'customer' && e.op == 'create') {
-                            await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(e.clientUuid);
-                          }
-                        }
-                        // Lệnh đóng lượt đang giữ lượt sau không bị xoá (AppDatabase.isHoldingLaterVisit, #24698 vòng 4).
-                        if (await db.clearDeadEntries() > 0 && context.mounted) _showHeldVisitCloseNotice(context);
-                      },
+                      onPressed: () => clearAllDeadSyncEntries(context, ref, deadEntries),
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
                         visualDensity: VisualDensity.compact,
@@ -341,7 +332,7 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                   child: ListView.builder(
                     shrinkWrap: true,
                     itemCount: deadEntries.length,
-                    itemBuilder: (ctx, idx) => _buildDeadQueueEntryTile(ctx, ref, deadEntries[idx], isDark),
+                    itemBuilder: (ctx, idx) => buildDeadSyncEntryTile(ctx, ref, deadEntries[idx], isDark),
                   ),
                 ),
               ],
@@ -354,29 +345,9 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
                 height: 46,
                 child: ElevatedButton.icon(
                   onPressed: isOnline
-                      ? () async {
+                      ? () {
                           Navigator.of(context).pop();
-                          try {
-                            await ref.read(syncServiceProvider).syncQueue(force: true);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Đang tiến hành gửi dữ liệu lên hệ thống...'),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Chưa thể gửi dữ liệu: ${StringUtils.formatUserFriendlyError(e)}'),
-                                  backgroundColor: AppColors.error,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          }
+                          sendSyncQueueNow(context, ref);
                         }
                       : null,
                   style: ElevatedButton.styleFrom(
@@ -400,14 +371,53 @@ class _OfflineSyncDetailSheet extends ConsumerWidget {
   }
 }
 
-class _SyncStatBox extends StatelessWidget {
+/// Gửi ngay toàn bộ hàng đợi (nút "Gửi dữ liệu ngay" của bảng hàng đợi và màn Báo cáo gửi dữ liệu).
+Future<void> sendSyncQueueNow(BuildContext context, WidgetRef ref) async {
+  try {
+    await ref.read(syncServiceProvider).syncQueue(force: true);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đang tiến hành gửi dữ liệu lên hệ thống...'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Chưa thể gửi dữ liệu: ${StringUtils.formatUserFriendlyError(e)}'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+/// Xoá mọi mục lỗi vĩnh viễn (dead) của người đang đăng nhập — nút "Xoá tất cả".
+Future<void> clearAllDeadSyncEntries(BuildContext context, WidgetRef ref, List<SyncQueueEntry> deadEntries) async {
+  final db = ref.read(appDatabaseProvider);
+  for (final e in deadEntries) {
+    // CHỈ dòng TẠO lỗi mới bỏ cả điểm bán chờ; lệnh SỬA lỗi thì chỉ bỏ chính lệnh đó (bên dưới).
+    if (e.entity == 'customer' && e.op == 'create') {
+      await ref.read(customerViewModelProvider.notifier).deletePendingCustomer(e.clientUuid);
+    }
+  }
+  // Lệnh đóng lượt đang giữ lượt sau không bị xoá (AppDatabase.isHoldingLaterVisit, #24698 vòng 4).
+  if (await db.clearDeadEntries() > 0 && context.mounted) _showHeldVisitCloseNotice(context);
+}
+
+class SyncStatBox extends StatelessWidget {
   final String title;
   final String count;
   final Color color;
   final Color bgColor;
   final IconData icon;
 
-  const _SyncStatBox({
+  const SyncStatBox({
+    super.key,
     required this.title,
     required this.count,
     required this.color,
@@ -460,7 +470,8 @@ class _SyncStatBox extends StatelessWidget {
   }
 }
 
-Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool isDark) {
+/// Một nhóm nghiệp vụ trong hàng đợi. [statusLabel] thay nhãn "Đang gửi/Chờ gửi" (màn báo cáo: giờ đã gửi).
+Widget buildGroupedSyncEntryTile(BuildContext context, GroupedSyncItem item, bool isDark, {String? statusLabel}) {
   return Container(
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -516,7 +527,7 @@ Widget _buildGroupedEntryTile(BuildContext context, GroupedSyncItem item, bool i
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            item.isSending ? 'Đang gửi' : 'Chờ gửi',
+            statusLabel ?? (item.isSending ? 'Đang gửi' : 'Chờ gửi'),
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -543,7 +554,7 @@ void _showHeldVisitCloseNotice(BuildContext context) {
   );
 }
 
-Widget _buildDeadQueueEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntry entry, bool isDark) {
+Widget buildDeadSyncEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntry entry, bool isDark) {
   final rawLastError = StringUtils.formatUserFriendlyError(entry.lastError);
   String cleanError = rawLastError;
   String? errorCode;

@@ -97,7 +97,11 @@ void main() {
         .map((r) => r.read<String>('sql'))
         .toList();
     await probe.close();
-    final v1 = ddl.map((sql) => sql.replaceAll(RegExp(r',\s*"owner_user_id" INTEGER NULL'), '')).toList();
+    // Bảng nhật ký đã gửi chỉ có từ schema 7 — schema 1 không có.
+    final v1 = ddl
+        .where((sql) => !sql.contains('sync_sent_logs'))
+        .map((sql) => sql.replaceAll(RegExp(r',\s*"owner_user_id" INTEGER NULL'), ''))
+        .toList();
     expect(v1.any((sql) => sql.contains('owner_user_id')), isFalse);
 
     final file = File('${dir.path}/v1.sqlite');

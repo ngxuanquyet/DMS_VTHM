@@ -13,6 +13,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/screens/error_log_screen.dart';
+import '../../../../core/screens/sync_report_screen.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/offline_sync_badge.dart';
@@ -523,6 +524,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       onTap: () {
                         context.push('/travel');
                       },
+                      isDark: isDark,
+                    ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.cloud_sync_outlined,
+                      title: strings.syncReport,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SyncReportScreen()),
+                      ),
                       isDark: isDark,
                     ),
                   ],

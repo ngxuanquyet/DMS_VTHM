@@ -2409,6 +2409,655 @@ class LocalCustomersCompanion extends UpdateCompanion<LocalCustomer> {
   }
 }
 
+class $SyncSentLogsTable extends SyncSentLogs
+    with TableInfo<$SyncSentLogsTable, SyncSentLog> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncSentLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _queueIdMeta = const VerificationMeta(
+    'queueId',
+  );
+  @override
+  late final GeneratedColumn<int> queueId = GeneratedColumn<int>(
+    'queue_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityMeta = const VerificationMeta('entity');
+  @override
+  late final GeneratedColumn<String> entity = GeneratedColumn<String>(
+    'entity',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _opMeta = const VerificationMeta('op');
+  @override
+  late final GeneratedColumn<String> op = GeneratedColumn<String>(
+    'op',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _clientUuidMeta = const VerificationMeta(
+    'clientUuid',
+  );
+  @override
+  late final GeneratedColumn<String> clientUuid = GeneratedColumn<String>(
+    'client_uuid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _parentUuidMeta = const VerificationMeta(
+    'parentUuid',
+  );
+  @override
+  late final GeneratedColumn<String> parentUuid = GeneratedColumn<String>(
+    'parent_uuid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sentAtMeta = const VerificationMeta('sentAt');
+  @override
+  late final GeneratedColumn<int> sentAt = GeneratedColumn<int>(
+    'sent_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverIdMeta = const VerificationMeta(
+    'serverId',
+  );
+  @override
+  late final GeneratedColumn<int> serverId = GeneratedColumn<int>(
+    'server_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ownerUserIdMeta = const VerificationMeta(
+    'ownerUserId',
+  );
+  @override
+  late final GeneratedColumn<int> ownerUserId = GeneratedColumn<int>(
+    'owner_user_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    queueId,
+    entity,
+    op,
+    clientUuid,
+    parentUuid,
+    payload,
+    createdAt,
+    sentAt,
+    serverId,
+    ownerUserId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_sent_logs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncSentLog> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('queue_id')) {
+      context.handle(
+        _queueIdMeta,
+        queueId.isAcceptableOrUnknown(data['queue_id']!, _queueIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_queueIdMeta);
+    }
+    if (data.containsKey('entity')) {
+      context.handle(
+        _entityMeta,
+        entity.isAcceptableOrUnknown(data['entity']!, _entityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityMeta);
+    }
+    if (data.containsKey('op')) {
+      context.handle(_opMeta, op.isAcceptableOrUnknown(data['op']!, _opMeta));
+    } else if (isInserting) {
+      context.missing(_opMeta);
+    }
+    if (data.containsKey('client_uuid')) {
+      context.handle(
+        _clientUuidMeta,
+        clientUuid.isAcceptableOrUnknown(data['client_uuid']!, _clientUuidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_clientUuidMeta);
+    }
+    if (data.containsKey('parent_uuid')) {
+      context.handle(
+        _parentUuidMeta,
+        parentUuid.isAcceptableOrUnknown(data['parent_uuid']!, _parentUuidMeta),
+      );
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('sent_at')) {
+      context.handle(
+        _sentAtMeta,
+        sentAt.isAcceptableOrUnknown(data['sent_at']!, _sentAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sentAtMeta);
+    }
+    if (data.containsKey('server_id')) {
+      context.handle(
+        _serverIdMeta,
+        serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta),
+      );
+    }
+    if (data.containsKey('owner_user_id')) {
+      context.handle(
+        _ownerUserIdMeta,
+        ownerUserId.isAcceptableOrUnknown(
+          data['owner_user_id']!,
+          _ownerUserIdMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncSentLog map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncSentLog(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      queueId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}queue_id'],
+      )!,
+      entity: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity'],
+      )!,
+      op: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}op'],
+      )!,
+      clientUuid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}client_uuid'],
+      )!,
+      parentUuid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_uuid'],
+      ),
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      sentAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sent_at'],
+      )!,
+      serverId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_id'],
+      ),
+      ownerUserId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}owner_user_id'],
+      ),
+    );
+  }
+
+  @override
+  $SyncSentLogsTable createAlias(String alias) {
+    return $SyncSentLogsTable(attachedDatabase, alias);
+  }
+}
+
+class SyncSentLog extends DataClass implements Insertable<SyncSentLog> {
+  final int id;
+  final int queueId;
+  final String entity;
+  final String op;
+  final String clientUuid;
+  final String? parentUuid;
+  final String payload;
+  final int createdAt;
+  final int sentAt;
+  final int? serverId;
+  final int? ownerUserId;
+  const SyncSentLog({
+    required this.id,
+    required this.queueId,
+    required this.entity,
+    required this.op,
+    required this.clientUuid,
+    this.parentUuid,
+    required this.payload,
+    required this.createdAt,
+    required this.sentAt,
+    this.serverId,
+    this.ownerUserId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['queue_id'] = Variable<int>(queueId);
+    map['entity'] = Variable<String>(entity);
+    map['op'] = Variable<String>(op);
+    map['client_uuid'] = Variable<String>(clientUuid);
+    if (!nullToAbsent || parentUuid != null) {
+      map['parent_uuid'] = Variable<String>(parentUuid);
+    }
+    map['payload'] = Variable<String>(payload);
+    map['created_at'] = Variable<int>(createdAt);
+    map['sent_at'] = Variable<int>(sentAt);
+    if (!nullToAbsent || serverId != null) {
+      map['server_id'] = Variable<int>(serverId);
+    }
+    if (!nullToAbsent || ownerUserId != null) {
+      map['owner_user_id'] = Variable<int>(ownerUserId);
+    }
+    return map;
+  }
+
+  SyncSentLogsCompanion toCompanion(bool nullToAbsent) {
+    return SyncSentLogsCompanion(
+      id: Value(id),
+      queueId: Value(queueId),
+      entity: Value(entity),
+      op: Value(op),
+      clientUuid: Value(clientUuid),
+      parentUuid: parentUuid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentUuid),
+      payload: Value(payload),
+      createdAt: Value(createdAt),
+      sentAt: Value(sentAt),
+      serverId: serverId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverId),
+      ownerUserId: ownerUserId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerUserId),
+    );
+  }
+
+  factory SyncSentLog.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncSentLog(
+      id: serializer.fromJson<int>(json['id']),
+      queueId: serializer.fromJson<int>(json['queueId']),
+      entity: serializer.fromJson<String>(json['entity']),
+      op: serializer.fromJson<String>(json['op']),
+      clientUuid: serializer.fromJson<String>(json['clientUuid']),
+      parentUuid: serializer.fromJson<String?>(json['parentUuid']),
+      payload: serializer.fromJson<String>(json['payload']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      sentAt: serializer.fromJson<int>(json['sentAt']),
+      serverId: serializer.fromJson<int?>(json['serverId']),
+      ownerUserId: serializer.fromJson<int?>(json['ownerUserId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'queueId': serializer.toJson<int>(queueId),
+      'entity': serializer.toJson<String>(entity),
+      'op': serializer.toJson<String>(op),
+      'clientUuid': serializer.toJson<String>(clientUuid),
+      'parentUuid': serializer.toJson<String?>(parentUuid),
+      'payload': serializer.toJson<String>(payload),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'sentAt': serializer.toJson<int>(sentAt),
+      'serverId': serializer.toJson<int?>(serverId),
+      'ownerUserId': serializer.toJson<int?>(ownerUserId),
+    };
+  }
+
+  SyncSentLog copyWith({
+    int? id,
+    int? queueId,
+    String? entity,
+    String? op,
+    String? clientUuid,
+    Value<String?> parentUuid = const Value.absent(),
+    String? payload,
+    int? createdAt,
+    int? sentAt,
+    Value<int?> serverId = const Value.absent(),
+    Value<int?> ownerUserId = const Value.absent(),
+  }) => SyncSentLog(
+    id: id ?? this.id,
+    queueId: queueId ?? this.queueId,
+    entity: entity ?? this.entity,
+    op: op ?? this.op,
+    clientUuid: clientUuid ?? this.clientUuid,
+    parentUuid: parentUuid.present ? parentUuid.value : this.parentUuid,
+    payload: payload ?? this.payload,
+    createdAt: createdAt ?? this.createdAt,
+    sentAt: sentAt ?? this.sentAt,
+    serverId: serverId.present ? serverId.value : this.serverId,
+    ownerUserId: ownerUserId.present ? ownerUserId.value : this.ownerUserId,
+  );
+  SyncSentLog copyWithCompanion(SyncSentLogsCompanion data) {
+    return SyncSentLog(
+      id: data.id.present ? data.id.value : this.id,
+      queueId: data.queueId.present ? data.queueId.value : this.queueId,
+      entity: data.entity.present ? data.entity.value : this.entity,
+      op: data.op.present ? data.op.value : this.op,
+      clientUuid: data.clientUuid.present
+          ? data.clientUuid.value
+          : this.clientUuid,
+      parentUuid: data.parentUuid.present
+          ? data.parentUuid.value
+          : this.parentUuid,
+      payload: data.payload.present ? data.payload.value : this.payload,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      sentAt: data.sentAt.present ? data.sentAt.value : this.sentAt,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
+      ownerUserId: data.ownerUserId.present
+          ? data.ownerUserId.value
+          : this.ownerUserId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncSentLog(')
+          ..write('id: $id, ')
+          ..write('queueId: $queueId, ')
+          ..write('entity: $entity, ')
+          ..write('op: $op, ')
+          ..write('clientUuid: $clientUuid, ')
+          ..write('parentUuid: $parentUuid, ')
+          ..write('payload: $payload, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentAt: $sentAt, ')
+          ..write('serverId: $serverId, ')
+          ..write('ownerUserId: $ownerUserId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    queueId,
+    entity,
+    op,
+    clientUuid,
+    parentUuid,
+    payload,
+    createdAt,
+    sentAt,
+    serverId,
+    ownerUserId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncSentLog &&
+          other.id == this.id &&
+          other.queueId == this.queueId &&
+          other.entity == this.entity &&
+          other.op == this.op &&
+          other.clientUuid == this.clientUuid &&
+          other.parentUuid == this.parentUuid &&
+          other.payload == this.payload &&
+          other.createdAt == this.createdAt &&
+          other.sentAt == this.sentAt &&
+          other.serverId == this.serverId &&
+          other.ownerUserId == this.ownerUserId);
+}
+
+class SyncSentLogsCompanion extends UpdateCompanion<SyncSentLog> {
+  final Value<int> id;
+  final Value<int> queueId;
+  final Value<String> entity;
+  final Value<String> op;
+  final Value<String> clientUuid;
+  final Value<String?> parentUuid;
+  final Value<String> payload;
+  final Value<int> createdAt;
+  final Value<int> sentAt;
+  final Value<int?> serverId;
+  final Value<int?> ownerUserId;
+  const SyncSentLogsCompanion({
+    this.id = const Value.absent(),
+    this.queueId = const Value.absent(),
+    this.entity = const Value.absent(),
+    this.op = const Value.absent(),
+    this.clientUuid = const Value.absent(),
+    this.parentUuid = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.sentAt = const Value.absent(),
+    this.serverId = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
+  });
+  SyncSentLogsCompanion.insert({
+    this.id = const Value.absent(),
+    required int queueId,
+    required String entity,
+    required String op,
+    required String clientUuid,
+    this.parentUuid = const Value.absent(),
+    required String payload,
+    required int createdAt,
+    required int sentAt,
+    this.serverId = const Value.absent(),
+    this.ownerUserId = const Value.absent(),
+  }) : queueId = Value(queueId),
+       entity = Value(entity),
+       op = Value(op),
+       clientUuid = Value(clientUuid),
+       payload = Value(payload),
+       createdAt = Value(createdAt),
+       sentAt = Value(sentAt);
+  static Insertable<SyncSentLog> custom({
+    Expression<int>? id,
+    Expression<int>? queueId,
+    Expression<String>? entity,
+    Expression<String>? op,
+    Expression<String>? clientUuid,
+    Expression<String>? parentUuid,
+    Expression<String>? payload,
+    Expression<int>? createdAt,
+    Expression<int>? sentAt,
+    Expression<int>? serverId,
+    Expression<int>? ownerUserId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (queueId != null) 'queue_id': queueId,
+      if (entity != null) 'entity': entity,
+      if (op != null) 'op': op,
+      if (clientUuid != null) 'client_uuid': clientUuid,
+      if (parentUuid != null) 'parent_uuid': parentUuid,
+      if (payload != null) 'payload': payload,
+      if (createdAt != null) 'created_at': createdAt,
+      if (sentAt != null) 'sent_at': sentAt,
+      if (serverId != null) 'server_id': serverId,
+      if (ownerUserId != null) 'owner_user_id': ownerUserId,
+    });
+  }
+
+  SyncSentLogsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? queueId,
+    Value<String>? entity,
+    Value<String>? op,
+    Value<String>? clientUuid,
+    Value<String?>? parentUuid,
+    Value<String>? payload,
+    Value<int>? createdAt,
+    Value<int>? sentAt,
+    Value<int?>? serverId,
+    Value<int?>? ownerUserId,
+  }) {
+    return SyncSentLogsCompanion(
+      id: id ?? this.id,
+      queueId: queueId ?? this.queueId,
+      entity: entity ?? this.entity,
+      op: op ?? this.op,
+      clientUuid: clientUuid ?? this.clientUuid,
+      parentUuid: parentUuid ?? this.parentUuid,
+      payload: payload ?? this.payload,
+      createdAt: createdAt ?? this.createdAt,
+      sentAt: sentAt ?? this.sentAt,
+      serverId: serverId ?? this.serverId,
+      ownerUserId: ownerUserId ?? this.ownerUserId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (queueId.present) {
+      map['queue_id'] = Variable<int>(queueId.value);
+    }
+    if (entity.present) {
+      map['entity'] = Variable<String>(entity.value);
+    }
+    if (op.present) {
+      map['op'] = Variable<String>(op.value);
+    }
+    if (clientUuid.present) {
+      map['client_uuid'] = Variable<String>(clientUuid.value);
+    }
+    if (parentUuid.present) {
+      map['parent_uuid'] = Variable<String>(parentUuid.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (sentAt.present) {
+      map['sent_at'] = Variable<int>(sentAt.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<int>(serverId.value);
+    }
+    if (ownerUserId.present) {
+      map['owner_user_id'] = Variable<int>(ownerUserId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncSentLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('queueId: $queueId, ')
+          ..write('entity: $entity, ')
+          ..write('op: $op, ')
+          ..write('clientUuid: $clientUuid, ')
+          ..write('parentUuid: $parentUuid, ')
+          ..write('payload: $payload, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentAt: $sentAt, ')
+          ..write('serverId: $serverId, ')
+          ..write('ownerUserId: $ownerUserId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2416,6 +3065,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $LocalCustomersTable localCustomers = $LocalCustomersTable(this);
+  late final $SyncSentLogsTable syncSentLogs = $SyncSentLogsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2423,6 +3073,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     syncQueueEntries,
     localCustomers,
+    syncSentLogs,
   ];
 }
 
@@ -3526,6 +4177,329 @@ typedef $$LocalCustomersTableProcessedTableManager =
       LocalCustomer,
       PrefetchHooks Function()
     >;
+typedef $$SyncSentLogsTableCreateCompanionBuilder =
+    SyncSentLogsCompanion Function({
+      Value<int> id,
+      required int queueId,
+      required String entity,
+      required String op,
+      required String clientUuid,
+      Value<String?> parentUuid,
+      required String payload,
+      required int createdAt,
+      required int sentAt,
+      Value<int?> serverId,
+      Value<int?> ownerUserId,
+    });
+typedef $$SyncSentLogsTableUpdateCompanionBuilder =
+    SyncSentLogsCompanion Function({
+      Value<int> id,
+      Value<int> queueId,
+      Value<String> entity,
+      Value<String> op,
+      Value<String> clientUuid,
+      Value<String?> parentUuid,
+      Value<String> payload,
+      Value<int> createdAt,
+      Value<int> sentAt,
+      Value<int?> serverId,
+      Value<int?> ownerUserId,
+    });
+
+class $$SyncSentLogsTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncSentLogsTable> {
+  $$SyncSentLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get queueId => $composableBuilder(
+    column: $table.queueId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entity => $composableBuilder(
+    column: $table.entity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get op => $composableBuilder(
+    column: $table.op,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get clientUuid => $composableBuilder(
+    column: $table.clientUuid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentUuid => $composableBuilder(
+    column: $table.parentUuid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sentAt => $composableBuilder(
+    column: $table.sentAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncSentLogsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncSentLogsTable> {
+  $$SyncSentLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get queueId => $composableBuilder(
+    column: $table.queueId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entity => $composableBuilder(
+    column: $table.entity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get op => $composableBuilder(
+    column: $table.op,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get clientUuid => $composableBuilder(
+    column: $table.clientUuid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parentUuid => $composableBuilder(
+    column: $table.parentUuid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sentAt => $composableBuilder(
+    column: $table.sentAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncSentLogsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncSentLogsTable> {
+  $$SyncSentLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get queueId =>
+      $composableBuilder(column: $table.queueId, builder: (column) => column);
+
+  GeneratedColumn<String> get entity =>
+      $composableBuilder(column: $table.entity, builder: (column) => column);
+
+  GeneratedColumn<String> get op =>
+      $composableBuilder(column: $table.op, builder: (column) => column);
+
+  GeneratedColumn<String> get clientUuid => $composableBuilder(
+    column: $table.clientUuid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get parentUuid => $composableBuilder(
+    column: $table.parentUuid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get sentAt =>
+      $composableBuilder(column: $table.sentAt, builder: (column) => column);
+
+  GeneratedColumn<int> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<int> get ownerUserId => $composableBuilder(
+    column: $table.ownerUserId,
+    builder: (column) => column,
+  );
+}
+
+class $$SyncSentLogsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncSentLogsTable,
+          SyncSentLog,
+          $$SyncSentLogsTableFilterComposer,
+          $$SyncSentLogsTableOrderingComposer,
+          $$SyncSentLogsTableAnnotationComposer,
+          $$SyncSentLogsTableCreateCompanionBuilder,
+          $$SyncSentLogsTableUpdateCompanionBuilder,
+          (
+            SyncSentLog,
+            BaseReferences<_$AppDatabase, $SyncSentLogsTable, SyncSentLog>,
+          ),
+          SyncSentLog,
+          PrefetchHooks Function()
+        > {
+  $$SyncSentLogsTableTableManager(_$AppDatabase db, $SyncSentLogsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncSentLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncSentLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncSentLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> queueId = const Value.absent(),
+                Value<String> entity = const Value.absent(),
+                Value<String> op = const Value.absent(),
+                Value<String> clientUuid = const Value.absent(),
+                Value<String?> parentUuid = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> sentAt = const Value.absent(),
+                Value<int?> serverId = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
+              }) => SyncSentLogsCompanion(
+                id: id,
+                queueId: queueId,
+                entity: entity,
+                op: op,
+                clientUuid: clientUuid,
+                parentUuid: parentUuid,
+                payload: payload,
+                createdAt: createdAt,
+                sentAt: sentAt,
+                serverId: serverId,
+                ownerUserId: ownerUserId,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int queueId,
+                required String entity,
+                required String op,
+                required String clientUuid,
+                Value<String?> parentUuid = const Value.absent(),
+                required String payload,
+                required int createdAt,
+                required int sentAt,
+                Value<int?> serverId = const Value.absent(),
+                Value<int?> ownerUserId = const Value.absent(),
+              }) => SyncSentLogsCompanion.insert(
+                id: id,
+                queueId: queueId,
+                entity: entity,
+                op: op,
+                clientUuid: clientUuid,
+                parentUuid: parentUuid,
+                payload: payload,
+                createdAt: createdAt,
+                sentAt: sentAt,
+                serverId: serverId,
+                ownerUserId: ownerUserId,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SyncSentLogsTable, SyncSentLog>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $SyncSentLogsTable,
+                    SyncSentLog
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncSentLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncSentLogsTable,
+      SyncSentLog,
+      $$SyncSentLogsTableFilterComposer,
+      $$SyncSentLogsTableOrderingComposer,
+      $$SyncSentLogsTableAnnotationComposer,
+      $$SyncSentLogsTableCreateCompanionBuilder,
+      $$SyncSentLogsTableUpdateCompanionBuilder,
+      (
+        SyncSentLog,
+        BaseReferences<_$AppDatabase, $SyncSentLogsTable, SyncSentLog>,
+      ),
+      SyncSentLog,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3534,4 +4508,6 @@ class $AppDatabaseManager {
       $$SyncQueueEntriesTableTableManager(_db, _db.syncQueueEntries);
   $$LocalCustomersTableTableManager get localCustomers =>
       $$LocalCustomersTableTableManager(_db, _db.localCustomers);
+  $$SyncSentLogsTableTableManager get syncSentLogs =>
+      $$SyncSentLogsTableTableManager(_db, _db.syncSentLogs);
 }

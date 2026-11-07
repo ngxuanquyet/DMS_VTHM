@@ -130,6 +130,7 @@ class AppStrings {
       ? 'Vui lòng vào lượt đang mở để check-out hoặc hủy lượt, rồi đăng xuất lại.'
       : 'Please open the visit to check out or cancel it, then log out again.';
   String get syncNow => isVietnamese ? 'Đồng bộ ngay' : 'Sync now';
+  String get syncReport => isVietnamese ? 'Báo cáo gửi dữ liệu' : 'Data sync report';
   String logoutDeadWarning(int count) => isVietnamese
       ? '\n\nLưu ý: còn $count mục bị hệ thống từ chối (lỗi đồng bộ). Đăng xuất sẽ XOÁ các mục này khỏi máy.'
       : '\n\nNote: $count item(s) were rejected by the server (sync errors). Logging out will DELETE them from this device.';

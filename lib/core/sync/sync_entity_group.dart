@@ -34,6 +34,12 @@ class GroupedSyncItem {
 
 /// Tiện ích gom nhóm các bản ghi kỹ thuật thô của hàng đợi thành các nghiệp vụ kinh doanh
 class SyncEntityGroupHelper {
+  /// Trạng thái gửi của một nhóm: mọi mục đã gửi (nhật ký đã gửi, màn Báo cáo gửi dữ liệu) ⇒ "Đã gửi".
+  static String _status(Iterable<SyncQueueEntry> list) {
+    if (list.every((e) => e.state == 'done')) return 'Đã gửi';
+    return list.any((e) => e.state == 'sending') ? 'Đang gửi' : 'Chờ gửi';
+  }
+
   /// Gom danh sách các bản ghi thô (SyncQueueEntry) thành danh sách các nhóm nghiệp vụ thực tế
   /// (Ví dụ: 1 lượt check-in + 3 ảnh chụp thực địa -> gom thành 1 lượt viếng thăm kèm 3 ảnh)
   static List<GroupedSyncItem> groupEntries(List<SyncQueueEntry> rawEntries) {
@@ -112,7 +118,7 @@ class SyncEntityGroupHelper {
       if (materialCount > 0) {
         subtitleParts.add('$materialCount thao tác vật tư');
       }
-      subtitleParts.add(isSending ? 'Đang gửi' : 'Chờ gửi');
+      subtitleParts.add(_status(list));
 
       result.add(
         GroupedSyncItem(
@@ -133,13 +139,13 @@ class SyncEntityGroupHelper {
 
     // 2. Khách hàng
     for (final c in customers) {
-      String name = 'Điểm bán mới';
+      String? payloadName;
       String? address;
       String? route;
       try {
         final p = jsonDecode(c.payload) as Map<String, dynamic>;
         if (p['name'] != null && p['name'].toString().trim().isNotEmpty) {
-          name = p['name'].toString().trim();
+          payloadName = p['name'].toString().trim();
         }
         if (p['address'] != null && p['address'].toString().trim().isNotEmpty) {
           address = p['address'].toString().trim();
@@ -151,13 +157,16 @@ class SyncEntityGroupHelper {
       final sub = <String>[];
       if (route != null && route.isNotEmpty) sub.add('Tuyến: $route');
       if (address != null && address.isNotEmpty) sub.add(address);
-      sub.add(c.state == 'sending' ? 'Đang gửi' : 'Chờ gửi');
+      sub.add(_status([c]));
 
       result.add(
         GroupedSyncItem(
           key: c.clientUuid,
           entityType: 'customer',
-          title: 'Thêm điểm bán mới: $name',
+          // Lệnh SỬA chỉ mang phần đổi — thường không có tên.
+          title: c.op == 'update'
+              ? 'Cập nhật điểm bán${payloadName == null ? '' : ': $payloadName'}'
+              : 'Thêm điểm bán mới: ${payloadName ?? 'Điểm bán mới'}',
           subtitle: sub.join(' • '),
           icon: Icons.person_add_alt_1_rounded,
           color: const Color(0xFF10B981),
@@ -186,9 +195,11 @@ class SyncEntityGroupHelper {
           key: f.clientUuid,
           entityType: 'form_submission',
           title: formTitle,
-          subtitle: f.state == 'sending'
-              ? 'Đang gửi lên hệ thống'
-              : 'Đã lưu trên máy, tự động gửi khi có mạng',
+          subtitle: f.state == 'done'
+              ? 'Đã gửi lên hệ thống'
+              : f.state == 'sending'
+                  ? 'Đang gửi lên hệ thống'
+                  : 'Đã lưu trên máy, tự động gửi khi có mạng',
           icon: Icons.assignment_turned_in_rounded,
           color: const Color(0xFF3B82F6),
           bgColor: const Color(0xFFEFF6FF),
@@ -216,7 +227,7 @@ class SyncEntityGroupHelper {
           key: d.clientUuid,
           entityType: 'declaration',
           title: 'Khai báo vị trí: $reason',
-          subtitle: addr != null ? '$addr (Chờ gửi)' : 'Chờ gửi lên hệ thống',
+          subtitle: addr != null ? '$addr (${_status([d])})' : '${_status([d])} lên hệ thống',
           icon: Icons.pin_drop_rounded,
           color: const Color(0xFF0D9488),
           bgColor: const Color(0xFFF0FDFA),
@@ -239,8 +250,8 @@ class SyncEntityGroupHelper {
           entityType: 'attendance',
           title: 'Lượt chấm công',
           subtitle: photoCount > 0
-              ? 'Kèm $photoCount ảnh xác thực • Chờ gửi'
-              : 'Đã lưu trên máy, chờ gửi',
+              ? 'Kèm $photoCount ảnh xác thực • ${_status(list)}'
+              : (_status(list) == 'Đã gửi' ? 'Đã gửi lên hệ thống' : 'Đã lưu trên máy, chờ gửi'),
           icon: Icons.access_time_filled_rounded,
           color: const Color(0xFF10B981),
           bgColor: const Color(0xFFECFDF5),
@@ -259,7 +270,7 @@ class SyncEntityGroupHelper {
           key: o.clientUuid,
           entityType: o.entity,
           title: 'Dữ liệu lưu trên máy (${o.entity})',
-          subtitle: 'Sẽ tự động gửi khi có mạng',
+          subtitle: o.state == 'done' ? 'Đã gửi lên hệ thống' : 'Sẽ tự động gửi khi có mạng',
           icon: Icons.cloud_upload_outlined,
           color: const Color(0xFF6366F1),
           bgColor: const Color(0xFFEEF2FF),

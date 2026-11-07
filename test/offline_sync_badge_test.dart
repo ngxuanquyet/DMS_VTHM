@@ -57,11 +57,12 @@ void main() {
       expect(find.text('3 chờ'), findsOneWidget);
       expect(find.byIcon(Icons.cloud_upload_outlined), findsOneWidget);
 
-      // Tap badge to open modal
+      // Chạm huy hiệu mở màn Báo cáo gửi dữ liệu
       await tester.tap(find.text('3 chờ'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Dữ liệu ngoại tuyến'), findsOneWidget);
+      expect(find.text('Báo cáo gửi dữ liệu'), findsOneWidget);
+      expect(find.text('Còn 3 mục chưa gửi'), findsOneWidget);
       expect(find.text('Đang chờ gửi'), findsOneWidget);
     });
 
