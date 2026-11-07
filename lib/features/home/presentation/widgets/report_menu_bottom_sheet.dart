@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/screens/sync_report_screen.dart';
+
 /// Hiển thị Modal Bottom Sheet khi bấm vào box "Báo cáo" trên trang chủ
-/// Gồm 3 mục:
+/// Gồm 4 mục:
 /// 1. Báo cáo viếng thăm
 /// 2. Lịch sử chấm công
 /// 3. Quãng đường di chuyển
+/// 4. Báo cáo gửi dữ liệu
 void showReportMenuBottomSheet(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -145,6 +148,19 @@ void showReportMenuBottomSheet(BuildContext context) {
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     context.push('/travel');
+                  },
+                ),
+
+                // 4. Báo cáo gửi dữ liệu
+                ReportMenuItem(
+                  title: 'Báo cáo gửi dữ liệu',
+                  subtitle: 'Kiểm tra dữ liệu đã gửi lên hệ thống và hàng chờ',
+                  icon: Icons.cloud_sync_rounded,
+                  iconColor: const Color(0xFF4F46E5),
+                  iconBgColor: const Color(0xFFE0E7FF),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SyncReportScreen()));
                   },
                 ),
                 const SizedBox(height: 12),

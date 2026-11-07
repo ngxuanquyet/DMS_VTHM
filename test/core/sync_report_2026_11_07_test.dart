@@ -9,6 +9,7 @@ import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/database/database_provider.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/core/screens/sync_report_screen.dart';
+import 'package:vthm_dms/features/home/presentation/widgets/report_menu_bottom_sheet.dart';
 
 class _FakeConnectivity extends ConnectivityNotifier {
   _FakeConnectivity() {
@@ -235,6 +236,34 @@ void main() {
       expect(find.text('Gửi dữ liệu ngay'), findsOneWidget);
       expect(find.text('Khai báo vị trí: Đại lý A'), findsOneWidget);
       expect(find.text('Không có dữ liệu nào gửi lên trong ngày này.'), findsOneWidget);
+    });
+
+    testWidgets('menu Báo cáo ở trang chủ có mục "Báo cáo gửi dữ liệu" mở đúng màn', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            pendingSyncCountProvider.overrideWith((ref) => Stream.value(0)),
+            allPendingQueueEntriesProvider.overrideWith((ref) => Stream.value(const [])),
+            deadQueueEntriesProvider.overrideWith((ref) => Stream.value(const [])),
+            sentLogsProvider.overrideWith((ref) => Stream.value(const [])),
+            connectivityProvider.overrideWith((ref) => _FakeConnectivity()),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(onPressed: () => showReportMenuBottomSheet(context), child: const Text('Báo cáo')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Báo cáo'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Báo cáo gửi dữ liệu'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SyncReportScreen), findsOneWidget);
+      expect(find.text('Đã gửi hết dữ liệu'), findsOneWidget);
     });
   });
 }
