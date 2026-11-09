@@ -263,6 +263,28 @@ void main() {
       expect(tester.getTopLeft(find.text('Tiêu đề con')).dx > tester.getTopLeft(find.text('Tiêu đề lớn')).dx, isTrue);
     });
 
+    testWidgets('ô dưới tiêu đề con thụt vào trong khung riêng, tới tiêu đề kế tiếp thì ra khỏi khung', (tester) async {
+      final fields = sectionsFromConfig(const [
+        DynamicFormField(code: 'h1', label: 'Mục A', type: DynamicFormFieldType.heading),
+        DynamicFormField(code: 'a', label: 'Ô ngoài', type: DynamicFormFieldType.text),
+        DynamicFormField(code: 'h2', label: 'Con 1', type: DynamicFormFieldType.heading, level: 2),
+        DynamicFormField(code: 'b', label: 'Ô trong 1', type: DynamicFormFieldType.text),
+        DynamicFormField(code: 'c', label: 'Ô trong 2', type: DynamicFormFieldType.text),
+        DynamicFormField(code: 'h3', label: '', type: DynamicFormFieldType.heading, helperText: 'Hết tiêu đề con'),
+        DynamicFormField(code: 'd', label: 'Ô sau', type: DynamicFormFieldType.text),
+      ]);
+      await tester.pumpWidget(wrap(DynamicFormBuilder(fields: fields, keepFieldOrder: true)));
+      await tester.pumpAndSettle();
+      double x(String s) => tester.getTopLeft(find.text(s).first).dx;
+      expect(x('Ô trong 1') > x('Ô ngoài'), isTrue);
+      expect(x('Ô trong 2'), x('Ô trong 1'));
+      expect(x('Ô sau'), x('Ô ngoài'));
+      final khung = find.ancestor(of: find.text('Ô trong 1'), matching: find.byWidgetPredicate(
+          (w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).border is Border));
+      expect(khung, findsWidgets);
+      expect(find.ancestor(of: find.text('Ô trong 2'), matching: find.byWidget(tester.widget(khung.first))), findsOneWidget);
+    });
+
     testWidgets('note: bấm mở / thu nội dung HTML và chữ thường', (tester) async {
       await tester.pumpWidget(wrap(const DynamicFormBuilder(keepFieldOrder: true, fields: [
         DynamicFormField(
