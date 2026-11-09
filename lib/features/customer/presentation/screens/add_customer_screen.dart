@@ -122,9 +122,6 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         options: channels.map((c) => DynamicFormOption(label: optionLabel(c.code, c.name), value: c.id)).toList(),
         // Chọn một mà phòng có nhiều kênh ⇒ không đoán, để trống.
         initialValue: nhieuKenh ? defaultChannels : (defaultChannels.length == 1 ? defaultChannels.first : null),
-        helperText: khoaKenh
-            ? 'Theo phòng của bạn — không đổi được.'
-            : 'Mặc định theo phòng của bạn — có thể chọn kênh khác.',
         choiceMultiple: nhieuKenh,
         choiceDisplay: kenhCH.choiceDisplay == 'dropdown' ? 'dropdown' : 'list',
         section: 'Thông tin chung',
@@ -136,7 +133,6 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         type: DynamicFormFieldType.singleChoice,
         isRequired: tuyenCH.isRequired && !khoaTuyen,
         isReadOnly: khoaTuyen,
-        helperText: khoaTuyen ? 'Theo phòng của bạn — không đổi được.' : null,
         // "Toàn kênh" đứng đầu (chốt 21/10/2026): không gắn tuyến — server lưu trống, không gán tuyến mặc định; ô Tuyến bắt buộc
         // vẫn điền được với phòng phụ trách cả kênh. Server điền sẵn mục này cho phòng chỉ có dòng toàn kênh.
         options: [
