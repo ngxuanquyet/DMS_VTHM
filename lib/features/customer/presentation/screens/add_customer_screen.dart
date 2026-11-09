@@ -75,6 +75,9 @@ final customerMetaProvider = FutureProvider.autoDispose<CustomerMetaData>((ref) 
 ///
 /// Lựa chọn = toàn danh mục, người dùng chọn tuỳ ý (chủ hệ thống chốt 21/10/2026); điền sẵn theo phòng người đăng nhập
 /// (giá trị server tự gán khi để trống) — người không thuộc phòng nào được gán kênh/tuyến thì hai ô để trống.
+///
+/// 🔒 Ô admin đặt CHỈ ĐỌC (chốt 09/11/2026): server gửi `read_only: true` cho đúng người phải khoá (nhân viên CÓ giá trị điền
+/// sẵn) ⇒ app khoá ô, bỏ dấu bắt buộc (server tự gán giá trị theo phòng, bỏ qua mọi giá trị gửi lên).
 List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {required List<DynamicFormField> schema}) {
   final cauHinh = {for (final f in schema) f.code: f};
   final kenhCH = cauHinh['own_channel_ids'];
@@ -106,17 +109,22 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
   final defaultChannels = choices.defaultChannelIds.where((id) => channels.any((c) => c.id == id)).toList();
   // Kiểu chọn / hiển thị admin đặt ở Cấu hình trường điểm bán (chốt 21/10/2026); server cũ không gửi ⇒ chọn nhiều, bày ra.
   final nhieuKenh = kenhCH?.choiceMultiple ?? true;
+  final khoaKenh = kenhCH?.isReadOnly ?? false;
+  final khoaTuyen = tuyenCH?.isReadOnly ?? false;
   return [
     if (kenhCH != null && channels.isNotEmpty)
       DynamicFormField(
         code: 'own_channel_ids',
         label: kenhCH.label.isNotEmpty ? kenhCH.label : 'Kênh',
         type: nhieuKenh ? DynamicFormFieldType.multipleChoice : DynamicFormFieldType.singleChoice,
-        isRequired: kenhCH.isRequired,
+        isRequired: kenhCH.isRequired && !khoaKenh,
+        isReadOnly: khoaKenh,
         options: channels.map((c) => DynamicFormOption(label: optionLabel(c.code, c.name), value: c.id)).toList(),
         // Chọn một mà phòng có nhiều kênh ⇒ không đoán, để trống.
         initialValue: nhieuKenh ? defaultChannels : (defaultChannels.length == 1 ? defaultChannels.first : null),
-        helperText: 'Mặc định theo phòng của bạn — có thể chọn kênh khác.',
+        helperText: khoaKenh
+            ? 'Theo phòng của bạn — không đổi được.'
+            : 'Mặc định theo phòng của bạn — có thể chọn kênh khác.',
         choiceMultiple: nhieuKenh,
         choiceDisplay: kenhCH.choiceDisplay == 'dropdown' ? 'dropdown' : 'list',
         section: 'Thông tin chung',
@@ -126,7 +134,9 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         code: 'territory_code',
         label: tuyenCH.label.isNotEmpty ? tuyenCH.label : 'Tuyến',
         type: DynamicFormFieldType.singleChoice,
-        isRequired: tuyenCH.isRequired,
+        isRequired: tuyenCH.isRequired && !khoaTuyen,
+        isReadOnly: khoaTuyen,
+        helperText: khoaTuyen ? 'Theo phòng của bạn — không đổi được.' : null,
         // "Toàn kênh" đứng đầu (chốt 21/10/2026): không gắn tuyến — server lưu trống, không gán tuyến mặc định; ô Tuyến bắt buộc
         // vẫn điền được với phòng phụ trách cả kênh. Server điền sẵn mục này cho phòng chỉ có dòng toàn kênh.
         options: [

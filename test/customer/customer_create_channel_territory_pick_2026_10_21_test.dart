@@ -36,6 +36,27 @@ void main() {
     expect(fields[1].initialValue, 'MN2');
   });
 
+  test('admin đặt Chỉ đọc (server gửi read_only cho người này) ⇒ khoá ô, giữ giá trị điền sẵn, bỏ dấu bắt buộc (09/11/2026)', () {
+    final meta = CustomerMetaData.fromJson(metaJson({
+      'pairs': null,
+      'default_channel_ids': [4],
+      'default_territory_code': 'MN2',
+    }));
+    final schema = [
+      DynamicFormField(code: 'own_channel_ids', label: 'Khu vực', type: DynamicFormFieldType.multipleChoice, isRequired: true, isReadOnly: true),
+      DynamicFormField(code: 'territory_code', label: '', type: DynamicFormFieldType.singleChoice, isRequired: true),
+    ];
+    final f = ownChannelTerritoryFields(meta, schema: schema);
+    expect(f[0].isReadOnly, isTrue);
+    expect(f[0].isRequired, isFalse);
+    expect(f[0].initialValue, [4]);
+    expect(f[0].label, 'Khu vực');
+    // Công tắc riêng từng ô: Tuyến không khoá thì vẫn chọn được, vẫn bắt buộc.
+    expect(f[1].isReadOnly, isFalse);
+    expect(f[1].isRequired, isTrue);
+    expect(f[1].initialValue, 'MN2');
+  });
+
   test('không thuộc phòng nào ⇒ toàn danh mục, hai ô trống, chọn được (không khoá)', () {
     final rong = CustomerMetaData.fromJson(metaJson({'pairs': null, 'default_channel_ids': [], 'default_territory_code': null}));
     final f = ownChannelTerritoryFields(rong, schema: kScopeFieldStubs);
