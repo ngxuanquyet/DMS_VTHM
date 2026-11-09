@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
 /// Ô TRÌNH BÀY "tiêu đề" (`heading`) — DÙNG CHUNG biểu mẫu thị trường và form động (Thêm/Sửa điểm bán).
 /// Cấp 1: chữ lớn, biểu tượng, gạch chân màu chủ đạo. Cấp 2 (tiêu đề con): chữ nhỏ hơn, thụt vào, vạch trái.
-/// Cấp đọc bằng `DynamicFormField.headingLevelOf`. Không thu giá trị.
+/// Cấp đọc bằng `DynamicFormField.headingLevelOf`. Không thu giá trị. Ô dưới tiêu đề con gom khung bằng [groupUnderSubheadings].
 class HeadingFieldWidget extends StatelessWidget {
   final String code;
   final String title;
@@ -66,6 +67,47 @@ class HeadingFieldWidget extends StatelessWidget {
           if (desc.isNotEmpty) ...[const SizedBox(height: 4), descriptionText(context, desc)],
         ],
       ),
+    );
+  }
+}
+
+/// Gom các ô sau một tiêu đề con (cấp 2) tới tiêu đề kế tiếp (mọi cấp) / hết danh sách vào khung riêng thụt vào —
+/// DÙNG CHUNG form điểm bán ([DynamicFormBuilder]) và biểu mẫu thị trường (`MarketFormRenderer`). `headingLevel` = cấp
+/// của ô tiêu đề, `null` với ô khác; `child` là widget đã dựng (kèm khoảng cách dưới) của ô đó.
+List<Widget> groupUnderSubheadings(Iterable<({int? headingLevel, Widget child})> items) {
+  final out = <Widget>[];
+  List<Widget>? nhom;
+  void dongNhom() {
+    if (nhom != null && nhom!.isNotEmpty) out.add(_SubheadingFrame(children: nhom!));
+    nhom = null;
+  }
+
+  for (final item in items) {
+    if (item.headingLevel != null) dongNhom();
+    (nhom ?? out).add(item.child);
+    if (item.headingLevel == 2) nhom = [];
+  }
+  dongNhom();
+  return out;
+}
+
+/// Khung của các ô thuộc một tiêu đề con: thẳng mép vạch trái của tiêu đề con (thụt 16), viền mảnh bo góc.
+class _SubheadingFrame extends StatelessWidget {
+  final List<Widget> children;
+
+  const _SubheadingFrame({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(left: 16, bottom: AppSpacing.stackMd),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      decoration: BoxDecoration(
+        borderRadius: AppRadius.roundedLg,
+        border: Border.all(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
     );
   }
 }

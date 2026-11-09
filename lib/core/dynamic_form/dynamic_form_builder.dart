@@ -705,20 +705,13 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   }
 
   List<Widget> _buildSectionFieldWidgets(List<DynamicFormField> sectionFields) {
-    final widgets = <Widget>[];
+    // Ô sau một tiêu đề con (cấp 2) tới tiêu đề kế tiếp (mọi cấp) / hết mục: vẽ thụt vào trong khung riêng.
+    final widgets = <({int? headingLevel, Widget child})>[];
     final hasLat = sectionFields.any((f) => f.code == 'lat');
     final hasLng = sectionFields.any((f) => f.code == 'lng');
-    // Ô sau một tiêu đề con (cấp 2) tới tiêu đề kế tiếp (mọi cấp) / hết mục: vẽ thụt vào trong khung riêng.
-    List<Widget>? nhom;
-    void dongNhom() {
-      if (nhom != null && nhom!.isNotEmpty) widgets.add(_subheadingFrame(nhom!));
-      nhom = null;
-    }
 
     for (int i = 0; i < sectionFields.length; i++) {
       final field = sectionFields[i];
-      final laTieuDe = field.type == DynamicFormFieldType.heading && !field.isSectionDescription;
-      if (laTieuDe) dongNhom();
 
       // Nếu gặp trường lat (và có lng đi cùng hoặc lat đơn lẻ) -> Dựng DynamicGpsCoordinatesWidget
       if (field.code == 'lat') {
@@ -731,8 +724,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             : num.tryParse(_formData['lng']?.toString() ?? '');
         final errText = _errors['lat'] ?? _errors['lng'];
 
-        (nhom ?? widgets).add(
-          KeyedSubtree(
+        widgets.add((
+          headingLevel: null,
+          child: KeyedSubtree(
             key: _getFieldKey('lat'),
             child: DynamicGpsCoordinatesWidget(
               latField: field,
@@ -748,7 +742,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               },
             ),
           ),
-        );
+        ));
         continue;
       }
 
@@ -764,8 +758,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             : num.tryParse(_formData['lng']?.toString() ?? '');
         final errText = _errors['lng'];
 
-        (nhom ?? widgets).add(
-          KeyedSubtree(
+        widgets.add((
+          headingLevel: null,
+          child: KeyedSubtree(
             key: _getFieldKey('lng'),
             child: DynamicGpsCoordinatesWidget(
               lngField: field,
@@ -777,36 +772,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               },
             ),
           ),
-        );
+        ));
         continue;
       }
 
       // Các trường thông thường khác
-      (nhom ?? widgets).add(
-        KeyedSubtree(
+      widgets.add((
+        headingLevel: field.type == DynamicFormFieldType.heading && !field.isSectionDescription ? field.level : null,
+        child: KeyedSubtree(
           key: _getFieldKey(field.code),
           child: _buildFieldWidget(field),
         ),
-      );
-      if (laTieuDe && field.level == 2) nhom = [];
+      ));
     }
-    dongNhom();
 
-    return widgets;
-  }
-
-  /// Khung của các ô thuộc một tiêu đề con: thẳng mép vạch trái của tiêu đề con (thụt 16), viền mảnh bo góc.
-  Widget _subheadingFrame(List<Widget> children) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.only(left: 16, bottom: kFormFieldSpacing),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      decoration: BoxDecoration(
-        borderRadius: AppRadius.roundedLg,
-        border: Border.all(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-    );
+    return groupUnderSubheadings(widgets);
   }
 
   /// Ô ma trận đang có ô đếm gõ sai dạng — [validate] chặn (không lặng lẽ bỏ số khỏi tổng).

@@ -335,6 +335,36 @@ void main() {
       expect(find.text('Ước lượng chiều dài mặt tiền cửa hàng (mét)'), findsOneWidget);
       expect(find.text('Bật nếu điểm bán có trang bị tủ làm mát sản phẩm'), findsOneWidget);
     });
+
+    testWidgets('ô dưới tiêu đề con thụt vào trong khung riêng (cùng bộ gom với form điểm bán)', (tester) async {
+      MarketFormBlockEntity b(String code, String label, String type, {dynamic config}) => MarketFormBlockEntity(
+            ref: code,
+            type: 'field',
+            required: false,
+            colSpan: 12,
+            resolved: MarketFormResolvedEntity(code: code, label: label, inputType: type, config: config),
+          );
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MarketFormRenderer(blocks: [
+              b('h1', 'Mục A', 'heading'),
+              b('a', 'Ô ngoài', 'text'),
+              b('h2', 'Con 1', 'heading', config: {'level': 2}),
+              b('b', 'Ô trong 1', 'text'),
+              b('c', 'Ô trong 2', 'text'),
+              b('h3', 'Mục B', 'heading'),
+              b('d', 'Ô sau', 'text'),
+            ]),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      double x(String s) => tester.getTopLeft(find.textContaining(s, findRichText: true).first).dx;
+      expect(x('Ô trong 1') > x('Ô ngoài'), isTrue);
+      expect(x('Ô trong 2'), x('Ô trong 1'));
+      expect(x('Ô sau'), x('Ô ngoài'));
+    });
   });
 }
 

@@ -712,20 +712,24 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     final visibleBlocks = widget.blocks.where(_isBlockVisible).toList();
 
+    // Ô sau tiêu đề con vào khung riêng — cùng bộ gom với form điểm bán ([groupUnderSubheadings]).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: visibleBlocks.map((block) {
-        return Padding(
-          // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng dẫn,
-          // đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
-          key: ValueKey('block_${block.resolved.code}'),
-          padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-          child: KeyedSubtree(
-            key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
-            child: _buildBlock(context, block, isDark),
-          ),
-        );
-      }).toList(),
+      children: groupUnderSubheadings(visibleBlocks.map((block) => (
+            headingLevel: block.resolved.inputType.toLowerCase() == 'heading'
+                ? DynamicFormField.headingLevelOf({'config': block.resolved.configMap})
+                : null,
+            child: Padding(
+              // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng
+              // dẫn, đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
+              key: ValueKey('block_${block.resolved.code}'),
+              padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
+              child: KeyedSubtree(
+                key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
+                child: _buildBlock(context, block, isDark),
+              ),
+            ),
+          ))),
     );
   }
 
