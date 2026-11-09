@@ -91,13 +91,15 @@ class SyncEntityGroupHelper {
     // 1. Lượt viếng thăm
     for (final entry in visitBuckets.entries) {
       final list = entry.value;
+      // Dòng check-in mang `dealer_name`; danh sách có thể sắp mới→cũ (nhật ký đã gửi) ⇒ check-out đứng trước — không lấy nó.
       final visitEntry = list.firstWhere(
-        (e) => e.entity == 'visit',
-        orElse: () => list.first,
+        (e) => e.entity == 'visit' && e.op == 'create',
+        orElse: () => list.firstWhere((e) => e.entity == 'visit', orElse: () => list.first),
       );
       final photoCount = list.where((e) => e.entity == 'visit_photo' || e.entity == 'photo').length;
       final materialCount = list.where((e) => e.entity == 'visit_material').length;
       final hasCheckout = list.any((e) => e.entity == 'visit' && e.op == 'checkout');
+      final hasCancel = list.any((e) => e.entity == 'visit' && e.op == 'cancel');
       final isSending = list.any((e) => e.state == 'sending');
 
       String dealerName = 'Điểm bán';
@@ -109,7 +111,9 @@ class SyncEntityGroupHelper {
       } catch (_) {}
 
       final subtitleParts = <String>[];
-      if (hasCheckout) {
+      if (hasCancel) {
+        subtitleParts.add('Đã huỷ');
+      } else if (hasCheckout) {
         subtitleParts.add('Đã check-out');
       }
       if (photoCount > 0) {

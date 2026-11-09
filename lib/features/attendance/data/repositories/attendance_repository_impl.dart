@@ -171,6 +171,15 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       try {
         final punchModel = await _apiService.punch(requestModel);
         final punchEntity = punchModel.toEntity();
+        // Lượt gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu) — chủ = người BẤM. Khoá = uuid server trả
+        // (gửi lại ⇒ server trả lượt CŨ với uuid cũ): ảnh gắn cha theo `punchResult.clientUuid` nên phải cùng khoá.
+        await database?.logDirectSend(
+          entity: 'attendance_punch',
+          op: 'create',
+          clientUuid: punchEntity.clientUuid.isNotEmpty ? punchEntity.clientUuid : finalUuid,
+          serverId: punchEntity.id,
+          ownerUserId: ownerAtStart,
+        );
 
         // Cập nhật lượt chấm vào đầu danh sách lịch sử cục bộ
         await _savePunchToLocalHistory(historyKey, punchEntity);
@@ -270,6 +279,18 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
           lng: lng,
         );
         final photoEntity = photoModel.toEntity();
+        // Gom vào lượt chấm cha trên màn báo cáo theo uuid lượt; không biết uuid thì KHÔNG ghi — khoá tự chế thành "lượt
+        // chấm công" thứ hai không có lượt nào.
+        if (parentUuid != null && parentUuid.isNotEmpty) {
+          await database?.logDirectSend(
+            entity: 'attendance_photo',
+            op: 'upload',
+            clientUuid: const Uuid().v4(),
+            parentUuid: parentUuid,
+            serverId: photoEntity.id,
+            ownerUserId: ownerAtStart,
+          );
+        }
 
         // Cập nhật ảnh vào lượt chấm trong lịch sử cục bộ
         await _attachPhotoToLocalPunch(historyKey, punchId, photoEntity);

@@ -33,13 +33,14 @@ class SyncQueueEntries extends Table {
 }
 
 /// Nhật ký mục ĐÃ GỬI lên máy chủ — nguồn màn "Báo cáo gửi dữ liệu" (nhân viên tự soát dữ liệu trong ngày đã lên hết
-/// chưa). Dòng hàng đợi `done` chỉ giữ [AppDatabase.doneRetention] nên chép riêng ra đây lúc [AppDatabase.markDone], giữ
+/// chưa). Hai đường ghi: dòng hàng đợi `done` (chỉ giữ [AppDatabase.doneRetention]) chép ra đây lúc [AppDatabase.markDone];
+/// mục gửi TRỰC TUYẾN (không qua hàng đợi) ghi bằng [AppDatabase.logDirectSend] với `queueId = 0`. Giữ
 /// [AppDatabase.sentLogRetention]. Cột trùng nghĩa cột hàng đợi để màn báo cáo gom nhóm bằng cùng
 /// [SyncEntityGroupHelper]; chỉ ghi thông tin, KHÔNG giữ tệp ảnh. `payload` chỉ giữ các trường màn báo cáo đọc
 /// ([AppDatabase.sentLogPayloadKeys]) — không mang toạ độ / câu trả lời biểu mẫu suốt hạn giữ.
 class SyncSentLogs extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get queueId => integer()(); // id dòng hàng đợi đã gửi — một dòng hàng đợi chỉ ghi một lần
+  IntColumn get queueId => integer()(); // id dòng hàng đợi đã gửi (một dòng chỉ ghi một lần); 0 = gửi trực tuyến, không có dòng hàng đợi
   TextColumn get entity => text()();
   TextColumn get op => text()();
   TextColumn get clientUuid => text()();
@@ -370,6 +371,60 @@ class AppDatabase extends _$AppDatabase {
         }
         return updated > 0;
       });
+
+  /// Ghi nhật ký đã gửi cho mục gửi TRỰC TUYẾN (không qua hàng đợi). Màn "Báo cáo gửi dữ liệu" phải hiện MỌI thứ đã
+  /// lên máy chủ trong ngày — trước 09/11/2026 chỉ ghi ở [markDone] nên lượt viếng thăm / chấm công / phiếu / điểm bán
+  /// gửi lúc có mạng không bao giờ xuất hiện, nhân viên tưởng dữ liệu chưa lên. `queueId = 0` (không có dòng hàng đợi).
+  /// Khử trùng theo (chủ, entity, op, clientUuid): gửi lại cùng lượt (server trả bản cũ) không thêm dòng — người gọi
+  /// muốn mỗi lần gửi là một dòng (sửa điểm bán nhiều lần) thì truyền uuid MỚI mỗi lần. Lỗi ghi nhật ký KHÔNG được làm
+  /// hỏng nghiệp vụ đã gửi xong ⇒ nuốt lỗi, chỉ log. [ownerUserId] = người BẤM khi người gọi biết (lượt chấm công có thể
+  /// xong sau khi đổi tài khoản), mặc định người đang/vừa đăng nhập; không biết ai ⇒ KHÔNG ghi (dòng chủ NULL không ai
+  /// thấy, nằm chết tới hạn dọn).
+  Future<void> logDirectSend({
+    required String entity,
+    required String op,
+    required String clientUuid,
+    String? parentUuid,
+    Map<String, dynamic> payload = const {},
+    int? serverId,
+    int? ownerUserId,
+  }) async {
+    try {
+      final owner = ownerUserId ?? ownerOrLastUserId;
+      // Không biết ai, hoặc người đó vừa đăng xuất "xoá dữ liệu" (lượt gửi xong muộn) ⇒ không ghi: dòng sẽ không ai thấy /
+      // là dữ liệu của người đã xoá.
+      if (owner == null || _userDataCleared) return;
+      await transaction(() async {
+        final dup = await (select(syncSentLogs)
+              ..where((t) =>
+                  t.ownerUserId.equals(owner) &
+                  t.entity.equals(entity) &
+                  t.op.equals(op) &
+                  t.clientUuid.equals(clientUuid))
+              ..limit(1))
+            .getSingleOrNull();
+        if (dup != null) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        await into(syncSentLogs).insert(SyncSentLogsCompanion.insert(
+          queueId: 0,
+          entity: entity,
+          op: op,
+          clientUuid: clientUuid,
+          parentUuid: Value(parentUuid),
+          payload: jsonEncode({
+            for (final e in payload.entries)
+              if (sentLogPayloadKeys.contains(e.key) && e.value != null) e.key: e.value,
+          }),
+          createdAt: now,
+          sentAt: now,
+          serverId: Value(serverId),
+          ownerUserId: Value(owner),
+        ));
+      });
+    } catch (e) {
+      debugPrint('[AppDatabase] Không ghi được nhật ký đã gửi ($entity/$op): $e');
+    }
+  }
 
   /// Đánh dấu mục bị lỗi vĩnh viễn (4xx, 403, 422, INVALID) -> chuyển sang 'dead' (§3.2, §3.3 Luật 1)
   Future<bool> markDead(int id, String error) async {

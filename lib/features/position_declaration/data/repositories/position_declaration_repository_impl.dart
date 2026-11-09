@@ -179,6 +179,14 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
         );
 
         await saveLocalDeclaration(syncedEntity);
+        // Khai báo gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu).
+        await _database.logDirectSend(
+          entity: 'declaration',
+          op: 'create',
+          clientUuid: declaration.clientUuid,
+          payload: {'reason_name': declaration.reasonName, 'address': declaration.address},
+          serverId: serverId,
+        );
         return syncedEntity;
       } on ServerException catch (serverErr) {
         final status = serverErr.statusCode;

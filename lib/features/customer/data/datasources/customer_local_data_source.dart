@@ -21,6 +21,9 @@ class CustomerLocalDataSource {
   /// Tài khoản đang đăng nhập (chủ các dòng điểm bán trong máy).
   int? get ownerUserId => _db.ownerUserId;
 
+  /// Cho repository ghi nhật ký đã gửi của lệnh gửi trực tuyến ([AppDatabase.logDirectSend]).
+  AppDatabase get db => _db;
+
   /// Thêm mới điểm bán ngoại tuyến (§1 BB-1, BB-2, BB-3, §3.1 & §7)
   /// - Sinh client_uuid v4 ngay lúc nhập
   /// - Ghi vào SQLite (LocalCustomers)

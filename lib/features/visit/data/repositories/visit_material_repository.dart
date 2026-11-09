@@ -691,7 +691,18 @@ class VisitMaterialRepository {
         if (r == null) {
           return const MaterialSubmitOutcome(ok: false, error: 'Phản hồi lưu vật tư không hợp lệ từ máy chủ.');
         }
-        if (r.ok) await _appendCachedOp(customerId, visitClientUuid, current, serverOk: true);
+        if (r.ok) {
+          await _appendCachedOp(customerId, visitClientUuid, current, serverOk: true);
+          // Thao tác gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu; `logDirectSend` tự nuốt lỗi).
+          await _db.logDirectSend(
+            entity: 'visit_material',
+            op: 'save',
+            clientUuid: current.clientUuid,
+            parentUuid: visitClientUuid,
+            payload: {'dealer_name': dealerName, 'visit_id': visitId},
+            serverId: r.outletMaterialId,
+          );
+        }
         return MaterialSubmitOutcome(
           ok: r.ok,
           error: r.ok ? null : (r.error ?? 'Không lưu được thao tác vật tư.'),

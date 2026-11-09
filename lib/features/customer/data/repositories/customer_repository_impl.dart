@@ -471,6 +471,15 @@ class CustomerRepositoryImpl implements CustomerRepository {
         }
         await _apiService.updateCustomer(id, body);
         changes = body;
+        // Mỗi lần sửa là một dòng nhật ký ⇒ uuid MỚI (khoá điểm bán cố định thì lần sửa thứ hai bị khử trùng, biến mất).
+        // `logDirectSend` tự nuốt lỗi — không thể biến lệnh server ĐÃ nhận thành "chuyển hàng đợi".
+        await _localDataSource.db.logDirectSend(
+          entity: 'customer',
+          op: 'update',
+          clientUuid: const Uuid().v4(),
+          payload: {'name': body['name'], 'address': body['address'], 'route': body['route']},
+          serverId: id,
+        );
         // Ảnh đã lên server, bản trong máy ghi token (bước 3) ⇒ dọn bản chép lâu dài màn sửa vừa tạo.
         await deleteOfflineCustomerPhotos(banChep);
       } catch (e) {
@@ -712,6 +721,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
         final serverCode = dto.code.isNotEmpty ? dto.code : '';
 
         if (serverId > 0) {
+          // Lệnh gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu).
+          await _localDataSource.db.logDirectSend(
+            entity: 'customer',
+            op: 'create',
+            clientUuid: data['client_uuid'].toString(),
+            payload: {'name': data['name'], 'address': data['address'], 'route': data['route']},
+            serverId: serverId,
+          );
           // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) + ảnh mặt tiền màn tạo vừa chép đã lên server ⇒ dọn bản chép lâu
           // dài trên máy (điểm bán mới — không dòng hàng đợi nào khác trỏ tới).
           await deleteOfflineCustomerPhotos([

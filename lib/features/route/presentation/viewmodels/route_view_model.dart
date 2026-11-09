@@ -2135,6 +2135,18 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       if (visit.customerName.isEmpty && custName.isNotEmpty) {
         visit = visit.copyWith(customerName: custName);
       }
+      // Server có thể trả lượt ĐANG MỞ với uuid khác uuid phiên vừa gửi ⇒ từ đây phiên đi theo uuid server: ảnh / check-out
+      // / huỷ / vật tư / khôi phục lượt đều gắn cha theo nó, và nhật ký đã gửi khoá lượt theo nó — check-in lại vào cùng
+      // lượt không sinh dòng "lượt viếng thăm" thứ hai (khử trùng theo uuid).
+      _sessionClientUuid = visit.clientUuid!;
+      // Lượt gửi TRỰC TUYẾN cũng vào nhật ký đã gửi — màn Báo cáo gửi dữ liệu không chỉ hiện thứ từng nằm hàng đợi.
+      _logDirectSend(
+        entity: 'visit',
+        op: 'create',
+        clientUuid: visit.clientUuid!,
+        payload: {'dealer_name': visit.customerName},
+        serverId: visit.id,
+      );
 
       _setupVisitTimer(visit.checkinAt);
 
@@ -2527,6 +2539,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         } catch (_) {}
         return (true, 'Ảnh đã bị xoá.');
       }
+      _logDirectSend(
+        entity: 'visit_photo',
+        op: 'upload',
+        clientUuid: const Uuid().v4(),
+        parentUuid: _sessionClientUuid,
+        payload: {'visit_id': state.visitId},
+        serverId: photo.id,
+      );
 
       final idx = state.photos.indexWhere((p) => p.id == tempId);
       if (idx >= 0) {
@@ -2617,6 +2637,28 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       }
       return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
+  }
+
+  /// Ghi nhật ký đã gửi cho mục gửi TRỰC TUYẾN ([AppDatabase.logDirectSend]) — không chờ, không có `ref` (test) thì bỏ qua.
+  void _logDirectSend({
+    required String entity,
+    required String op,
+    required String clientUuid,
+    String? parentUuid,
+    Map<String, dynamic> payload = const {},
+    int? serverId,
+  }) {
+    if (ref == null) return;
+    try {
+      unawaited(ref!.read(appDatabaseProvider).logDirectSend(
+            entity: entity,
+            op: op,
+            clientUuid: clientUuid,
+            parentUuid: parentUuid,
+            payload: payload,
+            serverId: serverId,
+          ));
+    } catch (_) {}
   }
 
   Future<int?> _enqueueVisitPhotoToDb({
@@ -3133,6 +3175,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     try {
       final completedVisit = await checkoutUseCase(visitId: state.visitId, request: request);
+      _logDirectSend(
+        entity: 'visit',
+        op: 'checkout',
+        clientUuid: const Uuid().v4(),
+        parentUuid: _sessionClientUuid,
+        payload: {'visit_id': state.visitId, 'dealer_name': completedVisit.customerName},
+        serverId: state.visitId,
+      );
 
       _visitTimer?.cancel();
       stopGeofenceWatcher();
@@ -3401,6 +3451,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     if (effectiveVisitId > 0) {
       try {
         await cancelVisitUseCase(effectiveVisitId, clientUuid: clientUuid);
+        _logDirectSend(
+          entity: 'visit',
+          op: 'cancel',
+          clientUuid: const Uuid().v4(),
+          parentUuid: clientUuid,
+          payload: {'visit_id': effectiveVisitId},
+          serverId: effectiveVisitId,
+        );
         // Lượt đang mở của màn này — dọn không điều kiện (bản lưu có thể còn id/uuid tạm, kho chỉ dọn khi khớp). Server đã
         // huỷ (clearActiveVisit tự nuốt lỗi ghi máy). Báo tuyến ngay (không chờ lượt nạp tuyến — mạng yếu thì
         // tuyến còn giữ lượt "đang mở").

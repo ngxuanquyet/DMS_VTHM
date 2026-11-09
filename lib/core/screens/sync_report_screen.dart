@@ -222,7 +222,8 @@ class _SyncReportScreenState extends ConsumerState<SyncReportScreen> {
   /// Dòng nhật ký → dạng dòng hàng đợi `done` để gom nhóm bằng cùng [SyncEntityGroupHelper]; giờ gửi nằm ở
   /// `nextAttemptAt` như dòng done của hàng đợi.
   static SyncQueueEntry _toQueueEntry(SyncSentLog l) => SyncQueueEntry(
-        id: l.queueId,
+        // Dòng gửi trực tuyến không có dòng hàng đợi (queueId = 0) ⇒ lấy -id nhật ký cho khỏi trùng nhau.
+        id: l.queueId > 0 ? l.queueId : -l.id,
         entity: l.entity,
         op: l.op,
         clientUuid: l.clientUuid,

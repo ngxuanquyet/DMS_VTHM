@@ -165,7 +165,9 @@ class FormsRepositoryImpl implements FormsRepository {
     }
 
     try {
-      return await _apiService.submitForm(submission);
+      final result = await _apiService.submitForm(submission);
+      await _logDirectSend(submission);
+      return result;
     } catch (e) {
       final errStr = e.toString().toLowerCase();
       // §5 & §6: Nếu server báo không tìm thấy ảnh (do bị dọn rác), tự động tải lại ảnh gốc từ máy
@@ -210,7 +212,9 @@ class FormsRepositoryImpl implements FormsRepository {
             isOfflineSync: submission.isOfflineSync,
             localPhotoPaths: submission.localPhotoPaths,
           );
-          return await _apiService.submitForm(retrySubmission);
+          final retried = await _apiService.submitForm(retrySubmission);
+          await _logDirectSend(retrySubmission);
+          return retried;
         } catch (retryErr) {
           debugPrint('[FormsRepository] Thử tải lại ảnh và nộp lại thất bại: $retryErr');
         }
@@ -234,6 +238,16 @@ class FormsRepositoryImpl implements FormsRepository {
         e.key: await OfflinePhotoStore.persist(e.value, dirName: 'offline_form_photos', prefix: '${uuid}_${e.key.replaceAll(':', '_')}'),
     };
   }
+
+  /// Phiếu gửi TRỰC TUYẾN cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu; `logDirectSend` tự nuốt lỗi). `form_code` = id
+  /// cấu hình để màn báo cáo gọi "Biểu mẫu #N" thay vì tên chung (phiếu không mang tên biểu mẫu).
+  Future<void> _logDirectSend(MarketFormSubmissionModel s) => _db.logDirectSend(
+        entity: 'form_submission',
+        op: 'create',
+        clientUuid: s.clientUuid,
+        parentUuid: s.parentUuid,
+        payload: {...s.toJson(), 'form_code': s.configId},
+      );
 
   Future<MarketFormSubmitResult> _saveToSyncQueue(
     MarketFormSubmissionModel submission,
