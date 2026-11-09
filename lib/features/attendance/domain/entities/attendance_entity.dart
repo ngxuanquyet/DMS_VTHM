@@ -1,5 +1,6 @@
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+
+import '../../../../core/utils/geo.dart';
 
 /// Cấu hình trạng thái hôm nay từ GET /attendance/mobile/config (§2 SPEC-2026-10-06)
 class AttendanceTodayEntity {
@@ -111,6 +112,7 @@ class AttendanceConfigEntity {
   final String? blockedReason;
   final AttendanceGroupEntity group;
   final AttendancePhotoConfigEntity photo;
+  final AttendanceGpsConfigEntity gps;
   final List<AttendanceLocationItemEntity> locations;
 
   /// Khối `today` NGUYÊN VĂN server trả — có thể là của ngày khác (cấu hình đọc từ bộ nhớ đệm khi mất mạng, hoặc app mở
@@ -122,6 +124,7 @@ class AttendanceConfigEntity {
     this.blockedReason,
     required this.group,
     required this.photo,
+    this.gps = const AttendanceGpsConfigEntity(),
     required this.locations,
     this.today,
   });
@@ -144,14 +147,22 @@ class AttendanceConfigEntity {
         blockedReason: blockedReason,
         group: group,
         photo: photo,
+        gps: gps,
         today: today,
         locations: [
           for (final l in locations)
             (l.isEverywhere || l.lat == null || l.lng == null)
                 ? l
-                : l.withDistance(Geolocator.distanceBetween(lat, lng, l.lat!, l.lng!).round()),
+                : _withDistanceLike(l, haversineMeters(lat, lng, l.lat!, l.lng!)),
         ],
       );
+
+  /// Khoảng cách tính trên máy ghi vào địa điểm: làm tròn LÊN — server so số lẻ `distance <= radius_m`
+  /// (`GeofenceMatcher`), app giữ số nguyên; `round()` cho 200,4 m thành 200 ≤ 200 là app cho qua rồi server 422; `ceil()`
+  /// cho 201 > 200 ⇒ chặn đúng như server, còn 199,6 ⇒ 200 ≤ 200 vẫn qua như server. Khoảng cách không hữu hạn (toạ độ GPS
+  /// giả / giả lập) ⇒ giữ nguyên địa điểm (không có số), `.round()`/`.ceil()` trên NaN là ném lỗi.
+  static AttendanceLocationItemEntity _withDistanceLike(AttendanceLocationItemEntity l, double meters) =>
+      meters.isFinite ? l.withDistance(meters.ceil()) : l;
 
   /// Kiểm tra xem hiện tại người dùng có nằm trong bất kỳ geofence nào không
   /// Quy tắc 06/10/2026: Nếu có bất kỳ địa điểm kind == 'everywhere' thì luôn hợp lệ
@@ -209,6 +220,30 @@ class AttendancePhotoConfigEntity {
     this.maxPhotos = 10,
     this.requireBoth = true,
   });
+}
+
+/// Luật dùng lại vị trí GPS khi bấm chấm công (khối `gps` của config; tham số `app_punch_gps_reuse_*` phía server).
+class AttendanceGpsConfigEntity {
+  /// Mặc định + biên — TRÙNG `SettingDefinition` của `app_punch_gps_reuse_*` phía server (nơi duy nhất khác giữ các số
+  /// này); app chỉ dùng khi server/bộ đệm cũ không có khối `gps`, hoặc để kẹp giá trị đọc từ bộ đệm.
+  static const int defaultReuseSeconds = 30;
+  static const int maxReuseSeconds = 300;
+  static const int defaultReuseAccuracyM = 50;
+  static const int minReuseAccuracyM = 5;
+  static const int maxReuseAccuracyM = 500;
+
+  /// Vị trí lấy mới chưa quá chừng này giây thì dùng lại; 0 = luôn bắt GPS mới.
+  final int reuseSeconds;
+
+  /// Sai số (m) tối đa để vị trí còn được dùng lại.
+  final int reuseAccuracyM;
+
+  const AttendanceGpsConfigEntity({
+    this.reuseSeconds = defaultReuseSeconds,
+    this.reuseAccuracyM = defaultReuseAccuracyM,
+  });
+
+  Duration get reuseAge => Duration(seconds: reuseSeconds);
 }
 
 class AttendanceLocationItemEntity {

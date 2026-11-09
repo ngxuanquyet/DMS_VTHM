@@ -68,6 +68,40 @@ class AttendancePhotoConfigModel {
       );
 }
 
+/// Khối `gps` của `GET /attendance/mobile/config` (§2 API-CHAM-CONG-MOBILE): bấm chấm công được dùng lại vị trí GPS vừa
+/// lấy nếu chưa quá [reuseSeconds] và sai số ≤ [reuseAccuracyM]. Server cũ / bộ đệm cũ không có khối này ⇒ mặc định ở
+/// [AttendanceGpsConfigEntity] (trùng mặc định tham số `app_punch_gps_reuse_*` ở Cài đặt → Chấm công).
+class AttendanceGpsConfigModel {
+  final int reuseSeconds;
+  final int reuseAccuracyM;
+
+  const AttendanceGpsConfigModel({
+    this.reuseSeconds = AttendanceGpsConfigEntity.defaultReuseSeconds,
+    this.reuseAccuracyM = AttendanceGpsConfigEntity.defaultReuseAccuracyM,
+  });
+
+  /// Kẹp vào đúng biên server cho phép: bộ đệm trên máy sửa được (máy root) — `reuse_seconds` khổng lồ là dùng lại vị trí
+  /// cả ngày cũ khi mất mạng.
+  factory AttendanceGpsConfigModel.fromJson(Map<String, dynamic> json) {
+    return AttendanceGpsConfigModel(
+      reuseSeconds: ((json['reuse_seconds'] as num?)?.toInt() ?? AttendanceGpsConfigEntity.defaultReuseSeconds)
+          .clamp(0, AttendanceGpsConfigEntity.maxReuseSeconds),
+      reuseAccuracyM: ((json['reuse_accuracy_m'] as num?)?.toInt() ?? AttendanceGpsConfigEntity.defaultReuseAccuracyM)
+          .clamp(AttendanceGpsConfigEntity.minReuseAccuracyM, AttendanceGpsConfigEntity.maxReuseAccuracyM),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'reuse_seconds': reuseSeconds,
+        'reuse_accuracy_m': reuseAccuracyM,
+      };
+
+  AttendanceGpsConfigEntity toEntity() => AttendanceGpsConfigEntity(
+        reuseSeconds: reuseSeconds,
+        reuseAccuracyM: reuseAccuracyM,
+      );
+}
+
 class AttendanceShiftModel {
   final int id;
   final String code;
@@ -284,6 +318,7 @@ class AttendanceConfigModel {
   final String? blockedReason;
   final AttendanceGroupModel group;
   final AttendancePhotoConfigModel photo;
+  final AttendanceGpsConfigModel gps;
   final List<AttendanceLocationItemModel> locations;
   final AttendanceTodayModel? today;
 
@@ -292,6 +327,7 @@ class AttendanceConfigModel {
     this.blockedReason,
     required this.group,
     required this.photo,
+    this.gps = const AttendanceGpsConfigModel(),
     required this.locations,
     this.today,
   });
@@ -305,6 +341,9 @@ class AttendanceConfigModel {
       ),
       photo: AttendancePhotoConfigModel.fromJson(
         json['photo'] as Map<String, dynamic>? ?? {},
+      ),
+      gps: AttendanceGpsConfigModel.fromJson(
+        json['gps'] as Map<String, dynamic>? ?? {},
       ),
       locations: (json['locations'] as List<dynamic>? ?? [])
           .map((e) => AttendanceLocationItemModel.fromJson(e as Map<String, dynamic>))
@@ -320,6 +359,7 @@ class AttendanceConfigModel {
         'blocked_reason': blockedReason,
         'group': group.toJson(),
         'photo': photo.toJson(),
+        'gps': gps.toJson(),
         'locations': locations.map((e) => e.toJson()).toList(),
         if (today != null) 'today': today!.toJson(),
       };
@@ -329,6 +369,7 @@ class AttendanceConfigModel {
         blockedReason: blockedReason,
         group: group.toEntity(),
         photo: photo.toEntity(),
+        gps: gps.toEntity(),
         locations: locations.map((e) => e.toEntity()).toList(),
         today: today?.toEntity(),
       );

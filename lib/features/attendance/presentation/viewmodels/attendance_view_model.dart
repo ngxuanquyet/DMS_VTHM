@@ -211,14 +211,24 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
     }
   }
 
+  /// Thứ tự lượt tải cấu hình theo vị trí: lượt về MUỘN hơn lượt mới hơn (mạng chậm, hoặc chạy ngầm sau
+  /// [applyPositionLocally]) mang khoảng cách của vị trí CŨ — bỏ, không đè.
+  int _locationRefreshSeq = 0;
+
   /// Cập nhật toạ độ GPS của người dùng và gọi lại config để tính khoảng cách (§2)
   Future<void> updateUserLocation(Position position) async {
-    state = state.copyWith(currentPosition: position);
+    final seq = ++_locationRefreshSeq;
+    state = state.copyWith(
+      currentPosition: position,
+      errorMessage: state.errorMessage,
+      successMessage: state.successMessage,
+    );
     try {
       final updatedConfig = await getConfigUseCase(
         lat: position.latitude,
         lng: position.longitude,
       );
+      if (!mounted || seq != _locationRefreshSeq) return;
 
       final (activeLoc, picked) = _pickLocation(updatedConfig);
 
@@ -226,10 +236,33 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
         config: updatedConfig,
         selectedLocation: activeLoc,
         locationPickedByUser: picked,
+        errorMessage: state.errorMessage,
+        successMessage: state.successMessage,
       );
     } catch (e) {
       debugPrint('[AttendanceViewModel] Lỗi refresh config theo vị trí: $e');
     }
+  }
+
+  /// Như [updateUserLocation] nhưng KHÔNG CHỜ máy chủ: khoảng cách tới từng địa điểm tính ngay trên máy theo [position]
+  /// (cùng phép đo với server — [AttendanceConfigEntity.withDistancesFrom]) để xét vùng tức thì. Dùng lúc bấm "Chấm
+  /// công": chờ một vòng mạng (0,3–1s trên 4G) ở đây chỉ kéo dài thời gian người dùng đứng chờ, mà server vẫn tự kiểm vùng
+  /// khi nhận lượt. Cấu hình server (trạng thái hôm nay, địa điểm vừa đổi) vẫn được tải lại NGẦM sau đó — không mất độ
+  /// tươi so với trước, chỉ không bắt người dùng chờ. Chưa có cấu hình thì rơi về [updateUserLocation].
+  Future<void> applyPositionLocally(Position position) async {
+    final config = state.config;
+    if (config == null) return updateUserLocation(position);
+    final updated = config.withDistancesFrom(position.latitude, position.longitude);
+    final (activeLoc, picked) = _pickLocation(updated);
+    state = state.copyWith(
+      currentPosition: position,
+      config: updated,
+      selectedLocation: activeLoc,
+      locationPickedByUser: picked,
+      errorMessage: state.errorMessage,
+      successMessage: state.successMessage,
+    );
+    unawaited(updateUserLocation(position));
   }
 
   /// Địa điểm chấm công sau khi tải lại [config]: giữ địa điểm người dùng TỰ chọn nếu còn trong danh sách; còn lại theo địa

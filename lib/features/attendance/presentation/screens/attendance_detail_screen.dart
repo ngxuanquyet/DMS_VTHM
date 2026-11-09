@@ -63,11 +63,16 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
     }
   }
 
-  /// Vị trí cho lượt chấm: vị trí MỚI từ GPS; không được (chưa quyền / tắt GPS / quá giờ) mới qua đường có hộp thoại
-  /// xin quyền (có thể trả bản cache).
+  /// Vị trí cho lượt chấm: vị trí MỚI lấy lúc mở màn nếu còn đủ mới / đủ chính xác theo `config.gps` (khỏi chờ GPS bắt
+  /// lại 1–4 giây), không thì bắt GPS mới; không được (chưa quyền / tắt GPS / quá giờ) mới qua đường có hộp thoại xin
+  /// quyền (có thể trả bản cache).
   Future<Position?> _positionForPunch(BuildContext context) async {
     final locationService = ref.read(locationServiceProvider);
-    return await locationService.getFreshPosition() ??
+    final gps = ref.read(attendanceViewModelProvider).config?.gps ?? const AttendanceGpsConfigEntity();
+    return await locationService.getRecentOrFreshPosition(
+          maxAge: gps.reuseAge,
+          maxAccuracyM: gps.reuseAccuracyM.toDouble(),
+        ) ??
         (context.mounted ? await locationService.checkAndGetLocation(context) : null);
   }
 
@@ -322,8 +327,9 @@ class _AttendanceDetailScreenState extends ConsumerState<AttendanceDetailScreen>
               }
               if (position == null) return;
 
-              // Cập nhật toạ độ vào state (tính lại khoảng cách tới địa điểm chấm công theo vị trí mới)
-              await vm.updateUserLocation(position);
+              // Tính lại khoảng cách tới địa điểm chấm công theo vị trí mới — NGAY TRÊN MÁY, không gọi lại máy chủ
+              // (server vẫn kiểm vùng khi nhận lượt; vòng mạng ở đây chỉ kéo dài thời gian chờ sau khi bấm).
+              await vm.applyPositionLocally(position);
               if (!mounted) return;
               // Đọc LẠI state sau khi cập nhật vị trí — `state`/`isBlockedByGeofence` ở trên là bản lúc dựng nút.
               final latest = ref.read(attendanceViewModelProvider);

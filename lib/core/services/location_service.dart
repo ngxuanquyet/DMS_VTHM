@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../location/location_provider.dart';
+import '../utils/system_clock.dart';
 import '../localization/language_provider.dart';
 import '../router/app_router.dart';
 import '../theme/app_colors.dart';
@@ -33,6 +34,14 @@ class LocationService {
   Future<Position?>? _freshInflight;
   bool _backgroundRefreshing = false;
 
+  /// Lượt lấy MỚI gần nhất ([getFreshPosition]) và mốc lấy theo đồng hồ ĐƠN ĐIỆU của máy — KHÔNG phải [_cachedPosition]
+  /// (bản đó có thể là "vị trí đã biết gần nhất" của hệ thống từ hàng giờ trước, do [checkAndGetLocation] nạp). Mốc
+  /// không dùng giờ tường: chỉnh lùi đồng hồ máy (đúng trò chống gian lận lệch giờ đang canh) sẽ làm vị trí cũ "mới" mãi.
+  /// Đồng hồ đơn điệu có thể ĐỨNG khi máy ngủ sâu tới khi [SystemClock] neo lại lúc mở app ⇒ xét TUỔI theo CẢ HAI đồng hồ
+  /// (đơn điệu + `timestamp` của fix): qua mặt phải vừa cho máy ngủ vừa chỉnh lùi giờ, và server vẫn tự kiểm vùng.
+  Position? _lastFreshPosition;
+  int? _lastFreshAtMonoMs;
+
   /// Lấy vị trí MỚI từ GPS — KHÁC [checkAndGetLocation] (trả ngay bản cache, có thể từ hàng giờ trước). Không bật hộp
   /// thoại nào: chưa cấp quyền / tắt GPS / quá [timeLimit] ⇒ `null`, người gọi tự quyết dùng gì thay. Lấy được thì cập
   /// nhật luôn cache cho các màn khác. Đang có lượt chạy thì trả chung lượt đó ([timeLimit] của lượt đầu).
@@ -47,6 +56,34 @@ class LocationService {
     return fresh;
   }
 
+  /// Vị trí cho thao tác cần GPS "đủ mới" (bấm Chấm công): lượt lấy MỚI gần nhất chưa quá [maxAge] và sai số ≤
+  /// [maxAccuracyM] thì trả ngay — khỏi chờ GPS bắt lại (1–4 giây, phần lớn thời gian chờ sau khi bấm nút); không thì
+  /// như [getFreshPosition]. [maxAge] bằng 0 ⇒ luôn lấy mới. Ngưỡng do server cấp (`config.gps`, tham số
+  /// `app_punch_gps_reuse_*`), không hardcode ở đây.
+  Future<Position?> getRecentOrFreshPosition({
+    required Duration maxAge,
+    required double maxAccuracyM,
+    Duration timeLimit = const Duration(seconds: 8),
+  }) {
+    // Đang có lượt lấy mới chạy dở (màn vừa mở) ⇒ chờ nó: sắp có vị trí mới hơn bản đang giữ.
+    final inflight = _freshInflight;
+    if (inflight != null) return inflight;
+    final last = _lastFreshPosition;
+    final at = _lastFreshAtMonoMs;
+    if (last != null &&
+        at != null &&
+        maxAge > Duration.zero &&
+        SystemClock.nowMonotonicMs - at <= maxAge.inMilliseconds &&
+        // Hệ điều hành có thể trả ngay một fix sẵn có (iOS) — tuổi của chính fix đó cũng phải trong hạn.
+        DateTime.now().difference(last.timestamp).abs() <= maxAge &&
+        // accuracy 0 = máy KHÔNG BIẾT sai số (Android không có hasAccuracy, nhiều nguồn giả lập) — không phải "tuyệt đối".
+        last.accuracy > 0 &&
+        last.accuracy <= maxAccuracyM) {
+      return Future.value(last);
+    }
+    return getFreshPosition(timeLimit: timeLimit);
+  }
+
   Future<Position?> _fetchFreshPosition(Duration timeLimit) async {
     if (kIsWeb) return null;
     try {
@@ -57,6 +94,8 @@ class LocationService {
         locationSettings: LocationSettings(accuracy: LocationAccuracy.high, timeLimit: timeLimit),
       );
       _cachedPosition = position;
+      _lastFreshPosition = position;
+      _lastFreshAtMonoMs = SystemClock.nowMonotonicMs;
       // Cập nhật trạng thái GPS của app như các nhánh khác — lỗi ở đây không được làm mất vị trí vừa lấy.
       try {
         unawaited(
