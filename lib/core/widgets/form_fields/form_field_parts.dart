@@ -227,12 +227,19 @@ class FormDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Ô KHOÁ (không `onChanged`): DropdownButton bọc mục đang chọn trong màu `disabledColor` (mờ 38%) — khó đọc. Vẽ lại
+    // mục hiển thị với ĐÚNG kiểu chữ của ô (chủ hệ thống 09/11/2026: ô chỉ đọc chữ đậm cho dễ nhìn). `disabledHint`
+    // không dùng được: khi có giá trị, nút hiện mục đang chọn chứ không hiện hint.
+    final style = formFieldTextStyle(isDark);
     return DropdownButtonFormField<T>(
       focusNode: focusNode,
       initialValue: initialValue,
       items: items,
       isExpanded: isExpanded,
-      style: formFieldTextStyle(isDark),
+      selectedItemBuilder: onChanged != null
+          ? null
+          : (_) => items.map((i) => DefaultTextStyle(style: style, child: i.child)).toList(),
+      style: style,
       dropdownColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
       decoration: formFieldDecoration(hintText: hintText, isDark: isDark, errorText: errorText, readOnly: readOnly),
       onChanged: onChanged,

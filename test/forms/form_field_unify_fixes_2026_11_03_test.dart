@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/core/theme/app_colors.dart';
+import 'package:vthm_dms/core/dynamic_form/widgets/single_choice_field_widget.dart';
+import 'package:flutter/rendering.dart';
 import 'package:vthm_dms/core/dynamic_form/models/dynamic_form_field.dart';
 import 'package:vthm_dms/core/dynamic_form/widgets/boolean_field_widget.dart';
 import 'package:vthm_dms/core/dynamic_form/widgets/long_text_field_widget.dart';
@@ -88,5 +91,22 @@ void main() {
     final rong = tester.getSize(find.byType(Scaffold)).width;
     expect(tag.dx - ten.dx, inInclusiveRange(0, 20), reason: 'tag phải kề tên ô');
     expect(tag.dx, lessThan(rong / 2), reason: 'tag không còn ở mép phải');
+  });
+
+  testWidgets('ô chọn xổ xuống CHỈ ĐỌC: chữ giá trị đậm như ô thường, không mờ 38% (09/11/2026)', (tester) async {
+    await tester.pumpWidget(wrap(DynamicSingleChoiceFieldWidget(
+      field: const DynamicFormField(
+        code: 't',
+        label: 'Tuyến',
+        type: DynamicFormFieldType.singleChoice,
+        catalog: 'dropdown',
+        isReadOnly: true,
+        options: [DynamicFormOption(label: 'KA', value: 'KA'), DynamicFormOption(label: 'MB2', value: 'MB2')],
+      ),
+      value: 'KA',
+      onChanged: (_) {},
+    )));
+    final p = tester.renderObject<RenderParagraph>(find.text('KA'));
+    expect(p.text.style?.color, AppColors.onSurface);
   });
 }
