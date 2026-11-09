@@ -5,8 +5,8 @@ import '../../theme/app_typography.dart';
 import '../../widgets/form_fields/form_field_parts.dart';
 import '../models/dynamic_form_field.dart';
 
-/// Vỏ một ô của form động — CÙNG cách vẽ biểu mẫu khảo sát/thu thập (#24756): [FormFieldLabel] (huy hiệu / "Chỉ đọc"
-/// bên phải) → [gap] → ô → dòng lỗi [FormFieldErrorText]; cách ô sau [kFormFieldSpacing]. Ô có viền nhập hiện lỗi
+/// Vỏ một ô của form động — CÙNG cách vẽ biểu mẫu khảo sát/thu thập (#24756): [FormFieldLabel] (huy hiệu ngay sau tên
+/// ô) → [gap] → ô → dòng lỗi [FormFieldErrorText]; cách ô sau [kFormFieldSpacing]. Ô có viền nhập hiện lỗi
 /// trong viền (`formFieldDecoration(errorText:)`) và KHÔNG truyền [errorText] vào đây.
 class DynamicFormFieldWrapper extends StatelessWidget {
   final DynamicFormField field;
@@ -45,15 +45,16 @@ class DynamicFormFieldWrapper extends StatelessWidget {
   }
 }
 
-/// Huy hiệu bên phải nhãn ô: [DynamicFormField.badge] hoặc "Chỉ đọc" (ô khoá); `null` = không có.
+/// Huy hiệu ngay sau tên ô: [DynamicFormField.badge]; `null` = không có. Ô khoá KHÔNG còn tag "Chỉ đọc" (chủ hệ thống bỏ
+/// 09/11/2026) — ô khoá tự hiện xám, không bấm được.
 class DynamicFieldBadge extends StatelessWidget {
   final String text;
 
   const DynamicFieldBadge(this.text, {super.key});
 
   static Widget? of(DynamicFormField field) {
-    final t = (field.badge != null && field.badge!.isNotEmpty) ? field.badge : (field.isReadOnly ? 'Chỉ đọc' : null);
-    return t == null ? null : DynamicFieldBadge(t);
+    final t = field.badge?.trim() ?? '';
+    return t.isEmpty ? null : DynamicFieldBadge(t);
   }
 
   @override

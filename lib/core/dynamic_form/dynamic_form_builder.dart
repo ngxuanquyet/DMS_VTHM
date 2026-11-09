@@ -619,7 +619,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
                   _buildSectionHeader(
                     icon: Icons.map_rounded,
                     title: sectionTitle.toLowerCase().contains('vị trí') ? sectionTitle : 'Vị trí trên bản đồ',
-                    badge: isCoordsRequired ? 'Bắt buộc' : 'Có thể sửa',
+                    // Bỏ tag "Bắt buộc" (chủ hệ thống 09/11/2026) — dấu `*` đỏ ở nhãn ô đã nói điều đó.
+                    badge: isCoordsRequired ? null : 'Có thể sửa',
                     isDark: isDark,
                   ),
                   const SizedBox(height: 12),
@@ -662,7 +663,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   Widget _buildSectionHeader({
     required IconData icon,
     required String title,
-    required String badge,
+    required String? badge,
     required bool isDark,
   }) {
     return Row(
@@ -681,7 +682,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
             ).copyWith(fontWeight: FontWeight.w700),
           ),
         ),
-        Container(
+        if (badge != null)
+          Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
             color: isDark

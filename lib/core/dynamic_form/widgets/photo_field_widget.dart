@@ -383,7 +383,7 @@ class DynamicPhotoFieldWidget extends StatelessWidget {
             description: field.description,
             asTextWidget: true,
             trailing: Wrap(
-              alignment: WrapAlignment.end,
+              alignment: WrapAlignment.start,
               spacing: 6,
               runSpacing: 4,
               children: [

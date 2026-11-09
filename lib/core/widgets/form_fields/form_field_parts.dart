@@ -25,8 +25,8 @@ class FormChoiceOption {
   const FormChoiceOption(this.value, this.label);
 }
 
-/// Nhãn ô: chữ đậm 14, dấu `*` đỏ khi bắt buộc, dòng mô tả nhỏ bên dưới; [trailing] (huy hiệu "Chỉ đọc", số ảnh…) nằm
-/// bên phải nhãn.
+/// Nhãn ô: chữ đậm 14, dấu `*` đỏ khi bắt buộc, dòng mô tả nhỏ bên dưới; [trailing] (huy hiệu số ảnh…) nằm NGAY SAU tên
+/// ô, không đẩy ra mép phải (chủ hệ thống yêu cầu 09/11/2026).
 class FormFieldLabel extends StatelessWidget {
   final String label;
   final bool isRequired;
@@ -83,12 +83,13 @@ class FormFieldLabel extends StatelessWidget {
             ],
           );
     if (trailing == null) return nhan;
+    // Tên ô co theo chữ (Flexible, không Expanded) ⇒ huy hiệu đứng liền sau; tên dài thì tự xuống dòng, huy hiệu vẫn kề bên.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: nhan),
-        const SizedBox(width: 8),
-        Flexible(child: trailing!),
+        Flexible(child: nhan),
+        const SizedBox(width: 6),
+        trailing!,
       ],
     );
   }

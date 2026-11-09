@@ -60,7 +60,7 @@ void main() {
     expect(d.errorMaxLines, 3);
   });
 
-  testWidgets('ô Có/Không và ô ảnh giữ huy hiệu badge / "Chỉ đọc"', (tester) async {
+  testWidgets('ô Có/Không và ô ảnh giữ huy hiệu badge; ô khoá KHÔNG còn tag "Chỉ đọc" (09/11/2026)', (tester) async {
     await tester.pumpWidget(wrap(Column(children: [
       DynamicBooleanFieldWidget(
         field: const DynamicFormField(code: 'b', label: 'Có kho', type: DynamicFormFieldType.boolean, isReadOnly: true),
@@ -73,7 +73,20 @@ void main() {
         onChanged: (_) {},
       ),
     ])));
-    expect(find.text('Chỉ đọc'), findsOneWidget);
+    expect(find.text('Chỉ đọc'), findsNothing);
     expect(find.text('Bắt buộc chụp'), findsOneWidget);
+  });
+
+  testWidgets('tag số ảnh nằm NGAY SAU tên ô, không bị đẩy ra mép phải (09/11/2026)', (tester) async {
+    await tester.pumpWidget(wrap(DynamicPhotoFieldWidget(
+      field: const DynamicFormField(code: 'p', label: 'Ảnh mặt tiền', type: DynamicFormFieldType.photo, maxPhotos: 5),
+      photoPaths: const [],
+      onChanged: (_) {},
+    )));
+    final ten = tester.getTopRight(find.text('Ảnh mặt tiền'));
+    final tag = tester.getTopLeft(find.byType(FormPhotoCountBadge));
+    final rong = tester.getSize(find.byType(Scaffold)).width;
+    expect(tag.dx - ten.dx, inInclusiveRange(0, 20), reason: 'tag phải kề tên ô');
+    expect(tag.dx, lessThan(rong / 2), reason: 'tag không còn ở mép phải');
   });
 }

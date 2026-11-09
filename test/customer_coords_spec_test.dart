@@ -222,7 +222,8 @@ void main() {
 
       // Verify Section Header row for Vị trí trên bản đồ exists
       expect(find.text('Vị trí trên bản đồ'), findsOneWidget);
-      expect(find.text('Bắt buộc'), findsOneWidget);
+      // Tag "Bắt buộc" ở tiêu đề khối toạ độ đã bỏ (chủ hệ thống 09/11/2026) — dấu `*` đỏ ở nhãn ô nói điều đó.
+      expect(find.text('Bắt buộc'), findsNothing);
 
       // Verify AppMapLocationCard is rendered with title 'Vị trí điểm bán trên bản đồ'
       expect(find.byType(AppMapLocationCard), findsOneWidget);
