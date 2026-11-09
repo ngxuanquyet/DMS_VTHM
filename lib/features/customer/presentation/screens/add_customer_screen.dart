@@ -1249,41 +1249,6 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Voice dictation tip banner
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 14),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.primary.withValues(alpha: 0.15)
-                                : AppColors.primaryContainer.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark
-                                  ? AppColors.primary.withValues(alpha: 0.3)
-                                  : AppColors.primaryContainer.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.mic_rounded,
-                                size: 20,
-                                color: isDark ? AppColors.primaryFixed : AppColors.primary,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Nhập liệu giọng nói: Nhấn & giữ biểu tượng 🎙️ ở mỗi ô để nói, thả tay để hoàn tất.',
-                                  style: AppTypography.bodySmall(
-                                    color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                                  ).copyWith(fontWeight: FontWeight.w500, fontSize: 12),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
                         // Form fields
                         DynamicFormBuilder(
                           key: _formKey,
