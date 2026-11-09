@@ -1046,35 +1046,12 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
               }
             },
           ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Thêm mới điểm bán',
-                style: AppTypography.titleLarge(
-                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                ).copyWith(fontWeight: FontWeight.w700),
-              ),
-            schemaAsync.maybeWhen(
-              data: (schemaData) {
-                final formName = schemaData['data']?['form']?['name']?.toString() ?? 'Hồ sơ điểm bán';
-                final version = schemaData['data']?['version']?.toString() ?? '';
-                return Text(
-                  '$formName ${version.isNotEmpty ? "• v.$version" : ""}',
-                  style: AppTypography.labelSmall(
-                    color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                  ).copyWith(fontSize: 11),
-                );
-              },
-              orElse: () => Text(
-                'Đang tải cấu hình biểu mẫu...',
-                style: AppTypography.labelSmall(
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                ).copyWith(fontSize: 11),
-              ),
-            ),
-          ],
-        ),
+          title: Text(
+            'Thêm mới điểm bán',
+            style: AppTypography.titleLarge(
+              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+            ).copyWith(fontWeight: FontWeight.w700),
+          ),
         backgroundColor: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
         elevation: 0,
         actions: [
