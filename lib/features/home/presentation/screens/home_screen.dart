@@ -14,6 +14,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/sync_progress.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
@@ -195,39 +196,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Đang đồng bộ...',
-                style: TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0284C7),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    // Thanh tiến trình 0→100% theo 9 bước bên dưới (chủ hệ thống 10/11/2026).
+    final progress = SyncProgress.show(context, total: 9);
 
     int failureCount = 0;
 
     // 1. Cập nhật rules thị trường (/dms/mobile-rules)
     try {
-      await ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true);
+      await progress.step('Cập nhật quy tắc thị trường', () => ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi fetchRules: $e');
       failureCount++;
@@ -235,7 +211,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     // 2. Cập nhật danh sách điểm bán theo tuyến (/dms/routes/customers)
     try {
-      await ref.read(routeCustomersServiceProvider).getRouteCustomers(forceRefresh: true);
+      await progress.step('Tải điểm bán theo tuyến', () => ref.read(routeCustomersServiceProvider).getRouteCustomers(forceRefresh: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi getRouteCustomers: $e');
       failureCount++;
@@ -243,7 +219,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     // 3. Cập nhật khách hàng (/dms/customers)
     try {
-      await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+      await progress.step('Tải danh sách điểm bán', () => ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi loadCustomers: $e');
       failureCount++;
@@ -252,10 +228,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // 3b. Cập nhật form thêm khách hàng & danh mục (/dms/customer-form-schema, /dms/customers/meta)
     try {
       final customerRepo = ref.read(customerRepositoryProvider);
-      await Future.wait([
-        customerRepo.getCustomerFormSchema(forceRefresh: true),
-        customerRepo.getCustomerMeta(forceRefresh: true),
-      ]);
+      await progress.step('Tải cấu hình biểu mẫu điểm bán', () => Future.wait([
+            customerRepo.getCustomerFormSchema(forceRefresh: true),
+            customerRepo.getCustomerMeta(forceRefresh: true),
+          ]));
       ref.invalidate(customerFormSchemaProvider);
       ref.invalidate(customerMetaProvider);
       ref.invalidate(userAssignedRoutesProvider);
@@ -274,14 +250,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     // 3c. Cập nhật biểu mẫu thị trường (/dms/forms)
     try {
-      await ref.read(formsViewModelProvider.notifier).loadForms();
+      await progress.step('Tải biểu mẫu thị trường', () => ref.read(formsViewModelProvider.notifier).loadForms());
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi loadForms: $e');
     }
 
     // 4. Cập nhật tuyến bán hàng & lượt viếng thăm hôm nay
     try {
-      await ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+      await progress.step('Tải tuyến & lượt viếng thăm', () => ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi loadRouteDetail: $e');
       failureCount++;
@@ -289,7 +265,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     // 5. Cập nhật dashboard trang chủ & trạng thái chấm công
     try {
-      await ref.read(homeViewModelProvider.notifier).loadDashboard(isRefresh: true);
+      await progress.step('Cập nhật trang chủ', () => ref.read(homeViewModelProvider.notifier).loadDashboard(isRefresh: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi loadDashboard: $e');
       failureCount++;
@@ -297,22 +273,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     // 5b. Cập nhật ca làm việc mới nhất & đặt lại lịch nhắc nếu admin đổi ca
     try {
-      await ref.read(attendanceViewModelProvider.notifier).loadInitialData();
+      await progress.step('Cập nhật ca làm việc', () => ref.read(attendanceViewModelProvider.notifier).loadInitialData());
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi cập nhật ca làm việc: $e');
     }
 
     // 6. Đẩy dữ liệu ngoại tuyến nếu có
     try {
-      await ref.read(syncServiceProvider).syncQueue(force: true);
+      await progress.step('Gửi dữ liệu ngoại tuyến', () => ref.read(syncServiceProvider).syncQueue(force: true));
     } catch (e) {
       debugPrint('[HomeScreenSync] Lỗi syncQueue: $e');
     }
+    // `finish` tự đóng thanh CỦA MÌNH — đừng `hideCurrentSnackBar()` thêm: lúc đó snackbar đang hiện có thể của màn khác.
+    await progress.finish();
 
     if (!mounted) return;
     setState(() => _isSyncing = false);
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (failureCount >= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

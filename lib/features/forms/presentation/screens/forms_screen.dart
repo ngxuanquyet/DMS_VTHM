@@ -8,6 +8,7 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/sync_progress.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
@@ -39,23 +40,16 @@ class _FormsScreenState extends ConsumerState<FormsScreen> {
   Future<void> _handleSync() async {
     final isOnline = ref.read(connectivityProvider).isOnline;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const AppLoading(size: 32),
-            const SizedBox(width: 10),
-            Text(isOnline
-                ? 'Đang đồng bộ...'
-                : 'Đang tải lại dữ liệu từ bộ nhớ máy...'),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    final progress = SyncProgress.show(context, total: 1);
 
-    await ref.read(formsViewModelProvider.notifier).loadForms();
+    try {
+      await progress.step(
+        isOnline ? 'Tải biểu mẫu thị trường' : 'Tải lại dữ liệu trên máy',
+        () => ref.read(formsViewModelProvider.notifier).loadForms(),
+      );
+    } finally {
+      await progress.finish();
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

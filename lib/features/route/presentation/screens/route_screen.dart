@@ -14,6 +14,7 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/sync_progress.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
@@ -233,50 +234,36 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
     // Danh mục khách ERP cho bước nối điểm bán (#24327) — "Đồng bộ" luôn tải lại ngầm.
     ref.read(erpCatalogServiceProvider).refreshInBackground(online: isOnline);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const AppLoading(size: 32),
-            const SizedBox(width: 10),
-            Text(
-              isOnline
-                  ? 'Đang đồng bộ...'
-                  : 'Đang tải lại dữ liệu từ bộ nhớ máy...',
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    // Thanh tiến trình 0→100%: trực tuyến 5 bước (gửi hàng đợi + 4 lượt tải song song), ngoại tuyến 1 bước.
+    final progress = SyncProgress.show(context, total: isOnline ? 5 : 1);
 
     try {
       if (isOnline) {
         // Đồng bộ các tác vụ ngoại tuyến (như huỷ lượt, upload ảnh) trước khi tải lại từ server
         try {
-          await ref.read(syncServiceProvider).syncQueue();
+          await progress.step('Gửi dữ liệu ngoại tuyến', () => ref.read(syncServiceProvider).syncQueue());
         } catch (_) {}
         await Future.wait([
-          vm.loadRouteDetail(isRefresh: true),
-          ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true),
-          customerRepo.getCustomerFormSchema(forceRefresh: true).catchError((
+          progress.step('Tải tuyến & lượt viếng thăm', () => vm.loadRouteDetail(isRefresh: true)),
+          progress.step('Cập nhật quy tắc thị trường', () => ref.read(mobileRulesProvider.notifier).fetchRules(forceRefresh: true)),
+          progress.step('Tải cấu hình biểu mẫu điểm bán', () => customerRepo.getCustomerFormSchema(forceRefresh: true).catchError((
             e,
           ) {
             debugPrint('[RouteSync] Lỗi làm mới schema form: $e');
             return <String, dynamic>{};
-          }),
-          customerRepo.getCustomerMeta(forceRefresh: true).catchError((e) {
+          })),
+          progress.step('Tải danh mục điểm bán', () => customerRepo.getCustomerMeta(forceRefresh: true).catchError((e) {
             debugPrint('[RouteSync] Lỗi làm mới meta khách hàng: $e');
             return kDefaultCustomerMeta;
-          }),
+          })),
         ]);
       } else {
-        await vm.loadRouteDetail(isRefresh: true);
+        await progress.step('Tải lại dữ liệu trên máy', () => vm.loadRouteDetail(isRefresh: true));
       }
     } catch (e) {
       debugPrint('[RouteScreenSync] Lỗi đồng bộ: $e');
     }
+    await progress.finish();
 
     // Làm mới provider của form nhập khách hàng
     ref.invalidate(customerFormSchemaProvider);

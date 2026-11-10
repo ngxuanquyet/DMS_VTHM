@@ -13,6 +13,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/string_utils.dart';
 import '../../../../core/constants/search_target.dart';
+import '../../../../core/widgets/sync_progress.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/scroll_to_top_button.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
@@ -370,27 +371,12 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
     final initialPending = await db.countPendingSync();
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const AppLoading(size: 32),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                isOnline ? 'Đang đồng bộ...' : 'Đang tải lại dữ liệu từ bộ nhớ máy...',
-              ),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    // Thanh tiến trình 0→100%: gửi hàng đợi · tải điểm bán · tải cấu hình biểu mẫu (bước không cần làm vẫn tính %).
+    final progress = SyncProgress.show(context, total: 3);
 
     try {
       if (isOnline && initialPending > 0) {
-        final syncResult = await ref.read(syncServiceProvider).syncQueue(force: true);
+        final syncResult = await progress.step('Gửi dữ liệu ngoại tuyến', () => ref.read(syncServiceProvider).syncQueue(force: true));
         if (syncResult.hasDeadErrors && mounted) {
           final msgs = syncResult.deadErrors.map((e) => StringUtils.formatUserFriendlyError(e.message)).take(3).join('\n• ');
           AppErrorDialog.show(
@@ -400,27 +386,35 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
             dismissText: 'Đã hiểu',
           );
         }
+      } else {
+        progress.skip();
       }
-      await ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+      await progress.step(
+        isOnline ? 'Tải danh sách điểm bán' : 'Tải lại dữ liệu trên máy',
+        () => ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true),
+      );
       if (isOnline) {
         try {
           final customerRepo = ref.read(customerRepositoryProvider);
-          await Future.wait([
-            customerRepo.getCustomerFormSchema(forceRefresh: true),
-            customerRepo.getCustomerMeta(forceRefresh: true),
-          ]);
+          await progress.step('Tải cấu hình biểu mẫu điểm bán', () => Future.wait([
+                customerRepo.getCustomerFormSchema(forceRefresh: true),
+                customerRepo.getCustomerMeta(forceRefresh: true),
+              ]));
         } catch (e) {
           debugPrint('[CustomerSync] Lỗi làm mới schema form: $e');
         }
+      } else {
+        progress.skip();
       }
       ref.invalidate(customerFormSchemaProvider);
       ref.invalidate(customerMetaProvider);
       ref.invalidate(userAssignedRoutesProvider);
 
       final deadCount = await db.countDeadSync();
+      // `finish` tự đóng thanh CỦA MÌNH — không `hideCurrentSnackBar()` thêm (có thể là snackbar của màn khác).
+      await progress.finish();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -456,6 +450,7 @@ class _CustomerScreenState extends ConsumerState<CustomerScreen>
         );
       }
     } catch (e) {
+      await progress.finish();
       if (mounted) {
         AppSnackBar.showError(context, e);
       }
