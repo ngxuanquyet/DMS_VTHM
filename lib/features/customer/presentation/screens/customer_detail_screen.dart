@@ -478,12 +478,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     _buildIdentityCard(isDark),
                     const SizedBox(height: 16),
 
-                    // Approval Status Banner (§3 API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15)
-                    if (_customer.approvalStatus != 'approved') ...[
-                      _buildApprovalStatusBanner(isDark),
-                      const SizedBox(height: 16),
-                    ],
-
                     // 3. Contact Info Card
                     _buildContactCard(isDark),
                     const SizedBox(height: 16),
@@ -1038,70 +1032,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 isDark: isDark,
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildApprovalStatusBanner(bool isDark) {
-    final isRejected = _customer.isRejectedApproval;
-    final bg = isRejected
-        ? (isDark ? const Color(0x33DC2626) : const Color(0xFFFEF2F2))
-        : (isDark ? const Color(0x33D97706) : const Color(0xFFFFFBEB));
-    final border = isRejected
-        ? (isDark ? const Color(0x55DC2626) : const Color(0xFFFCA5A5))
-        : (isDark ? const Color(0x55D97706) : const Color(0xFFFDE68A));
-    final iconColor = isRejected ? const Color(0xFFDC2626) : const Color(0xFFD97706);
-    final title = isRejected ? 'Điểm bán bị từ chối duyệt' : 'Điểm bán đang chờ duyệt';
-    final note = _customer.approvalNote;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: AppRadius.roundedLg,
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            isRejected ? Icons.cancel_outlined : Icons.hourglass_top_rounded,
-            color: iconColor,
-            size: 20,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: isRejected
-                        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
-                        : (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E)),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isRejected
-                      ? (note != null && note.isNotEmpty
-                          ? 'Lý do từ chối: $note'
-                          : 'Điểm bán chưa được phê duyệt. Vui lòng liên hệ quản lý hoặc cập nhật lại hồ sơ.')
-                      : 'Hồ sơ mở mới đang được gửi lên cấp quản lý để phê duyệt. Bạn vẫn có thể thực hiện viếng thăm bình thường.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isRejected
-                        ? (isDark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
-                        : (isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309)),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),

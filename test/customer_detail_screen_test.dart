@@ -397,5 +397,46 @@ void main() {
     expect(find.text('Người cập nhật lần cuối'), findsOneWidget);
     expect(find.text('Trần Thị Quản Lý (VTG002)'), findsOneWidget);
   });
-}
 
+  // Màn chi tiết từng vẽ HAI khung trạng thái duyệt (khung đầu trang + khung dưới thẻ thông tin) — chỉ còn một.
+  for (final status in ['rejected', 'pending']) {
+    testWidgets('CustomerDetailScreen chỉ có MỘT khung trạng thái duyệt ($status)', (tester) async {
+      final customer = CustomerEntity(
+        id: 889,
+        code: '08290620',
+        name: 'test duyệt',
+        type: 'Đại lý',
+        route: 'Chưa phân tuyến',
+        address: 'Phú Thọ',
+        contactPerson: 'Chưa cập nhật',
+        phone: 'Chưa có SĐT',
+        lat: 21.39507,
+        lng: 105.59340,
+        approvalStatus: status,
+        approvalNote: 'Sai địa chỉ',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            visitMaterialRepositoryProvider.overrideWith((ref) => FakeVisitMaterialRepository(ref)),
+            customerRepositoryProvider.overrideWithValue(MockCustomerRepository(customer)),
+            erpLinkRequestServiceProvider.overrideWithValue(FakeErpLinkRequestService()),
+            routeApiServiceProvider.overrideWithValue(FakeRouteApiService()),
+            getCustomerVisitHistoryUseCaseProvider.overrideWithValue(
+              MockGetCustomerVisitHistoryUseCase(
+                (customerId, {page = 1, perPage = 20}) async =>
+                    const CustomerVisitHistoryResponse(items: [], total: 0),
+              ),
+            ),
+          ],
+          child: MaterialApp(home: CustomerDetailScreen(customer: customer)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final title = status == 'rejected' ? 'Điểm bán bị từ chối' : 'Điểm bán đang chờ duyệt';
+      expect(find.textContaining(title), findsOneWidget);
+    });
+  }
+}
