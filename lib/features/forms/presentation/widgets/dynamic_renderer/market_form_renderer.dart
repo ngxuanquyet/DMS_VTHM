@@ -1801,6 +1801,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _errors.remove(matrix.$1);
         _syncMatrixAnswer(block);
       }
+      // Ảnh đổi ⇒ điều kiện hiển thị / bắt buộc theo ô ảnh tính lại NGAY (nơi gọi đều trong `setState`).
+      _recomputeVisibility();
       widget.onChanged?.call(_answers);
       return;
     }
@@ -1813,6 +1815,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     } else {
       _answers.remove(code);
     }
+    _recomputeVisibility();
     widget.onChanged?.call(_answers);
   }
 
