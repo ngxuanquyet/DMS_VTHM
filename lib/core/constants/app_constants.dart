@@ -1,11 +1,25 @@
+import 'package:package_info_plus/package_info_plus.dart';
+
 class AppConstants {
   AppConstants._();
 
   static const String appName = 'VTHM Group';
   static const String appSubtitle = 'Hệ thống Quản lý Nhân viên Thị trường';
-  static const String appVersion = 'Phiên bản 1.0.0 (Field Ops)';
-  static const String appVersionBuild = 'Phiên bản 1.0.0 (Build 1)';
-  static const String appVersionSimple = 'Phiên bản 1.0.0';
+
+  /// Số phiên bản đọc từ chính bản build (`version: x.y.z+n` của pubspec) — nạp một lần ở `main()` qua [loadVersion],
+  /// không gõ tay: chuỗi cứng cũ đứng yên '1.0.0' dù APK đã lên 1.0.1+2.
+  static String versionName = '';
+  static String buildNumber = '';
+
+  static Future<void> loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    versionName = info.version;
+    buildNumber = info.buildNumber;
+  }
+
+  static String get appVersion => 'Phiên bản $versionName (Field Ops)';
+  static String get appVersionBuild => 'Phiên bản $versionName (Build $buildNumber)';
+  static String get appVersionSimple => 'Phiên bản $versionName';
 
   // API Endpoints & Headers
   static const String baseUrl = 'https://api-app.vthmgroup.vn';

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
@@ -152,7 +153,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     final deviceInfo = {
       'os': Platform.operatingSystem,
       'os_version': Platform.operatingSystemVersion,
-      'app_version': '1.0.0',
+      'app_version': AppConstants.versionName,
     };
 
     final requestModel = AttendancePunchRequestModel(

@@ -20,6 +20,9 @@ void main() async {
   // Đồng hồ hàng đợi ngoại tuyến theo đồng hồ MÁY (#24618) — TRƯỚC mọi thứ có thể ghi vào hàng đợi.
   await SystemClock.init();
 
+  // Số phiên bản hiện ở màn đăng nhập/hồ sơ và gửi kèm chấm công/định vị/báo lỗi.
+  await AppConstants.loadVersion();
+
   // Khởi tạo dịch vụ theo dõi lỗi và nhật ký hệ thống
   await ErrorTrackerService.instance.initialize();
 
