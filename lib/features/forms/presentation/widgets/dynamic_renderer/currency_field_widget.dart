@@ -52,6 +52,8 @@ class CurrencyFieldWidget extends StatefulWidget {
   final num? initialValue;
   final ValueChanged<num?> onChanged;
   final String? errorText;
+  /// Bắt buộc HIỆU LỰC (cờ khối hoặc `required_if` đang đúng — #25067); vắng = theo cờ khối.
+  final bool? isRequired;
 
   const CurrencyFieldWidget({
     super.key,
@@ -59,6 +61,7 @@ class CurrencyFieldWidget extends StatefulWidget {
     this.initialValue,
     required this.onChanged,
     this.errorText,
+    this.isRequired,
   });
 
   @override
@@ -131,7 +134,7 @@ class _CurrencyFieldWidgetState extends State<CurrencyFieldWidget> {
                     color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                   ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
                   children: [
-                    if (widget.block.required)
+                    if (widget.isRequired ?? widget.block.required)
                       const TextSpan(
                         text: ' *',
                         style: TextStyle(

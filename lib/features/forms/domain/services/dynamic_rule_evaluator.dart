@@ -208,6 +208,35 @@ class DynamicRuleEvaluator {
     );
   }
 
+  /// Mã các ô BẮT BUỘC THEO ĐIỀU KIỆN lúc này (`required_if`, #25067 — server `FormValidator::conditionallyRequiredCodes()`):
+  /// cây điều kiện (cùng dạng `show_if`) của ô ĐANG HIỆN đánh giá đúng. Ô ẩn theo [visibility] đọc ra RỖNG và không bao giờ
+  /// bắt buộc. 🔴 Điều kiện `null`/rỗng = KHÔNG bắt buộc (khác `evalRule(null) == true` của `show_if`).
+  static Set<String> computeRequiredOf<T>({
+    required List<T> items,
+    required dynamic Function(T item) requiredIfOf,
+    required List<String> Function(T item) keysOf,
+    required Map<String, bool> visibility,
+    required Map<String, dynamic> answers,
+    Map<String, dynamic> customerContext = const {},
+  }) {
+    final out = <String>{};
+    dynamic read(String path) {
+      if (path.startsWith('@')) return readPath(customerContext, path);
+      if (visibility[path] == false) return null;
+      return answers[path];
+    }
+
+    for (final item in items) {
+      final rule = requiredIfOf(item);
+      if (rule == null || (rule is Map && rule.isEmpty) || (rule is List && rule.isEmpty)) continue;
+      final keys = keysOf(item).where((k) => k.isNotEmpty).toList();
+      if (keys.any((k) => visibility[k] == false)) continue;
+      if (evalRule(rule, read)) out.addAll(keys);
+    }
+
+    return out;
+  }
+
   /// Bản tổng quát của [computeVisibility] cho mọi danh sách ô có `show_if` (biểu mẫu thị trường, form điểm bán…):
   /// [keysOf] trả các mã nhận diện một ô (mã rỗng bị bỏ qua) — cùng luật ẩn theo TẦNG, cùng ngữ cảnh `@customer.*`.
   static Map<String, bool> computeVisibilityOf<T>({

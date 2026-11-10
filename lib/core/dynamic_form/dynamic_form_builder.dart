@@ -65,6 +65,10 @@ class DynamicFormBuilder extends StatefulWidget {
   /// trong form để hiện lại khi điều kiện đúng trở lại). `null` = không ô nào ẩn.
   final Set<String> Function(Map<String, dynamic> formData)? hiddenFieldsOf;
 
+  /// Mã các ô đang BẮT BUỘC THEO ĐIỀU KIỆN (`required_if`, #25067), tính từ dữ liệu ĐANG nhập như [hiddenFieldsOf]. Ô trong tập
+  /// được coi `isRequired = true` cả khi vẽ (dấu *) lẫn khi kiểm. `null` = không ô nào.
+  final Set<String> Function(Map<String, dynamic> formData)? requiredFieldsOf;
+
   /// Giá trị NỀN cho ô công thức (màn sửa: giá trị đang lưu của điểm bán) — ô động không có trên form vẫn được công
   /// thức đọc như server (đang lưu + phần gửi). Giá trị trên form đè lên nền.
   final Map<String, dynamic> formulaBaseData;
@@ -85,6 +89,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.customFieldBuilders,
     this.customValidators,
     this.hiddenFieldsOf,
+    this.requiredFieldsOf,
     this.formulaBaseData = const {},
     this.savedData = const {},
   });
@@ -274,6 +279,25 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return f(Map<String, dynamic>.unmodifiable(formulas.isEmpty ? _formData : {..._formData, ...formulas}));
   }
 
+  /// Giá trị RỖNG (null, chuỗi trắng, danh sách/map rỗng) — cùng nghĩa «trống» của lỗi bắt buộc.
+  static bool _rong(dynamic v) =>
+      v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty) || (v is Map && v.isEmpty);
+
+  /// Mã ô đang bắt buộc theo điều kiện ([DynamicFormBuilder.requiredFieldsOf]) trên dữ liệu đang nhập + ô công thức.
+  Set<String> _requiredIfWith(Map<String, num?> formulas) {
+    final f = widget.requiredFieldsOf;
+    if (f == null) return const <String>{};
+    return f(Map<String, dynamic>.unmodifiable(formulas.isEmpty ? _formData : {..._formData, ...formulas}));
+  }
+
+  /// Danh sách ô với bắt buộc HIỆU LỰC: ô bắt buộc theo điều kiện ([DynamicFormBuilder.requiredFieldsOf]) mang
+  /// `isRequired = true` — một chỗ cho cả vẽ lẫn kiểm.
+  List<DynamicFormField> _effectiveFields(Map<String, num?> formulas) {
+    final req = _requiredIfWith(formulas);
+    if (req.isEmpty) return widget.fields;
+    return [for (final x in widget.fields) req.contains(x.code) && !x.isRequired ? x.copyWith(isRequired: true) : x];
+  }
+
   /// Kết quả các ô công thức (số đã làm tròn theo `decimals`, `null` = rỗng) — tính như server trên TOÀN BỘ giá trị:
   /// nền [DynamicFormBuilder.formulaBaseData] + mọi ô trên form, KỂ CẢ ô đang ẩn.
   Map<String, num?> get formulaValues {
@@ -302,11 +326,22 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
   void updateFieldValue(String code, dynamic value) {
     _untouchedDefaults.remove(code);
+    final batBuocTruoc = widget.requiredFieldsOf == null ? const <String>{} : _requiredIfWith(formulaValues);
     setState(() {
       _formData[code] = value;
       // Clear error for this field
       if (_errors.containsKey(code)) {
         _errors[code] = null;
+      }
+      // Ô vừa THÔI bắt buộc theo điều kiện: gỡ lỗi «… là bắt buộc» đang treo, kẻo chữ đỏ còn khi dấu * đã mất. Chỉ ô KHÔNG bắt
+      // buộc tĩnh và đang RỖNG — lỗi treo ở đó chắc chắn là lỗi trống, không gỡ nhầm lỗi độ dài/định dạng.
+      if (batBuocTruoc.isNotEmpty) {
+        for (final c in batBuocTruoc.difference(_requiredIfWith(formulaValues))) {
+          final f = widget.fields.where((x) => x.code == c).firstOrNull;
+          if (f != null && !f.isRequired && _rong(_formData[c]) && _errors.containsKey(c)) {
+            _errors[c] = null;
+          }
+        }
       }
     });
     widget.onChanged?.call(Map<String, dynamic>.from(_formData));
@@ -351,9 +386,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     bool isValid = true;
     final newErrors = <String, String?>{};
     String? firstInvalidCode;
-    final hidden = hiddenFieldCodes;
+    final formulas = formulaValues;
+    final hidden = _hiddenWith(formulas);
 
-    for (final field in widget.fields) {
+    for (final field in _effectiveFields(formulas)) {
       // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc); ô công thức chỉ đọc, không kiểm.
       if (hidden.contains(field.code) || field.type == DynamicFormFieldType.formula || field.isDisplayOnly) continue;
       final value = _formData[field.code];
@@ -563,7 +599,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     // Mục theo cấu hình (danh tính [DynamicFormField.sectionKey], không thì tên mục) KHÔNG còn ô nhập nào được vẽ (kể cả
     // bản đồ) ⇒ bỏ luôn ô trình bày của mục (mô tả, tiêu đề con, ghi chú) — không vẽ khung chỉ có chữ trình bày.
     String mucCua(DynamicFormField f) => f.sectionKey != null ? 'h:${f.sectionKey}' : 's:${f.section ?? 'Thông tin chung'}';
-    final dangHien = widget.fields.where((f) => !hidden.contains(f.code)).toList();
+    final dangHien = _effectiveFields(_formulaValuesCache).where((f) => !hidden.contains(f.code)).toList();
     final mucCoNhap = {for (final f in dangHien) if (!f.isDisplayOnly) mucCua(f)};
 
     // Chia khúc theo thứ tự cấu hình. Khoá khúc = danh tính mục; bản đồ (coords) luôn là khúc riêng.

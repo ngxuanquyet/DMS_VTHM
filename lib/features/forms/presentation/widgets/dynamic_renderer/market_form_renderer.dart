@@ -109,6 +109,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
 
+  /// Mã ô đang BẮT BUỘC THEO ĐIỀU KIỆN (`required_if`, #25067) — tính lại cùng nhịp với [_visibilityMap].
+  Set<String> _requiredIfCodes = {};
+
+  /// Bắt buộc HIỆU LỰC của một ô: cờ `required` của khối HOẶC điều kiện `required_if` đang đúng (server cùng luật).
+  bool _req(MarketFormBlockEntity block) =>
+      block.required ||
+      _requiredIfCodes.contains(block.resolved.code) ||
+      (block.ref.isNotEmpty && _requiredIfCodes.contains(block.ref));
+
   /// Ô chọn đang chọn «Khác…» (xem [ChoiceOther]): mã ô → chuỗi đang gõ (đã trim, có thể rỗng). Trạng thái giao diện —
   /// câu trả lời chỉ chứa chuỗi gõ tay thật.
   final Map<String, String> _otherText = {};
@@ -412,11 +421,27 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       for (final b in widget.blocks)
         if (b.resolved.formula != null && b.resolved.code.isNotEmpty) b.resolved.code: b.resolved.formula!,
     }, _answers);
+    final answers = _formulaValues.isEmpty ? _answers : {..._answers, ..._formulaValues};
     _visibilityMap = DynamicRuleEvaluator.computeVisibility(
       blocks: widget.blocks,
-      answers: _formulaValues.isEmpty ? _answers : {..._answers, ..._formulaValues},
+      answers: answers,
       customerContext: widget.customerContext,
     );
+    final requiredBefore = _requiredIfCodes;
+    _requiredIfCodes = DynamicRuleEvaluator.computeRequiredOf<MarketFormBlockEntity>(
+      items: widget.blocks,
+      requiredIfOf: (b) => b.requiredIf,
+      keysOf: (b) => [b.resolved.code, b.ref],
+      visibility: _visibilityMap,
+      answers: answers,
+      customerContext: widget.customerContext,
+    );
+    // Ô vừa THÔI bắt buộc theo điều kiện: gỡ lỗi «… không được để trống» đang treo (dấu * đã mất). Chỉ ô KHÔNG bắt buộc tĩnh
+    // và đang RỖNG — lỗi treo ở đó chắc chắn là lỗi trống, không gỡ nhầm lỗi định dạng / số ảnh.
+    for (final c in requiredBefore.difference(_requiredIfCodes)) {
+      final b = widget.blocks.where((x) => x.resolved.code == c || x.ref == c).firstOrNull;
+      if (b != null && !b.required && DynamicRuleEvaluator.isEmptyValue(_answers[c])) _errors.remove(c);
+    }
   }
 
   /// Trả về bản sao các câu trả lời hiện tại
@@ -474,7 +499,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Xử lý riêng cho ô ảnh (§1, §2, §3)
       if (block.isImage || block.resolved.inputType.toLowerCase() == 'file') {
         final entries = _photoEntries[code] ?? [];
-        if (block.required && entries.isEmpty) {
+        if (_req(block) && entries.isEmpty) {
           newErrors[code] = '$label không được để trống.';
           continue;
         }
@@ -505,7 +530,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Xử lý riêng cho ô vị trí (§2, §3, §4)
       if (block.isLocation) {
         if (val == null || DynamicRuleEvaluator.isEmptyValue(val)) {
-          if (block.required) {
+          if (_req(block)) {
             newErrors[code] = '$label không được để trống.';
           }
           continue;
@@ -534,7 +559,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 newErrors[code] = '$label không được vượt quá $maxLen ký tự.';
               }
               continue;
-            } else if (block.required) {
+            } else if (_req(block)) {
               newErrors[code] = '$label không được để trống.';
               continue;
             }
@@ -542,7 +567,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             // Đối với trường vị trí / toạ độ kho / GPS
             if (addrVal != null && addrVal.trim().isNotEmpty) {
               newErrors[code] = '$label cần có toạ độ GPS — bấm "Lấy vị trí".';
-            } else if (block.required) {
+            } else if (_req(block)) {
               newErrors[code] = '$label không được để trống.';
             }
             continue;
@@ -581,7 +606,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (_allowsOther(block)) {
         final active = _otherText.containsKey(code);
         final other = _otherText[code];
-        final loi = ChoiceOther.validate(active: active, required: block.required, other: other);
+        final loi = ChoiceOther.validate(active: active, required: _req(block), other: other);
         if (loi != null) {
           newErrors[code] = loi;
           continue;
@@ -599,7 +624,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // 1. Kiểm tra bắt buộc (required) - 0, "0", false không phải rỗng (§2 Luật 1)
       final isEmpty = DynamicRuleEvaluator.isEmptyValue(val);
 
-      if (block.required && isEmpty) {
+      if (_req(block) && isEmpty) {
         newErrors[code] = '$label không được để trống.';
         continue;
       }
@@ -664,8 +689,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final hadError = _errors.remove(code) != null;
     final visibilityBefore = _visibilityMap;
     final formulasBefore = _formulaValues;
+    final requiredBefore = _requiredIfCodes;
     _recomputeVisibility();
-    if (hadError || !mapEquals(visibilityBefore, _visibilityMap) || !mapEquals(formulasBefore, _formulaValues)) {
+    // Dấu * của ô bắt buộc theo điều kiện đổi theo chữ đang gõ ⇒ cũng phải dựng lại.
+    if (hadError ||
+        !mapEquals(visibilityBefore, _visibilityMap) ||
+        !mapEquals(formulasBefore, _formulaValues) ||
+        !setEquals(requiredBefore, _requiredIfCodes)) {
       setState(() {});
     }
     widget.onChanged?.call(_answers);
@@ -765,6 +795,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'currency':
         return CurrencyFieldWidget(
           block: block,
+          isRequired: _req(block),
           initialValue: _answers[block.resolved.code] as num?,
           errorText: _errors[block.resolved.code],
           onChanged: (val) => _updateValue(block.resolved.code, val),
@@ -800,6 +831,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 : (currentVal != null ? int.tryParse(currentVal.toString()) : null));
         return RefCustomerFieldWidget(
           block: block,
+          isRequired: _req(block),
           selectedId: selectedId ?? (widget.lockCustomer ? widget.defaultCustomerId : null),
           errorText: _errors[block.resolved.code],
           defaultCustomerName: widget.defaultCustomerName,
@@ -819,7 +851,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           fieldCode: block.resolved.code,
           label: block.resolved.label.isNotEmpty ? block.resolved.label : block.resolved.code,
           description: block.resolved.description,
-          isRequired: block.required,
+          isRequired: _req(block),
           multiple: multiple,
           selectedCodes: ErpPartnerFieldWidget.codesFromValue(_answers[block.resolved.code]),
           errorText: _errors[block.resolved.code],
@@ -863,7 +895,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       label: r.label.isNotEmpty ? r.label : r.code,
       type: laXa ? DynamicFormFieldType.geoWard : DynamicFormFieldType.geoProvince,
       helperText: r.description,
-      isRequired: block.required,
+      isRequired: _req(block),
     );
     return GeoSelectFieldWidget(
       field: field,
@@ -929,7 +961,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     return LocationFieldWidget(
       label: block.resolved.label.isNotEmpty ? block.resolved.label : code,
-      isRequired: block.required,
+      isRequired: _req(block),
       isReadOnly: false,
       description: block.resolved.description,
       maxLength: block.resolved.validation?.maxLength ?? 500,
@@ -1294,7 +1326,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       key: code,
       label: block.resolved.label,
       description: block.resolved.description,
-      isRequired: block.required,
+      isRequired: _req(block),
       minFiles: _resolveMinFiles(block),
       maxFiles: _resolveMaxFiles(block),
       error: _errors[code],
@@ -1407,7 +1439,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       fieldCode: code,
       label: block.resolved.label,
       description: block.resolved.description,
-      isRequired: block.required,
+      isRequired: _req(block),
       config: cfg,
       counts: DisplayMatrixFieldWidget.countsOf(_answers[code]),
       // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — ô chưa sửa hiện số này, Tổng / % SOS tính cả
@@ -1460,13 +1492,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // Ô BẮT BUỘC, nhân viên không sửa ô nào nhưng bảng đang hiện số hiện trạng ⇒ coi là XÁC NHẬN số đó, gửi cả ma trận đang
     // hiện (chủ hệ thống chốt 06/11/2026). Để riêng ở [_matrixConfirm], chỉ vào câu gửi khi CẢ phiếu hợp lệ: ghi vào
     // [_answers] thì lượt nộp hỏng vì ô khác biến cả ma trận số cũ thành "đã sửa" — sửa thêm một ô là gửi số cũ đè số mới.
-    if (block.required && counts.isEmpty) {
+    if (_req(block) && counts.isEmpty) {
       counts = DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg);
       if (counts.isNotEmpty) _matrixConfirm[code] = {'counts': counts, 'photos': photos};
     }
 
     final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
-    if (block.required && counts.isEmpty && photos.isEmpty) return '$label không được để trống.';
+    if (_req(block) && counts.isEmpty && photos.isEmpty) return '$label không được để trống.';
     if (_matrixInvalid[code] == true) return '$label – có ô đếm nhập sai dạng số.';
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '$label – $cellErr';
@@ -1790,7 +1822,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Widget _buildLabel(MarketFormBlockEntity block, bool isDark) => FormFieldLabel(
         label: block.resolved.label,
-        isRequired: block.required,
+        isRequired: _req(block),
         description: block.resolved.description,
       );
 

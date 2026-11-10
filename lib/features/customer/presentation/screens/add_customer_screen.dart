@@ -202,23 +202,52 @@ Set<String> customerHiddenFieldCodes(
   CustomerEntity? editing,
 }) {
   if (!fields.any((f) => f.kind == 'dynamic' && f.showIf != null)) return const {};
-  final c = editing;
+  final vis = _customerVisibility(fields, formData, editing);
+  return {for (final e in vis.entries) if (!e.value) e.key};
+}
+
+/// Biến ngữ cảnh `@customer.*` của điều kiện ô động — ô cứng Loại / Khu vực / Tỉnh ĐANG nhập, vắng thì giá trị đang lưu.
+Map<String, dynamic> _customerRuleContext(Map<String, dynamic> formData, CustomerEntity? c) {
   int? nguCanh(String code, dynamic dangLuu) =>
       GeoSelectFieldWidget.idOf(formData.containsKey(code) ? formData[code] : dangLuu);
-  final vis = DynamicRuleEvaluator.computeVisibilityOf<DynamicFormField>(
-    items: fields,
-    showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
-    keysOf: (f) => [f.code],
-    answers: formData,
-    customerContext: {
-      '@customer': {
-        'type_id': nguCanh('customer_type_id', c?.customerTypeId),
-        'region_id': nguCanh('region_id', c?.regionId),
-        'province_id': nguCanh('province_id', c?.dynamicFields['province_id']),
-      },
+  return {
+    '@customer': {
+      'type_id': nguCanh('customer_type_id', c?.customerTypeId),
+      'region_id': nguCanh('region_id', c?.regionId),
+      'province_id': nguCanh('province_id', c?.dynamicFields['province_id']),
     },
+  };
+}
+
+Map<String, bool> _customerVisibility(List<DynamicFormField> fields, Map<String, dynamic> formData, CustomerEntity? c) =>
+    DynamicRuleEvaluator.computeVisibilityOf<DynamicFormField>(
+      items: fields,
+      showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
+      keysOf: (f) => [f.code],
+      answers: formData,
+      customerContext: _customerRuleContext(formData, c),
+    );
+
+/// Mã các ô ĐỘNG đang BẮT BUỘC THEO ĐIỀU KIỆN (`required_if`, #25067 — server `FormValidator::conditionallyRequiredCodes()`)
+/// — truyền vào `DynamicFormBuilder.requiredFieldsOf` ở màn Thêm mới và Sửa. Cùng ngữ cảnh + cùng luật ô ẩn (đọc rỗng, không
+/// bao giờ bắt buộc) với [customerHiddenFieldCodes]; ô chỉ đọc không bắt buộc.
+Set<String> customerRequiredIfCodes(
+  List<DynamicFormField> fields,
+  Map<String, dynamic> formData, {
+  CustomerEntity? editing,
+}) {
+  if (!fields.any((f) => f.kind == 'dynamic' && f.requiredIf != null)) return const {};
+  return DynamicRuleEvaluator.computeRequiredOf<DynamicFormField>(
+    items: fields,
+    // Ô không nhập được (chỉ đọc, công thức, trình bày) không bao giờ bắt buộc — kẻo vẽ dấu * mà không kiểm.
+    requiredIfOf: (f) => f.kind == 'dynamic' && !f.isReadOnly && f.type != DynamicFormFieldType.formula && !f.isDisplayOnly
+        ? f.requiredIf
+        : null,
+    keysOf: (f) => [f.code],
+    visibility: _customerVisibility(fields, formData, editing),
+    answers: formData,
+    customerContext: _customerRuleContext(formData, editing),
   );
-  return {for (final e in vis.entries) if (!e.value) e.key};
 }
 
 /// Form TẠO điểm bán có bước khai vật tư không — theo ô ảo "Vật tư tại điểm" ở Cấu hình trường điểm bán (MẶC ĐỊNH ẨN,
@@ -1270,6 +1299,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
                           customValidators: {'erp_links': erpLinksCreateValidator},
                           hiddenFieldsOf: (data) => customerHiddenFieldCodes(fields, data),
+                          requiredFieldsOf: (data) => customerRequiredIfCodes(fields, data),
                         ),
                         if (!customerCreateMaterialsEnabled(schemaData))
                           const SizedBox.shrink()

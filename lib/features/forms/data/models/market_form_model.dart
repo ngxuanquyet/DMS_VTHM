@@ -112,6 +112,8 @@ class MarketFormBlockModel {
   final bool required; // cấp block
   final int colSpan;
   final dynamic showIf;
+  /// Bắt buộc THEO ĐIỀU KIỆN (`required_if`, #25067) — cùng dạng cây `show_if`; `null` = không.
+  final dynamic requiredIf;
   final MarketFormResolvedModel resolved;
   final Map<String, dynamic>? blockJson;
 
@@ -121,6 +123,7 @@ class MarketFormBlockModel {
     required this.required,
     this.colSpan = 12,
     this.showIf,
+    this.requiredIf,
     required this.resolved,
     this.blockJson,
   });
@@ -142,6 +145,7 @@ class MarketFormBlockModel {
           ? json['col_span'] as int
           : (int.tryParse(json['col_span']?.toString() ?? '') ?? 12),
       showIf: json['show_if'],
+      requiredIf: json['required_if'],
       resolved: MarketFormResolvedModel.fromJson(
         resolvedMap,
         blockJson: json,
@@ -156,6 +160,7 @@ class MarketFormBlockModel {
         'required': required,
         'col_span': colSpan,
         if (showIf != null) 'show_if': showIf,
+        if (requiredIf != null) 'required_if': requiredIf,
         'resolved': resolved.toJson(),
       };
 
@@ -166,6 +171,7 @@ class MarketFormBlockModel {
       required: required,
       colSpan: colSpan,
       showIf: showIf,
+      requiredIf: requiredIf,
       resolved: resolved.toEntity(),
     );
   }

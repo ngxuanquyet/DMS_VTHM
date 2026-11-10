@@ -20,10 +20,13 @@ class RefCustomerFieldWidget extends ConsumerStatefulWidget {
   final String? defaultCustomerCode;
   final String? defaultCustomerAddress;
   final bool isReadOnly;
+  /// Bắt buộc HIỆU LỰC (cờ khối hoặc `required_if` đang đúng — #25067); vắng = theo cờ khối.
+  final bool? isRequired;
 
   const RefCustomerFieldWidget({
     super.key,
     required this.block,
+    this.isRequired,
     required this.selectedId,
     required this.onChanged,
     this.errorText,
@@ -413,7 +416,7 @@ class _RefCustomerFieldWidgetState
                         isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                   ).copyWith(fontWeight: FontWeight.w600),
                   children: [
-                    if (widget.block.required)
+                    if (widget.isRequired ?? widget.block.required)
                       const TextSpan(
                         text: ' *',
                         style: TextStyle(

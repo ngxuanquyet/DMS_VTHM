@@ -319,6 +319,10 @@ class DynamicFormField {
   /// trường); `null` = luôn hiện (ô cứng, server/bản lưu máy cũ không có khoá).
   final dynamic showIf;
 
+  /// Bắt buộc THEO ĐIỀU KIỆN (`required_if` của schema, #25067) — cùng dạng cây [showIf]; ô vẫn hiện, chỉ đòi điền khi cây
+  /// đúng (xem `customerRequiredIfCodes`). `null` = không (ô cứng, schema cũ).
+  final dynamic requiredIf;
+
   /// Cấu hình ô công thức (khoá `formula` của schema: `{expr, format, decimals, blank}`); `null` = không phải ô công thức
   /// (ô khác / server hoặc bản lưu máy cũ không có khoá).
   final FormulaConfig? formula;
@@ -381,6 +385,7 @@ class DynamicFormField {
     this.allowOther = false,
     this.dependsOn,
     this.showIf,
+    this.requiredIf,
     this.formula,
     this.section,
     this.badge,
@@ -537,6 +542,7 @@ class DynamicFormField {
           ? ((json['depends_on'] as List).first as Map)['field_code']?.toString()
           : null,
       showIf: json['show_if'],
+      requiredIf: json['required_if'],
       formula: formula,
       section: section,
       badge: json['badge']?.toString(),
@@ -574,6 +580,7 @@ class DynamicFormField {
     bool? allowOther,
     String? dependsOn,
     dynamic showIf,
+    dynamic requiredIf,
     FormulaConfig? formula,
     String? section,
     String? badge,
@@ -610,6 +617,7 @@ class DynamicFormField {
       allowOther: allowOther ?? this.allowOther,
       dependsOn: dependsOn ?? this.dependsOn,
       showIf: showIf ?? this.showIf,
+      requiredIf: requiredIf ?? this.requiredIf,
       formula: formula ?? this.formula,
       section: section ?? this.section,
       badge: badge ?? this.badge,

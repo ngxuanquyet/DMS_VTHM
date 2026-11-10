@@ -50,6 +50,8 @@ class MarketFormBlockEntity {
   final bool required;
   final int colSpan;
   final dynamic showIf;
+  /// Bắt buộc THEO ĐIỀU KIỆN (`required_if`, #25067) — ô vẫn hiện, chỉ đòi điền khi cây đúng; `null` = không.
+  final dynamic requiredIf;
   final MarketFormResolvedEntity resolved;
 
   const MarketFormBlockEntity({
@@ -58,6 +60,7 @@ class MarketFormBlockEntity {
     required this.required,
     this.colSpan = 12,
     this.showIf,
+    this.requiredIf,
     required this.resolved,
   });
 
