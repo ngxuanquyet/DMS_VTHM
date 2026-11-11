@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/notifications/domain/entities/notification_entity.dart';
 import '../../features/notifications/data/models/notification_model.dart';
 import '../router/app_router.dart';
+import '../../features/consent/data/privacy_consent_service.dart';
 
 final appNotificationServiceProvider = Provider<AppNotificationService>((ref) {
   final service = AppNotificationService();
@@ -123,6 +124,8 @@ class AppNotificationService {
   /// Xử lý điều hướng khi người dùng chạm vào thông báo (hỗ trợ FCM link `/crm/customers?open=<id>` hoặc `/crm/my-customers?open=<id>`)
   void _handleNotificationTapPayload(String? payload) {
     if (payload == null || payload.trim().isEmpty) return;
+    // Chưa đồng ý điều khoản ⇒ hoãn, đồng ý xong mới mở (màn mở dưới lớp phủ vẫn chạy, vd đọc GPS).
+    if (PrivacyConsentGate.deferUntilAccepted(() => _handleNotificationTapPayload(payload))) return;
     try {
       String targetPath = payload.trim();
       bool isRejectedCustomer = false;

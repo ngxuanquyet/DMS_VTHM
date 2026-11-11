@@ -13,9 +13,12 @@ import 'core/theme/app_theme.dart';
 import 'core/utils/account_key.dart';
 import 'core/utils/system_clock.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
+import 'features/consent/presentation/privacy_consent_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Trước runApp: phải đứng trước Router trong danh sách nhận nút Back (xem ConsentBackGuard).
+  ConsentBackGuard.install();
 
   // Đồng hồ hàng đợi ngoại tuyến theo đồng hồ MÁY (#24618) — TRƯỚC mọi thứ có thể ghi vào hàng đợi.
   await SystemClock.init();
@@ -102,12 +105,15 @@ class VthmApp extends ConsumerWidget {
       routerConfig: router,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () {
-            FocusManager.instance.primaryFocus?.unfocus();
-          },
-          child: child,
+        // Đồng ý điều khoản (Luật 91/2025) — lớp phủ bọc TRÊN Navigator nên che mọi màn, kể cả màn mở từ thông báo.
+        return PrivacyConsentOverlay(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+            },
+            child: child,
+          ),
         );
       },
     );

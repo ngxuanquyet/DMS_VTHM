@@ -10,6 +10,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../profile/presentation/viewmodels/profile_view_model.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../consent/data/privacy_consent_service.dart';
 import '../../../../core/services/route_restoration_service.dart';
 import '../viewmodels/auth_view_model.dart';
 
@@ -66,8 +67,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
       if (_isAuthenticated) {
         ref.read(profileViewModelProvider.notifier).loadProfile();
 
-        // Kiểm tra xem có phiên làm việc cần khôi phục sau khi người dùng cấp quyền từ Cài đặt không
-        final restoreRoute = await RouteRestorationService.getAndClearPendingRestoreRoute();
+        // Kiểm đồng ý điều khoản trước khi vào app — chưa đồng ý thì lớp phủ che mọi màn (kể cả route khôi phục).
+        await ref.read(privacyConsentGateProvider.notifier).check();
+
+        // Kiểm tra xem có phiên làm việc cần khôi phục sau khi người dùng cấp quyền từ Cài đặt không.
+        // Chưa đồng ý ⇒ KHÔNG khôi phục: màn khôi phục (check-in, chấm công) đọc GPS ngay khi mở, dù lớp phủ che.
+        // Vẫn đọc-và-xoá khi chưa đồng ý: để lại thì lần mở sau nhảy về màn cũ đã hết ngữ cảnh.
+        final consented = ref.read(privacyConsentGateProvider) == ConsentGateStatus.accepted;
+        final pendingRoute = await RouteRestorationService.getAndClearPendingRestoreRoute();
+        final restoreRoute = consented ? pendingRoute : null;
         if (restoreRoute != null && restoreRoute.isNotEmpty && restoreRoute != '/home') {
           if (mounted) {
             _progressController.stop();

@@ -24,6 +24,8 @@ import '../../../route/presentation/viewmodels/open_visit.dart';
 import '../viewmodels/profile_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
 import '../../../../core/widgets/user_avatar.dart';
+import '../../../consent/data/privacy_consent_content.dart';
+import '../../../consent/presentation/privacy_consent_overlay.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -646,12 +648,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _buildMenuItem(
                       icon: Icons.article_outlined,
                       title: strings.termsOfService,
-                      onTap: () {
-                        _showInfoDialog(
-                          strings.termsOfService,
-                          'Điều khoản sử dụng phần mềm VTHM DMS:\n\n- Ứng dụng dành riêng cho CBNV VTHM Group phục vụ công tác quản lý thị trường.\n- Nghiêm cấm chia sẻ thông tin khách hàng và lộ trình ra bên ngoài doanh nghiệp.\n- Vui lòng duy trì GPS và kết nối Internet trong suốt ca làm việc để dữ liệu đồng bộ chính xác.',
-                        );
-                      },
+                      // Cùng văn bản người dùng đã tick đồng ý khi vào app (một nguồn: features/consent/data).
+                      onTap: () => showConsentDocument(context, termsOfUseDocument, strings),
                       isDark: isDark,
                     ),
                   ],

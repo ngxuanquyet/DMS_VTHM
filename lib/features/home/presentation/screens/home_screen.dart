@@ -43,6 +43,7 @@ import '../../../employee_tracking/presentation/services/employee_tracking_servi
 import '../../../../core/services/erp_catalog_service.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
+import '../../../consent/data/privacy_consent_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -57,13 +58,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   final GlobalKey _attendanceActionKey = GlobalKey();
   Timer? _punchReminderTimer;
 
+  /// Chưa đồng ý điều khoản (cổng ≠ accepted) — thu GPS, đồng bộ, hỏi quyền, nhắc chấm công đều đợi.
+  bool _consentPending = true;
+  bool _servicesStarted = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndAutoSync();
-      ref.read(employeeTrackingProvider.notifier).startService();
+      if (!mounted) return;
+      // 🔴 Đồng ý điều khoản + xử lý dữ liệu cá nhân TRƯỚC: thu vị trí, đồng bộ, hỏi quyền chỉ chạy khi cổng mở
+      // (Luật 91/2025). Splash/Login đã kiểm; lối vào nào chưa kiểm thì kiểm ở đây (lớp phủ tự hiện nếu cần).
+      final gate = ref.read(privacyConsentGateProvider.notifier);
+      if (ref.read(privacyConsentGateProvider) == ConsentGateStatus.unknown) gate.check();
+      ref.listenManual(privacyConsentGateProvider, (_, status) => _onConsentStatus(status), fireImmediately: true);
     });
     // Nhắc chấm công: dò mỗi giây tới khi đủ điều kiện hiện (dữ liệu chấm công + dashboard đã tải, Home đang ở trên
     // cùng — không có hộp thoại/màn khác đè) hoặc hết lý do nhắc; dò thay vì nghe state vì hộp thoại khởi động
@@ -83,6 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (_consentPending) return;
       _refreshAttendanceOnResume();
       // Quay lại app: làm mới ngầm danh mục khách ERP nếu lần tải gần nhất đã quá 10 phút (#24327).
       ref.read(erpCatalogServiceProvider).refreshInBackground(
@@ -92,11 +102,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
+  void _onConsentStatus(ConsentGateStatus status) {
+    _consentPending = status != ConsentGateStatus.accepted;
+    if (_consentPending || _servicesStarted || !mounted) return;
+    _servicesStarted = true;
+    _checkAndAutoSync();
+    ref.read(employeeTrackingProvider.notifier).startService();
+  }
+
   void _tryShowPunchReminder() {
     if (!mounted || AttendancePunchReminder.shownThisLaunch) {
       _punchReminderTimer?.cancel();
       return;
     }
+    if (_consentPending) return;
     final att = ref.read(attendanceViewModelProvider);
     final dashboard = ref.read(homeViewModelProvider).dashboard;
     final today = att.config?.currentToday;

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import '../../../consent/data/privacy_consent_service.dart';
 import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/localization/language_provider.dart';
@@ -42,7 +43,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Đang trong lượt đăng nhập (gồm cả lúc kiểm đồng ý điều khoản sau khi đăng nhập xong) — chặn bấm lần hai.
+  bool _submitting = false;
+
   Future<void> _handleLogin() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await _login();
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _login() async {
     final authVM = ref.read(authViewModelProvider.notifier);
     final success = await authVM.login(
       _usernameController.text,
@@ -51,6 +65,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     if (success && mounted) {
       ref.read(profileViewModelProvider.notifier).loadProfile();
+      // Kiểm đồng ý điều khoản của tài khoản vừa đăng nhập trước khi vào app (chưa đồng ý ⇒ lớp phủ che app).
+      // reset trước: bỏ thông báo chạm trong lúc đang đăng nhập (có thể là của tài khoản trước trên máy này).
+      final gate = ref.read(privacyConsentGateProvider.notifier)..reset();
+      await gate.check();
+      if (!mounted) return;
       context.go('/home');
     }
   }
@@ -279,7 +298,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         AppButton(
                           text: strings.loginButton,
                           height: 52,
-                          isLoading: authState.status == AuthStatus.authenticating,
+                          isLoading: authState.status == AuthStatus.authenticating || _submitting,
                           trailingIcon: const Icon(
                             Icons.arrow_forward_rounded,
                             size: 20,

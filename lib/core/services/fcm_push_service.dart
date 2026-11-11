@@ -18,6 +18,7 @@ import 'app_notification_service.dart';
 import '../../features/auth/presentation/viewmodels/auth_view_model.dart';
 import '../../features/customer/presentation/viewmodels/customer_view_model.dart';
 import '../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
+import '../../features/consent/data/privacy_consent_service.dart';
 import '../../firebase_options.dart';
 
 /// Background message handler chạy khi app đã tắt hoặc ở chế độ nền.
@@ -395,6 +396,8 @@ class FcmPushService {
 
   /// Mở màn hình tương ứng khi người dùng chạm vào push ở cả 3 trạng thái
   void openFromPush(RemoteMessage message) {
+    // Chưa đồng ý điều khoản (kể cả lúc khởi động lạnh, cổng chưa kiểm xong) ⇒ hoãn, đồng ý xong mới mở.
+    if (PrivacyConsentGate.deferUntilAccepted(() => openFromPush(message))) return;
     final context = rootNavigatorKey.currentContext;
     if (context == null) {
       debugPrint('[FcmPushService] rootNavigatorKey context null, không thể điều hướng');

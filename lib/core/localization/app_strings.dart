@@ -747,5 +747,37 @@ class AppStrings {
       ? 'Chưa khai vật tư bắt buộc: $names. Không có thì khai số lượng 0.'
       : 'Required materials not declared: $names. Declare 0 if none.';
   String get createMaterialsUndo => isVietnamese ? 'Bỏ khai' : 'Undo';
-}
 
+  // Đồng ý điều khoản + xử lý dữ liệu cá nhân (11/11/2026, Luật 91/2025) — toàn văn ở features/consent/data
+  String get consentTitle => isVietnamese ? 'Điều khoản & Quyền riêng tư' : 'Terms & Privacy';
+  String get consentSummary => isVietnamese
+      ? 'Để dùng VTHM DMS, Công ty cần bạn đồng ý cho xử lý dữ liệu cá nhân: vị trí GPS khi check-in/check-out điểm '
+          'bán, ảnh chụp chấm công, thông tin nhân sự và nhật ký sử dụng hệ thống — chỉ phục vụ chấm công, đối soát '
+          'viếng thăm, chi trả lương và chế độ.'
+      : 'To use VTHM DMS, the Company needs your consent to process your personal data: GPS location at outlet '
+          'check-in/check-out, attendance photos, HR information and system usage logs — used only for attendance, '
+          'visit reconciliation, payroll and benefits.';
+  String get consentReadHint => isVietnamese
+      ? 'Chạm vào tên văn bản để đọc toàn văn. Đánh dấu cả hai ô để tiếp tục.'
+      : 'Tap a document name to read it in full. Tick both boxes to continue.';
+  String get consentAgreePrefix => isVietnamese ? 'Tôi đã đọc và đồng ý với ' : 'I have read and agree to the ';
+  String get consentTermsLink => isVietnamese ? 'Điều khoản sử dụng' : 'Terms of Use';
+  String get consentPrivacyLink =>
+      isVietnamese ? 'Văn bản đồng ý xử lý dữ liệu cá nhân' : 'Personal Data Processing Consent';
+  String get consentAccept => isVietnamese ? 'Đồng ý & Tiếp tục' : 'Agree & Continue';
+  String get consentDecline => isVietnamese ? 'Từ chối' : 'Decline';
+  String consentVersion(String v) => isVietnamese ? 'Phiên bản điều khoản $v' : 'Terms version $v';
+  String get consentLegalNote => isVietnamese
+      ? 'Văn bản pháp lý chỉ có bản tiếng Việt.'
+      : 'This legal document is available in Vietnamese only.';
+  String get consentDeclineTitle => isVietnamese ? 'Không thể tiếp tục' : 'Cannot continue';
+  String get consentDeclineMessage => isVietnamese
+      ? 'Ứng dụng cần sự đồng ý của bạn để ghi nhận viếng thăm, chấm công và đồng bộ dữ liệu. Nếu không đồng ý, bạn '
+          'không thể sử dụng ứng dụng.'
+      : 'The app needs your consent to record visits, attendance and sync data. Without it, you cannot use the app.';
+  String get consentReview => isVietnamese ? 'Xem lại' : 'Review';
+  String get consentExitApp => isVietnamese ? 'Thoát ứng dụng' : 'Exit app';
+  String get consentLogoutFailed => isVietnamese
+      ? 'Chưa đăng xuất được, vui lòng thử lại.'
+      : 'Could not log out, please try again.';
+}
