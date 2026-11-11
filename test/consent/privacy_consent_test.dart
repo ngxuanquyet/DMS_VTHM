@@ -31,7 +31,10 @@ class FakeApiClient implements ApiClient {
   Future<dynamic> post(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
     if (offline) throw Exception('offline');
     posts.add(Map<String, dynamic>.from(data as Map));
-    return {'success': true, 'data': {'accepted': true}};
+    return {
+      'success': true,
+      'data': {'accepted': true},
+    };
   }
 
   @override
@@ -70,7 +73,10 @@ void main() {
 
   test('máy chủ báo đã đồng ý ⇒ không hỏi, lần sau không gọi lại máy chủ', () async {
     await _login('7');
-    api.getResponse = {'success': true, 'data': {'accepted': true, 'accepted_at': '2026-11-11 09:00:00+07'}};
+    api.getResponse = {
+      'success': true,
+      'data': {'accepted': true, 'accepted_at': '2026-11-11 09:00:00+07'},
+    };
     expect(await service.needsConsent(), isFalse);
 
     api.offline = true;
@@ -79,7 +85,10 @@ void main() {
 
   test('chưa đồng ý ⇒ hỏi; đồng ý thì gửi máy chủ đúng phiên bản và không hỏi lại', () async {
     await _login('7');
-    api.getResponse = {'success': true, 'data': {'accepted': false}};
+    api.getResponse = {
+      'success': true,
+      'data': {'accepted': false},
+    };
     expect(await service.needsConsent(), isTrue);
 
     await service.accept();
@@ -115,7 +124,10 @@ void main() {
     test('check: chưa đồng ý ⇒ required; đã đồng ý ⇒ accepted; accept ⇒ accepted + gửi máy chủ', () async {
       await _login('7');
       final gate = PrivacyConsentGate(service);
-      api.getResponse = {'success': true, 'data': {'accepted': false}};
+      api.getResponse = {
+        'success': true,
+        'data': {'accepted': false},
+      };
       await gate.check();
       expect(gate.state, ConsentGateStatus.required);
 
@@ -134,7 +146,10 @@ void main() {
   test('kết quả check() cũ không đè trạng thái sau reset', () async {
     await _login('7');
     final gate = PrivacyConsentGate(service);
-    api.getResponse = {'success': true, 'data': {'accepted': true}};
+    api.getResponse = {
+      'success': true,
+      'data': {'accepted': true},
+    };
     final pending = gate.check();
     gate.reset();
     await pending;
@@ -204,25 +219,35 @@ void main() {
 
     Future<void> pump(WidgetTester tester) async {
       homeTaps = 0;
-      router = GoRouter(initialLocation: '/home', routes: [
-        GoRoute(
-          path: '/home',
-          builder: (_, __) => Scaffold(
-            body: Center(child: ElevatedButton(onPressed: () => homeTaps++, child: const Text('home-action'))),
+      router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(
+            path: '/home',
+            builder: (_, __) => Scaffold(
+              body: Center(
+                child: ElevatedButton(onPressed: () => homeTaps++, child: const Text('home-action')),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/attendance',
+            builder: (_, __) => const Scaffold(body: Text('attendance')),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            privacyConsentGateProvider.overrideWith((ref) => gate),
+            appRouterProvider.overrideWithValue(router),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) => PrivacyConsentOverlay(child: child!),
           ),
         ),
-        GoRoute(path: '/attendance', builder: (_, __) => const Scaffold(body: Text('attendance'))),
-      ]);
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          privacyConsentGateProvider.overrideWith((ref) => gate),
-          appRouterProvider.overrideWithValue(router),
-        ],
-        child: MaterialApp.router(
-          routerConfig: router,
-          builder: (context, child) => PrivacyConsentOverlay(child: child!),
-        ),
-      ));
+      );
       await tester.pumpAndSettle();
     }
 
@@ -247,13 +272,28 @@ void main() {
       expect(find.text(vi.consentTitle), findsOneWidget);
     });
 
-    testWidgets('nút Đồng ý chỉ sáng khi tick đủ hai ô; đồng ý thì lớp phủ biến mất', (tester) async {
+    testWidgets('toàn văn hiện thẳng trong popup; mũi tên đưa xuống cuối rồi ẩn; một ô tick mở nút Đồng ý', (
+      tester,
+    ) async {
       await pump(tester);
+      // Toàn văn cả hai văn bản nằm ngay trong vùng cuộn (không phải link mở lớp khác).
+      expect(find.text(termsOfUseDocument.title), findsOneWidget);
+      expect(find.text(personalDataConsentDocument.title, skipOffstage: false), findsOneWidget);
+      expect(find.text(personalDataConsentDocument.sections.first.heading, skipOffstage: false), findsOneWidget);
+
+      // Ô tick + nút ở CUỐI vùng cuộn: lúc mở chưa chạm được (ngoài khung nhìn), nút mũi tên đang hiện.
+      expect(find.byType(Checkbox).hitTestable(), findsNothing);
+      final arrow = find.byIcon(Icons.keyboard_double_arrow_down_rounded);
+      expect(arrow, findsOneWidget);
+
+      await tester.tap(arrow);
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox).hitTestable(), findsOneWidget);
+      expect(find.text(vi.consentDecline).hitTestable(), findsOneWidget, reason: 'mũi tên phải đưa tới TẬN cuối');
+      expect(arrow, findsNothing, reason: 'đã ở cuối thì ẩn mũi tên');
+
       expect(acceptEnabled(tester), isFalse);
-      await tester.tap(find.byType(Checkbox).first);
-      await tester.pump();
-      expect(acceptEnabled(tester), isFalse);
-      await tester.tap(find.byType(Checkbox).last);
+      await tester.tap(find.byType(Checkbox));
       await tester.pump();
       expect(acceptEnabled(tester), isTrue);
 
@@ -265,26 +305,23 @@ void main() {
       expect(homeTaps, 1);
     });
 
-    testWidgets('Từ chối ⇒ xác nhận; Xem lại quay về; đọc toàn văn ngay trong lớp phủ', (tester) async {
+    testWidgets('Từ chối ⇒ xác nhận; Xem lại quay về; Back hệ thống không pop màn dưới', (tester) async {
       await pump(tester);
+      await tester.tap(find.byIcon(Icons.keyboard_double_arrow_down_rounded));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(vi.consentDecline));
       await tester.pumpAndSettle();
       expect(find.text(vi.consentDeclineMessage), findsOneWidget);
       await tester.tap(find.text(vi.consentReview));
       await tester.pumpAndSettle();
       expect(find.text(vi.consentTitle), findsOneWidget);
+      // Quay lại vùng cuộn dựng mới ở ĐẦU ⇒ mũi tên phải hiện lại (không kẹt trạng thái "đã ở cuối" cũ).
+      expect(find.byIcon(Icons.keyboard_double_arrow_down_rounded), findsOneWidget);
 
-      // Back hệ thống khi lớp phủ hiện: không pop màn dưới, mở xác nhận từ chối.
       expect(await ConsentBackGuard.instance.didPopRoute(), isTrue);
       await tester.pumpAndSettle();
       expect(find.text(vi.consentDeclineMessage), findsOneWidget);
       expect(await ConsentBackGuard.instance.didPopRoute(), isTrue);
-      await tester.pumpAndSettle();
-
-      await tester.tapOnText(find.textRange.ofSubstring(vi.consentPrivacyLink));
-      await tester.pumpAndSettle();
-      expect(find.text(personalDataConsentDocument.title), findsOneWidget);
-      await tester.tap(find.text(vi.close));
       await tester.pumpAndSettle();
       expect(find.text(vi.consentTitle), findsOneWidget);
     });

@@ -750,20 +750,10 @@ class AppStrings {
 
   // Đồng ý điều khoản + xử lý dữ liệu cá nhân (11/11/2026, Luật 91/2025) — toàn văn ở features/consent/data
   String get consentTitle => isVietnamese ? 'Điều khoản & Quyền riêng tư' : 'Terms & Privacy';
-  String get consentSummary => isVietnamese
-      ? 'Để dùng VTHM DMS, Công ty cần bạn đồng ý cho xử lý dữ liệu cá nhân: vị trí GPS khi check-in/check-out điểm '
-          'bán, ảnh chụp chấm công, thông tin nhân sự và nhật ký sử dụng hệ thống — chỉ phục vụ chấm công, đối soát '
-          'viếng thăm, chi trả lương và chế độ.'
-      : 'To use VTHM DMS, the Company needs your consent to process your personal data: GPS location at outlet '
-          'check-in/check-out, attendance photos, HR information and system usage logs — used only for attendance, '
-          'visit reconciliation, payroll and benefits.';
-  String get consentReadHint => isVietnamese
-      ? 'Chạm vào tên văn bản để đọc toàn văn. Đánh dấu cả hai ô để tiếp tục.'
-      : 'Tap a document name to read it in full. Tick both boxes to continue.';
-  String get consentAgreePrefix => isVietnamese ? 'Tôi đã đọc và đồng ý với ' : 'I have read and agree to the ';
-  String get consentTermsLink => isVietnamese ? 'Điều khoản sử dụng' : 'Terms of Use';
-  String get consentPrivacyLink =>
-      isVietnamese ? 'Văn bản đồng ý xử lý dữ liệu cá nhân' : 'Personal Data Processing Consent';
+  String get consentAgreeAll => isVietnamese
+      ? 'Tôi đã đọc, hiểu và đồng ý với toàn bộ các điều khoản trên'
+      : 'I have read, understood and agree to all of the terms above';
+  String get consentScrollToEnd => isVietnamese ? 'Cuộn xuống cuối' : 'Scroll to the end';
   String get consentAccept => isVietnamese ? 'Đồng ý & Tiếp tục' : 'Agree & Continue';
   String get consentDecline => isVietnamese ? 'Từ chối' : 'Decline';
   String consentVersion(String v) => isVietnamese ? 'Phiên bản điều khoản $v' : 'Terms version $v';

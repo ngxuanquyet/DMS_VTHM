@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,8 +20,10 @@ import '../data/privacy_consent_service.dart';
 /// phải route nên không bị hộp thoại khác pop nhầm. Hiện khi cổng = [ConsentGateStatus.required] và không ở màn
 /// Splash/Đăng nhập. Nút Back khi đang hiện do [ConsentBackGuard] nhận (cài ở `main()` trước `runApp`).
 ///
-/// Dạng bottom sheet trượt lên: hai ô tick riêng (không tick sẵn), MỘT nút "Đồng ý & Tiếp tục" chỉ sáng khi đủ hai ô,
-/// nút chữ "Từ chối" ⇒ xác nhận: Xem lại hoặc Thoát (Android đóng app; iOS không cho tự thoát ⇒ đăng xuất).
+/// Dạng bottom sheet trượt lên (chủ hệ thống chốt lại 11/11/2026): tiêu đề ghim trên; vùng cuộn liệt kê TOÀN VĂN Điều
+/// khoản sử dụng rồi Văn bản xử lý dữ liệu cá nhân; Ở CUỐI vùng cuộn là MỘT ô tick gộp (không tick sẵn) + nút "Đồng ý &
+/// Tiếp tục" (sáng khi đã tick) + chữ "Từ chối" ⇒ xác nhận: Xem lại hoặc Thoát (Android đóng app; iOS ⇒ đăng xuất). Nút
+/// tròn mũi tên xuống nổi góc dưới: cuộn thẳng tới cuối, tự ẩn khi đã ở cuối.
 class PrivacyConsentOverlay extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -32,16 +33,22 @@ class PrivacyConsentOverlay extends ConsumerStatefulWidget {
   ConsumerState<PrivacyConsentOverlay> createState() => _PrivacyConsentOverlayState();
 }
 
-enum _Panel { main, terms, privacy, decline }
+enum _Panel { main, decline }
 
 class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
-  bool _termsChecked = false;
-  bool _privacyChecked = false;
+  bool _agreed = false;
   bool _busy = false;
   bool _logoutFailed = false;
   _Panel _panel = _Panel.main;
-  late final TapGestureRecognizer _termsTap = TapGestureRecognizer()..onTap = () => _show(_Panel.terms);
-  late final TapGestureRecognizer _privacyTap = TapGestureRecognizer()..onTap = () => _show(_Panel.privacy);
+  final ScrollController _scroll = ScrollController();
+
+  /// Mốc 0px đặt ngay đầu khối ô tick/nút (cuối vùng cuộn) và khung nhìn của vùng cuộn — đo khối đã ló vào khung chưa.
+  final GlobalKey _blockKey = GlobalKey();
+  final GlobalKey _viewportKey = GlobalKey();
+  bool _syncScheduled = false;
+
+  /// Vùng cuộn đã ở (gần) cuối — ẩn nút mũi tên.
+  bool _atEnd = false;
 
   late final GoRouter _router = ref.read(appRouterProvider);
   String _path = '';
@@ -51,6 +58,7 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
     super.initState();
     _path = _currentPath();
     _router.routerDelegate.addListener(_onRouteChanged);
+    _scroll.addListener(_scheduleSync);
   }
 
   String _currentPath() {
@@ -75,21 +83,25 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
   void dispose() {
     _router.routerDelegate.removeListener(_onRouteChanged);
     ConsentBackGuard.instance.handler = null;
-    _termsTap.dispose();
-    _privacyTap.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  /// Back khi lớp phủ đang hiện: văn bản/xác nhận ⇒ về màn chính; màn chính ⇒ mở xác nhận từ chối. Luôn nuốt phím.
+  /// Back khi lớp phủ đang hiện: xác nhận từ chối ⇒ về màn chính; màn chính ⇒ mở xác nhận từ chối. Luôn nuốt phím.
   bool _onBack() {
     if (!_busy) _show(_panel == _Panel.main ? _Panel.decline : _Panel.main);
     return true;
   }
 
-  void _show(_Panel p) => setState(() {
-        _panel = p;
-        _logoutFailed = false;
-      });
+  void _show(_Panel p) {
+    setState(() {
+      _panel = p;
+      _logoutFailed = false;
+      // Vùng cuộn dựng MỚI ở đầu ⇒ khối ô tick chắc chắn chưa thấy; đặt ngay để khung hình đầu không thiếu mũi tên.
+      if (p == _Panel.main) _atEnd = false;
+    });
+    _scheduleSync();
+  }
 
   Future<void> _accept() async {
     setState(() => _busy = true);
@@ -121,8 +133,10 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
     ref.listen(privacyConsentGateProvider, (prev, next) {
       if (next == ConsentGateStatus.required && prev != ConsentGateStatus.required) {
         FocusManager.instance.primaryFocus?.unfocus();
-        _termsChecked = _privacyChecked = false;
+        _agreed = false;
+        _atEnd = false;
         _panel = _Panel.main;
+        _scheduleSync();
       }
     });
     final gate = ref.watch(privacyConsentGateProvider);
@@ -145,23 +159,10 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final media = MediaQuery.of(context);
 
-    Widget panel;
-    switch (_panel) {
-      case _Panel.terms:
-      case _Panel.privacy:
-        panel = SizedBox(
-          height: media.size.height * 0.9,
-          child: ConsentDocumentView(
-            doc: _panel == _Panel.terms ? termsOfUseDocument : personalDataConsentDocument,
-            strings: s,
-            onClose: () => _show(_Panel.main),
-          ),
-        );
-      case _Panel.decline:
-        panel = _declinePanel(s, isDark);
-      case _Panel.main:
-        panel = _mainPanel(s, isDark, media);
-    }
+    final panel = _panel == _Panel.decline
+        ? _declinePanel(s, isDark)
+        // Trừ tai thỏ/thanh trạng thái + đáy an toàn (SafeArea bên dưới cộng thêm đáy) — máy ngang/thấp không tràn lên trên.
+        : SizedBox(height: (media.size.height - media.padding.vertical) * 0.92, child: _mainPanel(s, isDark));
 
     return Material(
       color: Colors.black.withValues(alpha: 0.45),
@@ -185,76 +186,151 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
     );
   }
 
-  Widget _mainPanel(AppStrings s, bool isDark, MediaQueryData media) {
+  /// Đo lại ở khung hình KẾ (sau layout — vị trí con trong vùng cuộn chỉ đúng sau khi dựng xong); gộp nhiều lần gọi.
+  void _scheduleSync() {
+    if (_syncScheduled) return;
+    _syncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncScheduled = false;
+      _syncAtEnd();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// `_atEnd` = khối ô tick/nút ĐÃ LÓ vào khung nhìn (đo vị trí thật, không theo ngưỡng px) ⇒ ẩn mũi tên. Mũi tên chỉ hiện khi
+  /// khối còn nằm HẲN dưới khung nên không bao giờ đè lên ô tick/nút, bất kể cỡ chữ; nội dung ngắn hơn khung ⇒ khối thấy
+  /// ngay ⇒ không có mũi tên vô dụng.
+  void _syncAtEnd() {
+    if (!mounted) return;
+    final marker = _blockKey.currentContext?.findRenderObject();
+    final view = _viewportKey.currentContext?.findRenderObject();
+    if (marker is! RenderBox || view is! RenderBox || !marker.attached || !view.attached) return;
+    final blockTop = marker.localToGlobal(Offset.zero).dy;
+    final viewBottom = view.localToGlobal(Offset(0, view.size.height)).dy;
+    final atEnd = blockTop < viewBottom;
+    if (atEnd != _atEnd) setState(() => _atEnd = atEnd);
+  }
+
+  void _scrollToEnd() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _mainPanel(AppStrings s, bool isDark) {
     final onSurface = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
     final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline;
-    final canAccept = _termsChecked && _privacyChecked && !_busy;
+    final divider = isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: media.size.height * 0.9),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.verified_user_outlined, color: AppColors.primary, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(s.consentTitle, style: AppTypography.titleLarge(color: onSurface))),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(s.consentSummary, style: AppTypography.bodyMedium(color: onSurface)),
-            const SizedBox(height: 8),
-            Text(s.consentReadHint, style: AppTypography.bodySmall(color: muted)),
-            const SizedBox(height: 12),
-            _checkRow(
-              checked: _termsChecked,
-              onChanged: (v) => setState(() => _termsChecked = v),
-              prefix: s.consentAgreePrefix,
-              link: s.consentTermsLink,
-              linkTap: _termsTap,
-              textColor: onSurface,
-            ),
-            _checkRow(
-              checked: _privacyChecked,
-              onChanged: (v) => setState(() => _privacyChecked = v),
-              prefix: s.consentAgreePrefix,
-              link: s.consentPrivacyLink,
-              linkTap: _privacyTap,
-              textColor: onSurface,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              s.consentVersion(privacyConsentVersion),
-              textAlign: TextAlign.center,
-              style: AppTypography.labelSmall(color: muted),
-            ),
-            const SizedBox(height: 16),
-            AppButton(
-              text: s.consentAccept,
-              width: double.infinity,
-              height: 52,
-              isLoading: _busy,
-              onPressed: canAccept ? _accept : null,
-            ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: _busy ? null : () => _show(_Panel.decline),
-              child: Text(s.consentDecline, style: AppTypography.labelLarge(color: muted)),
-            ),
-          ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+                child: const Icon(Icons.verified_user_outlined, color: AppColors.primary, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(s.consentTitle, style: AppTypography.titleLarge(color: onSurface)),
+              ),
+            ],
+          ),
         ),
-      ),
+        Divider(height: 1, color: divider),
+        Expanded(
+          child: Stack(
+            key: _viewportKey,
+            children: [
+              // Cuộn đã do `_scroll.addListener`; ở đây bắt đổi KÍCH THƯỚC (xoay máy, cỡ chữ, đổi ngôn ngữ) không kèm cuộn.
+              NotificationListener<ScrollMetricsNotification>(
+                onNotification: (_) {
+                  _scheduleSync();
+                  return false;
+                },
+                // KHÔNG ListView: dựng lười ⇒ `maxScrollExtent` chỉ là ước lượng, nút mũi tên cuộn tới đó là DỪNG TRƯỚC ô tick.
+                // Văn bản ~40 đoạn — dựng hết một lần cho chiều dài chính xác.
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ...consentDocumentChildren(termsOfUseDocument, s, isDark),
+                      const SizedBox(height: 24),
+                      ...consentDocumentChildren(personalDataConsentDocument, s, isDark),
+                      const SizedBox(height: 20),
+                      Divider(height: 1, color: divider),
+                      const SizedBox(height: 8),
+                      // Mốc đo NGAY TRƯỚC hàng ô tick: mũi tên chỉ ẩn khi ô tick bắt đầu ló vào khung (thấy đường kẻ chưa đủ).
+                      SizedBox(key: _blockKey, height: 0),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: _busy ? null : () => setState(() => _agreed = !_agreed),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: _agreed,
+                              activeColor: AppColors.primary,
+                              onChanged: _busy ? null : (v) => setState(() => _agreed = v ?? false),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Text(s.consentAgreeAll, style: AppTypography.bodyMedium(color: onSurface)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        s.consentVersion(privacyConsentVersion),
+                        textAlign: TextAlign.center,
+                        style: AppTypography.labelSmall(color: muted),
+                      ),
+                      const SizedBox(height: 12),
+                      AppButton(
+                        text: s.consentAccept,
+                        width: double.infinity,
+                        height: 52,
+                        isLoading: _busy,
+                        onPressed: _agreed && !_busy ? _accept : null,
+                      ),
+                      const SizedBox(height: 4),
+                      TextButton(
+                        onPressed: _busy ? null : () => _show(_Panel.decline),
+                        child: Text(s.consentDecline, style: AppTypography.labelLarge(color: muted)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (!_atEnd)
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  // KHÔNG `tooltip`: lớp phủ nằm TRÊN Navigator nên không có Overlay ⇒ Tooltip nổ "No Overlay widget found".
+                  child: FloatingActionButton.small(
+                    heroTag: null,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    onPressed: _scrollToEnd,
+                    // Nhãn đọc màn hình gắn vào Icon — FAB tự tạo node ngữ nghĩa riêng, bọc Semantics ngoài là gắn nhầm node.
+                    child: Icon(Icons.keyboard_double_arrow_down_rounded, semanticLabel: s.consentScrollToEnd),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -275,67 +351,13 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
             Text(s.consentLogoutFailed, style: AppTypography.bodySmall(color: AppColors.error)),
           ],
           const SizedBox(height: 20),
-          AppButton(
-            text: s.consentReview,
-            width: double.infinity,
-            onPressed: _busy ? null : () => _show(_Panel.main),
-          ),
+          AppButton(text: s.consentReview, width: double.infinity, onPressed: _busy ? null : () => _show(_Panel.main)),
           const SizedBox(height: 4),
           TextButton(
             onPressed: _busy ? null : _exit,
             child: Text(s.consentExitApp, style: AppTypography.labelLarge(color: AppColors.error)),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _checkRow({
-    required bool checked,
-    required ValueChanged<bool> onChanged,
-    required String prefix,
-    required String link,
-    required TapGestureRecognizer linkTap,
-    required Color textColor,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => onChanged(!checked),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Checkbox(
-              value: checked,
-              activeColor: AppColors.primary,
-              onChanged: (v) => onChanged(v ?? false),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text.rich(
-                  TextSpan(
-                    style: AppTypography.bodyMedium(color: textColor),
-                    children: [
-                      TextSpan(text: prefix),
-                      TextSpan(
-                        text: link,
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                          decorationColor: AppColors.primary,
-                        ),
-                        recognizer: linkTap,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -389,43 +411,13 @@ class ConsentDocumentView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final onSurface = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
-    final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline;
 
     return Column(
       children: [
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-            children: [
-              Text(doc.title, textAlign: TextAlign.center, style: AppTypography.titleLarge(color: onSurface)),
-              if (doc.subtitle != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(doc.subtitle!, textAlign: TextAlign.center, style: AppTypography.bodySmall(color: muted)),
-                ),
-              if (!strings.isVietnamese)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(strings.consentLegalNote,
-                      textAlign: TextAlign.center, style: AppTypography.labelSmall(color: muted)),
-                ),
-              const SizedBox(height: 12),
-              for (final p in doc.preamble)
-                Text(p, style: AppTypography.bodySmall(color: muted).copyWith(fontStyle: FontStyle.italic)),
-              for (final section in doc.sections) ...[
-                if (section.heading.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16, bottom: 6),
-                    child: Text(section.heading, style: AppTypography.titleMedium(color: onSurface)),
-                  ),
-                for (final p in section.paragraphs)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(p, style: AppTypography.bodyMedium(color: onSurface).copyWith(height: 1.45)),
-                  ),
-              ],
-            ],
+            children: consentDocumentChildren(doc, strings, isDark),
           ),
         ),
         Padding(
@@ -440,4 +432,54 @@ class ConsentDocumentView extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Toàn văn một văn bản (tiêu đề, căn cứ, các điều) — dùng chung cho lớp phủ đồng ý và màn Cá nhân.
+List<Widget> consentDocumentChildren(ConsentDocument doc, AppStrings strings, bool isDark) {
+  final onSurface = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
+  final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline;
+
+  return [
+    Text(
+      doc.title,
+      textAlign: TextAlign.center,
+      style: AppTypography.titleLarge(color: onSurface),
+    ),
+    if (doc.subtitle != null)
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          doc.subtitle!,
+          textAlign: TextAlign.center,
+          style: AppTypography.bodySmall(color: muted),
+        ),
+      ),
+    if (!strings.isVietnamese)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          strings.consentLegalNote,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelSmall(color: muted),
+        ),
+      ),
+    const SizedBox(height: 12),
+    for (final p in doc.preamble)
+      Text(
+        p,
+        style: AppTypography.bodySmall(color: muted).copyWith(fontStyle: FontStyle.italic),
+      ),
+    for (final section in doc.sections) ...[
+      if (section.heading.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 6),
+          child: Text(section.heading, style: AppTypography.titleMedium(color: onSurface)),
+        ),
+      for (final p in section.paragraphs)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(p, style: AppTypography.bodyMedium(color: onSurface).copyWith(height: 1.45)),
+        ),
+    ],
+  ];
 }
