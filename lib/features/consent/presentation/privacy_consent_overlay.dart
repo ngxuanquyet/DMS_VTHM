@@ -440,28 +440,21 @@ List<Widget> consentDocumentChildren(ConsentDocument doc, AppStrings strings, bo
   final muted = isDark ? AppColors.darkOnSurfaceVariant : AppColors.outline;
 
   return [
+    // Tiêu đề văn bản: căn trái, đậm, gạch chân (chủ hệ thống chốt 11/11/2026).
     Text(
       doc.title,
-      textAlign: TextAlign.center,
-      style: AppTypography.titleLarge(color: onSurface),
+      style: AppTypography.titleLarge(color: onSurface)
+          .copyWith(fontWeight: FontWeight.w700, decoration: TextDecoration.underline, decorationColor: onSurface),
     ),
     if (doc.subtitle != null)
       Padding(
         padding: const EdgeInsets.only(top: 4),
-        child: Text(
-          doc.subtitle!,
-          textAlign: TextAlign.center,
-          style: AppTypography.bodySmall(color: muted),
-        ),
+        child: Text(doc.subtitle!, style: AppTypography.bodySmall(color: muted)),
       ),
     if (!strings.isVietnamese)
       Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: Text(
-          strings.consentLegalNote,
-          textAlign: TextAlign.center,
-          style: AppTypography.labelSmall(color: muted),
-        ),
+        child: Text(strings.consentLegalNote, style: AppTypography.labelSmall(color: muted)),
       ),
     const SizedBox(height: 12),
     for (final p in doc.preamble)
