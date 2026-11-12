@@ -1257,15 +1257,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     final takenCount = state.photos.length;
     final photosMissing = math.max(0, targetMinPhotos - takenCount);
 
-    // §3b DUYET-DIEM-BAN-MOI-2026-10-15 (chốt 16/10/2026):
-    // Lượt đầu ở điểm bán NV mở trên app: KHÔNG chịu thời gian tối thiểu (seconds_remaining = 0)
-    final isNewPendingStore = state.customer is CustomerEntity &&
-        (state.customer as CustomerEntity).isPendingApproval;
-
+    // §3b DUYET-DIEM-BAN-MOI-2026-10-15: miễn thời gian tối thiểu CHỈ ở lượt ĐẦU tại điểm bán NV mở trên app. Không tự
+    // suy từ "điểm bán chờ duyệt" ở đây: lượt ghé thứ hai của điểm bán vẫn chờ duyệt KHÔNG được miễn — app cho qua thì
+    // gói check-out ngoại tuyến bị server trả 422 rồi thành "lỗi đồng bộ". Lượt trực tuyến đọc `seconds_remaining` của
+    // server; lượt ngoại tuyến đã tính miễn hay không lúc dựng ([_isFirstVisitAtPendingStore]).
+    // Giữ số giây CẢ khi đóng cửa (đóng cửa được miễn qua isClosed ở dưới, không qua con số): ghi 0 lúc đóng cửa thì đổi
+    // lại "mở cửa" lúc ngoại tuyến đọc lại số 0 đó ⇒ mất hẳn thời gian tối thiểu, check-out bị server 422.
     var currentReq = state.requirements;
-    final currentSec = (isClosed || isNewPendingStore)
-        ? 0
-        : (currentReq?.secondsRemaining ?? rules.visit.minDurationMinutes * 60);
+    final currentSec = currentReq?.secondsRemaining ?? rules.visit.minDurationMinutes * 60;
     // Lượt tạo NGOẠI TUYẾN (id âm) chưa có danh sách của server ⇒ tự dựng từ biểu mẫu khảo sát đã lưu trong máy.
     final missingForms = isClosed
         ? <MissingFormEntity>[]
@@ -1277,14 +1276,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         ? (currentReq?.missingMaterials ?? <MissingMaterialEntity>[])
         : <MissingMaterialEntity>[];
 
-    final isTimeOk = isClosed || isNewPendingStore || currentSec <= 0;
+    final isTimeOk = isClosed || currentSec <= 0;
     final isFormsOk = isClosed || missingForms.isEmpty;
     final isPhotosOk = photosMissing <= 0;
     final satisfied = isTimeOk && isFormsOk && isPhotosOk && (isClosed || missingMaterials.isEmpty);
 
     List<String> blockers = [];
     if (!isClosed) {
-      if (!isNewPendingStore && currentSec > 0) {
+      if (currentSec > 0) {
         final minutes = (currentSec / 60).ceil();
         blockers.add('Bạn cần ở lại thêm $minutes phút nữa mới check-out được.');
       }
@@ -1307,7 +1306,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     final updated = VisitRequirementsEntity(
       satisfied: satisfied,
-      secondsRemaining: (isClosed || isNewPendingStore) ? 0 : currentSec,
+      secondsRemaining: currentSec,
       photosMissing: photosMissing,
       missingForms: missingForms,
       missingMaterials: missingMaterials,
@@ -1905,6 +1904,23 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     return !neverSent.any(str.contains);
   }
 
+  /// Lượt NGOẠI TUYẾN có được miễn thời gian tối thiểu không — luật server (`VisitCheckoutGuard::secondsRemaining`, #23461):
+  /// lượt ĐẦU (không tính lượt "Tạo điểm bán") của BẤT KỲ AI ở điểm bán NV mở trên app. Máy chỉ biết lượt trong bộ nhớ
+  /// của chính nó, nên chỉ miễn khi chắc chắn: điểm bán còn chưa lên server (tạo ngoại tuyến, id ≤ 0 — chưa ai khác ghé
+  /// được) và máy chưa có lượt nào khác ở đó. Điểm bán đã có id server ⇒ không miễn: chặt hơn server thì chỉ phải chờ
+  /// thêm, lỏng hơn thì gói check-out bị server 422 thành "lỗi đồng bộ" và lượt treo mở.
+  Future<bool> _isFirstVisitAtPendingStore(int customerId, String? customerClientUuid) async {
+    final customer = state.customer;
+    if (customer is! CustomerEntity || !customer.isPendingApproval || customerId > 0) return false;
+    try {
+      final visits = await visitRepository.getAllLocalVisits();
+      return !visits.any((v) =>
+          v.cancelledAt == null && !v.isNewOutlet && v.isAtCustomer(customerId, customerClientUuid));
+    } catch (_) {
+      return false;
+    }
+  }
+
   VisitEntity _createOfflineVisit({
     required int customerId,
     double? lat,
@@ -1914,12 +1930,14 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     bool? isMockLocation,
     String? note,
     MobileRules? mobileRules,
+    bool exemptMinDuration = false,
   }) {
     final now = DateTime.now();
     final tempId = -now.millisecondsSinceEpoch;
     final rules = mobileRules ?? activeMobileRules;
     final isClosed = state.visitResult == 'closed';
-    final minDurationMinutes = isClosed ? 0 : rules.visit.minDurationMinutes;
+    // Không về 0 khi đóng cửa — cùng lý do [_recomputeOfflineRequirements]: đổi lại "mở cửa" sau đó phải còn thời gian tối thiểu.
+    final minDurationMinutes = rules.visit.minDurationMinutes;
     final minPhotos =
         isClosed ? rules.visit.closedMinPhotos : rules.visit.minPhotos;
     final photosMissing = math.max(0, minPhotos - state.photos.length);
@@ -1938,9 +1956,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     // §5b API-DUYET-DIEM-BAN-THAY-DOI-CHO-MOBILE-2026-10-15:
     // Lượt đầu ở điểm bán vừa mở: KHÔNG chịu thời gian tối thiểu (seconds_remaining = 0)
-    final isNewPendingStore = state.customer is CustomerEntity &&
-        (state.customer as CustomerEntity).isPendingApproval;
-    final effectiveMinDuration = isNewPendingStore ? 0 : minDurationMinutes;
+    final effectiveMinDuration = exemptMinDuration ? 0 : minDurationMinutes;
 
     final missingForms = isClosed ? <MissingFormEntity>[] : _offlineMissingForms();
 
@@ -1987,7 +2003,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       customerApprovalStatus: customerApprovalStatus,
       customerApprovalNote: customerApprovalNote,
       requirements: VisitRequirementsEntity(
-        satisfied: photosMissing <= 0 && effectiveMinDuration <= 0 && missingForms.isEmpty,
+        satisfied: photosMissing <= 0 && (isClosed || effectiveMinDuration <= 0) && missingForms.isEmpty,
         secondsRemaining: effectiveMinDuration * 60,
         photosMissing: photosMissing,
         missingForms: missingForms,
@@ -2196,6 +2212,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     } catch (e) {
       if (_isNetworkError(e)) {
         // TẠO PHIÊN VIẾNG THĂM NGOẠI TUYẾN
+        final exemptMinDuration = await _isFirstVisitAtPendingStore(customerId, customerClientUuid);
         var offlineVisit = _createOfflineVisit(
           customerId: customerId,
           lat: lat,
@@ -2205,6 +2222,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           isMockLocation: isMockLocation,
           note: note,
           mobileRules: mobileRules,
+          exemptMinDuration: exemptMinDuration,
         );
         if (customerId <= 0 && (customerClientUuid?.isNotEmpty ?? false)) {
           offlineVisit = offlineVisit.copyWith(customerClientUuid: customerClientUuid);

@@ -17,6 +17,7 @@ import 'package:vthm_dms/core/rules/mobile_rules_model.dart';
 import 'package:vthm_dms/core/rules/mobile_rules_service.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
 import 'package:vthm_dms/core/utils/system_clock.dart';
+import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/forms/data/models/route_customer_model.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
 import 'package:vthm_dms/features/route/presentation/states/route_state.dart';
@@ -417,6 +418,75 @@ void main() {
       expect(vm.state.requirements?.secondsRemaining, 60);
       expect(vm.state.requirements?.blockers, contains('Bạn cần ở lại thêm 1 phút nữa mới check-out được.'));
       expect(vm.state.requirements?.blockers.any((b) => b.contains('5 phút')), isFalse);
+    });
+
+    // Miễn thời gian tối thiểu CHỈ ở lượt ĐẦU tại điểm bán NV mở trên app (luật server VisitCheckoutGuard, #23461) —
+    // rà soát 12/11/2026: bản cũ miễn MỌI lượt khi điểm bán còn chờ duyệt ⇒ check-out ngoại tuyến lượt thứ hai bị server
+    // 422. Ngoại tuyến máy chỉ chắc "lượt đầu" khi điểm bán còn chưa lên server (id 0).
+    Future<CheckInViewModel> checkinPendingStore({required int id, String? clientUuid}) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        MobileRulesNotifier.cacheKey,
+        jsonEncode({
+          'visit': {'require_geofence': true, 'default_radius_m': 100, 'min_duration_minutes': 1, 'min_photos': 1},
+        }),
+      );
+      final vm = container.read(checkInViewModelProvider.notifier);
+      final pending = CustomerEntity(
+        id: id,
+        code: 'KH$id',
+        name: 'Điểm bán chờ duyệt',
+        type: '',
+        route: '',
+        address: 'Hà Nội',
+        contactPerson: '',
+        phone: '',
+        approvalStatus: 'pending',
+        clientUuid: clientUuid,
+      );
+      vm.initCheckinWithDealer(DealerEntity(
+        id: '$id',
+        order: '01',
+        name: 'Điểm bán chờ duyệt',
+        address: 'Hà Nội',
+        status: DealerVisitStatus.pending,
+        statusLabel: 'Chưa ghé',
+        isVip: false,
+        lat: 21.028511,
+        lng: 105.854444,
+        customer: pending,
+      ));
+      final error = await vm.performCheckin(customerId: id, lat: 21.028511, lng: 105.854444);
+      expect(error, isNull);
+      expect(vm.state.visitId, lessThan(0));
+      return vm;
+    }
+
+    test('Offline: lượt ĐẦU ở điểm bán tạo ngoại tuyến (chưa lên server) ⇒ miễn thời gian tối thiểu', () async {
+      final vm = await checkinPendingStore(id: 0, clientUuid: 'cu-offline-1');
+      expect(vm.state.requirements?.secondsRemaining, 0);
+    });
+
+    test('Offline: lượt THỨ HAI ở điểm bán tạo ngoại tuyến ⇒ KHÔNG miễn', () async {
+      await visitRepo.saveLocalVisit(VisitEntity(
+        id: -555,
+        customerId: 0,
+        customerClientUuid: 'cu-offline-1',
+        checkinAt: DateTime.now().subtract(const Duration(hours: 2)),
+        checkoutAt: DateTime.now().subtract(const Duration(hours: 1)),
+      ));
+      final vm = await checkinPendingStore(id: 0, clientUuid: 'cu-offline-1');
+      expect(vm.state.requirements?.secondsRemaining, 60);
+    });
+
+    test('Offline: điểm bán chờ duyệt ĐÃ có id server ⇒ KHÔNG miễn (máy không biết người khác đã ghé chưa)', () async {
+      final vm = await checkinPendingStore(id: 101);
+      expect(vm.state.requirements?.secondsRemaining, 60);
+      // Tính lại (đổi kết quả đóng ⇄ mở cửa) cũng không được miễn trở lại — bản cũ về 0 ở bước này.
+      vm.setVisitResult('closed');
+      vm.setVisitResult('visited');
+      await Future<void>.delayed(Duration.zero);
+      expect(vm.state.requirements?.secondsRemaining, greaterThan(0));
     });
 
     test('Check-in blocks when outside dynamic allowedRadiusMeters', () async {

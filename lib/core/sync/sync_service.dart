@@ -1185,11 +1185,29 @@ class SyncService {
         _ref.read(travelViewModelProvider.notifier).loadMyTravel(refresh: true);
       } catch (_) {}
     } catch (e) {
+      // Chỉ câu lỗi NGHIỆP VỤ (422) mới được đọc là "lượt đã đóng" — 403/5xx mà câu lỗi lỡ chứa cụm này thì không (cùng luật
+      // [_handleErrorByStatus]); đánh nhầm là xoá gói check-out trong khi lượt vẫn mở trên server.
       final raw = e.toString();
-      // Nếu server trả về 422 "đã check-out rồi" / "đã đóng", coi là thành công theo §9
-      if (raw.contains('đã check-out rồi') || raw.contains('đã đóng')) {
+      final rule = e is AppException && e.statusCode == 422;
+      // Server trả 422 "đã check-out rồi" / "đã đóng" ⇒ coi là thành công theo §9
+      if (rule && (raw.contains('đã check-out rồi') || raw.contains('đã đóng'))) {
         await _db.markDone(entry.id);
         debugPrint('[SyncService] Lượt #$visitId đã được đóng trước đó, đánh dấu hoàn tất.');
+        return;
+      }
+      // Lượt đã bị HUỶ (từ máy khác / trước khi gói này tới — #24895): §7 API-VIENG-THAM coi như xong, và lượt trong máy
+      // phải hiện "đã huỷ" chứ không phải "đã check-out".
+      if (rule && (raw.contains('đã bị huỷ') || raw.contains('đã bị hủy'))) {
+        // Ghi xuống kho lượt trong máy TRƯỚC khi đóng mục (app bị kill giữa chừng thì mục còn đó, lần sau ghi lại) — không
+        // chỉ state tuyến: mở lại app thì lượt vẫn phải là "đã huỷ".
+        try {
+          await _ref.read(visitRepositoryProvider).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+        } catch (_) {}
+        await _db.markDone(entry.id);
+        try {
+          _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+        } catch (_) {}
+        debugPrint('[SyncService] Lượt #$visitId đã bị huỷ trên server, bỏ gói check-out.');
         return;
       }
       rethrow;
@@ -1255,23 +1273,31 @@ class SyncService {
       debugPrint('[SyncService] Đồng bộ Huỷ lượt thành công cho lượt #$visitId');
     } catch (e) {
       final raw = e.toString().toLowerCase();
+      // Chỉ câu lỗi NGHIỆP VỤ (422) mới được dò chữ — 403/5xx mà câu lỗi lỡ chứa "đã huỷ" thì không (cùng luật
+      // [_handleErrorByStatus]): đánh nhầm là lượt hiện "đã huỷ" trong máy trong khi vẫn mở trên server.
+      final rule = e is AppException && e.statusCode == 422;
       // Server idempotent (§3.4): Nếu server báo "đã bị huỷ" / "đã huỷ" hoặc "đã check out rồi", coi là thành công
-      if (raw.contains('đã bị huỷ') ||
-          raw.contains('đã huỷ') ||
-          raw.contains('đã bị hủy') ||
-          raw.contains('đã hủy') ||
-          raw.contains('already cancelled') ||
+      if ((rule &&
+              (raw.contains('đã bị huỷ') ||
+                  raw.contains('đã huỷ') ||
+                  raw.contains('đã bị hủy') ||
+                  raw.contains('đã hủy') ||
+                  raw.contains('already cancelled') ||
+                  raw.contains('đã check out') ||
+                  raw.contains('đã checkout') ||
+                  raw.contains('đã check-out') ||
+                  raw.contains('không hủy được nữa') ||
+                  raw.contains('không huỷ được nữa') ||
+                  raw.contains('không hủy được') ||
+                  raw.contains('không huỷ được') ||
+                  raw.contains('already checked out') ||
+                  raw.contains('already closed'))) ||
           // Mã HTTP, KHÔNG dò chuỗi '404': câu lỗi mạng mang mã tra cứu hex ngẫu nhiên có thể chứa '404' (#24698 vòng 4).
-          (e is AppException && e.statusCode == 404) ||
-          raw.contains('đã check out') ||
-          raw.contains('đã checkout') ||
-          raw.contains('đã check-out') ||
-          raw.contains('không hủy được nữa') ||
-          raw.contains('không huỷ được nữa') ||
-          raw.contains('không hủy được') ||
-          raw.contains('không huỷ được') ||
-          raw.contains('already checked out') ||
-          raw.contains('already closed')) {
+          (e is AppException && e.statusCode == 404)) {
+        // Cùng nhánh check-out: ghi "đã huỷ" xuống kho lượt trong máy trước khi đóng mục, không chỉ state tuyến.
+        try {
+          await _ref.read(visitRepositoryProvider).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+        } catch (_) {}
         await _db.markDone(entry.id);
         try {
           await _clearActiveVisitIf(visitId, entry.parentUuid);
@@ -1465,9 +1491,10 @@ class SyncService {
       for (final p in localPaths) {
         final path = p.toString().trim();
         if (path.isNotEmpty) {
-          final file = File(path);
+          // Dựng lại theo thư mục Documents hiện tại (iOS đổi UUID thư mục app sau cập nhật) — cùng luật ảnh khác.
+          final file = await OfflinePhotoStore.existingFile(path);
           // Mất tệp ⇒ báo lỗi (dead), không gửi khai báo thiếu ảnh mà không ai biết — cùng luật ảnh phiếu/viếng thăm.
-          if (!await file.exists()) {
+          if (file == null) {
             throw const AppException('Ảnh khai báo vị trí không còn trên máy, không gửi được.', 410);
           }
           final token = await _uploadTempPhoto('/dms/position-photos', file);

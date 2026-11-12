@@ -164,7 +164,8 @@ void main() {
       final updatedList = await database.searchLocalCustomers('hoang');
       expect(updatedList.first.id, 777);
       expect(updatedList.first.syncStatus, 'synced');
-      expect(updatedList.first.approvalStatus, 'approved');
+      // Điểm bán NV tạo lên server là CHỜ DUYỆT — đồng bộ xong không được tự gắn 'approved'.
+      expect(updatedList.first.approvalStatus, 'pending');
     });
   });
 

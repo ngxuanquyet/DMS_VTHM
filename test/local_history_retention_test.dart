@@ -23,7 +23,7 @@ void main() {
         {'id': -3, 'customer_id': 10, 'checkin_at': iso(old), 'checkout_at': iso(old)}, // chưa đồng bộ ⇒ giữ
         {'id': 4, 'customer_id': 10, 'checkin_at': iso(old)}, // còn mở ⇒ giữ
       ]),
-      'pos_declarations_local_list': jsonEncode([
+      'pos_declarations_local_list_7': jsonEncode([
         {'client_uuid': 'd-old', 'sync_status': 'synced', 'created_at_ms': old.millisecondsSinceEpoch},
         {'client_uuid': 'd-new', 'sync_status': 'synced', 'created_at_ms': recent.millisecondsSinceEpoch},
         {'client_uuid': 'd-pending', 'sync_status': 'pending', 'created_at_ms': old.millisecondsSinceEpoch},
@@ -48,7 +48,7 @@ void main() {
     final visits = (jsonDecode(prefs.getString('dms_visits_local_cache_v2')!) as List).map((e) => e['id']);
     expect(visits, unorderedEquals([2, -3, 4]));
     final decls =
-        (jsonDecode(prefs.getString('pos_declarations_local_list')!) as List).map((e) => e['client_uuid']);
+        (jsonDecode(prefs.getString('pos_declarations_local_list_7')!) as List).map((e) => e['client_uuid']);
     expect(decls, unorderedEquals(['d-new', 'd-pending']));
     expect(prefs.containsKey('notify_throttle_route_brief_2026-08-01'), isFalse);
     expect(prefs.containsKey('notify_throttle_queue_pending'), isTrue);
@@ -102,7 +102,7 @@ void main() {
     final oldFileUri = mk('${root.path}/image_picker_uri.jpg', old);
     final oldInList = mk('${root.path}/image_picker_list.jpg', old);
     SharedPreferences.setMockInitialValues({
-      'pos_declarations_local_list': jsonEncode([
+      'pos_declarations_local_list_7': jsonEncode([
         {'client_uuid': 'd1', 'local_photo_paths': [oldInHistory.path]},
       ]),
       'dms_active_visit_session_v1': jsonEncode({'photos': ['file://${oldFileUri.path}']}),

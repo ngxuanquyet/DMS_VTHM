@@ -49,6 +49,20 @@ String? attendanceHistoryCacheKey(SharedPreferences prefs) {
 /// Tiền tố khoá lịch sử chấm công theo tài khoản — đăng xuất xoá theo tiền tố này.
 const String attendanceHistoryCachePrefix = 'dms_attendance_history_cache_v2';
 
+/// Khoá lịch sử khai báo vị trí của tài khoản đang đăng nhập; `null` khi chưa rõ tài khoản (đừng đọc/ghi).
+///
+/// Bản cũ dùng chung khoá `pos_declarations_local_list` cho mọi tài khoản và đăng xuất không xoá ⇒ người đăng nhập sau
+/// trên máy dùng chung thấy toạ độ, địa chỉ, ghi chú, ảnh khai báo của người trước (vị trí = dữ liệu nhạy cảm, Luật 91/2025).
+String? declarationsListKey(SharedPreferences prefs) {
+  final account = cacheAccountKey(prefs);
+
+  return account == null ? null : '${declarationsListPrefix}_$account';
+}
+
+/// Tiền tố khoá lịch sử khai báo vị trí theo tài khoản — đăng xuất xoá theo tiền tố này; bản cũ (đúng tên tiền tố, không
+/// mã tài khoản) bị [removeLegacySharedCaches] xoá.
+const String declarationsListPrefix = 'pos_declarations_local_list';
+
 /// Xoá các khoá bộ nhớ đệm DÙNG CHUNG kiểu cũ (trước khi tách theo tài khoản, 21/10/2026) — gọi mỗi lần khởi động, rẻ.
 ///
 /// Bản cũ còn nằm trong máy thì dữ liệu của người dùng trước (tuyến được giao, biểu mẫu có tự điền theo phòng ban) ở lại
@@ -65,6 +79,9 @@ Future<void> removeLegacySharedCaches(SharedPreferences prefs) async {
     'att_mobile_history_cache',
     'dms_local_attendance_session_v1',
     'dms_local_attendance_history_v1',
+    // Khai báo vị trí: lịch sử dùng chung mọi tài khoản (trước 12/11/2026) — không biết dòng nào của ai nên bỏ hẳn.
+    // Khai báo chưa gửi vẫn nằm trong hàng đợi (lọc theo chủ) và vẫn được gửi.
+    declarationsListPrefix,
   ];
   final oldForms = RegExp(r'^dms_market_forms_(survey|collect)_-?\d+$');
   for (final k in prefs.getKeys().toList()) {

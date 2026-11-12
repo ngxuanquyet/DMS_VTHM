@@ -1,7 +1,6 @@
 // ignore_for_file: prefer_initializing_formals
 import 'dart:convert';
 import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +9,8 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/connectivity_provider.dart';
+import '../../../../core/utils/account_key.dart';
+import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/utils/system_clock.dart';
 import '../../domain/entities/position_declaration_entity.dart';
 import '../../domain/entities/position_reason_entity.dart';
@@ -37,7 +38,6 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
   final Ref _ref;
 
   static const String _reasonsCacheKey = 'pos_reasons_active_cache';
-  static const String _declarationsListKey = 'pos_declarations_local_list';
 
   PositionDeclarationRepositoryImpl({
     required PositionDeclarationApiService apiService,
@@ -128,6 +128,18 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
   Future<PositionDeclarationEntity> submitDeclaration(
     PositionDeclarationEntity declaration,
   ) async {
+    // 0. Ảnh chụp nằm ở thư mục tạm của camera (image_picker) — hệ điều hành dọn trước khi có mạng là khai báo chết vì
+    // "mất ảnh". Chép vào chỗ lưu lâu dài TRƯỚC khi lưu / xếp hàng, cùng luật ảnh viếng thăm / chấm công / điểm bán.
+    if (declaration.localPhotoPaths.isNotEmpty) {
+      declaration = declaration.copyWith(
+        localPhotoPaths: await OfflinePhotoStore.persist(
+          declaration.localPhotoPaths,
+          dirName: 'offline_declaration_photos',
+          prefix: declaration.clientUuid,
+        ),
+      );
+    }
+
     // 1. Lưu bản ghi cục bộ ở trạng thái pending trước
     await saveLocalDeclaration(declaration);
 
@@ -188,41 +200,19 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
           serverId: serverId,
         );
         return syncedEntity;
-      } on ServerException catch (serverErr) {
-        final status = serverErr.statusCode;
-        if (status != null && status >= 400 && status < 500) {
-          await updateLocalDeclarationStatus(
-            declaration.clientUuid,
-            syncStatus: 'error',
-            error: serverErr.message,
-          );
-          rethrow;
-        }
-        debugPrint('[PositionDeclarationRepo] Lỗi server 5xx -> Đưa vào hàng đợi offline: $serverErr');
-      } on DioException catch (dioErr) {
-        final status = dioErr.response?.statusCode;
-        // Nếu lỗi 422/4xx: người dùng làm thiếu hoặc sai điều kiện -> cập nhật lỗi và ném ra
-        if (status != null && status >= 400 && status < 500) {
-          final msg = _extractErrorMessage(dioErr);
-          await updateLocalDeclarationStatus(
-            declaration.clientUuid,
-            syncStatus: 'error',
-            error: msg,
-          );
-          rethrow;
-        }
-        // Nếu lỗi 5xx hoặc mất mạng giữa chừng -> chuyển sang hàng đợi offline
-        debugPrint('[PositionDeclarationRepo] Lỗi mạng/5xx khi gửi -> Đưa vào hàng đợi offline: $dioErr');
       } catch (e) {
-        if (e is ServerException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+        // CÙNG luật phân loại với hàng đợi ([isPermanentRejection]): 401 / 403 `DMS_APP_FORBIDDEN` / 408 / 429 KHÔNG phải
+        // bị từ chối — đánh 'error' là khai báo nằm chết, không dòng hàng đợi nào gửi lại (server khử trùng theo
+        // client_uuid nên xếp hàng an toàn).
+        if (isPermanentRejection(e)) {
           await updateLocalDeclarationStatus(
             declaration.clientUuid,
             syncStatus: 'error',
-            error: e.message,
+            error: (e as AppException).message,
           );
           rethrow;
         }
-        debugPrint('[PositionDeclarationRepo] Lỗi ngoại lệ -> Đưa vào hàng đợi offline: $e');
+        debugPrint('[PositionDeclarationRepo] Lỗi tạm khi gửi -> Đưa vào hàng đợi offline: $e');
       }
     }
 
@@ -271,7 +261,9 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
   @override
   Future<List<PositionDeclarationEntity>> getLocalDeclarations() async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_declarationsListKey);
+    final key = declarationsListKey(prefs);
+    if (key == null) return const [];
+    final jsonStr = prefs.getString(key);
     if (jsonStr == null || jsonStr.isEmpty) return const [];
 
     try {
@@ -295,6 +287,8 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
     PositionDeclarationEntity declaration,
   ) async {
     final prefs = await SharedPreferences.getInstance();
+    final key = declarationsListKey(prefs);
+    if (key == null) return;
     final currentList = await getLocalDeclarations();
 
     final updated = List<PositionDeclarationEntity>.from(currentList);
@@ -309,7 +303,7 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
     }
 
     final jsonStr = jsonEncode(updated.map((e) => e.toJson()).toList());
-    await prefs.setString(_declarationsListKey, jsonStr);
+    await prefs.setString(key, jsonStr);
   }
 
   @override
@@ -322,6 +316,8 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
     String? error,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final key = declarationsListKey(prefs);
+    if (key == null) return;
     final currentList = await getLocalDeclarations();
 
     final updated = List<PositionDeclarationEntity>.from(currentList);
@@ -338,17 +334,7 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
       );
 
       final jsonStr = jsonEncode(updated.map((e) => e.toJson()).toList());
-      await prefs.setString(_declarationsListKey, jsonStr);
+      await prefs.setString(key, jsonStr);
     }
-  }
-
-  String _extractErrorMessage(DioException e) {
-    if (e.response?.data is Map<String, dynamic>) {
-      final map = e.response!.data as Map<String, dynamic>;
-      if (map['message'] != null) {
-        return map['message'].toString();
-      }
-    }
-    return e.message ?? 'Đã xảy ra lỗi khi gửi khai báo vị trí';
   }
 }

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/app_database.dart';
+import '../utils/account_key.dart';
 
 import '../../features/position_declaration/domain/entities/position_declaration_entity.dart';
 import '../../features/visit/domain/entities/visit_entity.dart';
@@ -21,7 +22,6 @@ class LocalHistoryRetention {
   static const keep = Duration(days: 60);
 
   static const _visitsKey = 'dms_visits_local_cache_v2'; // visit_repository_impl
-  static const _declarationsKey = 'pos_declarations_local_list'; // position_declaration_repository_impl
   static const _throttlePrefix = 'notify_throttle_'; // app_notification_service
   static const _travelLegsPrefix = 'dms_travel_legs_cache_v1_'; // travel_repository_impl: <prefix><userId>_<yyyy-MM-dd>
   static const _formsPrefix = 'dms_market_forms_'; // forms_repository_impl: <prefix><account>_<kind>_<customerId>
@@ -36,6 +36,7 @@ class LocalHistoryRetention {
     'offline_customer_photos',
     'attendance_photos',
     'offline_form_photos',
+    'offline_declaration_photos',
   ];
   static const _imageExts = {'.jpg', '.jpeg', '.png', '.heic', '.webp'};
 
@@ -97,8 +98,15 @@ class LocalHistoryRetention {
     await prefs.setString(_visitsKey, jsonEncode(kept.map((e) => e.toJson()).toList()));
   }
 
+  /// Lịch sử khai báo của MỌI tài khoản từng đăng nhập máy này (`declarationsListKey`: <tiền tố>_<tài khoản>).
   static Future<void> _pruneDeclarations(SharedPreferences prefs, DateTime cutoff) async {
-    final raw = prefs.getString(_declarationsKey);
+    for (final k in prefs.getKeys().where((k) => k.startsWith('${declarationsListPrefix}_')).toList()) {
+      await _pruneDeclarationsKey(prefs, k, cutoff);
+    }
+  }
+
+  static Future<void> _pruneDeclarationsKey(SharedPreferences prefs, String key, DateTime cutoff) async {
+    final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return;
     final all = (jsonDecode(raw) as List<dynamic>)
         .whereType<Map<String, dynamic>>()
@@ -112,7 +120,7 @@ class LocalHistoryRetention {
       return at == null || !at.isBefore(cutoff);
     }).toList();
     if (kept.length == all.length) return;
-    await prefs.setString(_declarationsKey, jsonEncode(kept.map((e) => e.toJson()).toList()));
+    await prefs.setString(key, jsonEncode(kept.map((e) => e.toJson()).toList()));
   }
 
   /// Khoá chống bắn trùng thông báo mang mốc ms lần bắn gần nhất; khoảng chặn dài nhất chỉ vài giờ.

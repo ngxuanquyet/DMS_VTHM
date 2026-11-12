@@ -18,7 +18,6 @@ class HomeRepositoryImpl implements HomeRepository {
   final AppDatabase? _database;
 
   static const String _visitsListKey = 'dms_visits_local_cache_v2';
-  static const String _declarationsListKey = 'pos_declarations_local_list';
 
   HomeRepositoryImpl([this._apiService, this._database]);
 
@@ -259,7 +258,8 @@ class HomeRepositoryImpl implements HomeRepository {
     }
 
     // Hoạt động khai báo vị trí thực tế
-    final declJson = prefs.getString(_declarationsListKey);
+    final declKey = declarationsListKey(prefs);
+    final declJson = declKey == null ? null : prefs.getString(declKey);
     if (declJson != null && declJson.isNotEmpty) {
       try {
         final declList = jsonDecode(declJson) as List<dynamic>;

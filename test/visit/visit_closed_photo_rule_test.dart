@@ -234,7 +234,9 @@ void main() {
       expect(vm.state.visitResult, 'closed');
       expect(vm.state.requirements?.photosMissing, 1,
           reason: 'Closed store must require closedMinPhotos (1 photo), not minPhotos (3 photos)');
-      expect(vm.state.requirements?.secondsRemaining, 0,
+      // Miễn thời gian qua kết quả 'closed' (không chặn, không blocker), KHÔNG qua con số: secondsRemaining giữ nguyên để
+      // đổi lại "mở cửa" còn thời gian tối thiểu (rà soát 12/11/2026).
+      expect(vm.state.requirements?.blockers.any((b) => b.contains('ở lại thêm')), false,
           reason: 'Time requirement must be waived for closed store');
       expect(vm.state.requirements?.satisfied, false,
           reason: '0 photos taken out of 1 required -> not yet satisfied');

@@ -1164,7 +1164,8 @@ class AppDatabase extends _$AppDatabase {
         type: type != null && type.isNotEmpty ? Value(type) : const Value.absent(),
         dynamicFieldsJson: dynamicFieldsJson != null ? Value(dynamicFieldsJson) : const Value.absent(),
         syncStatus: const Value('synced'),
-        approvalStatus: const Value('approved'),
+        // KHÔNG gắn 'approved': điểm bán NV tạo lên server là chờ duyệt (phản hồi tạo không trả trạng thái) — giữ trạng thái
+        // trong máy ('pending' lúc tạo ngoại tuyến) tới lần nạp danh sách sau.
       ),
     );
   }
