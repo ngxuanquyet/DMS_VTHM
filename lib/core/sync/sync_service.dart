@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/database_provider.dart';
 import '../errors/app_exceptions.dart';
+export '../errors/app_exceptions.dart' show openVisitErrorCode;
 import '../network/api_client.dart';
 import '../network/connectivity_provider.dart';
 import '../network/refresh_outcome.dart';
@@ -48,9 +49,6 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 /// Mục bị chặn vì phiên đăng nhập (401 / thu quyền app) chờ bao lâu mới thử lại — đăng nhập lại thì "Đồng bộ ngay"
 /// hoặc lượt đổi mạng gửi ngay, không phải chờ hết khoảng này.
 const Duration authBlockedRetryDelay = Duration(minutes: 1);
-
-/// Mã lỗi server khi mở lượt mới mà còn lượt cũ chưa check-out (`OpenVisitException::CODE`).
-const String openVisitErrorCode = 'DMS_VISIT_STILL_OPEN';
 
 /// Trần số lần check-in bị server trả [openVisitErrorCode] (mỗi lần cách tối đa 5 phút ⇒ ≈ 2 giờ CÓ MẠNG). Trần kỹ thuật
 /// chống vòng lặp vĩnh viễn (mục chờ gửi chặn đăng xuất): lượt trước không được đóng trong chừng ấy thì báo lỗi ở "Lỗi

@@ -448,6 +448,7 @@ class ApiClient {
       final data = error.response?.data;
       final rawCode = data is Map ? data['code']?.toString() : null;
       final errCode = rawCode ?? _resolveDefaultCode(statusCode);
+      final errData = data is Map && data['data'] is Map ? Map<String, dynamic>.from(data['data'] as Map) : null;
       String? message;
       if (data is Map &&
           data.containsKey('message') &&
@@ -487,14 +488,14 @@ class ApiClient {
           final fullMsg = message != null
               ? '$message\n${errorList.join("\n")}'
               : errorList.join('\n');
-          return ServerException(fullMsg, statusCode, errCode, errorId);
+          return ServerException(fullMsg, statusCode, errCode, errorId, errData);
         }
       }
 
       if (message != null) {
-        return ServerException(message, statusCode, errCode, errorId);
+        return ServerException(message, statusCode, errCode, errorId, errData);
       }
-      return ServerException('Lỗi máy chủ ($statusCode)', statusCode, errCode, errorId);
+      return ServerException('Lỗi máy chủ ($statusCode)', statusCode, errCode, errorId, errData);
     }
     return ServerException(error.message ?? 'Đã xảy ra lỗi không xác định', null, 'CONNECTION_ERROR', errorId);
   }

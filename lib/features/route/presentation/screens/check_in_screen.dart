@@ -56,6 +56,8 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   final TextEditingController _closedNoteController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   bool _isCheckingIn = false;
+  // Đang dò lại lượt đang mở sau 422 DMS_VISIT_STILL_OPEN (#25390) — chặn dò lồng nếu server vẫn chặn.
+  bool _reloadingBlockingVisit = false;
 
   /// 403 khi nạp vật tư ⇒ tài khoản không có quyền vật tư, ẩn mục Vật tư (#24522).
   bool _materialsForbidden = false;
@@ -478,6 +480,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     });
 
     if (error != null) {
+      // Server chỉ ra ĐÚNG lượt đang chặn, đã lưu làm lượt đang mở ⇒ dò lại: khôi phục hoặc dẫn tới lượt đó (#25390).
+      final blocking = ref.read(checkInViewModelProvider.notifier).takeBlockingVisit();
+      if (blocking != null && !_reloadingBlockingVisit) {
+        _reloadingBlockingVisit = true;
+        try {
+          await _initAndCheckin();
+        } finally {
+          _reloadingBlockingVisit = false;
+        }
+        return;
+      }
       _showCheckinErrorDialog(error);
     } else {
       final updatedState = ref.read(checkInViewModelProvider);

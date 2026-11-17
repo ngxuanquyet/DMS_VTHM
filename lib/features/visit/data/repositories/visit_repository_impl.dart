@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../../domain/entities/visit_entity.dart';
 import '../../domain/entities/visit_photo_entity.dart';
@@ -35,6 +36,22 @@ Future<bool> serverConfirmsVisitNotOpen(VisitRepository repo, VisitEntity visit)
     return !open.any((v) => isSameVisit(v, visit));
   } catch (_) {
     return false;
+  }
+}
+
+/// Lượt server báo đang chặn check-in trong lỗi [e] (422 [openVisitErrorCode] kèm `data.open_visit_id` /
+/// `open_visit_client_uuid` — server từ 15/11/2026, #25390): khớp theo đúng mã đó trong danh sách lượt còn mở, KHÔNG đoán.
+/// Server cũ (không có hai trường), không tra được hoặc lượt không còn trong danh sách ⇒ `null` (nơi gọi báo lỗi như cũ).
+Future<VisitEntity?> findBlockingOpenVisit(VisitRepository repo, Object e) async {
+  if (e is! AppException || e.code != openVisitErrorCode || repo is! VisitRepositoryImpl) return null;
+  final id = int.tryParse(e.data?['open_visit_id']?.toString() ?? '') ?? 0;
+  final uuid = e.data?['open_visit_client_uuid']?.toString() ?? '';
+  if (id <= 0 && uuid.isEmpty) return null;
+  try {
+    final open = await repo.getOpenVisits().timeout(const Duration(seconds: 8));
+    return open.where((v) => (id > 0 && v.id == id) || (uuid.isNotEmpty && v.clientUuid == uuid)).firstOrNull;
+  } catch (_) {
+    return null;
   }
 }
 

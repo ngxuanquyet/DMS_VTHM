@@ -1,10 +1,16 @@
+/// Mã lỗi server khi mở lượt mới mà còn lượt cũ chưa check-out (`OpenVisitException::CODE`).
+const String openVisitErrorCode = 'DMS_VISIT_STILL_OPEN';
+
 class AppException implements Exception {
   final String message;
   final int? statusCode;
   final String? code;
   final String? errorId;
 
-  const AppException(this.message, [this.statusCode, this.code, this.errorId]);
+  /// `data` của phản hồi lỗi (vd 422 DMS_VISIT_STILL_OPEN mang `open_visit_id` / `open_visit_client_uuid`, #25390).
+  final Map<String, dynamic>? data;
+
+  const AppException(this.message, [this.statusCode, this.code, this.errorId, this.data]);
 
   /// Chuỗi mã lỗi định danh chuẩn hóa để hiển thị trên UI, gửi cho quản trị viên tra cứu
   String? get displayErrorCode {
@@ -81,6 +87,7 @@ class ServerException extends AppException {
     super.statusCode,
     super.code,
     super.errorId,
+    super.data,
   ]);
 }
 

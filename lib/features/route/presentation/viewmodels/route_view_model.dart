@@ -178,6 +178,20 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
+  /// Lượt server báo còn mở mà máy chưa biết (#25390): thay bản cũ cùng lượt trong danh sách hôm nay (hoặc thêm) và đặt làm
+  /// lượt đang mở — màn check-in đối chiếu danh sách này, bản cũ "đã đóng" sẽ khiến nó dọn mất lượt.
+  void upsertOpenVisit(VisitEntity visit) {
+    if (!mounted) return;
+    final found = state.todayVisits.any((v) => isSameVisit(v, visit));
+    state = state.copyWith(
+      todayVisits: found
+          ? state.todayVisits.map((v) => isSameVisit(v, visit) ? visit : v).toList()
+          : [...state.todayVisits, visit],
+      activeVisit: visit,
+    );
+    _recomputeRouteDetail();
+  }
+
   void markVisitCancelledLocally(int visitId, {String? clientUuid}) {
     if (!mounted) return;
     final updatedVisits = state.todayVisits.map((v) {
@@ -1097,6 +1111,15 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   int _elapsedSeconds = 0;
   DateTime? _targetDoneTime;
   String _sessionClientUuid = const Uuid().v4();
+  // Lượt server chỉ ra đang chặn lần check-in vừa rồi (422 DMS_VISIT_STILL_OPEN, #25390) — màn lấy MỘT lần qua [takeBlockingVisit].
+  VisitEntity? _blockingVisit;
+
+  /// Lượt đang chặn lần check-in vừa hỏng (đã lưu làm lượt đang mở), lấy xong thì xoá; `null` khi lỗi khác / server cũ.
+  VisitEntity? takeBlockingVisit() {
+    final v = _blockingVisit;
+    _blockingVisit = null;
+    return v;
+  }
 
   /// false trong lúc khôi phục một lượt đang mở — chưa nạp tiến độ đã lưu ([VisitProgressStore]) thì không được ghi
   /// đè nó bằng danh sách ảnh / biểu mẫu rỗng của trạng thái vừa dựng lại.
@@ -2023,6 +2046,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     bool? isMockLocation,
     String? note,
   }) async {
+    _blockingVisit = null;
     final customerClientUuid = customerClientUuidOf(state.customer);
     // Chặn cả online và offline nếu đang có một lượt viếng thăm khác chưa đóng (§3 Luật 3)
     if (state.visitId != 0 &&
@@ -2318,6 +2342,25 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           .toString()
           .replaceAll('ServerException: ', '')
           .replaceAll('AppException: ', '');
+      // Còn lượt chưa check-out mà máy không biết (mở trên máy khác / web) ⇒ lưu ĐÚNG lượt server chỉ ra làm lượt đang mở
+      // (cả trong danh sách lượt hôm nay của tuyến); màn dò lại: cùng điểm bán thì khôi phục, khác điểm bán thì dẫn tới nó.
+      // Lệnh đóng lượt chờ gửi không lọt tới đây — còn lệnh lượt chờ thì check-in đi hàng đợi (cổng đẩy phía trên).
+      var blocking = await findBlockingOpenVisit(visitRepository, e);
+      // Máy coi lượt đó là ngày khác (lệch giờ) ⇒ màn sẽ không nhận nó làm lượt đang mở; trong lúc chờ tra (≤ 8 s) lô đồng
+      // bộ đã đặt lượt mở khác ⇒ không đè. Hai ca này báo lỗi như cũ.
+      if (blocking != null && (!blocking.isCheckinToday || blocking.isPastDayServerVisit)) blocking = null;
+      if (blocking != null) {
+        final current = await visitRepository.getActiveVisit();
+        if (current != null && current.isOpen && !isSameVisit(current, blocking)) blocking = null;
+      }
+      if (blocking != null) {
+        await visitRepository.saveActiveVisit(blocking);
+        await visitRepository.saveLocalVisit(blocking);
+        try {
+          ref?.read(routeViewModelProvider.notifier).upsertOpenVisit(blocking);
+        } catch (_) {}
+      }
+      _blockingVisit = blocking;
       state = state.copyWith(errorMessage: msg);
       return msg;
     }
