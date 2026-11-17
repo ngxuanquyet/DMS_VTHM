@@ -1,6 +1,14 @@
 /// Mã lỗi server khi mở lượt mới mà còn lượt cũ chưa check-out (`OpenVisitException::CODE`).
 const String openVisitErrorCode = 'DMS_VISIT_STILL_OPEN';
 
+/// Lượt đang chặn trong `data` của lỗi [openVisitErrorCode] (server từ 15/11/2026, #25390): (`open_visit_id`,
+/// `open_visit_client_uuid`), `null` khi server cũ / không có cả hai. Id 0 và uuid rỗng nghĩa là "không có".
+(int, String)? openVisitRefOf(Map<String, dynamic>? data) {
+  final id = int.tryParse(data?['open_visit_id']?.toString() ?? '') ?? 0;
+  final uuid = data?['open_visit_client_uuid']?.toString() ?? '';
+  return id <= 0 && uuid.isEmpty ? null : (id, uuid);
+}
+
 class AppException implements Exception {
   final String message;
   final int? statusCode;

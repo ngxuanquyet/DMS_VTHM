@@ -553,6 +553,109 @@ void main() {
       expect((await row(createB)).state, 'dead');
     });
 
+    // #25390: server gửi kèm ĐÚNG lượt đang chặn ⇒ hàng đợi xét theo lượt đó, không đoán.
+    (int, Map<String, dynamic>) stillOpenWith(Map<String, dynamic> data) =>
+        (422, {'success': false, 'code': openVisitErrorCode, 'message': 'còn lượt', 'data': data});
+
+    test('#25390 server chỉ ra lượt A có check-out bị từ chối ⇒ B CHỜ, không đếm vào trần', () async {
+      boot((o) => o.path == '/dms/visits' ? stillOpenWith({'open_visit_id': 901, 'open_visit_client_uuid': 'visitA'}) : null);
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead', payload: '{"visit_id":901}');
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({'customer_id': 10, openVisitCountKey: openVisitMaxAttempts - 1}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final r = await row(createB);
+      expect(r.state, 'pending');
+      expect(jsonDecode(r.payload)[openVisitCountKey], openVisitMaxAttempts - 1);
+    });
+
+    test('#25390 lượt chặn là lượt KHÁC (mở ở web) dù A có check-out bị từ chối ⇒ đếm vào trần, không chờ mãi', () async {
+      boot((o) => o.path == '/dms/visits' ? stillOpenWith({'open_visit_id': 777, 'open_visit_client_uuid': null}) : null);
+      await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead', payload: '{"visit_id":901}');
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final r = await row(createB);
+      expect(r.state, 'pending');
+      expect(jsonDecode(r.payload)[openVisitCountKey], 1, reason: 'lỗi cũ: đoán A là thủ phạm ⇒ giữ chờ cả ngày không báo');
+    });
+
+    test('#25390 tới trần ⇒ câu lỗi nêu đúng điểm bán của lượt đang chặn', () async {
+      boot((o) {
+        if (o.path == '/dms/visits') return stillOpenWith({'open_visit_id': 777});
+        if (o.path.startsWith('/dms/visits/mine')) {
+          return (200, {
+            'success': true,
+            'data': [
+              {'id': 777, 'customer_id': 5, 'customer_name': 'Điểm X', 'checkin_at': DateTime.now().toIso8601String()},
+            ],
+          });
+        }
+        return null;
+      });
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({'customer_id': 10, openVisitCountKey: openVisitMaxAttempts - 1}));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final r = await row(createB);
+      expect(r.state, 'dead');
+      expect(r.lastError, contains('Điểm X'));
+    });
+
+    test('#25390 cổng chặn xoá cùng luật: giữ đúng lệnh đóng của lượt server chỉ ra, thả lệnh của lượt khác', () async {
+      boot((o) => o.path == '/dms/visits' ? stillOpenWith({'open_visit_id': 901, 'open_visit_client_uuid': 'visitA'}) : null);
+      // Lượt A không có dòng tạo trong máy (check-in trực tuyến) — cách đoán cũ vẫn giữ được; lượt C thì không phải thủ phạm.
+      final coA = await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead', payload: '{"visit_id":901}');
+      final coC = await enqueue('visit', 'checkout', 'coC', parent: 'visitC', state: 'dead', payload: '{"visit_id":903}');
+      final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      expect((await row(createB)).state, 'pending');
+      expect(jsonDecode((await row(createB)).payload)[openVisitBlockerKey],
+          {'open_visit_id': 901, 'open_visit_client_uuid': 'visitA'});
+      expect(await db.deleteEntry(coA), isFalse, reason: 'xoá đi thì B đếm trần rồi chết');
+      expect(await db.deleteEntry(coC), isTrue, reason: 'lỗi cũ: đoán C cũng đang giữ B nên không cho xoá');
+    });
+
+    test('#25390 phản hồi sau không còn mã lượt ⇒ bỏ mã cũ, quay về đoán (không chờ theo lượt đã thôi chặn)', () async {
+      boot((o) => o.path == '/dms/visits'
+          ? (422, {'success': false, 'code': openVisitErrorCode, 'message': 'còn lượt'})
+          : null);
+      // Lệnh đóng dead của A từ HÔM QUA: theo mã cũ (A) thì B chờ; đoán (chỉ lệnh đóng từ đầu ngày) thì B đếm trần.
+      final coA = await enqueue('visit', 'checkout', 'coA', parent: 'visitA', state: 'dead', payload: '{"visit_id":901}');
+      await (db.update(db.syncQueueEntries)..where((t) => t.id.equals(coA))).write(SyncQueueEntriesCompanion(
+          createdAt: Value(DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch)));
+      final createB = await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({
+            'customer_id': 10,
+            openVisitBlockerKey: {'open_visit_id': 901, 'open_visit_client_uuid': 'visitA'}
+          }));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final p = jsonDecode((await row(createB)).payload) as Map;
+      expect(p.containsKey(openVisitBlockerKey), isFalse);
+      expect(p[openVisitCountKey], 1);
+    });
+
+    test('#25390 khoá nội bộ lượt chặn không gửi lên server', () async {
+      boot((o) => null);
+      await enqueue('visit', 'create', 'visitB',
+          payload: jsonEncode({
+            'customer_id': 10,
+            openVisitBlockerKey: {'open_visit_id': 901, 'open_visit_client_uuid': 'visitA'}
+          }));
+
+      await container.read(syncServiceProvider).syncQueue();
+
+      final sent = adapter.calls.firstWhere((c) => c.path == '/dms/visits').data as Map;
+      expect(sent.containsKey(openVisitBlockerKey), isFalse);
+    });
+
     test('422 khác của check-in vẫn là lỗi vĩnh viễn', () async {
       boot((o) => o.path == '/dms/visits' ? (422, {'success': false, 'message': 'Ngoài vùng điểm bán'}) : null);
       final createB = await enqueue('visit', 'create', 'visitB', payload: '{"customer_id":10}');

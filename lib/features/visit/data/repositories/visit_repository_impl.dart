@@ -43,10 +43,16 @@ Future<bool> serverConfirmsVisitNotOpen(VisitRepository repo, VisitEntity visit)
 /// `open_visit_client_uuid` — server từ 15/11/2026, #25390): khớp theo đúng mã đó trong danh sách lượt còn mở, KHÔNG đoán.
 /// Server cũ (không có hai trường), không tra được hoặc lượt không còn trong danh sách ⇒ `null` (nơi gọi báo lỗi như cũ).
 Future<VisitEntity?> findBlockingOpenVisit(VisitRepository repo, Object e) async {
-  if (e is! AppException || e.code != openVisitErrorCode || repo is! VisitRepositoryImpl) return null;
-  final id = int.tryParse(e.data?['open_visit_id']?.toString() ?? '') ?? 0;
-  final uuid = e.data?['open_visit_client_uuid']?.toString() ?? '';
-  if (id <= 0 && uuid.isEmpty) return null;
+  if (e is! AppException || e.code != openVisitErrorCode) return null;
+  final ref = openVisitRefOf(e.data);
+  return ref == null ? null : findOpenVisitByRef(repo, ref);
+}
+
+/// Lượt còn mở trên server có mã [ref] (`open_visit_id`, `open_visit_client_uuid` — [openVisitRefOf]); không tra được
+/// hoặc không còn mở ⇒ `null`.
+Future<VisitEntity?> findOpenVisitByRef(VisitRepository repo, (int, String) ref) async {
+  if (repo is! VisitRepositoryImpl) return null;
+  final (id, uuid) = ref;
   try {
     final open = await repo.getOpenVisits().timeout(const Duration(seconds: 8));
     return open.where((v) => (id > 0 && v.id == id) || (uuid.isNotEmpty && v.clientUuid == uuid)).firstOrNull;

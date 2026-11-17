@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../errors/app_exceptions.dart' show openVisitErrorCode, openVisitRefOf;
 
 part 'app_database.g.dart';
 
@@ -88,6 +89,18 @@ class LocalCustomers extends Table {
 
   @override
   Set<Column> get primaryKey => {clientUuid};
+}
+
+
+/// Khoá nội bộ trong payload dòng tạo lượt: lượt server báo đang chặn (`{open_visit_id, open_visit_client_uuid}` — đúng
+/// `data` của 422 [openVisitErrorCode], #25390).
+/// KHÔNG gửi lên server.
+const String openVisitBlockerKey = '_still_open_by';
+
+/// Ngày (giờ máy) của mốc [ms].
+DateTime _dayOf(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  return DateTime(d.year, d.month, d.day);
 }
 
 @DriftDatabase(tables: [SyncQueueEntries, LocalCustomers, SyncSentLogs])
@@ -658,7 +671,7 @@ class AppDatabase extends _$AppDatabase {
               (t.state.equals('pending') | t.state.equals('sending'))))
         .get();
     for (final c in creates) {
-      if (await hasDeadVisitCloseBefore(c, onlyCloseId: row.id)) return true;
+      if (await isCreateWaitingOnClose(c, onlyCloseId: row.id)) return true;
     }
     return false;
   }
@@ -969,6 +982,55 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// Dòng tạo lượt [create] bị 422 [openVisitErrorCode] đang CHỜ nhân viên đóng lại lượt chặn (lệnh check-out / huỷ của
+  /// lượt đó bị từ chối) ⇒ không đếm vào trần; [onlyCloseId]: chỉ xét đúng lệnh đóng đó ([isHoldingLaterVisit]). Một luật
+  /// cho cả hàng đợi lẫn cổng chặn xoá. Biết lượt chặn (server gửi kèm, lưu ở [openVisitBlockerKey] — hoặc [blocker] vừa
+  /// nhận) ⇒ xét ĐÚNG lượt đó trong chính ngày của [create] (#25390); không biết ⇒ đoán [hasDeadVisitCloseBefore].
+  Future<bool> isCreateWaitingOnClose(SyncQueueEntry create, {(int, String)? blocker, int? nowMs, int? onlyCloseId}) async {
+    if (create.entity != 'visit' || create.op != 'create') return false;
+    final by = blocker ?? _storedOpenVisitBlocker(create);
+    if (by == null) return hasDeadVisitCloseBefore(create, nowMs: nowMs, onlyCloseId: onlyCloseId);
+    // Chặn trên thời gian miễn như luật cũ: qua ngày thì cron đánh dấu lượt kia, còn chặn là do lượt khác ⇒ đếm trần.
+    if (_dayOf(nowMs ?? DateTime.now().millisecondsSinceEpoch) != _dayOf(create.createdAt)) return false;
+    final (visitId, clientUuid) = by;
+    final rows = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('visit') &
+              (tbl.op.equals('checkout') | tbl.op.equals('cancel')) &
+              (tbl.state.equals('dead') | tbl.state.equals('done')) &
+              // Lọc thô trước (payload là jsonEncode không khoảng trắng), khớp chính xác ở [ofVisit].
+              ((clientUuid.isNotEmpty ? tbl.parentUuid.equals(clientUuid) : const Constant(false)) |
+                  (visitId > 0 ? tbl.payload.like('%"visit_id":$visitId%') : const Constant(false)))))
+        .get();
+    bool ofVisit(SyncQueueEntry r) {
+      if (clientUuid.isNotEmpty && r.parentUuid == clientUuid) return true;
+      if (visitId <= 0) return false;
+      try {
+        final p = jsonDecode(r.payload);
+        return p is Map && int.tryParse(p['visit_id']?.toString() ?? '') == visitId;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final closes = rows.where(ofVisit).toList();
+    // Lượt đã được đóng lại bằng lệnh khác gửi xong ⇒ không còn chờ.
+    if (closes.any((r) => r.state == 'done')) return false;
+    return closes.any((r) => r.state == 'dead' && (onlyCloseId == null || r.id == onlyCloseId));
+  }
+
+  /// Lượt chặn đã lưu trong payload dòng tạo lượt ([openVisitBlockerKey], đúng `data` server gửi), `null` nếu chưa có.
+  (int, String)? _storedOpenVisitBlocker(SyncQueueEntry create) {
+    try {
+      final p = jsonDecode(create.payload);
+      final b = p is Map ? p[openVisitBlockerKey] : null;
+      return b is Map ? openVisitRefOf(Map<String, dynamic>.from(b)) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Có check-out / huỷ của lượt KHÁC (nhập trước dòng tạo lượt [entry]) bị server từ chối (dead) mà lượt đó ĐÃ lên server,
   /// check-in CÙNG NGÀY với [entry] và chưa được đóng lại bằng một lệnh check-out / huỷ khác trong hàng đợi — tức lượt đó
   /// còn mở trên server, [entry] nhận DMS_VISIT_STILL_OPEN cho tới khi nhân viên đóng lại nó (màn tuyến đưa nó lên làm lượt
@@ -980,13 +1042,8 @@ class AppDatabase extends _$AppDatabase {
   /// [onlyCloseId]: chỉ xét đúng lệnh đóng đó ([isHoldingLaterVisit]).
   Future<bool> hasDeadVisitCloseBefore(SyncQueueEntry entry, {int? nowMs, int? onlyCloseId}) async {
     if (entry.entity != 'visit' || entry.op != 'create') return false;
-    DateTime dayOf(int ms) {
-      final d = DateTime.fromMillisecondsSinceEpoch(ms);
-      return DateTime(d.year, d.month, d.day);
-    }
-
-    final day = dayOf(entry.createdAt);
-    if (dayOf(nowMs ?? DateTime.now().millisecondsSinceEpoch) != day) return false;
+    final day = _dayOf(entry.createdAt);
+    if (_dayOf(nowMs ?? DateTime.now().millisecondsSinceEpoch) != day) return false;
     // Lệnh đóng đứng sau check-in của lượt đó ⇒ lượt check-in trong ngày [day] có lệnh đóng tạo từ đầu ngày [day].
     final closes = await _otherVisitClosesBefore(entry, 'dead', createdFromMs: day.millisecondsSinceEpoch);
     for (final r in closes) {
@@ -998,7 +1055,7 @@ class AppDatabase extends _$AppDatabase {
           .getSingleOrNull();
       // Dòng tạo chưa lên server (chờ / chết / kẹt) ⇒ lượt không mở trên server, không phải nó chặn [entry].
       if (create != null && create.state != 'done') continue;
-      if (dayOf(create?.createdAt ?? r.createdAt) != day) continue;
+      if (_dayOf(create?.createdAt ?? r.createdAt) != day) continue;
       final reclosed = await (select(syncQueueEntries)
             ..where((t) =>
                 isMine(t) &

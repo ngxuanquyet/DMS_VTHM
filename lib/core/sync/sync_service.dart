@@ -938,6 +938,7 @@ class SyncService {
     final payload = jsonDecode(entry.payload) as Map<String, dynamic>;
     final markedMaybeOnServer = payload[queueMaybeOnServerKey] == true;
     payload.remove(openVisitCountKey);
+    payload.remove(openVisitBlockerKey);
     payload.remove(queueMaybeOnServerKey);
     payload['is_offline_sync'] = true;
     payload['client_uuid'] = entry.clientUuid;
@@ -1689,7 +1690,8 @@ class SyncService {
     final errorMsg = _extractDioErrorMessage(dioErr);
     final data = dioErr.response?.data;
     return await _handleErrorByStatus(entry, statusCode, errorMsg, currentDeadErrors,
-        errorCode: data is Map ? data['code']?.toString() : null);
+        errorCode: data is Map ? data['code']?.toString() : null,
+        errorData: data is Map && data['data'] is Map ? Map<String, dynamic>.from(data['data'] as Map) : null);
   }
 
   /// Xử lý lỗi từ AppException
@@ -1699,7 +1701,7 @@ class SyncService {
     List<SyncDeadError> currentDeadErrors,
   ) async {
     return await _handleErrorByStatus(entry, appErr.statusCode, appErr.message, currentDeadErrors,
-        parentPending: appErr is _ParentPendingException, errorCode: appErr.code);
+        parentPending: appErr is _ParentPendingException, errorCode: appErr.code, errorData: appErr.data);
   }
 
   /// Xử lý lỗi chung (ngoại lệ mạng hoặc không xác định)
@@ -1718,6 +1720,7 @@ class SyncService {
     List<SyncDeadError> currentDeadErrors, {
     bool parentPending = false,
     String? errorCode,
+    Map<String, dynamic>? errorData,
   }) async {
     // 0. Phiên hết hạn / tài khoản bị thu quyền app: dữ liệu của mục KHÔNG sai — đăng nhập lại là gửi được. Chuyển
     // dead ở đây (bản cũ) là mất trắng: mục dead chỉ xoá được, và cả lô phía sau cũng nhận đúng lỗi này.
@@ -1781,18 +1784,34 @@ class SyncService {
     // Check-in bị từ chối vì còn lượt trước chưa check-out (DMS_VISIT_STILL_OPEN): CHỜ — lượt trước được check-out /
     // huỷ là gửi được; coi là lỗi vĩnh viễn thì lượt mới (cùng ảnh, phiếu, check-out của nó) bị bỏ trắng.
     var stillOpen = errorCode == openVisitErrorCode && entry.entity == 'visit' && entry.op == 'create';
-    // Lượt trước có check-out / huỷ bị từ chối hẳn ⇒ chờ nhân viên đóng lại nó (hoặc cron đầu ngày), KHÔNG đếm vào trần.
-    if (stillOpen && !await _db.hasDeadVisitCloseBefore(entry)) {
+    if (stillOpen) {
       Map<String, dynamic> p = {};
       try {
         p = jsonDecode(entry.payload) as Map<String, dynamic>;
       } catch (_) {}
-      final count = ((p[openVisitCountKey] as num?)?.toInt() ?? 0) + 1;
-      p[openVisitCountKey] = count;
+      // Server từ 15/11/2026 gửi kèm ĐÚNG lượt đang chặn (#25390) ⇒ lưu vào payload: hàng đợi và cổng chặn xoá lệnh đóng
+      // ([AppDatabase.isHoldingLaterVisit]) cùng xét theo lượt đó; server cũ ⇒ đoán theo lệnh đóng bị từ chối.
+      // Phản hồi không còn mã ⇒ bỏ mã cũ: đừng chờ theo lượt đã thôi chặn.
+      final blocker = openVisitRefOf(errorData);
+      if (blocker != null) {
+        p[openVisitBlockerKey] = {'open_visit_id': blocker.$1, 'open_visit_client_uuid': blocker.$2};
+      } else {
+        p.remove(openVisitBlockerKey);
+      }
+      // Lượt chặn có check-out / huỷ bị từ chối hẳn ⇒ chờ nhân viên đóng lại nó (hoặc cron đầu ngày), KHÔNG đếm vào trần.
+      // [entry] còn mang payload CŨ (mã đã bỏ ở trên) ⇒ không có mã thì đoán thẳng, đừng để nó đọc lại mã cũ.
+      final waitsForClose = blocker != null
+          ? await _db.isCreateWaitingOnClose(entry, blocker: blocker)
+          : await _db.hasDeadVisitCloseBefore(entry);
+      var count = (p[openVisitCountKey] as num?)?.toInt() ?? 0;
+      if (!waitsForClose) p[openVisitCountKey] = ++count;
       await _db.updatePayload(entry.id, jsonEncode(p));
-      if (count >= openVisitMaxAttempts) {
+      if (!waitsForClose && count >= openVisitMaxAttempts) {
         stillOpen = false;
-        errorMsg = 'Lượt trước vẫn chưa được check-out / huỷ sau $count lần thử — vào lượt đang mở để đóng nó: $errorMsg';
+        final name = blocker == null ? null : (await findOpenVisitByRef(_ref.read(visitRepositoryProvider), blocker))?.customerName;
+        errorMsg = (name ?? '').isNotEmpty
+            ? 'Lượt tại "$name" vẫn chưa được check-out / huỷ sau $count lần thử — vào lượt đó để đóng nó: $errorMsg'
+            : 'Lượt trước vẫn chưa được check-out / huỷ sau $count lần thử — vào lượt đang mở để đóng nó: $errorMsg';
       }
     }
     final permanentClientError = !stillOpen &&
