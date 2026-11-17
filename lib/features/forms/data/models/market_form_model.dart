@@ -7,6 +7,7 @@ class MarketFormConfigModel {
   final int formId;
   final String code;
   final String name;
+  final String? description;
   final String kind; // 'survey' | 'collect'
   final bool isRequired;
   final int sortOrder;
@@ -18,6 +19,7 @@ class MarketFormConfigModel {
     required this.formId,
     required this.code,
     required this.name,
+    this.description,
     required this.kind,
     required this.isRequired,
     required this.sortOrder,
@@ -35,6 +37,7 @@ class MarketFormConfigModel {
           : (int.tryParse(json['form_id']?.toString() ?? '') ?? 0),
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
+      description: json['description']?.toString(),
       kind: json['kind']?.toString() ?? 'collect',
       isRequired: json['is_required'] == true || json['is_required'] == 1,
       sortOrder: json['sort_order'] is int
@@ -52,6 +55,7 @@ class MarketFormConfigModel {
         'form_id': formId,
         'code': code,
         'name': name,
+        if (description != null) 'description': description,
         'kind': kind,
         'is_required': isRequired,
         'sort_order': sortOrder,
@@ -65,6 +69,7 @@ class MarketFormConfigModel {
       formId: formId,
       code: code,
       name: name,
+      description: description,
       kind: kind,
       isRequired: isRequired,
       sortOrder: sortOrder,

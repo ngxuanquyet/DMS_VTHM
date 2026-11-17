@@ -147,6 +147,17 @@ class MarketFormCard extends StatelessWidget {
                             ],
                           ],
                         ),
+                        if (config.descriptionText != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            config.descriptionText!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.bodySmall(
+                              color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         Text(
                           'Mã: ${config.code} · ${config.schema.blocks.length} câu hỏi',
