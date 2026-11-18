@@ -6,6 +6,7 @@ import '../../../features/auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../features/notifications/presentation/viewmodels/notifications_view_model.dart';
 import '../../../features/profile/presentation/viewmodels/profile_view_model.dart';
 import '../constants/app_assets.dart';
+import '../constants/app_constants.dart';
 import '../localization/language_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
@@ -23,7 +24,7 @@ class VthmTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   const VthmTopAppBar({
     super.key,
-    this.title = 'VTHM Group',
+    this.title = AppConstants.appName,
     this.showAvatar = true,
     this.showBackButton = false,
     this.showLogo = true,

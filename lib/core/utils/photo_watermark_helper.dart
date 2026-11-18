@@ -139,7 +139,7 @@ class PhotoWatermarkHelper {
       final baseFontSize = (width / 50).clamp(12.0, 36.0);
       final padding = baseFontSize * 0.8;
       final lineHeight = baseFontSize * 1.35;
-      final totalLines = watermarkLines.length + 1; // + 1 cho dòng thương hiệu VTHM DMS
+      final totalLines = watermarkLines.length + 1; // + 1 cho dòng thương hiệu VTHM Đồng hành
       final bannerHeight = (totalLines * lineHeight) + (padding * 2);
 
       // 5. Vẽ nền banner mờ màu đen bán trong suốt ở góc dưới ảnh
@@ -185,7 +185,7 @@ class PhotoWatermarkHelper {
         currentY += lineHeight;
       }
 
-      // 7. Vẽ dòng thương hiệu: Logo SVG ở bên trái text 'VTHM DMS'
+      // 7. Vẽ dòng thương hiệu: Logo SVG ở bên trái text 'VTHM Đồng hành'
       if (logoInfo != null) {
         final svgSize = logoInfo.size;
         final svgAspect = svgSize.width / (svgSize.height > 0 ? svgSize.height : 1.0);
@@ -217,9 +217,9 @@ class PhotoWatermarkHelper {
 
         logoInfo.picture.dispose();
 
-        // Vẽ chữ 'VTHM DMS' ngay bên phải logo
+        // Vẽ chữ 'VTHM Đồng hành' ngay bên phải logo
         final brandSpan = TextSpan(
-          text: 'VTHM DMS',
+          text: 'VTHM Đồng hành',
           style: TextStyle(
             color: Colors.white,
             fontSize: baseFontSize * 0.88,
@@ -242,7 +242,7 @@ class PhotoWatermarkHelper {
       } else {
         // Fallback nếu không tải được logo SVG: dùng biểu tượng text
         final fallbackSpan = TextSpan(
-          text: '🛡️ VTHM DMS',
+          text: '🛡️ VTHM Đồng hành',
           style: TextStyle(
             color: Colors.white,
             fontSize: baseFontSize * 0.88,

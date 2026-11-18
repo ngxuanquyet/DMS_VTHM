@@ -3,7 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'VTHM Group';
+  static const String appName = 'VTHM Đồng hành';
   static const String appSubtitle = 'Hệ thống Quản lý Nhân viên Thị trường';
 
   /// Số phiên bản đọc từ chính bản build (`version: x.y.z+n` của pubspec) — nạp một lần ở `main()` qua [loadVersion],

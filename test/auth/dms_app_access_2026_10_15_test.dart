@@ -19,7 +19,7 @@ class MockAuthRepository implements AuthRepository {
   Future<bool> checkAppAccess() async {
     if (checkAppAccessShouldThrow403) {
       throw DmsAppForbiddenException(
-        forbiddenMessage ?? 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+        forbiddenMessage ?? 'Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.',
       );
     }
     if (checkAppAccessShouldThrowNetwork) {
@@ -49,7 +49,7 @@ class MockAuthRepository implements AuthRepository {
   }) async {
     if (loginShouldThrowForbidden) {
       throw DmsAppForbiddenException(
-        forbiddenMessage ?? 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+        forbiddenMessage ?? 'Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.',
       );
     }
     return const UserEntity(
@@ -84,7 +84,7 @@ void main() {
       const ex = DmsAppForbiddenException();
       expect(ex.statusCode, equals(403));
       expect(ex.code, equals('DMS_APP_FORBIDDEN'));
-      expect(ex.message, contains('Tài khoản chưa được cấp quyền dùng app DMS'));
+      expect(ex.message, contains('Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành'));
     });
 
     test('3. Login with 403 DMS_APP_FORBIDDEN sets exact server message without claiming wrong password', () async {
@@ -100,7 +100,7 @@ void main() {
       final success = await vm.login('VTG999', 'correct_password');
       expect(success, isFalse);
       expect(vm.state.status, equals(AuthStatus.error));
-      expect(vm.state.errorMessage, equals('Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.'));
+      expect(vm.state.errorMessage, equals('Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.'));
       expect(vm.state.errorMessage, isNot(contains('Sai mật khẩu')));
     });
 
@@ -117,7 +117,7 @@ void main() {
       final isAuth = await vm.checkAuth();
       expect(isAuth, isFalse);
       expect(vm.state.status, equals(AuthStatus.error));
-      expect(vm.state.errorMessage, contains('Tài khoản chưa được cấp quyền dùng app DMS'));
+      expect(vm.state.errorMessage, contains('Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành'));
     });
 
     test('5. checkAuth retains session when offline or network error occurs during checkAppAccess', () async {

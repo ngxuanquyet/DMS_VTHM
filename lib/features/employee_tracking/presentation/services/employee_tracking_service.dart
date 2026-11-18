@@ -110,7 +110,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
         forceLocationManager: false,
         intervalDuration: Duration(seconds: intervalSec),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'DMS VTHM - Chia sẻ vị trí',
+          notificationTitle: 'VTHM Đồng hành - Chia sẻ vị trí',
           notificationText: 'Ứng dụng đang duy trì cập nhật vị trí công tác',
           enableWakeLock: true,
           setOngoing: true,

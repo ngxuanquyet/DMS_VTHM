@@ -118,7 +118,7 @@ void main() {
     });
 
     test('403 DMS_APP_FORBIDDEN ⇒ giữ pending', () async {
-      boot((o) => (403, {'success': false, 'code': 'DMS_APP_FORBIDDEN', 'message': 'chưa được cấp quyền dùng app DMS'}));
+      boot((o) => (403, {'success': false, 'code': 'DMS_APP_FORBIDDEN', 'message': 'chưa được cấp quyền dùng app VTHM Đồng hành'}));
       final a = await enqueue('declaration', 'create', 'd1', payload: '{"reason_id":1,"lat":1,"lng":1}');
 
       await container.read(syncServiceProvider).syncQueue(force: true);

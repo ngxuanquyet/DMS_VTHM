@@ -31,7 +31,7 @@ class ConsentDocument {
 
 /// Điều khoản sử dụng phần mềm (cũng là nội dung mục "Điều khoản sử dụng" ở màn Cá nhân).
 const ConsentDocument termsOfUseDocument = ConsentDocument(
-  title: 'Điều khoản sử dụng phần mềm VTHM DMS',
+  title: 'Điều khoản sử dụng phần mềm VTHM Đồng hành',
   sections: [
     ConsentSection('', [
       '1. Ứng dụng dành riêng cho CBNV VTHM Group phục vụ công tác quản lý thị trường.',
