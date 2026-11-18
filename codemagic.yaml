@@ -15,11 +15,15 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Get Flutter packages
-        script: flutter pub get
-      - name: Install CocoaPods
+      - name: Disable Swift Package Manager & Get Flutter packages
         script: |
-          find . -name "Podfile" -execdir pod install \;
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
+      - name: Clean & Install CocoaPods
+        script: |
+          cd ios
+          rm -rf Pods Podfile.lock
+          pod install --repo-update
       - name: Set up code signing settings on Xcode project
         script: xcode-project use-profiles
       - name: Build IPA for distribution
