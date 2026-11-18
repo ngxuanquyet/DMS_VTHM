@@ -445,6 +445,15 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
                       color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
                     ).copyWith(fontWeight: FontWeight.w700),
                   ),
+                  if (config.descriptionText != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      config.descriptionText!,
+                      style: AppTypography.bodyMedium(
+                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                   if (widget.args.dealerName != null &&
                       widget.args.dealerName!.isNotEmpty) ...[
                     const SizedBox(height: 6),

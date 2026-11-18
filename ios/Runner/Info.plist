@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>VTHM DMS</string>
+	<string>VTHM Đồng hành</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -65,11 +65,11 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>DMS VTHM cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
+	<string>VTHM Đồng hành cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>DMS VTHM cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
+	<string>VTHM Đồng hành cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>DMS VTHM cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
+	<string>VTHM Đồng hành cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Ứng dụng cần quyền nhận diện giọng nói để chuyển giọng nói thành văn bản.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -88,7 +88,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>DMS VTHM cần quyền sử dụng máy ảnh để chụp ảnh chấm công, check-in viếng thăm điểm bán và khảo sát thị trường.</string>
+	<string>VTHM Đồng hành cần quyền sử dụng máy ảnh để chụp ảnh chấm công, check-in viếng thăm điểm bán và khảo sát thị trường.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Ứng dụng cần quyền truy cập thư viện ảnh để tải lên hình ảnh báo cáo.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

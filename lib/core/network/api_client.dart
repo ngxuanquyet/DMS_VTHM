@@ -460,7 +460,7 @@ class ApiClient {
       // Xử lý mã lỗi 403 DMS_APP_FORBIDDEN theo spec 15/10/2026
       if (isDmsForbiddenResponse(statusCode, errCode, message)) {
         return DmsAppForbiddenException(
-          message ?? 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+          message ?? 'Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.',
           errorId,
         );
       }

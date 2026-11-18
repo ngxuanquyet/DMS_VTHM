@@ -8,7 +8,7 @@ class AppStrings {
   bool get isVietnamese => language == AppLanguage.vi;
 
   // General
-  String get appName => 'VTHM Group';
+  String get appName => 'VTHM Đồng hành';
   String get appSubtitle => isVietnamese
       ? 'Hệ thống Quản lý Nhân viên Thị trường'
       : 'Field Operations Management System';
@@ -272,11 +272,11 @@ class AppStrings {
   String get locationPermissionDeniedTitle =>
       isVietnamese ? 'Yêu cầu quyền vị trí' : 'Location Permission Required';
   String get locationServiceDisabledDesc => isVietnamese
-      ? 'Hệ thống DMS VTHM cần định vị GPS để xác thực vị trí chấm công và check-in ghé thăm điểm bán trên tuyến. Vui lòng bật dịch vụ vị trí trên thiết bị.'
-      : 'VTHM DMS requires GPS location to verify shift attendance and store check-ins on your route. Please enable location services on your device.';
+      ? 'Ứng dụng VTHM Đồng hành cần định vị GPS để xác thực vị trí chấm công và check-in ghé thăm điểm bán trên tuyến. Vui lòng bật dịch vụ vị trí trên thiết bị.'
+      : 'VTHM Đồng hành requires GPS location to verify shift attendance and store check-ins on your route. Please enable location services on your device.';
   String get locationPermissionDeniedDesc => isVietnamese
-      ? 'Vui lòng cấp quyền truy cập vị trí cho ứng dụng DMS VTHM để hệ thống ghi nhận chính xác tọa độ chấm công và lịch trình đi tuyến của bạn.'
-      : 'Please grant location permission to VTHM DMS so the system can accurately verify your attendance and sales route itinerary.';
+      ? 'Vui lòng cấp quyền truy cập vị trí cho ứng dụng VTHM Đồng hành để hệ thống ghi nhận chính xác tọa độ chấm công và lịch trình đi tuyến của bạn.'
+      : 'Please grant location permission to VTHM Đồng hành so the system can accurately verify your attendance and sales route itinerary.';
   String get locationPermissionDeniedForeverDesc => isVietnamese
       ? 'Quyền truy cập vị trí đang bị từ chối. Để tiếp tục chấm công và ghé thăm điểm bán, vui lòng mở Cài đặt ứng dụng và cấp quyền Vị trí.'
       : 'Location permission was denied. To continue attendance check-in and store visits, please open App Settings and allow Location permission.';

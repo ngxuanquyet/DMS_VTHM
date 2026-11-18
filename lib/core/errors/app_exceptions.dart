@@ -68,7 +68,7 @@ class AppException implements Exception {
 /// Ngoại lệ khi tài khoản chưa được phân quyền truy cập app DMS (HTTP 403 DMS_APP_FORBIDDEN)
 class DmsAppForbiddenException extends AppException {
   const DmsAppForbiddenException([
-    String message = 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+    String message = 'Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.',
     String? errorId,
   ]) : super(message, 403, 'DMS_APP_FORBIDDEN', errorId);
 }

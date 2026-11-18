@@ -27,7 +27,7 @@ class AppNotificationService {
   bool _isInitialized = false;
 
   static const String _channelId = 'dms_vthm_notifications';
-  static const String _channelName = 'Thông báo DMS VTHM';
+  static const String _channelName = 'Thông báo VTHM Đồng hành';
   static const String _channelDesc =
       'Kênh nhận thông báo chấm công, lộ trình, cảnh báo và đồng bộ ngoại tuyến';
   static const String _alertChannelId = 'vthm_alerts';
@@ -509,7 +509,7 @@ class AppNotificationService {
   Future<void> sendTestNotification() async {
     await sendNotification(
       id: 999,
-      title: 'Kiểm tra thông báo DMS VTHM',
+      title: 'Kiểm tra thông báo VTHM Đồng hành',
       message: 'Hệ thống thông báo hoạt động tốt! Bạn sẽ nhận được nhắc chấm công vào ca, ra ca theo đúng ca làm việc.',
       type: 'test_notification',
       category: 'system',
@@ -551,7 +551,7 @@ class AppNotificationService {
     await _localNotifications?.zonedSchedule(
       id: 998,
       title: '🔔 Thử nghiệm thông báo khi tắt app!',
-      body: 'Thông báo nền DMS VTHM hoạt động thành công! Nhắc chấm công theo ca sẽ tới cả khi đã tắt app.',
+      body: 'Thông báo nền VTHM Đồng hành hoạt động thành công! Nhắc chấm công theo ca sẽ tới cả khi đã tắt app.',
       scheduledDate: scheduledDate,
       notificationDetails: details,
       androidScheduleMode: scheduleMode,

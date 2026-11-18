@@ -146,7 +146,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
             await logout();
             state = state.copyWith(
               status: AuthStatus.error,
-              errorMessage: 'Tài khoản chưa được cấp quyền dùng app DMS. Vui lòng liên hệ quản lý.',
+              errorMessage: 'Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành. Vui lòng liên hệ quản lý.',
               errorCode: e.displayErrorCode ?? 'DMS_APP_FORBIDDEN (403)',
             );
             return false;

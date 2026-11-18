@@ -9,6 +9,8 @@ class MarketFormConfigEntity {
   final int formId;
   final String code;
   final String name;
+  /// Mô tả biểu mẫu soạn ở Thư viện biểu mẫu (`fld_form.description`); `null`/rỗng = không có.
+  final String? description;
   final String kind; // 'survey' | 'collect'
   final bool isRequired;
   final int sortOrder;
@@ -20,12 +22,19 @@ class MarketFormConfigEntity {
     required this.formId,
     required this.code,
     required this.name,
+    this.description,
     required this.kind,
     required this.isRequired,
     required this.sortOrder,
     required this.schema,
     this.visitScope = 'all',
   });
+
+  /// Mô tả đã cắt khoảng trắng; `null` khi không có gì để hiện.
+  String? get descriptionText {
+    final d = description?.trim();
+    return (d == null || d.isEmpty) ? null : d;
+  }
 
   bool get isSurvey => kind == 'survey';
   bool get isCollect => kind == 'collect';

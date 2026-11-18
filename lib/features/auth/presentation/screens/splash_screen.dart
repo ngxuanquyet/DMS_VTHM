@@ -149,21 +149,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
                     const SizedBox(height: 18),
 
                     // Primary Brand Name
-                    Text(
-                      'VTHM GROUP',
-                      style: AppTypography.displayLarge(
-                        color: AppColors.primary,
-                      ).copyWith(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2.0,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        AppConstants.appName.toUpperCase(),
+                        maxLines: 1,
+                        style: AppTypography.displayLarge(
+                          color: AppColors.primary,
+                        ).copyWith(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2.0,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 4),
 
                     // Subtitle
                     Text(
-                      'HỆ THỐNG PHÂN PHỐI DMS',
+                      'VTHM GROUP',
                       style: AppTypography.labelSmall(
                         color: AppColors.onSurfaceVariant,
                       ).copyWith(

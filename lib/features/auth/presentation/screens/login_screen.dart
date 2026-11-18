@@ -108,19 +108,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                         Text(
-                          strings.appSubtitle,
+                          AppConstants.appName,
                           textAlign: TextAlign.center,
                           style: AppTypography.headlineSmallMobile(
-                            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                          ).copyWith(fontWeight: FontWeight.w700),
+                            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                          ).copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: AppSpacing.stackSm),
                         Text(
-                          AppConstants.appName,
+                          strings.appSubtitle,
                           textAlign: TextAlign.center,
                           style: AppTypography.titleMedium(
-                            color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                          ).copyWith(fontWeight: FontWeight.w600),
+                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                          ).copyWith(fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(height: AppSpacing.stackLg),
 
