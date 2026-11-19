@@ -97,6 +97,9 @@ class DisplayMatrixConfig {
   /// Công tắc ô (D5, `config.matrix.photos_when_zero`): mọi loại có ảnh tối thiểu > 0 phải đủ ảnh dù loại đó toàn 0.
   final bool photosWhenZero;
 
+  /// Số thương hiệu tối thiểu phải có số > 0 (`config.matrix.min_brands`, 19/11/2026); 0 = không bắt.
+  final int minBrands;
+
   /// Đơn vị gợi ý cho loại gõ tay (`config.matrix.units`; server cũ không gửi ⇒ đơn vị của các loại danh mục).
   final List<String> units;
 
@@ -109,6 +112,7 @@ class DisplayMatrixConfig {
     this.brands = const [],
     this.types = const [],
     this.photosWhenZero = false,
+    this.minBrands = 0,
     this.units = const [],
     this.customDecimals = 2,
     this.customMinPhotos = 1,
@@ -141,6 +145,7 @@ class DisplayMatrixConfig {
             ),
       ],
       photosWhenZero: photosWhenZero,
+      minBrands: minBrands,
       units: units,
       customDecimals: customDecimals,
       customMinPhotos: customMinPhotos,
@@ -177,6 +182,7 @@ class DisplayMatrixConfig {
         : ({for (final t in types) '${t['unit'] ?? ''}'.trim()}..remove('')).toList();
     return DisplayMatrixConfig(
       photosWhenZero: m['photos_when_zero'] == true,
+      minBrands: m['min_brands'] == null ? 0 : i(m['min_brands']),
       units: units,
       customDecimals: ct['decimals'] == null ? 2 : i(ct['decimals']).clamp(0, 2),
       customMinPhotos: ct['min_photos'] == null ? 1 : i(ct['min_photos']),
@@ -518,6 +524,15 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
       if (can && n < t.effectiveMinPhotos) return '${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
     }
     return null;
+  }
+
+  /// Lỗi SỐ THƯƠNG HIỆU tối thiểu (cùng luật server): thương hiệu có ít nhất một ô > 0, tính cả "của ta" + gõ tay. [counts] là
+  /// số HIỆU LỰC — phiếu cập nhật hồ sơ truyền số đã ghép số hiện trạng ([withHints]). Ô hoàn toàn rỗng không bị đòi. Hợp lệ ⇒ `null`.
+  static String? brandsError(DisplayMatrixCounts counts, Map photos, DisplayMatrixConfig cfg) {
+    if (cfg.minBrands <= 0) return null;
+    if (counts.isEmpty && photos.values.every((l) => l is! List || l.isEmpty)) return null;
+    final n = counts.values.where((r) => r.values.any((v) => v > 0)).length;
+    return n < cfg.minBrands ? 'cần khai số cho ít nhất ${cfg.minBrands} thương hiệu (đang có $n).' : null;
   }
 
   /// Lỗi của MỘT ô đếm; hợp lệ ⇒ `null`.

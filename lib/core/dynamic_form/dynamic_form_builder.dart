@@ -959,7 +959,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     if (cellErr != null) return '${field.label} – $cellErr';
     final photos = value is Map && value['photos'] is Map ? value['photos'] as Map : const {};
     final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
-    return anhErr == null ? null : '${field.label} – $anhErr';
+    if (anhErr != null) return '${field.label} – $anhErr';
+    final hieuErr = DisplayMatrixFieldWidget.brandsError(counts, photos, cfg);
+    return hieuErr == null ? null : '${field.label} – $hieuErr';
   }
 
   /// Kết quả ô công thức của lần dựng hiện tại (tính một lần mỗi `build`).

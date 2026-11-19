@@ -1582,7 +1582,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '$label – $cellErr';
     final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
-    return anhErr == null ? null : '$label – $anhErr';
+    if (anhErr != null) return '$label – $anhErr';
+    // Số thương hiệu tối thiểu: ô trống giữ số hiện trạng của hồ sơ ⇒ đếm trên số HIỆU LỰC (server bỏ kiểm ô cập nhật hồ sơ).
+    // Ô bỏ trống hẳn (không số, không ảnh) không bị đòi — như server.
+    if (counts.isEmpty && photos.isEmpty) return null;
+    final hieuLuc =
+        DisplayMatrixFieldWidget.withHints(counts, DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg));
+    final hieuErr = DisplayMatrixFieldWidget.brandsError(hieuLuc, photos, cfg);
+    return hieuErr == null ? null : '$label – $hieuErr';
   }
 
   Widget _buildPhotoThumbnail(

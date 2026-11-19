@@ -8,7 +8,7 @@ import 'package:vthm_dms/features/forms/presentation/widgets/dynamic_renderer/ma
 /// Ma trận SOS đợt 2 (hợp đồng `API-MA-TRAN-SOS-DOT2-2026-11-19.md`): thương hiệu thêm dần, thương hiệu / loại gõ tay
 /// (`custom`), công tắc `photos_when_zero`, loại gõ tay bắt ít nhất 1 ảnh.
 void main() {
-  Map<String, dynamic> matrix({bool photosWhenZero = false}) => {
+  Map<String, dynamic> matrix({bool photosWhenZero = false, int? minBrands}) => {
         'matrix': {
           'brands': [
             {'code': 'vthm', 'name': 'VTHM', 'is_own': true},
@@ -20,6 +20,7 @@ void main() {
             {'code': 'op_mau', 'name': 'Ốp mẫu', 'unit': 'm²', 'decimals': 1, 'face_factor': 2, 'min_photos': 0, 'max_photos': 0},
           ],
           'photos_when_zero': photosWhenZero,
+          if (minBrands != null) 'min_brands': minBrands,
           'units': ['m²', 'tấm'],
           'custom_type': {'decimals': 2, 'face_factor': 1, 'min_photos': 1, 'max_photos': 10},
         },
@@ -268,8 +269,9 @@ void main() {
   });
 
   group('vá sau review', () {
-    Future<GlobalKey<MarketFormRendererState>> moHoSo(WidgetTester tester, {bool required = true, bool photosWhenZero = false}) async {
-      final cfg = matrix(photosWhenZero: photosWhenZero)..['update_customer_field'] = 'sos_ho_so';
+    Future<GlobalKey<MarketFormRendererState>> moHoSo(WidgetTester tester,
+        {bool required = true, bool photosWhenZero = false, int? minBrands}) async {
+      final cfg = matrix(photosWhenZero: photosWhenZero, minBrands: minBrands)..['update_customer_field'] = 'sos_ho_so';
       final key = GlobalKey<MarketFormRendererState>();
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -402,5 +404,68 @@ void main() {
       expect((custom['brands'] as List).map((x) => x['code']), ['x_toa_cu']);
       expect((custom['types'] as List).map((x) => x['code']), ['x_ke_go']);
     });
+  });
+
+  group('số thương hiệu tối thiểu (min_brands, 19/11/2026)', () {
+    test('config + brandsError: đếm thương hiệu có ô > 0 (kể cả gõ tay), ô rỗng không đòi', () {
+      final cfg = DisplayMatrixConfig.fromConfig(matrix(minBrands: 2));
+      expect(cfg.minBrands, 2);
+      expect(cfg.withCustom(const DisplayMatrixCustom()).minBrands, 2);
+      expect(DisplayMatrixConfig.fromConfig(matrix()).minBrands, 0);
+      expect(DisplayMatrixFieldWidget.brandsError(const {}, const {}, cfg), isNull);
+      expect(
+        DisplayMatrixFieldWidget.brandsError({'vthm': {'ke_lat': 3}, 'kova': {'ke_lat': 0}}, const {}, cfg),
+        'cần khai số cho ít nhất 2 thương hiệu (đang có 1).',
+      );
+      expect(DisplayMatrixFieldWidget.brandsError({'vthm': {'ke_lat': 3}, 'x_toa': {'ke_lat': 1}}, const {}, cfg), isNull);
+    });
+
+    testWidgets('phiếu thường: một thương hiệu ⇒ chặn nộp', (tester) async {
+      final key = await mo(tester, cfg: matrix(minBrands: 2));
+      await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '1');
+      await tester.pump();
+      expect(key.currentState!.validateAndGetAnswers(), isNull);
+      await tester.pump();
+      expect(find.textContaining('cần khai số cho ít nhất 2 thương hiệu (đang có 1)'), findsOneWidget);
+    });
+  });
+
+  testWidgets('min_brands — phiếu cập nhật hồ sơ: đếm cả số hiện trạng (vthm + TOA của hồ sơ)', (tester) async {
+    final key = GlobalKey<MarketFormRendererState>();
+    final cfg = matrix(minBrands: 2)..['update_customer_field'] = 'sos_ho_so';
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: MarketFormRenderer(
+            key: key,
+            blocks: [
+              MarketFormBlockEntity(
+                ref: 'sos',
+                type: 'field',
+                required: false,
+                resolved: MarketFormResolvedEntity(code: 'sos', label: 'SOS', inputType: 'display_matrix', config: cfg),
+              ),
+            ],
+            customerData: {
+              'sos_ho_so': {
+                'counts': {'vthm': {'op_mau': 2}, 'x_toa': {'op_mau': 3}},
+                'snapshot': {
+                  'brands': [{'code': 'x_toa', 'name': 'TOA', 'custom': true}],
+                  'types': <Map>[],
+                },
+              },
+            },
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '5');
+    await tester.pump();
+    expect(key.currentState!.validateAndGetAnswers(), isNotNull);
+    // Gõ 0 cho thương hiệu hồ sơ ⇒ gỡ ⇒ còn 1.
+    await tester.enterText(find.byKey(const ValueKey('matrix_x_toa_op_mau')), '0');
+    await tester.pump();
+    expect(key.currentState!.validateAndGetAnswers(), isNull);
   });
 }
