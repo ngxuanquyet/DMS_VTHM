@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../../core/dynamic_form/choice_other.dart';
 import '../../../../core/dynamic_form/formula_evaluator.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 
 /// Entity cấu hình biểu mẫu thị trường
 class MarketFormConfigEntity {
@@ -96,6 +97,9 @@ class MarketFormResolvedEntity {
   /// Số ảnh tối thiểu (`config.min_files`, 0 = không đòi) — như server: chỉ áp khi ô ĐÃ có ảnh; ô trống do `required` quyết.
   final int minFiles;
 
+  /// NHÓM TRƯỜNG LẶP (`inputType = group_table`): ô con dạng `{ref, required, resolved}`; rỗng với ô khác.
+  final List<dynamic> groupItems;
+
   const MarketFormResolvedEntity({
     required this.code,
     required this.label,
@@ -106,7 +110,13 @@ class MarketFormResolvedEntity {
     this.validation,
     this.maxFiles = 10,
     this.minFiles = 0,
+    this.groupItems = const [],
   });
+
+  bool get isRepeatGroup => inputType.toLowerCase() == 'group_table';
+
+  /// Đặc tả nhóm trường lặp (số dòng ở `config.min_rows`/`max_rows`, ô con ở [groupItems]).
+  RepeatGroupSpec get repeatGroup => RepeatGroupSpec.fromEngineItems(groupItems, _configMap);
 
   bool get isImage => inputType.toLowerCase() == 'image';
   bool get isLocation => inputType.toLowerCase() == 'location';

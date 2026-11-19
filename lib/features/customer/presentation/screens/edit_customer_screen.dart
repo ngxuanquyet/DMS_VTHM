@@ -19,6 +19,7 @@ import '../viewmodels/customer_view_model.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/utils/offline_photo_store.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
 /// Tuân theo 100% schema biểu mẫu động giống màn Thêm mới (AddCustomerScreen),
@@ -194,6 +195,10 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       final val = entry.value;
       final initialVal = _initialData[key];
 
+      if (_formKey.currentState?.isRepeatGroup(key) ?? false) {
+        if (!RepeatGroupSpec.sameRows(val, initialVal)) return true;
+        continue;
+      }
       if (val is List && initialVal is List) {
         if (val.length != initialVal.length) return true;
         for (int i = 0; i < val.length; i++) {
@@ -503,6 +508,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         // Điểm bán chưa có ô này + người dùng không đụng tới ⇒ giá trị là mặc định của form (false / [] / số sao mặc định),
         // không gửi (#24698 vòng 3–4).
         if (!c.dynamicFields.containsKey(key) && (_formKey.currentState?.isUntouchedDefault(key) ?? false)) continue;
+        // Nhóm trường lặp so theo NỘI DUNG (thứ tự khoá jsonb, mảng chép lại) — khớp cách form bỏ kiểm nhóm không đổi.
+        if (_formKey.currentState?.isRepeatGroup(key) ?? false) {
+          if (!RepeatGroupSpec.sameRows(newVal, oldVal)) dynamicChanges[key] = newVal;
+          continue;
+        }
         // Ô ma trận so theo nội dung: khớp cách form bỏ qua kiểm ô trùng giá trị đang lưu (C3).
         if (newVal != oldVal && !DisplayMatrixFieldWidget.sameValue(newVal, oldVal)) {
           dynamicChanges[key] = newVal;
@@ -899,6 +909,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                               // Ô công thức đọc cả giá trị đang lưu của ô động không có trên form (như server).
                               formulaBaseData: c.dynamicFields,
                               savedData: c.dynamicFields,
+                              editing: true,
                             ),
                           ],
                         ),

@@ -9,6 +9,7 @@ import '../../domain/usecases/visit_usecases.dart';
 import 'visit_kind_badge.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 
 /// Modal bottom sheet hiển thị chi tiết một lượt viếng thăm lịch sử (§2.4 SPEC 16/10/2026)
 /// Hiển thị ảnh (ghép URL tương đối / MobiWork) và các biểu mẫu đã nộp kèm câu hỏi & câu trả lời.
@@ -787,6 +788,8 @@ class _VisitHistoryDetailSheetState
     final schemaFields = <String, String>{};
     final optionLabels = <String, Map<String, String>>{};
     final formulaCodes = <String, FormulaConfig?>{};
+    /// Nhóm trường lặp theo ảnh chụp: mã nhóm → đặc tả (để in mỗi đối tượng một dòng, nhãn lựa chọn đúng).
+    final nhomLap = <String, RepeatGroupSpec>{};
     if (form.formSchemaSnapshot != null) {
       final schema = MarketFormSchemaModel.fromJson(form.formSchemaSnapshot!);
       for (final block in schema.blocks) {
@@ -794,6 +797,7 @@ class _VisitHistoryDetailSheetState
         if (r.code.isEmpty) continue;
         if (r.label.isNotEmpty) schemaFields[r.code] = r.label;
         if (r.inputType.toLowerCase() == 'formula') formulaCodes[r.code] = r.toEntity().formula;
+        if (r.inputType == 'group_table') nhomLap[r.code] = r.toEntity().repeatGroup;
         final options = r.config is Map ? r.config['options'] : null;
         if (options is List) {
           optionLabels[r.code] = {
@@ -823,6 +827,11 @@ class _VisitHistoryDetailSheetState
       if (soCongThuc != null) displayValue = FormulaEvaluator.formatWith(soCongThuc, formulaCodes[code]);
       // Ô ma trận trưng bày: tóm tắt số mặt + % SOS thay cho chuỗi Map thô (#24767).
       displayValue = displayMatrixSummary(val) ?? displayValue;
+      // Nhóm trường lặp: mỗi đối tượng một dòng ("Nguyễn Văn A – 0912…"); không có ảnh chụp thì lấy khoá của dòng.
+      if (nhomLap.containsKey(code) || RepeatGroupSpec.looksLikeRows(val)) {
+        final spec = nhomLap[code] ?? const RepeatGroupSpec();
+        displayValue = spec.displayText(val);
+      }
 
       // Kiểm tra xem có phải ảnh (trong answerPhotos) không
       final List<String> photoUrls = [];

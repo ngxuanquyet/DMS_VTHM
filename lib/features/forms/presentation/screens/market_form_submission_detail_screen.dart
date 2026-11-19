@@ -11,6 +11,7 @@ import '../../data/models/market_form_submission_model.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/dynamic_form/matrix_photo_key.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 
 /// Màn xem lại chi tiết phiếu biểu mẫu đã nộp theo đặc tả §4.3 & §9:
 /// GET /dms/form-submissions/{id}
@@ -242,6 +243,9 @@ class _MarketFormSubmissionDetailScreenState
                 !v.contains('/') &&
                 !v.contains(r'\'));
 
+        // Nhóm trường lặp: theo ảnh chụp schema (đúng thứ tự ô + nhãn lựa chọn), không có thì nhận theo hình dạng giá trị.
+        final nhomLap = detail.repeatGroups.containsKey(fieldCode) || RepeatGroupSpec.looksLikeRows(value);
+
         final isLocationField = value is Map &&
             (value.containsKey('lat') || value.containsKey('lng') || value.containsKey('address'));
 
@@ -279,7 +283,9 @@ class _MarketFormSubmissionDetailScreenState
               else ...[
                 Text(
                   // Ô ma trận trưng bày: tóm tắt số mặt + % SOS thay cho chuỗi Map thô (#24767).
-                  displayMatrixSummary(value) ?? detail.choiceLabelOf(fieldCode) ?? value?.toString() ?? '—',
+                  nhomLap
+                      ? _nhomText(detail, fieldCode, value)
+                      : displayMatrixSummary(value) ?? detail.choiceLabelOf(fieldCode) ?? value?.toString() ?? '—',
                   style: AppTypography.bodyMedium(
                     color: isDark
                         ? AppColors.darkOnSurface
@@ -297,6 +303,11 @@ class _MarketFormSubmissionDetailScreenState
         );
       }).toList(),
     );
+  }
+
+  /// Nhóm trường lặp: mỗi đối tượng một dòng theo ảnh chụp schema (thứ tự ô + nhãn lựa chọn); rỗng ⇒ '—'.
+  String _nhomText(MarketFormSubmissionDetailModel detail, String code, dynamic value) {
+    return (detail.repeatGroups[code] ?? const RepeatGroupSpec()).displayText(value);
   }
 
   /// Hiển thị câu trả lời ô vị trí theo đặc tả §5

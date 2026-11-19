@@ -1,6 +1,7 @@
 export 'dynamic_form_builder.dart';
 export 'formula_evaluator.dart';
 export 'models/dynamic_form_field.dart';
+export 'repeat_group.dart';
 export 'widgets/boolean_field_widget.dart';
 export 'widgets/datetime_field_widget.dart';
 export 'widgets/formula_field_widget.dart';
@@ -12,5 +13,6 @@ export 'widgets/multiple_choice_field_widget.dart';
 export 'widgets/number_field_widget.dart';
 export 'widgets/photo_field_widget.dart';
 export 'widgets/rating_field_widget.dart';
+export 'widgets/repeat_group_field_widget.dart';
 export 'widgets/single_choice_field_widget.dart';
 export 'widgets/text_field_widget.dart';

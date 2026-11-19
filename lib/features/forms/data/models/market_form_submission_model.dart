@@ -1,4 +1,6 @@
 import 'package:uuid/uuid.dart';
+import 'market_form_model.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 
 /// DTO nộp phiếu biểu mẫu thị trường qua POST /dms/form-submissions
 class MarketFormSubmissionModel {
@@ -220,6 +222,10 @@ class MarketFormSubmissionDetailModel {
   final String? clientUuid;
   final String? createdAt;
 
+  /// Nhóm trường lặp theo ẢNH CHỤP schema lúc nộp (`form_schema_snapshot`): mã nhóm → đặc tả — để in mỗi đối tượng một
+  /// dòng đúng thứ tự ô con và NHÃN lựa chọn; rỗng khi phiếu không có nhóm / server không gửi ảnh chụp.
+  final Map<String, RepeatGroupSpec> repeatGroups;
+
   const MarketFormSubmissionDetailModel({
     required this.id,
     required this.configId,
@@ -230,6 +236,7 @@ class MarketFormSubmissionDetailModel {
     this.choiceLabels = const {},
     this.clientUuid,
     this.createdAt,
+    this.repeatGroups = const {},
   });
 
   factory MarketFormSubmissionDetailModel.fromJson(Map<String, dynamic> json) {
@@ -255,7 +262,16 @@ class MarketFormSubmissionDetailModel {
       choiceLabels: json['choice_labels'] is Map ? Map<String, dynamic>.from(json['choice_labels'] as Map) : const {},
       clientUuid: json['client_uuid']?.toString(),
       createdAt: json['created_at']?.toString(),
+      repeatGroups: _repeatGroupsOf(json['form_schema_snapshot']),
     );
+  }
+
+  static Map<String, RepeatGroupSpec> _repeatGroupsOf(dynamic snapshot) {
+    if (snapshot is! Map<String, dynamic>) return const {};
+    return {
+      for (final b in MarketFormSchemaModel.fromJson(snapshot).blocks)
+        if (b.resolved.inputType == 'group_table') b.resolved.code: b.resolved.toEntity().repeatGroup,
+    };
   }
 
   /// Tên lúc nộp của ô [code] (nhiều lựa chọn nối bằng dấu phẩy), hoặc null nếu ô không lấy từ danh mục.

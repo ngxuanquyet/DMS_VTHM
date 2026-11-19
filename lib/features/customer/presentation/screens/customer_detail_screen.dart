@@ -29,6 +29,7 @@ import '../../../auth/presentation/viewmodels/auth_view_model.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
 import '../../../../core/network/refresh_outcome.dart';
 import '../widgets/customer_sos_history_card.dart';
+import '../../../../core/dynamic_form/repeat_group.dart';
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
@@ -1611,6 +1612,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             .cast<CustomerDynamicColumn?>()
             .firstWhere((c) => c?.code == e.key, orElse: () => null);
         final label = col?.label.isNotEmpty == true ? col!.label : e.key;
+        // Nhóm trường lặp: MỖI đối tượng một dòng ("Nguyễn Văn A – 0912…") — cùng cách gộp với web.
+        // Chưa có cấu hình cột (chưa tải / ngoại tuyến) ⇒ nhận theo hình dạng giá trị, không in Map thô kèm line_id.
+        if ((col != null && col.isRepeatGroup) || RepeatGroupSpec.looksLikeRows(e.value)) {
+          final spec = col != null && col.isRepeatGroup ? col.repeatGroup : const RepeatGroupSpec();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10.0),
+            child: _buildInfoRow(label: label, value: spec.displayText(e.value), icon: Icons.fiber_manual_record_rounded, isDark: isDark),
+          );
+        }
         final isLocation = (col != null && col.isLocation) ||
             (e.value is Map && (e.value.containsKey('lat') || e.value.containsKey('lng') || e.value.containsKey('address')));
 

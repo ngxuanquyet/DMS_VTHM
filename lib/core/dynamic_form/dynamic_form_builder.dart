@@ -7,6 +7,7 @@ import '../widgets/app_snackbar.dart';
 import 'choice_other.dart';
 import 'formula_evaluator.dart';
 import 'models/dynamic_form_field.dart';
+import 'repeat_group.dart';
 import 'widgets/display_matrix_field_widget.dart';
 import 'widgets/dynamic_form_field_wrapper.dart';
 import '../widgets/form_fields/form_field_parts.dart';
@@ -21,6 +22,7 @@ import 'widgets/multiple_choice_field_widget.dart';
 import 'widgets/number_field_widget.dart';
 import 'widgets/photo_field_widget.dart';
 import 'widgets/rating_field_widget.dart';
+import 'widgets/repeat_group_field_widget.dart';
 import 'widgets/single_choice_field_widget.dart';
 import 'widgets/text_field_widget.dart';
 import '../widgets/location_field_widget.dart';
@@ -77,6 +79,10 @@ class DynamicFormBuilder extends StatefulWidget {
   /// sát áp vào hiện trạng (#24789) hoặc admin vừa nâng số ảnh tối thiểu không chặn lần sửa ô khác (#24698 vòng 4, C3).
   final Map<String, dynamic> savedData;
 
+  /// Đang SỬA một bản ghi đã có (màn sửa điểm bán) — KHÔNG suy từ [savedData] rỗng hay không: điểm bán có thật vẫn có thể
+  /// chưa có ô động nào. Nhóm trường lặp KHÔNG đổi so với [savedData] thì không kiểm (màn sửa không gửi, server không kiểm).
+  final bool editing;
+
   const DynamicFormBuilder({
     super.key,
     required this.fields,
@@ -92,6 +98,7 @@ class DynamicFormBuilder extends StatefulWidget {
     this.requiredFieldsOf,
     this.formulaBaseData = const {},
     this.savedData = const {},
+    this.editing = false,
   });
 
   @override
@@ -313,8 +320,25 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   Map<String, dynamic> _visibleFormData() {
     final hidden = hiddenFieldCodes;
     final congThuc = {for (final f in widget.fields) if (f.type == DynamicFormFieldType.formula) f.code};
-    return Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
+    final out = Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
+    // Nhóm trường lặp: bỏ dòng không điền gì (bấm nhầm "+ Thêm"). Không bỏ dòng nào ⇒ giữ nguyên tham chiếu (màn sửa so
+    // tham chiếu để biết ô có đổi không).
+    for (final f in widget.fields.where((f) => f.type == DynamicFormFieldType.repeatGroup)) {
+      final v = out[f.code];
+      final spec = RepeatGroupSpec.fromCustomerSchema(f.group);
+      if (v is! List || spec == null) continue;
+      // Nhóm không đổi so với đang lưu ⇒ để nguyên (dòng server đang giữ không bị âm thầm xoá ở lượt sửa ô khác).
+      if (widget.editing && RepeatGroupSpec.sameRows(v, widget.savedData[f.code])) continue;
+      final rows = RepeatGroupSpec.rowsOf(v);
+      final gon = spec.pruneEmpty(rows);
+      if (gon.length != rows.length) out[f.code] = gon;
+    }
+    return out;
   }
+
+  /// Ô [code] là NHÓM TRƯỜNG LẶP — màn sửa so nhóm theo NỘI DUNG ([RepeatGroupSpec.sameRows]), không theo tham chiếu.
+  bool isRepeatGroup(String code) =>
+      widget.fields.any((f) => f.code == code && f.type == DynamicFormFieldType.repeatGroup);
 
   /// Mã các ô mang giá trị MẶC ĐỊNH theo loại ô (không có trong dữ liệu nạp vào, không có giá trị điền sẵn) mà người dùng
   /// chưa đụng tới.
@@ -398,6 +422,28 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       final kiemRieng = widget.customValidators?[field.code];
       if (kiemRieng != null) {
         final loi = kiemRieng(field, value);
+        if (loi != null) {
+          newErrors[field.code] = loi;
+          isValid = false;
+          firstInvalidCode ??= field.code;
+        }
+        continue;
+      }
+
+      // Nhóm trường lặp — TRƯỚC phép kiểm bắt buộc chung: số dòng + ô con bắt buộc của từng dòng (cùng luật server). Dòng
+      // không điền gì bị bỏ. Màn sửa mà nhóm TRÙNG giá trị đang lưu ⇒ không kiểm: màn sửa không gửi ô không đổi, server cũng
+      // không kiểm (PATCH) — admin vừa siết luật nhóm không được chặn người chỉ sửa số điện thoại.
+      if (field.type == DynamicFormFieldType.repeatGroup) {
+        final spec = RepeatGroupSpec.fromCustomerSchema(field.group);
+        if (spec == null) continue;
+        // Kiểm trên bản đã bỏ dòng trống — KHÔNG ghi ngược [_formData] (thẻ trống vừa thêm sẽ biến mất); bản gửi đi bỏ ở
+        // [_visibleFormData].
+        // Nhóm chỉ đọc: không thêm/xoá được thẻ ⇒ không đòi số dòng (server cũng miễn ô chỉ đọc).
+        if (field.isReadOnly) continue;
+        final gon = spec.pruneEmpty(RepeatGroupSpec.rowsOf(value));
+        // So bản ĐÃ bỏ dòng trống — đúng bản sẽ gửi: thẻ trống bấm nhầm không biến nhóm thành "đã đổi".
+        if (widget.editing && RepeatGroupSpec.sameRows(gon, widget.savedData[field.code])) continue;
+        final loi = spec.validate(gon, label: field.label, isRequired: field.isRequired);
         if (loi != null) {
           newErrors[field.code] = loi;
           isValid = false;
@@ -990,6 +1036,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
       case DynamicFormFieldType.displayMatrix:
         return _buildDisplayMatrix(field, value, errorText);
+
+      case DynamicFormFieldType.repeatGroup:
+        final spec = RepeatGroupSpec.fromCustomerSchema(field.group);
+        if (spec == null) return const SizedBox.shrink();
+        return RepeatGroupFieldWidget(
+          field: field,
+          spec: spec,
+          value: value,
+          errorText: errorText,
+          onChanged: (rows) => updateFieldValue(field.code, rows),
+        );
 
       case DynamicFormFieldType.rating:
         final intVal = value is int ? value : (int.tryParse(value?.toString() ?? '') ?? 5);

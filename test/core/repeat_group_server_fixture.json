@@ -1,0 +1,187 @@
+{
+ "customer_group_field": {
+  "kind": "dynamic",
+  "code": "tcc_nguoi_lien_he",
+  "label": "[TEST-CC] Người liên hệ",
+  "input_type": "group_table",
+  "description": null,
+  "level": null,
+  "required": true,
+  "read_only": false,
+  "source": "own",
+  "legacy_key": null,
+  "catalog": null,
+  "min_length": null,
+  "max_length": null,
+  "min": null,
+  "max": null,
+  "options": [],
+  "allow_other": false,
+  "default": null,
+  "max_files": null,
+  "min_files": null,
+  "outlet": null,
+  "erp_partner": null,
+  "formula": null,
+  "show_if": null,
+  "required_if": null,
+  "choice": null,
+  "depends_on": null,
+  "matrix": null,
+  "group": {
+   "min_rows": null,
+   "max_rows": 3,
+   "columns": [
+    {
+     "code": "tcc_ho_ten",
+     "label": "Họ tên",
+     "input_type": "text",
+     "description": null,
+     "required": true,
+     "options": [],
+     "allow_other": false,
+     "min_length": null,
+     "max_length": null,
+     "min": null,
+     "max": null
+    },
+    {
+     "code": "tcc_sdt",
+     "label": "SĐT",
+     "input_type": "text",
+     "description": null,
+     "required": false,
+     "options": [],
+     "allow_other": false,
+     "min_length": null,
+     "max_length": null,
+     "min": null,
+     "max": null
+    },
+    {
+     "code": "tcc_vai",
+     "label": "Vai trò",
+     "input_type": "select",
+     "description": null,
+     "required": false,
+     "options": [
+      {
+       "label": "Chủ shop",
+       "value": "Chủ shop"
+      },
+      {
+       "label": "Nhân viên",
+       "value": "Nhân viên"
+      }
+     ],
+     "allow_other": false,
+     "min_length": null,
+     "max_length": null,
+     "min": null,
+     "max": null
+    }
+   ]
+  }
+ },
+ "market_form": {
+  "config_id": 15191,
+  "form_id": 37852,
+  "code": "tcc_nhom_lap_1795060898",
+  "name": "[TEST-CC] Biểu mẫu nhóm lặp",
+  "description": null,
+  "kind": "collect",
+  "is_required": false,
+  "visit_scope": "all",
+  "sort_order": 0,
+  "schema": {
+   "blocks": [
+    {
+     "type": "field",
+     "ref": "dms_test_cc_ghi_chu_2",
+     "required": false,
+     "col_span": 12,
+     "resolved": {
+      "code": "dms_test_cc_ghi_chu_2",
+      "label": "[TEST-CC] Ghi chú",
+      "input_type": "text",
+      "config": [],
+      "description": null,
+      "show_in_list": false
+     }
+    },
+    {
+     "type": "group",
+     "ref": "dms_tcc_mf_nguoi_lien_he",
+     "required": true,
+     "col_span": 12,
+     "resolved": {
+      "code": "dms_tcc_mf_nguoi_lien_he",
+      "name": "[TEST-CC] Người liên hệ",
+      "kind": "table",
+      "config": {
+       "max_rows": 3
+      },
+      "items": [
+       {
+        "ref": "dms_tcc_mf_ho_ten",
+        "resolved": {
+         "code": "dms_tcc_mf_ho_ten",
+         "label": "Họ tên",
+         "input_type": "text",
+         "config": [],
+         "description": null,
+         "show_in_list": false
+        },
+        "required": true,
+        "sort_order": 0,
+        "col_span": 24,
+        "overrides": []
+       },
+       {
+        "ref": "dms_tcc_mf_sdt",
+        "resolved": {
+         "code": "dms_tcc_mf_sdt",
+         "label": "SĐT",
+         "input_type": "text",
+         "config": [],
+         "description": null,
+         "show_in_list": false
+        },
+        "required": false,
+        "sort_order": 1,
+        "col_span": 24,
+        "overrides": []
+       },
+       {
+        "ref": "dms_tcc_mf_vai",
+        "resolved": {
+         "code": "dms_tcc_mf_vai",
+         "label": "Vai trò",
+         "input_type": "select",
+         "config": {
+          "options": [
+           {
+            "label": "Chủ shop",
+            "value": "Chủ shop"
+           },
+           {
+            "label": "Nhân viên",
+            "value": "Nhân viên"
+           }
+          ]
+         },
+         "description": null,
+         "show_in_list": false
+        },
+        "required": false,
+        "sort_order": 2,
+        "col_span": 24,
+        "overrides": []
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

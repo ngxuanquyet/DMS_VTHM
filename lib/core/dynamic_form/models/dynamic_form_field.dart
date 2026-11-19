@@ -63,6 +63,10 @@ enum DynamicFormFieldType {
   /// [DynamicFormField.matrix]. Giá trị `{counts, photos}`.
   displayMatrix,
 
+  /// NHÓM TRƯỜNG LẶP (`group_table`, 19/11/2026): nhiều dòng cùng bộ ô con — đặc tả ở [DynamicFormField.group]
+  /// (`RepeatGroupSpec`), giá trị là mảng dòng `[{line_id, …}]`.
+  repeatGroup,
+
   /// Ô TRÌNH BÀY — tiêu đề phần (`heading`), cấp ở [DynamicFormField.level]; không thu giá trị
   heading,
 
@@ -142,6 +146,9 @@ enum DynamicFormFieldType {
       case 'attachment':
       case 'file':
         return DynamicFormFieldType.photo;
+
+      case 'group_table':
+        return DynamicFormFieldType.repeatGroup;
 
       case 'boolean':
       case 'bool':
@@ -352,6 +359,10 @@ class DynamicFormField {
   /// Danh mục của ô ma trận trưng bày (`matrix` của schema: thương hiệu + loại đang bật); `null` với ô khác.
   final Map? matrix;
 
+  /// Đặc tả NHÓM TRƯỜNG LẶP (khoá `group` của schema: `{min_rows, max_rows, columns[]}`) — đọc bằng
+  /// `RepeatGroupSpec.fromCustomerSchema`; `null` với ô khác.
+  final Map? group;
+
   /// Ô chỉ để trình bày (tiêu đề / ghi chú) — xem [DynamicFormFieldType.isDisplayOnly].
   bool get isDisplayOnly => type.isDisplayOnly;
 
@@ -394,6 +405,7 @@ class DynamicFormField {
     this.sectionKey,
     this.isSectionDescription = false,
     this.matrix,
+    this.group,
   });
 
   /// Cấp tiêu đề — luật CHUNG form điểm bán và biểu mẫu thị trường: khoá phẳng `level` (schema điểm bán) rồi
@@ -482,8 +494,10 @@ class DynamicFormField {
     }
 
     // Xác định section tự động nếu API chưa truyền section tường minh
-    String? section =
-        json['section']?.toString() ?? json['group']?.toString() ?? json['category']?.toString();
+    // `group` là TÊN MỤC chỉ khi là chuỗi — với ô nhóm trường lặp nó là đặc tả (Map), đọc thành tên mục là ra chuỗi rác.
+    String? section = json['section']?.toString() ??
+        (json['group'] is String ? json['group'] as String : null) ??
+        json['category']?.toString();
     if (section == null || section.isEmpty) {
       if (kind == 'dynamic' || code.startsWith('mw_')) {
         section = 'Thông tin mở rộng (Động)';
@@ -549,6 +563,7 @@ class DynamicFormField {
       order: json['order'] is int ? json['order'] as int : (int.tryParse(json['order']?.toString() ?? '') ?? 0),
       level: headingLevelOf(json),
       matrix: json['matrix'] is Map ? json['matrix'] as Map : null,
+      group: json['group'] is Map ? json['group'] as Map : null,
     );
   }
 
@@ -589,6 +604,7 @@ class DynamicFormField {
     String? sectionKey,
     bool? isSectionDescription,
     Map? matrix,
+    Map? group,
   }) {
     return DynamicFormField(
       code: code ?? this.code,
@@ -626,6 +642,7 @@ class DynamicFormField {
       sectionKey: sectionKey ?? this.sectionKey,
       isSectionDescription: isSectionDescription ?? this.isSectionDescription,
       matrix: matrix ?? this.matrix,
+      group: group ?? this.group,
     );
   }
 

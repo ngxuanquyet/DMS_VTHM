@@ -24,6 +24,8 @@ import '../../../../../core/widgets/geo_select_field_widget.dart';
 import '../../../../../core/dynamic_form/choice_other.dart';
 import '../../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../../core/dynamic_form/models/dynamic_form_field.dart';
+import '../../../../../core/dynamic_form/repeat_group.dart';
+import '../../../../../core/dynamic_form/widgets/repeat_group_field_widget.dart';
 import '../../../../../core/dynamic_form/widgets/choice_other_input.dart';
 import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
@@ -478,6 +480,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     _recomputeVisibility();
     _matrixConfirm.clear();
     final Map<String, String> newErrors = {};
+    /// Nhóm trường lặp đã BỎ dòng không điền gì — chỉ vào bản gửi đi, KHÔNG ghi ngược [_answers]: ghi ngược là thẻ trống
+    /// người dùng vừa thêm biến mất khỏi màn hình ngay khi bấm nộp.
+    final Map<String, dynamic> nhomGon = {};
 
     for (final block in widget.blocks) {
       if (block.isPresentation) continue;
@@ -488,6 +493,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
       final code = block.resolved.code;
       final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
+
+      // Nhóm trường lặp: bỏ dòng không điền gì, rồi kiểm số dòng + ô con bắt buộc của từng dòng (cùng luật server); nhóm
+      // rỗng thì không gửi khoá.
+      if (block.resolved.isRepeatGroup) {
+        final spec = block.resolved.repeatGroup;
+        final gon = spec.pruneEmpty(RepeatGroupSpec.rowsOf(_answers[code]));
+        nhomGon[code] = gon.isEmpty ? null : gon;
+        final err = spec.validate(gon, label: label, isRequired: _req(block));
+        if (err != null) newErrors[code] = err;
+        continue;
+      }
 
       // Ô ma trận trưng bày (#24767): cùng luật server — ô trống = 0 (C1); ảnh tối thiểu chỉ bắt khi loại có số > 0 (C2).
       if (_isMatrixBlock(block)) {
@@ -671,7 +687,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     // Làm sạch: Bỏ các trường rỗng, ô trình bày, và ô đang ẩn (§5, §9)
     return MarketFormSubmissionModel.sanitizeAnswers(
-      _matrixConfirm.isEmpty ? _answers : {..._answers, ..._matrixConfirm},
+      {..._answers, ..._matrixConfirm, ...nhomGon}..removeWhere((_, v) => v == null),
       presentationCodes: _presentationCodes,
       allowedCodes: visibleCodes,
       imageCodes: imageCodes,
@@ -817,6 +833,22 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return _buildImageField(context, block, isDark);
       case 'display_matrix':
         return _buildDisplayMatrixField(context, block, isDark);
+      case 'group_table':
+        // Nhóm trường lặp: danh sách thẻ, mỗi đối tượng đủ ô con — widget dùng chung với form điểm bán.
+        return RepeatGroupFieldWidget(
+          field: DynamicFormField(
+            code: block.resolved.code,
+            label: block.resolved.label,
+            type: DynamicFormFieldType.repeatGroup,
+            helperText: block.resolved.description,
+            isRequired: _req(block),
+          ),
+          spec: block.resolved.repeatGroup,
+          value: _answers[block.resolved.code],
+          errorText: _errors[block.resolved.code],
+          // Nhóm tự giữ dòng ⇒ cập nhật NHẸ (không dựng lại cả biểu mẫu mỗi phím; chỉ dựng lại khi ẩn/hiện/lỗi đổi).
+          onChanged: (rows) => _updateTypedValue(block.resolved.code, rows),
+        );
       case 'location':
       case 'address':
       case 'dia_chi':

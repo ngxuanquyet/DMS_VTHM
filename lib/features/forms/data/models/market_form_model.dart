@@ -192,6 +192,10 @@ class MarketFormResolvedModel {
   final Map<String, dynamic>? resolvedJson;
   final Map<String, dynamic>? blockJson;
 
+  /// NHÓM TRƯỜNG LẶP (khối `group`, `resolved.kind = table`): ô con dạng `{ref, required, resolved}` — PHẢI đi theo
+  /// [toJson] (bản lưu máy cho chạy offline), không thì nhóm mất hết ô con khi mở biểu mẫu từ cache.
+  final List<dynamic> groupItems;
+
   const MarketFormResolvedModel({
     required this.code,
     required this.label,
@@ -200,6 +204,7 @@ class MarketFormResolvedModel {
     this.description,
     this.resolvedJson,
     this.blockJson,
+    this.groupItems = const [],
   });
 
   factory MarketFormResolvedModel.empty({Map<String, dynamic>? blockJson}) =>
@@ -227,11 +232,15 @@ class MarketFormResolvedModel {
                 json['config']['helper_text'])
             : null);
 
-    final inputType = json['input_type']?.toString() ??
-        json['type']?.toString() ??
-        blockJson?['input_type']?.toString() ??
-        blockJson?['type']?.toString() ??
-        'text';
+    // Nhóm trường lặp: định nghĩa NHÓM không có `input_type` (chỉ `kind`) — để rơi xuống `type` của khối là thành 'group'.
+    final laNhomLap = json['kind']?.toString() == 'table' || json['input_type']?.toString() == 'group_table';
+    final inputType = laNhomLap
+        ? 'group_table'
+        : json['input_type']?.toString() ??
+            json['type']?.toString() ??
+            blockJson?['input_type']?.toString() ??
+            blockJson?['type']?.toString() ??
+            'text';
 
     final label = json['label']?.toString() ??
         json['title']?.toString() ??
@@ -256,6 +265,7 @@ class MarketFormResolvedModel {
       description: rawDesc?.toString(),
       resolvedJson: json,
       blockJson: blockJson,
+      groupItems: laNhomLap && json['items'] is List ? json['items'] as List : const [],
     );
   }
 
@@ -265,6 +275,8 @@ class MarketFormResolvedModel {
         'input_type': inputType,
         if (config != null) 'config': config,
         if (description != null) 'description': description,
+        if (inputType == 'group_table') 'kind': 'table',
+        if (groupItems.isNotEmpty) 'items': groupItems,
       };
 
   MarketFormResolvedEntity toEntity() {
@@ -346,6 +358,7 @@ class MarketFormResolvedModel {
       validation: parsedValidation,
       maxFiles: parsedMaxFiles,
       minFiles: parsedMinFiles,
+      groupItems: groupItems,
     );
   }
 
