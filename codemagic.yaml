@@ -22,6 +22,8 @@ workflows:
       - name: Clean & Install CocoaPods
         script: |
           cd ios
+          sed -i '' "s/# platform :ios, .*/platform :ios, '15.0'/g" Podfile
+          sed -i '' "s/platform :ios, .*/platform :ios, '15.0'/g" Podfile
           rm -rf Pods Podfile.lock
           pod install --repo-update
       - name: Set up code signing settings on Xcode project
