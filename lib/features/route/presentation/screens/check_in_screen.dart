@@ -793,6 +793,12 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   }
 
   Future<void> _handleExit() async {
+    // Check-in đang gửi: rời lúc này là đổi uuid phiên (resetSession) giữa chừng — server có thể đã tạo lượt theo uuid cũ
+    // mà hàng đợi xếp lượt theo uuid mới (lượt treo / lượt đôi), hoặc kết quả check-in đổ vào phiên của điểm bán kế tiếp.
+    if (_isCheckingIn) {
+      AppSnackBar.showInvalid(context, 'Đang check-in, vui lòng chờ xong rồi thoát.');
+      return;
+    }
     final state = ref.read(checkInViewModelProvider);
     final vm = ref.read(checkInViewModelProvider.notifier);
 

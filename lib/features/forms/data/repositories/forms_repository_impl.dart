@@ -174,6 +174,7 @@ class FormsRepositoryImpl implements FormsRepository {
       if ((errStr.contains('không tìm thấy ảnh') || errStr.contains('không tìm thấy ảnh vừa tải lên')) &&
           submission.localPhotoPaths != null &&
           submission.localPhotoPaths!.isNotEmpty) {
+        var missingFile = false;
         try {
           debugPrint('[FormsRepository] Phát hiện ảnh bị dọn rác, tự động tải lại ảnh gốc từ máy...');
           final updatedAnswers = Map<String, dynamic>.from(submission.answers);
@@ -188,16 +189,21 @@ class FormsRepositoryImpl implements FormsRepository {
                 newTokens.add(p);
                 continue;
               }
-              final file = File(p);
-              if (await file.exists()) {
-                final photoResult = await _apiService.uploadPhoto(file);
-                newTokens.add(photoResult.token);
+              final file = await OfflinePhotoStore.existingFile(p);
+              // Mất tệp ⇒ báo người dùng chụp lại; bỏ qua là nộp phiếu thiếu ảnh mà không ai biết.
+              if (file == null) {
+                missingFile = true;
+                break;
               }
+              final photoResult = await _apiService.uploadPhoto(file);
+              newTokens.add(photoResult.token);
             }
+            if (missingFile) break;
             if (newTokens.isNotEmpty) {
               applyPhotoList(updatedAnswers, fieldCode, newTokens);
             }
           }
+          if (missingFile) throw StateError('missing photo file');
           final retrySubmission = MarketFormSubmissionModel(
             configId: submission.configId,
             visitId: submission.visitId,
@@ -217,6 +223,9 @@ class FormsRepositoryImpl implements FormsRepository {
           return retried;
         } catch (retryErr) {
           debugPrint('[FormsRepository] Thử tải lại ảnh và nộp lại thất bại: $retryErr');
+        }
+        if (missingFile) {
+          throw const AppException('Ảnh của phiếu không còn trên máy — vui lòng xoá ảnh đó, chụp lại rồi nộp.', 410);
         }
       }
 

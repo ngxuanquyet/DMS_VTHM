@@ -466,6 +466,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
           if (entry.parentUuid != null) {
             pendingCheckoutUuids.add(entry.parentUuid!);
             pendingCheckoutAt[entry.parentUuid!] = at;
+            final parentId = await _parentServerId(db, entry.parentUuid!);
+            if (parentId != null) {
+              pendingCheckoutVisitIds.add(parentId);
+              pendingCheckoutAt[parentId] = at;
+            }
           }
           try {
             final payload = jsonDecode(entry.payload);
@@ -507,6 +512,8 @@ class RouteViewModel extends StateNotifier<RouteState> {
         for (final entry in pendingCancels) {
           if (entry.parentUuid != null) {
             pendingCancelUuids.add(entry.parentUuid!);
+            final parentId = await _parentServerId(db, entry.parentUuid!);
+            if (parentId != null) pendingCancelVisitIds.add(parentId);
           }
           try {
             final payload = jsonDecode(entry.payload);
@@ -630,6 +637,15 @@ class RouteViewModel extends StateNotifier<RouteState> {
     }
 
     return (todayVisits, activeVisit);
+  }
+
+  /// Id server của lượt NGOẠI TUYẾN [parentUuid] khi dòng tạo lượt đã lên server. Check-out / huỷ chờ gửi của lượt đó mang
+  /// `visit_id` âm và danh sách lượt của server không có `client_uuid` ⇒ chỉ khớp được qua id này; không có thì lượt đã
+  /// check-out trong máy hiện lại là "đang mở" (chặn check-in điểm kế tiếp, vào lại là check-out lần hai).
+  static Future<int?> _parentServerId(AppDatabase db, String parentUuid) async {
+    final parent = await db.getEntryByClientUuid(parentUuid);
+    final id = parent?.entity == 'visit' && parent?.op == 'create' ? parent?.serverId : null;
+    return id != null && id > 0 ? id : null;
   }
 
   /// [silent]: nạp lại ngầm (sau lượt tải ngầm) — không chuyển sang trạng thái tải, danh sách đang xem giữ nguyên.
@@ -3239,7 +3255,21 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
 
     try {
-      final completedVisit = await checkoutUseCase(visitId: state.visitId, request: request);
+      final checkedOut = await checkoutUseCase(visitId: state.visitId, request: request);
+      // Phản hồi check-out chỉ có id + phần check-out (không checkin_at / visit_date / điểm bán / client_uuid) ⇒ gộp vào
+      // lượt đang có. Lưu nguyên phản hồi là lượt vừa xong biến khỏi danh sách hôm nay khi lần nạp tuyến sau hỏng mạng.
+      final completedVisit = state.visitEntity?.id == checkedOut.id
+          ? state.visitEntity!.copyWith(
+              checkoutAt: checkedOut.checkoutAt,
+              checkoutAtRaw: checkedOut.checkoutAtRaw,
+              durationSeconds: checkedOut.durationSeconds,
+              visitResult: checkedOut.visitResult,
+              visitResultLabel: checkedOut.visitResultLabel,
+              visitResultColor: checkedOut.visitResultColor,
+              checkoutLat: checkedOut.checkoutLat,
+              checkoutLng: checkedOut.checkoutLng,
+            )
+          : checkedOut;
       _logDirectSend(
         entity: 'visit',
         op: 'checkout',

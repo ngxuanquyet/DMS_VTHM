@@ -332,6 +332,11 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   }
 
   Future<void> _handleSubmit() async {
+    // Ảnh đang đóng dấu / tải lên: câu trả lời còn mang ảnh GỐC chưa đóng dấu — nộp lúc này là gửi ảnh sai.
+    if (_rendererKey.currentState?.hasUploadingPhotos ?? false) {
+      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi nộp.');
+      return;
+    }
     final answers = _rendererKey.currentState?.validateAndGetAnswers();
     if (answers == null) {
       AppSnackBar.showInvalid(context, 'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.');

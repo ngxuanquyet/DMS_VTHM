@@ -561,13 +561,28 @@ class SyncService {
       }
       return _SyncItemStatus.success;
     } on DioException catch (dioErr) {
-      return await _handleDioError(entry, dioErr, currentDeadErrors);
+      return await _guardHandler(entry, () => _handleDioError(entry, dioErr, currentDeadErrors));
     } catch (e) {
-      if (e is AppException) {
-        return await _handleAppException(entry, e, currentDeadErrors);
-      } else {
-        return await _handleGenericError(entry, e.toString());
-      }
+      return await _guardHandler(
+        entry,
+        () => e is AppException
+            ? _handleAppException(entry, e, currentDeadErrors)
+            : _handleGenericError(entry, e.toString()),
+      );
+    }
+  }
+
+  /// Bộ xử lý lỗi tự hỏng (SQLite khoá / đầy bộ nhớ lúc ghi lịch thử lại…): mục KHÔNG được nằm lại `sending` — lượt định
+  /// kỳ chỉ nhặt `pending`, mục kẹt tới lần mở app sau (chặn cả đăng xuất lẫn check-out của lượt) và cả lô bị bỏ ngang.
+  Future<_SyncItemStatus> _guardHandler(SyncQueueEntry entry, Future<_SyncItemStatus> Function() handle) async {
+    try {
+      return await handle();
+    } catch (e) {
+      try {
+        // Chỉ dòng còn `sending`: handler hỏng SAU khi đã markDead thì đưa về pending là gửi lại lệnh server đã từ chối.
+        if ((await _db.getEntryById(entry.id))?.state == 'sending') await _applyBackoff(entry, e.toString());
+      } catch (_) {}
+      return _SyncItemStatus.retryable;
     }
   }
 
