@@ -641,13 +641,6 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
                         ),
                 ),
               if ((type.hint ?? '').trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(type.hint!.trim())),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Đếm theo ${type.unit.isEmpty ? 'đơn vị' : type.unit} · 1 ${type.unit} = ${fmtMatrixNumber(type.faceFactor)} mặt',
-                  style: AppTypography.labelSmall(color: AppColors.onSurfaceVariant),
-                ),
-              ),
             ],
           ),
         ),

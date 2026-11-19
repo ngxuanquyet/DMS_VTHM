@@ -183,7 +183,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('matrix_head_ke_lat')));
     await tester.pumpAndSettle();
     expect(find.text('Mỗi tấm lật xem được = 1 mặt'), findsOneWidget);
-    expect(find.text('Đếm theo tấm · 1 tấm = 1 mặt'), findsOneWidget);
+    expect(find.textContaining('Đếm theo'), findsNothing);
     await tester.tap(find.text('Đã hiểu'));
     await tester.pumpAndSettle();
   });
