@@ -106,6 +106,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   Map<String, dynamic>? _draftAnswers;
   DateTime? _draftSavedAt;
   Map<String, dynamic>? _pendingDraft;
+  /// Ảnh khôi phục từ nháp: token → tệp gốc ([FormDraftStore] `token_files`) — renderer chỉ còn token của chúng.
+  Map<String, String> _draftTokenFiles = {};
+  Map<String, String> _pendingTokenFiles = {};
   Timer? _draftTimer;
   Map<String, String> _draftPhotoMemo = {};
 
@@ -129,6 +132,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       setState(() {
         _draftAnswers = d?.answers;
         _draftSavedAt = d?.savedAt;
+        _draftTokenFiles = d?.tokenFiles ?? {};
         _draftLoaded = true;
       });
     });
@@ -152,6 +156,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   void _onAnswersChanged(Map<String, dynamic> answers) {
     if (!_draftEnabled || _isSubmitting || _isExiting) return;
     _pendingDraft = answers;
+    // Chụp lúc đổi: lúc ghi ở dispose, renderer (con) đã bị gỡ.
+    _pendingTokenFiles = {..._draftTokenFiles, ...?_rendererKey.currentState?.uploadedPhotoFiles};
     _draftTimer?.cancel();
     _draftTimer = Timer(const Duration(seconds: 1), _flushDraft);
   }
@@ -179,6 +185,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       configId: _configId,
       answers: answers,
       photoMemo: _draftPhotoMemo,
+      tokenFiles: _pendingTokenFiles,
     ).then((ok) {
       if (gen == _draftGen) _lastDraftSaveOk = ok;
     });
@@ -202,6 +209,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     _lastDraftSaveOk = true;
     // Map MỚI: lần ghi cũ còn chạy vẫn ghi vào map của nó, không lẫn vào biểu mẫu mới.
     _draftPhotoMemo = {};
+    _draftTokenFiles = {};
     setState(() {
       _draftAnswers = null;
       _draftSavedAt = null;
@@ -421,6 +429,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         submitLng: lng,
         submitAddress: address,
         localPhotoPaths: localPhotos,
+        tokenFiles: _draftTokenFiles,
         parentUuid: widget.args.kind == 'survey' ? widget.args.visitClientUuid : null,
       );
 

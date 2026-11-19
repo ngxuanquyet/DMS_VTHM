@@ -1194,13 +1194,15 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     try {
       if (ref != null && _sessionClientUuid.isNotEmpty) {
         final db = ref!.read(appDatabaseProvider);
-        final photoEntries = await (db.select(db.syncQueueEntries)
+        final queued = await (db.select(db.syncQueueEntries)
           ..where((t) =>
               t.entity.equals('visit_photo') &
               t.parentUuid.equals(_sessionClientUuid) &
               t.state.isNotValue('dead'))
         ).get();
         if (state.visitId != forVisitId) return; // đã rời / sang lượt khác trong lúc đọc
+        // Dòng đang được gửi trực tuyến ([uploadPhoto]) đã có ảnh mã tạm trên màn — nạp nữa là ảnh hiện đôi.
+        final photoEntries = queued.where((e) => !SyncService.isHeldForOnline(e.id)).toList();
         if (photoEntries.isNotEmpty) {
           final restoredPhotos = photoEntries.map((e) {
             Map<String, dynamic> p = {};
@@ -2519,6 +2521,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
     // Chuẩn hoá photoType theo đặc tả API (§4.1):
     final apiPhotoType = (photoType == 'closed_store') ? 'store_front' : photoType;
+    // Mốc LÚC CHỤP — ảnh xếp hàng sau một lần gửi hỏng (quá giờ ~30s) không được mang giờ lúc xếp hàng.
+    final takenAt = DateTime.now();
 
     // 1. Sao lưu file vào thư mục offline_visit_photos lâu dài
     File persistentFile;
@@ -2547,7 +2551,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       photoType: apiPhotoType,
       photoTypeLabel: _photoTypeLabel(apiPhotoType),
       photoTypeColor: 'primary',
-      takenAt: DateTime.now().toIso8601String(),
+      takenAt: takenAt.toIso8601String(),
     );
 
     final updatedPhotos = List<VisitPhotoEntity>.from(state.photos)..add(tempPhoto);
@@ -2587,6 +2591,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       final queueId = await _enqueueVisitPhotoToDb(
         file: persistentFile,
         photoType: apiPhotoType,
+        takenAt: takenAt,
         lat: lat,
         lng: lng,
       );
@@ -2602,15 +2607,76 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       return (true, 'Đã lưu ảnh ngoại tuyến trên máy. Ảnh sẽ tự động tải lên khi có mạng lại.');
     }
 
+    // Ghi hàng đợi TRƯỚC khi tải (giữ cho màn này gửi — lô đồng bộ bỏ qua): app bị tắt giữa lúc tải thì lần mở sau hàng
+    // đợi gửi tiếp (server khử trùng ảnh theo nội dung tệp), không mất ảnh.
+    final outboxId = await _enqueueVisitPhotoToDb(
+      file: persistentFile,
+      photoType: apiPhotoType,
+      takenAt: takenAt,
+      lat: lat,
+      lng: lng,
+    );
+    if (outboxId != null) SyncService.holdForOnline(outboxId);
+    try {
+      return await _uploadPhotoOnline(
+        file: file,
+        persistentFile: persistentFile,
+        apiPhotoType: apiPhotoType,
+        takenAt: takenAt,
+        tempId: tempId,
+        outboxId: outboxId,
+        lat: lat,
+        lng: lng,
+      );
+    } finally {
+      if (outboxId != null) SyncService.releaseOnline(outboxId);
+    }
+  }
+
+  /// Phần gửi trực tuyến của [uploadPhoto]. [outboxId] = dòng hàng đợi đã ghi sẵn (null khi ghi hỏng ⇒ xếp hàng như cũ
+  /// lúc gửi hỏng): gửi xong thì bỏ dòng, gửi hỏng tạm thì để nguyên dòng cho hàng đợi.
+  Future<(bool, String?)> _uploadPhotoOnline({
+    required File file,
+    required File persistentFile,
+    required String apiPhotoType,
+    required DateTime takenAt,
+    required int tempId,
+    required int? outboxId,
+    double? lat,
+    double? lng,
+  }) async {
+    Future<void> dropOutbox() async {
+      if (outboxId == null || ref == null) return;
+      try {
+        final db = ref!.read(appDatabaseProvider);
+        await (db.delete(db.syncQueueEntries)..where((t) => t.id.equals(outboxId))).go();
+      } catch (_) {}
+    }
+
+    // Dòng ghi sẵn còn đó thì để hàng đợi gửi; mất (bị xoá theo đường khác) thì xếp hàng lại.
+    Future<int?> queueForLater() async =>
+        (outboxId != null && ref != null && await ref!.read(appDatabaseProvider).getEntryById(outboxId) != null
+            ? outboxId
+            : null) ??
+        await _enqueueVisitPhotoToDb(
+          file: persistentFile,
+          photoType: apiPhotoType,
+          takenAt: takenAt,
+          lat: lat,
+          lng: lng,
+        );
+
     try {
       final photo = await uploadVisitPhotoUseCase(
         visitId: state.visitId,
         file: persistentFile,
         photoType: apiPhotoType,
-        takenAt: DateTime.now(),
+        takenAt: takenAt,
         lat: lat,
         lng: lng,
       );
+      // Đã lên server (ảnh mang mã server) — dòng hàng đợi không còn việc gì. Bỏ TRƯỚC khi xét "người dùng đã xoá ảnh".
+      await dropOutbox();
 
       // Nếu trong lúc chờ upload, người dùng đã bấm xoá ảnh (ảnh không còn trong state hoặc file đã xoá)
       if (!state.photos.any((p) => p.id == tempId) || !persistentFile.existsSync()) {
@@ -2640,16 +2706,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     } catch (e) {
       // 🔴 Nếu người dùng đã xoá ảnh trong lúc chờ tải lên ⇒ không đưa vào hàng đợi offline
       if (!state.photos.any((p) => p.id == tempId) || !persistentFile.existsSync()) {
+        await dropOutbox();
         return (false, 'Ảnh đã bị xoá.');
       }
 
       if (_isNetworkError(e)) {
-        final queueId = await _enqueueVisitPhotoToDb(
-          file: persistentFile,
-          photoType: apiPhotoType,
-          lat: lat,
-          lng: lng,
-        );
+        final queueId = await queueForLater();
         if (queueId != null) {
           final idx = state.photos.indexWhere((p) => p.id == tempId);
           if (idx >= 0) {
@@ -2669,6 +2731,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           rawMsg.contains('already cancelled');
 
       if (isCancelledError) {
+        await dropOutbox();
         final cancelledVisitId = state.visitId;
         final clientUuid = state.visitEntity?.clientUuid ?? _sessionClientUuid;
         await visitRepository.clearActiveVisit();
@@ -2691,6 +2754,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       // Máy chủ TỪ CHỐI ảnh (4xx khác 408/429 — quá số ảnh, lượt đã check-out…) ⇒ gỡ ảnh lạc quan, nạp lại điều kiện
       // check-out từ server và báo câu lỗi. Xếp hàng thì cổng ảnh trên máy báo đủ trong khi ảnh sẽ chết ở hàng đợi (#24698).
       if (isPermanentRejection(e)) {
+        await dropOutbox();
         state = state.copyWith(photos: state.photos.where((ph) => ph.id != tempId).toList());
         if (persistentFile.path != file.path) {
           try {
@@ -2701,12 +2765,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         return (false, e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', ''));
       }
 
-      final queueId = await _enqueueVisitPhotoToDb(
-        file: persistentFile,
-        photoType: apiPhotoType,
-        lat: lat,
-        lng: lng,
-      );
+      final queueId = await queueForLater();
       if (queueId != null) {
         final idx = state.photos.indexWhere((p) => p.id == tempId);
         if (idx >= 0) {
@@ -2744,6 +2803,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   Future<int?> _enqueueVisitPhotoToDb({
     required File file,
     required String photoType,
+    required DateTime takenAt,
     double? lat,
     double? lng,
   }) async {
@@ -2756,7 +2816,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         'photo_type': photoType,
         'lat': lat,
         'lng': lng,
-        'taken_at': DateTime.now().toIso8601String(),
+        'taken_at': takenAt.toIso8601String(),
         'is_offline_sync': true,
       };
 
@@ -2785,6 +2845,19 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   Future<(bool, String?)> deletePhoto(int photoId) async {
     final photo =
         state.photos.where((p) => p.id == photoId).firstOrNull;
+    // Ảnh mang mã dòng hàng đợi (-id) mà dòng đã / đang lên server: xoá trên máy thôi là ảnh vẫn nằm ở lượt trên server.
+    if (photoId < 0 && -photoId < _tempPhotoIdFloor && ref != null) {
+      SyncQueueEntry? row;
+      try {
+        row = await ref!.read(appDatabaseProvider).getEntryById(-photoId);
+      } catch (_) {}
+      if (row != null && row.state == 'sending') {
+        return (false, 'Ảnh đang được gửi lên máy chủ, vui lòng thử lại sau giây lát.');
+      }
+      if (row != null && row.state == 'done' && (row.serverId ?? 0) > 0) {
+        return _deleteSyncedQueuedPhoto(row, photo);
+      }
+    }
     if (state.visitId <= 0 || (photo != null && photo.id < 0)) {
       final updatedPhotos =
           state.photos.where((p) => p.id != photoId).toList();
@@ -2852,6 +2925,48 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           .replaceAll('AppException: ', '');
       return (false, msg);
     }
+  }
+
+  /// Xoá ảnh chụp ngoại tuyến ĐÃ được hàng đợi gửi lên (dòng `done` giữ mã ảnh server): xoá trên server theo lượt cha rồi
+  /// mới bỏ khỏi màn + hàng đợi. 404 / 410 = đã không còn trên server ⇒ coi như xong.
+  Future<(bool, String?)> _deleteSyncedQueuedPhoto(SyncQueueEntry row, VisitPhotoEntity? photo) async {
+    final db = ref!.read(appDatabaseProvider);
+    var visitId = state.visitId;
+    if (visitId <= 0 && row.parentUuid != null) {
+      visitId = (await db.getEntryByClientUuid(row.parentUuid!))?.serverId ?? 0;
+    }
+    if (visitId <= 0) return (false, 'Chưa xác định được lượt trên máy chủ, vui lòng thử lại sau.');
+    state = state.copyWith(isDeletingPhoto: true);
+    VisitRequirementsEntity? newReq;
+    try {
+      newReq = await deleteVisitPhotoUseCase(visitId: visitId, photoId: row.serverId!);
+    } catch (e) {
+      final status = e is AppException ? e.statusCode : null;
+      if (status != 404 && status != 410) {
+        state = state.copyWith(isDeletingPhoto: false);
+        return (false, e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', ''));
+      }
+    }
+    try {
+      await (db.delete(db.syncQueueEntries)..where((t) => t.id.equals(row.id))).go();
+    } catch (_) {}
+    if (photo?.localPath != null) {
+      try {
+        final file = File(photo!.localPath!);
+        if (file.existsSync()) await file.delete();
+      } catch (_) {}
+    }
+    state = state.copyWith(
+      photos: state.photos.where((p) => p.id != -row.id).toList(),
+      isDeletingPhoto: false,
+    );
+    // Lượt trực tuyến: điều kiện check-out mới của server; lượt còn mã âm: tính lại trên máy.
+    if (newReq != null && state.visitId > 0) {
+      state = state.copyWith(requirements: newReq);
+    } else {
+      _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
+    }
+    return (true, null);
   }
 
   /// Mã tạm của ảnh đang tải trực tuyến là -mốc ms (~1,7e12) — mã dòng hàng đợi không bao giờ tới mức này.

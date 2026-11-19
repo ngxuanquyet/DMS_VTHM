@@ -11,7 +11,8 @@ import '../../../../core/utils/offline_photo_store.dart';
 ///
 /// MỘT ô cho lượt đang mở (như [VisitProgressStore]): khớp id lượt hoặc `client_uuid` (lượt ngoại tuyến đổi id âm → id
 /// server, uuid giữ nguyên). Tệp trên máy (ảnh / tệp đính kèm CHƯA tải lên) chép vào `Documents/[photoDir]` — ảnh chụp
-/// nằm ở thư mục tạm, hệ điều hành dọn được; ảnh đã tải lên giữ token (xem [maxAge]).
+/// nằm ở thư mục tạm, hệ điều hành dọn được; ảnh đã tải lên giữ token trong câu trả lời, tệp gốc của nó chép vào
+/// `token_files` (token → tệp) — phiếu nộp muộn khi token đã hết hạn trên server thì tải lại từ tệp này.
 /// Xoá: nộp thành công ([remove]), kết thúc lượt ([clearVisit]), lưu cho lượt khác; nháp quá [maxAge] không khôi phục.
 class FormDraftStore {
   FormDraftStore._();
@@ -82,12 +83,17 @@ class FormDraftStore {
     required int configId,
     required Map<String, dynamic> answers,
     required Map<String, String> photoMemo,
+    Map<String, String> tokenFiles = const {},
   }) {
     final done = _chain.then((_) async {
       try {
         final prefix = '${clientUuid}_$configId';
         final now = DateTime.now().millisecondsSinceEpoch;
         final draft = <String, dynamic>{'saved_at': now, 'answers': await _persistFiles(answers, photoMemo, prefix)};
+        // Tệp gốc của ảnh đã có token, chỉ giữ token còn trong câu trả lời (ảnh đã xoá thì bỏ tệp).
+        final encoded = jsonEncode(answers);
+        final keep = {for (final e in tokenFiles.entries) if (encoded.contains('"${e.key}"')) e.key: e.value};
+        if (keep.isNotEmpty) draft['token_files'] = await _persistFiles(keep, photoMemo, prefix);
         final prefs = await SharedPreferences.getInstance();
         final slot = _read(prefs);
         final old = slot?['drafts'] is Map ? slot!['drafts'] as Map : const {};
@@ -115,7 +121,7 @@ class FormDraftStore {
   }
 
   /// Nháp của phiếu [configId] trong đúng lượt này; null khi không có / của lượt khác / quá [maxAge] / hỏng.
-  static Future<({Map<String, dynamic> answers, DateTime savedAt})?> load({
+  static Future<({Map<String, dynamic> answers, DateTime savedAt, Map<String, String> tokenFiles})?> load({
     required int visitId,
     required String clientUuid,
     required int configId,
@@ -130,7 +136,12 @@ class FormDraftStore {
       final savedAt = DateTime.fromMillisecondsSinceEpoch(d['saved_at'] is num ? (d['saved_at'] as num).toInt() : 0);
       final createdAt = d['created_at'] is num ? (d['created_at'] as num).toInt() : 0;
       if (DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(createdAt)) > maxAge) return null;
-      return (answers: Map<String, dynamic>.from(d['answers'] as Map), savedAt: savedAt);
+      final tf = d['token_files'] is Map ? d['token_files'] as Map : const {};
+      return (
+        answers: Map<String, dynamic>.from(d['answers'] as Map),
+        savedAt: savedAt,
+        tokenFiles: {for (final e in tf.entries) '${e.key}': '${e.value}'},
+      );
     } catch (_) {
       return null;
     }

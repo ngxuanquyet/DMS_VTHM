@@ -152,6 +152,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     return map;
   }
 
+  /// Ảnh ĐÃ tải lên (có token) còn tệp trên máy: token → tệp. Nháp phiếu giữ token trong câu trả lời; tệp này chỉ là bản
+  /// dự phòng khi token hết hạn trên server (dọn ảnh chưa nộp sau 1 ngày) — xem [FormDraftStore].
+  Map<String, String> get uploadedPhotoFiles => {
+        for (final l in _photoEntries.values)
+          for (final e in l)
+            if ((e.token ?? '').isNotEmpty && e.localPath.isNotEmpty && !isUploadedPhotoToken(e.localPath))
+              e.token!: e.localPath,
+      };
+
   /// Còn ảnh đang đóng dấu / tải lên — chưa vào câu trả lời, rời màn lúc này là mất ảnh.
   bool get hasUploadingPhotos => _photoEntries.values.any((l) => l.any((e) => e.isUploading));
 

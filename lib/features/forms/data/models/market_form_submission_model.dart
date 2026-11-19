@@ -18,6 +18,8 @@ class MarketFormSubmissionModel {
   final int? queuedSeconds;
   final String? clientBootId;
   final Map<String, List<String>>? localPhotoPaths; // §5: Đường dẫn ảnh gốc trên máy phục vụ tải lại khi cần
+  /// Ảnh khôi phục từ nháp chỉ còn token: token → tệp gốc trên máy, chỉ dùng khi server báo token hết hạn.
+  final Map<String, String>? tokenFiles;
 
   MarketFormSubmissionModel({
     required this.configId,
@@ -34,6 +36,7 @@ class MarketFormSubmissionModel {
     this.queuedSeconds,
     this.clientBootId,
     this.localPhotoPaths,
+    this.tokenFiles,
   })  : clientUuid = clientUuid ?? const Uuid().v4(),
         clientTime = clientTime ?? _formatIsoWithOffset(DateTime.now());
 
@@ -170,6 +173,7 @@ class MarketFormSubmissionModel {
       if (queuedSeconds != null) 'queued_seconds': queuedSeconds,
       if (clientBootId != null && clientBootId!.isNotEmpty) 'client_boot_id': clientBootId,
       if (includeInternal && localPhotoPaths != null) '_local_photo_paths': localPhotoPaths,
+      if (includeInternal && (tokenFiles?.isNotEmpty ?? false)) '_token_files': tokenFiles,
     };
     return map;
   }

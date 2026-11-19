@@ -646,6 +646,49 @@ class AppDatabase extends _$AppDatabase {
     return held.length;
   }
 
+  /// Loại mục lỗi được GỬI LẠI tay: chỉ lệnh TẠO mà server khử trùng theo `client_uuid` / nội dung tệp. Không có:
+  /// * lệnh SỬA (sửa điểm bán, vật tư) — gửi lại bản cũ SAU lệnh sửa mới hơn là đè dữ liệu mới;
+  /// * chấm công, khai báo vị trí — giờ ghi = giờ server trừ `queued_seconds`, máy đã khởi động lại thì mất mốc ⇒ ghi
+  ///   giờ bấm gửi lại;
+  /// * lệnh của lượt viếng thăm — thứ tự giữa các lượt do hàng đợi tự giữ ([isHoldingLaterVisit], [isCheckoutHeld]); lượt
+  ///   bị từ chối được đóng lại ở tuyến (lượt hiện lại là đang mở).
+  /// Ảnh chấm công đời cũ (không `parentUuid`) tìm lượt chấm theo "lượt gửi xong mới nhất" — gửi lại muộn là gắn nhầm lượt.
+  static bool canRetryDead(SyncQueueEntry row) =>
+      row.state == 'dead' &&
+      const {'customer:create', 'form_submission:create', 'visit_photo:upload', 'attendance_photo:upload'}
+          .contains('${row.entity}:${row.op}') &&
+      (row.entity != 'attendance_photo' || row.parentUuid != null);
+
+  /// Người dùng bấm "Gửi lại" một mục lỗi (dead): về `pending` như mục mới — lỗi có thể chỉ là tạm (403 do quyền đang
+  /// cấu hình, proxy chặn…). Bộ đếm lỗi nội bộ trong payload bỏ luôn, không thì mục bỏ cuộc ngay lần hỏng đầu. Cùng
+  /// `client_uuid` ⇒ server khử trùng. `false` = không còn là mục lỗi gửi lại được.
+  Future<bool> requeueDead(int id) => transaction(() async {
+        final row = await (select(syncQueueEntries)..where((tbl) => isMine(tbl) & tbl.id.equals(id))).getSingleOrNull();
+        if (row == null || !canRetryDead(row)) return false;
+        var payload = row.payload;
+        try {
+          final m = jsonDecode(payload);
+          if (m is Map) {
+            m.removeWhere((k, _) => '$k'.startsWith('_server_failure'));
+            payload = jsonEncode(m);
+          }
+        } catch (_) {}
+        await (update(syncQueueEntries)..where((tbl) => tbl.id.equals(id))).write(SyncQueueEntriesCompanion(
+          state: const Value('pending'),
+          attempts: const Value(0),
+          nextAttemptAt: const Value(null),
+          lastError: const Value(null),
+          payload: Value(payload),
+        ));
+        // Điểm bán mới bị đánh dấu lỗi lúc chết ([markCustomerSyncError]) ⇒ về "chờ gửi".
+        if (row.entity == 'customer' && row.op == 'create') {
+          await (update(localCustomers)..where((tbl) => tbl.clientUuid.equals(row.clientUuid))).write(
+            const LocalCustomersCompanion(syncStatus: Value('pending')),
+          );
+        }
+        return true;
+      });
+
   /// Xoá một mục hàng đợi (người dùng bấm xoá mục lỗi) — kèm tệp ảnh của nó. `false` = không xoá (lệnh đóng lượt đang
   /// giữ lượt sau, [isHoldingLaterVisit]).
   Future<bool> deleteEntry(int id) async {

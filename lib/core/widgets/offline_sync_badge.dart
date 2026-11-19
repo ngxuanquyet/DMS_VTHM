@@ -670,6 +670,25 @@ Widget buildDeadSyncEntryTile(BuildContext context, WidgetRef ref, SyncQueueEntr
           ),
         ),
         const SizedBox(width: 4),
+        if (AppDatabase.canRetryDead(entry))
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF2563EB)),
+            tooltip: 'Gửi lại',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            visualDensity: VisualDensity.compact,
+            onPressed: () async {
+              // Lỗi có thể chỉ là tạm (quyền đang cấu hình, proxy chặn…) — gửi lại cùng mã, server khử trùng.
+              final ok = await ref.read(appDatabaseProvider).requeueDead(entry.id);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(ok ? 'Đã đưa lại vào hàng chờ, đang gửi…' : 'Mục này không còn để gửi lại.'),
+                duration: const Duration(seconds: 2),
+              ));
+              if (ok) ref.read(syncServiceProvider).syncQueue();
+            },
+          ),
         IconButton(
           icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE11D48)),
           tooltip: 'Xóa mục này',

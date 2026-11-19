@@ -205,4 +205,30 @@ void main() {
     }
     expect(Directory('${docs.path}/${FormDraftStore.photoDir}').listSync(), hasLength(1));
   });
+
+  test('ảnh đã có token: giữ TỆP GỐC (token_files) cho lúc token hết hạn; ảnh đã xoá khỏi câu trả lời thì bỏ tệp', () async {
+    const t1 = '0123456789abcdef0123456789abcdef';
+    const t2 = 'fedcba9876543210fedcba9876543210';
+    final a = shot('t1.jpg');
+    final b = shot('t2.jpg');
+    await FormDraftStore.save(
+      visitId: 1,
+      clientUuid: 'u',
+      configId: 1,
+      answers: {
+        'anh': [t1],
+      },
+      photoMemo: {},
+      tokenFiles: {t1: a.path, t2: b.path},
+    );
+    a.deleteSync();
+    final d = (await FormDraftStore.load(visitId: 1, clientUuid: 'u', configId: 1))!;
+    expect(d.answers['anh'], [t1]);
+    expect(d.tokenFiles.keys, [t1], reason: 't2 không còn trong câu trả lời');
+    expect(d.tokenFiles[t1], contains('/${FormDraftStore.photoDir}/'));
+    expect(File(d.tokenFiles[t1]!).existsSync(), isTrue);
+
+    await FormDraftStore.remove(visitId: 1, clientUuid: 'u', configId: 1);
+    expect(File(d.tokenFiles[t1]!).existsSync(), isFalse);
+  });
 }

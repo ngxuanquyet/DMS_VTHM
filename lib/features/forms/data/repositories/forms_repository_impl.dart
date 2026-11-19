@@ -184,12 +184,13 @@ class FormsRepositoryImpl implements FormsRepository {
             if (!hasPhotoSlot(updatedAnswers, fieldCode)) continue;
             final newTokens = <String>[];
             for (final p in paths) {
-              // Ảnh đã có token mà không còn tệp trên máy (bản nháp khôi phục) — giữ nguyên.
-              if (isUploadedPhotoToken(p)) {
+              // Ảnh đã có token (bản nháp khôi phục): token cũng bị dọn ⇒ tải lại từ tệp gốc của nháp nếu còn.
+              final src = isUploadedPhotoToken(p) ? (submission.tokenFiles ?? const {})[p] : p;
+              if (src == null) {
                 newTokens.add(p);
                 continue;
               }
-              final file = await OfflinePhotoStore.existingFile(p);
+              final file = await OfflinePhotoStore.existingFile(src);
               // Mất tệp ⇒ báo người dùng chụp lại; bỏ qua là nộp phiếu thiếu ảnh mà không ai biết.
               if (file == null) {
                 missingFile = true;
@@ -217,6 +218,7 @@ class FormsRepositoryImpl implements FormsRepository {
             clientTime: submission.clientTime,
             isOfflineSync: submission.isOfflineSync,
             localPhotoPaths: submission.localPhotoPaths,
+            tokenFiles: submission.tokenFiles,
           );
           final retried = await _apiService.submitForm(retrySubmission);
           await _logDirectSend(retrySubmission);
@@ -266,6 +268,15 @@ class FormsRepositoryImpl implements FormsRepository {
     final offlinePayload = submission.toJson(includeInternal: true);
     final persisted = await _persistFormPhotos(submission.localPhotoPaths, submission.clientUuid);
     if (persisted != null) offlinePayload['_local_photo_paths'] = persisted;
+    // Tệp gốc của ảnh nháp: nháp bị xoá ngay sau khi nộp ⇒ chép sang thư mục của hàng đợi.
+    final tokenFiles = submission.tokenFiles;
+    if (tokenFiles != null && tokenFiles.isNotEmpty) {
+      final copied = await OfflinePhotoStore.persist(tokenFiles.values.toList(),
+          dirName: 'offline_form_photos', prefix: '${submission.clientUuid}_tf');
+      offlinePayload['_token_files'] = {
+        for (var i = 0; i < tokenFiles.length; i++) tokenFiles.keys.elementAt(i): copied[i],
+      };
+    }
     offlinePayload['is_offline_sync'] = true;
 
     await _db.enqueue(

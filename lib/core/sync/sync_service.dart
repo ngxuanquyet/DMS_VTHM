@@ -115,6 +115,17 @@ class SyncService {
 
   bool _isSyncing = false;
 
+  /// Dòng hàng đợi đang được màn gửi TRỰC TUYẾN (ảnh viếng thăm ghi hàng đợi trước khi tải — app bị tắt giữa chừng thì
+  /// lần mở sau gửi tiếp). Lô đồng bộ bỏ qua các dòng này để không tải cùng ảnh song song; chỉ sống trong RAM — app chết
+  /// là dòng tự về tay hàng đợi. Tĩnh: nơi giữ không cần dựng SyncService.
+  static final Set<int> _heldForOnline = {};
+
+  static void holdForOnline(int id) => _heldForOnline.add(id);
+
+  static void releaseOnline(int id) => _heldForOnline.remove(id);
+
+  static bool isHeldForOnline(int id) => _heldForOnline.contains(id);
+
   /// Mục vừa bị chặn vì phiên là do bị thu quyền app (DMS_APP_FORBIDDEN), không phải 401.
   bool _lastAuthBlockForbidden = false;
 
@@ -526,6 +537,7 @@ class SyncService {
     SyncQueueEntry batchEntry,
     List<SyncDeadError> currentDeadErrors,
   ) async {
+    if (_heldForOnline.contains(batchEntry.id)) return _SyncItemStatus.skipped;
     // Đánh dấu sang 'sending' — dòng đã bị xoá / đổi trạng thái sau lúc nạp lô (huỷ lượt chưa gửi…) thì KHÔNG gửi.
     if (!await _db.markSending(batchEntry.id)) return _SyncItemStatus.skipped;
     // Đọc LẠI dòng sau khi giành: lô nạp sẵn tới 50 mục, người dùng có thể đã gộp phần sửa vào payload (sửa điểm bán)
@@ -1096,9 +1108,11 @@ class SyncService {
     if (payload['taken_at'] != null) formMap['taken_at'] = payload['taken_at'];
 
     final formData = FormData.fromMap(formMap);
-    await _apiClient.postMultipart('/dms/visits/$visitId/photos', formData: formData);
+    final res = await _apiClient.postMultipart('/dms/visits/$visitId/photos', formData: formData);
 
-    await _db.markDone(entry.id);
+    // Giữ mã ảnh server: xoá ảnh đã gửi xong (màn check-in, ảnh mang mã âm của dòng hàng đợi) phải xoá cả trên server.
+    final data = res is Map ? res['data'] : null;
+    await _db.markDone(entry.id, serverId: data is Map && data['id'] is num ? (data['id'] as num).toInt() : null);
 
     if (file.path.contains('offline_visit_photos')) {
       try {
@@ -1388,7 +1402,10 @@ class SyncService {
         ? Map<String, dynamic>.from(payload['answers'] as Map)
         : <String, dynamic>{};
 
-    Future<void> uploadAllLocalPhotos() async {
+    // Ảnh nháp chỉ còn token: token → tệp gốc ([FormsRepositoryImpl] chép vào hàng đợi) — chỉ dùng khi token đã bị dọn.
+    final tokenFiles = payload['_token_files'] is Map ? payload['_token_files'] as Map : const {};
+
+    Future<void> uploadAllLocalPhotos({bool replaceTokens = false}) async {
       if (localPhotoPaths == null || localPhotoPaths.isEmpty) return;
       for (final kv in localPhotoPaths.entries) {
         final fieldCode = kv.key;
@@ -1398,9 +1415,11 @@ class SyncService {
         if (paths is List) {
           final newTokens = <String>[];
           for (final p in paths) {
-            // Ảnh đã có token (bản nháp khôi phục, không còn tệp trên máy) — giữ nguyên, không tải lại.
+            // Ảnh đã có token (bản nháp khôi phục): giữ nguyên — trừ khi server báo token đã bị dọn và còn tệp gốc.
             if (isUploadedPhotoToken(p.toString())) {
-              newTokens.add(p.toString());
+              final src = replaceTokens ? tokenFiles[p.toString()]?.toString() : null;
+              final f = src == null ? null : await OfflinePhotoStore.existingFile(src);
+              newTokens.add(f == null ? p.toString() : await _uploadTempPhoto('/dms/form-photos', f));
               continue;
             }
             final file = await OfflinePhotoStore.existingFile(p.toString());
@@ -1438,6 +1457,7 @@ class SyncService {
     // Payload gửi lên server loại bỏ các khoá nội bộ
     final sendPayload = Map<String, dynamic>.from(payload);
     sendPayload.remove('_local_photo_paths');
+    sendPayload.remove('_token_files');
     // Bộ đếm lỗi máy chủ của hàng đợi ([recordVisitMaterialFailure]) là khoá nội bộ.
     sendPayload.removeWhere((k, _) => k.startsWith('_server_failure'));
 
@@ -1455,7 +1475,7 @@ class SyncService {
           localPhotoPaths != null &&
           localPhotoPaths.isNotEmpty) {
         debugPrint('[SyncService] Phát hiện ảnh bị dọn rác, tự động tải lại ảnh gốc từ máy...');
-        await uploadAllLocalPhotos();
+        await uploadAllLocalPhotos(replaceTokens: true);
         sendPayload['answers'] = payload['answers'];
         // Gửi lại cùng client_uuid (§3 & §5)
         response = await _apiClient.post(
