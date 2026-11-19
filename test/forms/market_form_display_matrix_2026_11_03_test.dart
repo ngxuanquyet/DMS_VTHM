@@ -35,6 +35,14 @@ void main() {
         resolved: const MarketFormResolvedEntity(code: 'sos', label: 'Số mặt trưng bày', inputType: 'display_matrix', config: matrix),
       );
 
+  /// D1 (19/11/2026): thương hiệu không phải "của ta" chỉ hiện khi đã có số / được thêm ⇒ thêm "Đối thủ A" qua nút.
+  Future<void> themDoiThu(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('matrix_sos_add_brand')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('matrix_add_brand_rival')));
+    await tester.pumpAndSettle();
+  }
+
   test('đọc config.matrix; tổng mặt + % SOS cùng công thức server', () {
     final cfg = DisplayMatrixConfig.fromConfig(matrix);
     expect(cfg.brands.map((b) => b.code), ['rival', 'vthm']);
@@ -91,6 +99,7 @@ void main() {
       home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: [o(required: false)]))),
     ));
     await tester.pumpAndSettle();
+    await themDoiThu(tester);
 
     expect(tester.getTopLeft(find.text('VTHM')).dy, lessThan(tester.getTopLeft(find.text('Đối thủ A')).dy));
 
@@ -163,6 +172,7 @@ void main() {
       home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(blocks: [o(required: false)]))),
     ));
     await tester.pumpAndSettle();
+    await themDoiThu(tester);
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op_mau')), '3');
     await tester.enterText(find.byKey(const ValueKey('matrix_rival_ke_lat')), '2');
     await tester.pump();
@@ -252,6 +262,7 @@ void main() {
       home: Scaffold(body: SingleChildScrollView(child: MarketFormRenderer(blocks: [o(required: false)]))),
     ));
     await tester.pumpAndSettle();
+    await themDoiThu(tester);
     await tester.enterText(find.byKey(const ValueKey('matrix_vthm_ke_lat')), '123456789012345');
     await tester.enterText(find.byKey(const ValueKey('matrix_rival_ke_lat')), '987654321098765');
     await tester.pump();

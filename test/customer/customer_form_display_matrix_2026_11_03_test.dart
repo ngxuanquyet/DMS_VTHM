@@ -145,4 +145,72 @@ void main() {
       reason: 'ô vị trí (map không phải ma trận) đổi giá trị phải được gửi',
     );
   });
+
+  testWidgets('đợt 2 (19/11/2026): hồ sơ có mục gõ tay trong snapshot ⇒ dựng lại thẻ + cột, lưu lại gửi kèm custom; thêm loại gõ tay bắt 1 ảnh',
+      (tester) async {
+    tester.view.physicalSize = const Size(1080, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final dangLuu = {
+      'counts': {'x_toa': {'x_kego': 2}},
+      'photos': {'x_kego': ['a' * 32]},
+      'snapshot': {
+        'brands': [{'code': 'x_toa', 'name': 'TOA', 'is_own': false, 'is_other': false, 'custom': true}],
+        'types': [{'code': 'x_kego', 'name': 'Kệ gỗ', 'unit': 'tấm', 'decimals': 2, 'face_factor': 1, 'custom': true}],
+      },
+    };
+    final key = GlobalKey<DynamicFormBuilderState>();
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DynamicFormBuilder(key: key, fields: [DynamicFormField.fromJson(json)], initialData: {'sos': dangLuu}),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('TOA'), findsOneWidget);
+    expect(find.text('Khác'), findsNothing, reason: 'thương hiệu danh mục chưa có số không hiện sẵn (D1)');
+    expect(find.byKey(const ValueKey('matrix_vthm_x_kego')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_op')), '1');
+    await tester.pump();
+    expect(key.currentState!.validate(focusFirstError: false), isTrue);
+    final sos = key.currentState!.getFormData()['sos'] as Map;
+    expect(sos['counts'], {'x_toa': {'x_kego': 2}, 'vthm': {'op': 1}});
+    expect(sos['custom'], {
+      'brands': [{'code': 'x_toa', 'name': 'TOA'}],
+      'types': [{'code': 'x_kego', 'name': 'Kệ gỗ', 'unit': 'tấm'}],
+    });
+
+    await tester.tap(find.byKey(const ValueKey('matrix_sos_add_type')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_name_input')), 'Tủ màu');
+    await tester.tap(find.widgetWithText(ActionChip, 'tấm'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('matrix_name_ok')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('matrix_vthm_x_tumau')), '1');
+    await tester.pump();
+    expect(key.currentState!.validate(focusFirstError: false), isFalse, reason: 'loại gõ tay có số mà chưa có ảnh');
+    expect(((key.currentState!.getFormData()['sos'] as Map)['custom'] as Map)['types'], [
+      {'code': 'x_kego', 'name': 'Kệ gỗ', 'unit': 'tấm'},
+      {'code': 'x_tumau', 'name': 'Tủ màu', 'unit': 'tấm'},
+    ]);
+  });
+
+  testWidgets('đợt 2: ô chỉ đọc ⇒ không có nút thêm thương hiệu / loại', (tester) async {
+    final ro = Map<String, dynamic>.from(json)..['readonly'] = true;
+    final f = DynamicFormField.fromJson(ro);
+    expect(f.isReadOnly, isTrue);
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: DynamicFormBuilder(fields: [f])))),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('matrix_sos_add_brand')), findsNothing);
+  });
 }

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/string_utils.dart';
 import '../../theme/app_typography.dart';
 import '../../widgets/form_fields/form_field_parts.dart';
 import '../../utils/rich_image_cache.dart' show richImageCacheProvider;
@@ -17,7 +18,19 @@ class DisplayMatrixBrand {
   final String name;
   final bool isOwn;
 
-  const DisplayMatrixBrand({required this.code, required this.name, this.isOwn = false});
+  /// Thương hiệu GÕ TAY (ngoài danh mục, mã `x_…` — đợt 2, D2): chỉ sống trong phiếu / hồ sơ.
+  final bool custom;
+
+  /// `false` = dòng danh mục đã tắt / xoá (server gửi kèm chỉ để nhận số cũ) — không dùng để khớp tên gõ tay (hợp đồng §2).
+  final bool active;
+
+  const DisplayMatrixBrand({
+    required this.code,
+    required this.name,
+    this.isOwn = false,
+    this.custom = false,
+    this.active = true,
+  });
 }
 
 /// Một loại trưng bày trong `config.matrix.types` (đơn vị, hệ số ra mặt, số ảnh tối thiểu/tối đa ĐÃ áp số riêng của biểu mẫu).
@@ -34,6 +47,12 @@ class DisplayMatrixType {
   final int minPhotos;
   final int maxPhotos;
 
+  /// Loại trưng bày GÕ TAY (mã `x_…`, đợt 2 — D3): một cột chung cho mọi thương hiệu, hệ số 1 mặt, ảnh tối thiểu 1 (D4).
+  final bool custom;
+
+  /// Như [DisplayMatrixBrand.active].
+  final bool active;
+
   const DisplayMatrixType({
     required this.code,
     required this.name,
@@ -44,6 +63,8 @@ class DisplayMatrixType {
     this.illustrationTokens = const [],
     this.minPhotos = 0,
     this.maxPhotos = 0,
+    this.custom = false,
+    this.active = true,
   });
 
   /// Số ảnh tối thiểu HIỆU LỰC — không vượt tối đa (server cũng kẹp), tránh đòi ảnh khi không có nút chụp.
@@ -65,26 +86,113 @@ class DisplayMatrixType {
 const num kDisplayMatrixMaxCount = 100000;
 
 /// Danh mục của MỘT ô ma trận — server bơm vào `config.matrix` (dòng đang bật, đã áp số ảnh riêng của biểu mẫu).
+///
+/// Đợt 2 (hợp đồng `API-MA-TRAN-SOS-DOT2-2026-11-19.md`): [withCustom] ghép thêm thương hiệu / loại GÕ TAY của giá trị đang
+/// nhập — cấu hình HIỆU LỰC mà bảng, tổng / % SOS, kiểm số và khối ảnh đều dùng, nên mục gõ tay đi qua đúng luật của mục
+/// danh mục.
 class DisplayMatrixConfig {
   final List<DisplayMatrixBrand> brands;
   final List<DisplayMatrixType> types;
 
-  const DisplayMatrixConfig({this.brands = const [], this.types = const []});
+  /// Công tắc ô (D5, `config.matrix.photos_when_zero`): mọi loại có ảnh tối thiểu > 0 phải đủ ảnh dù loại đó toàn 0.
+  final bool photosWhenZero;
+
+  /// Đơn vị gợi ý cho loại gõ tay (`config.matrix.units`; server cũ không gửi ⇒ đơn vị của các loại danh mục).
+  final List<String> units;
+
+  /// Luật loại gõ tay (`config.matrix.custom_type`): số lẻ, ảnh tối thiểu / tối đa.
+  final int customDecimals;
+  final int customMinPhotos;
+  final int customMaxPhotos;
+
+  const DisplayMatrixConfig({
+    this.brands = const [],
+    this.types = const [],
+    this.photosWhenZero = false,
+    this.units = const [],
+    this.customDecimals = 2,
+    this.customMinPhotos = 1,
+    this.customMaxPhotos = 10,
+  });
+
+  /// Cấu hình HIỆU LỰC: danh mục + mục gõ tay của [custom] (mã đã có trong danh mục thì bỏ qua — danh mục thắng).
+  DisplayMatrixConfig withCustom(DisplayMatrixCustom custom) {
+    if (custom.isEmpty) return this;
+    final b = {for (final x in brands) x.code};
+    final t = {for (final x in types) x.code};
+    return DisplayMatrixConfig(
+      brands: [
+        ...brands,
+        for (final x in custom.brands)
+          if (!b.contains(x.code)) DisplayMatrixBrand(code: x.code, name: x.name, custom: true),
+      ],
+      types: [
+        ...types,
+        for (final x in custom.types)
+          if (!t.contains(x.code))
+            DisplayMatrixType(
+              code: x.code,
+              name: x.name,
+              unit: x.unit,
+              decimals: customDecimals,
+              minPhotos: customMinPhotos,
+              maxPhotos: customMaxPhotos,
+              custom: true,
+            ),
+      ],
+      photosWhenZero: photosWhenZero,
+      units: units,
+      customDecimals: customDecimals,
+      customMinPhotos: customMinPhotos,
+      customMaxPhotos: customMaxPhotos,
+    );
+  }
+
+  /// Thương hiệu DANH MỤC ĐANG DÙNG trùng tên gõ [name] theo mã chuẩn hoá (§2: "kova" = "KOVA") — `null` nếu không trùng.
+  DisplayMatrixBrand? catalogBrandNamed(String name) {
+    final k = displayMatrixSlug(name);
+    if (k.isEmpty) return null;
+    return brands.where((b) => !b.custom && b.active && displayMatrixSlug(b.name) == k).firstOrNull;
+  }
+
+  /// Loại DANH MỤC trùng tên gõ [name] (cùng luật [catalogBrandNamed]).
+  DisplayMatrixType? catalogTypeNamed(String name) {
+    final k = displayMatrixSlug(name);
+    if (k.isEmpty) return null;
+    return types.where((t) => !t.custom && t.active && displayMatrixSlug(t.name) == k).firstOrNull;
+  }
 
   /// Đọc từ `config` của ô (Map đã giải mã); thiếu/lạ ⇒ danh mục rỗng.
   static DisplayMatrixConfig fromConfig(Map? config) {
     final m = config?['matrix'];
     if (m is! Map) return const DisplayMatrixConfig();
     int i(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+    final ct = m['custom_type'] is Map ? m['custom_type'] as Map : const {};
+    final types = [
+      for (final t in (m['types'] is List ? m['types'] as List : const []))
+        if (t is Map && t['code'] != null) t,
+    ];
+    final units = m['units'] is List
+        ? [for (final u in m['units'] as List) if ('$u'.trim().isNotEmpty) '$u'.trim()]
+        : ({for (final t in types) '${t['unit'] ?? ''}'.trim()}..remove('')).toList();
     return DisplayMatrixConfig(
+      photosWhenZero: m['photos_when_zero'] == true,
+      units: units,
+      customDecimals: ct['decimals'] == null ? 2 : i(ct['decimals']).clamp(0, 2),
+      customMinPhotos: ct['min_photos'] == null ? 1 : i(ct['min_photos']),
+      customMaxPhotos: ct['max_photos'] == null ? 10 : i(ct['max_photos']),
       brands: [
         for (final b in (m['brands'] is List ? m['brands'] as List : const []))
           if (b is Map && b['code'] != null)
-            DisplayMatrixBrand(code: '${b['code']}', name: '${b['name'] ?? b['code']}', isOwn: b['is_own'] == true),
+            DisplayMatrixBrand(
+              code: '${b['code']}',
+              name: '${b['name'] ?? b['code']}',
+              isOwn: b['is_own'] == true,
+              active: b['active'] != false,
+            ),
       ],
       types: [
-        for (final t in (m['types'] is List ? m['types'] as List : const []))
-          if (t is Map && t['code'] != null)
+        for (final t in types)
             DisplayMatrixType(
               code: '${t['code']}',
               name: '${t['name'] ?? t['code']}',
@@ -95,10 +203,148 @@ class DisplayMatrixConfig {
               illustrationTokens: DisplayMatrixType.tokensOf(t),
               minPhotos: i(t['min_photos']),
               maxPhotos: i(t['max_photos']),
+              active: t['active'] != false,
             ),
       ],
     );
   }
+}
+
+/// Tên gõ tay đã chuẩn hoá (hợp đồng §2): cắt hai đầu, gộp khoảng trắng liên tiếp, tối đa 60 ký tự.
+String displayMatrixNormName(String name) {
+  final s = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+  return s.length > 60 ? s.substring(0, 60).trimRight() : s;
+}
+
+/// Slug của tên (hợp đồng §2): chữ thường, bỏ dấu tiếng Việt (đ → d), bỏ HẾT ký tự ngoài `[a-z0-9]` (gộp liền — "Kô va" =
+/// "KOVA" = `kova`), tối đa 40 ký tự. Chuỗi rỗng = tên không dùng được.
+String displayMatrixSlug(String name) {
+  final s = StringUtils.toUnaccentedLower(displayMatrixNormName(name)).replaceAll(RegExp(r'[^a-z0-9]+'), '');
+  return s.length > 40 ? s.substring(0, 40) : s;
+}
+
+/// Mã mục gõ tay: `x_` + [displayMatrixSlug]; tên không dùng được ⇒ `null`. Server chuẩn hoá lại bằng đúng luật này.
+String? displayMatrixCustomCode(String name) {
+  final s = displayMatrixSlug(name);
+  return s.isEmpty ? null : 'x_$s';
+}
+
+/// Trần kỹ thuật mỗi giá trị (hợp đồng §3) — server cũng chặn.
+const int kDisplayMatrixMaxCustomBrands = 20;
+const int kDisplayMatrixMaxCustomTypes = 10;
+
+/// Thương hiệu / loại trưng bày GÕ TAY của MỘT giá trị ô ma trận — gửi lên ở khoá `custom` (hợp đồng §3), đọc lại từ `custom`
+/// (bản nháp) và từ mục `custom: true` của `snapshot` (giá trị server đã lưu — §4).
+class DisplayMatrixCustom {
+  final List<({String code, String name})> brands;
+  final List<({String code, String name, String unit})> types;
+
+  const DisplayMatrixCustom({this.brands = const [], this.types = const []});
+
+  bool get isEmpty => brands.isEmpty && types.isEmpty;
+
+  /// Đọc từ giá trị ô: `custom.{brands,types}` trước, rồi mục `custom: true` của `snapshot`; trùng mã giữ bản đầu.
+  static DisplayMatrixCustom fromValue(dynamic value) {
+    if (value is! Map) return const DisplayMatrixCustom();
+    final b = <String, ({String code, String name})>{};
+    final t = <String, ({String code, String name, String unit})>{};
+    void doc(dynamic list, bool fromSnap, bool isType) {
+      if (list is! List) return;
+      for (final x in list) {
+        if (x is! Map || x['code'] == null || (fromSnap && x['custom'] != true)) continue;
+        final code = '${x['code']}';
+        if (!code.startsWith('x_')) continue;
+        final name = displayMatrixNormName('${x['name'] ?? code}');
+        if (isType) {
+          t.putIfAbsent(code, () => (code: code, name: name, unit: '${x['unit'] ?? ''}'.trim()));
+        } else {
+          b.putIfAbsent(code, () => (code: code, name: name));
+        }
+      }
+    }
+
+    final c = value['custom'] is Map ? value['custom'] as Map : const {};
+    final snap = value['snapshot'] is Map ? value['snapshot'] as Map : const {};
+    doc(c['brands'], false, false);
+    doc(snap['brands'], true, false);
+    doc(c['types'], false, true);
+    doc(snap['types'], true, true);
+    return DisplayMatrixCustom(brands: b.values.toList(), types: t.values.toList());
+  }
+
+  /// Hợp hai bộ (trùng mã giữ bản của `this`).
+  DisplayMatrixCustom merge(DisplayMatrixCustom other) {
+    if (other.isEmpty) return this;
+    final b = {for (final x in brands) x.code: x};
+    final t = {for (final x in types) x.code: x};
+    for (final x in other.brands) {
+      b.putIfAbsent(x.code, () => x);
+    }
+    for (final x in other.types) {
+      t.putIfAbsent(x.code, () => x);
+    }
+    return DisplayMatrixCustom(brands: b.values.toList(), types: t.values.toList());
+  }
+
+  /// Chỉ giữ mục được DÙNG trong [counts] / [photos] (mục gõ tay của hồ sơ mà phiếu không chạm thì khỏi gửi).
+  DisplayMatrixCustom onlyUsed(DisplayMatrixCounts counts, Map photos) {
+    final loai = <String>{for (final r in counts.values) ...r.keys, ...photos.keys.map((k) => '$k')};
+    return DisplayMatrixCustom(
+      brands: [for (final x in brands) if (counts.containsKey(x.code)) x],
+      types: [for (final x in types) if (loai.contains(x.code)) x],
+    );
+  }
+
+  /// Bỏ mục của [fromHints] (mục gõ tay của HỒ SƠ điểm bán) mà phiếu không dùng — mục người dùng tự thêm thì giữ.
+  DisplayMatrixCustom minusUnused(DisplayMatrixCustom fromHints, DisplayMatrixCounts counts, Map photos) {
+    final dung = onlyUsed(counts, photos);
+    final b = {for (final x in fromHints.brands) x.code};
+    final t = {for (final x in fromHints.types) x.code};
+    return DisplayMatrixCustom(
+      brands: [for (final x in brands) if (!b.contains(x.code) || dung.brands.any((y) => y.code == x.code)) x],
+      types: [for (final x in types) if (!t.contains(x.code) || dung.types.any((y) => y.code == x.code)) x],
+    );
+  }
+
+  DisplayMatrixCustom withoutBrand(String code) =>
+      DisplayMatrixCustom(brands: [for (final x in brands) if (x.code != code) x], types: types);
+
+  DisplayMatrixCustom withoutType(String code) =>
+      DisplayMatrixCustom(brands: brands, types: [for (final x in types) if (x.code != code) x]);
+
+  DisplayMatrixCustom withBrand(String code, String name) =>
+      brands.any((x) => x.code == code) ? this : DisplayMatrixCustom(brands: [...brands, (code: code, name: name)], types: types);
+
+  DisplayMatrixCustom withType(String code, String name, String unit) => types.any((x) => x.code == code)
+      ? this
+      : DisplayMatrixCustom(brands: brands, types: [...types, (code: code, name: name, unit: unit)]);
+
+  /// Khoá `custom` gửi lên (hợp đồng §3).
+  Map<String, dynamic> toJson() => {
+        'brands': [for (final x in brands) {'code': x.code, 'name': x.name}],
+        'types': [for (final x in types) {'code': x.code, 'name': x.name, 'unit': x.unit}],
+      };
+}
+
+/// Giá trị ô ma trận có DỮ LIỆU (số hoặc ảnh). Giá trị chỉ mang `custom` (thêm thẻ / cột mà chưa nhập gì) giữ trong form để
+/// bảng còn thẻ / cột, nhưng là ô RỖNG khi kiểm bắt buộc và khi gửi (server coi là rỗng).
+bool displayMatrixHasData(dynamic value) {
+  if (value is! Map) return false;
+  final c = value['counts'];
+  final p = value['photos'];
+  return (c is Map && c.values.any((r) => r is Map && r.isNotEmpty)) ||
+      (p is Map && p.values.any((l) => l is List && l.isNotEmpty));
+}
+
+/// Ghép giá trị ô ma trận để lưu / gửi: `{counts, photos}` + `custom` khi có mục gõ tay. Không số, không ảnh, không mục gõ
+/// tay ⇒ `null` (ô rỗng).
+Map<String, dynamic>? displayMatrixValue(DisplayMatrixCounts counts, Map photos, DisplayMatrixCustom custom) {
+  if (counts.isEmpty && photos.isEmpty && custom.isEmpty) return null;
+  return {
+    'counts': counts,
+    'photos': photos,
+    if (!custom.isEmpty) 'custom': custom.toJson(),
+  };
 }
 
 /// Số đếm của ô: `{mã thương hiệu: {mã loại: số}}` — CHỈ ô đã nhập (ô trống = 0 khi cộng, chốt C1).
@@ -165,6 +411,13 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   /// giữ số trên server (luật 05/11), số trong máy có thể cũ hơn server, gửi lại là đè số mới. Ô bị xoá trống hiện mờ số này.
   final DisplayMatrixCounts hintCounts;
 
+  /// Mục GÕ TAY của giá trị đang nhập (đợt 2) — [config] là cấu hình HIỆU LỰC đã ghép chúng ([DisplayMatrixConfig.withCustom]).
+  final DisplayMatrixCustom custom;
+
+  /// Báo thay đổi CẤU TRÚC (thêm / bỏ mục gõ tay, xoá một thương hiệu / loại cùng số của nó) — màn chứa ghép lại giá trị
+  /// (`custom` + `counts`). `null` ⇒ bảng chỉ nhập số, không có nút thêm / xoá (giữ hành vi cũ).
+  final void Function(DisplayMatrixCustom custom, DisplayMatrixCounts counts, bool hasInvalidCell)? onCustomChanged;
+
   const DisplayMatrixFieldWidget({
     super.key,
     this.fieldCode = '',
@@ -177,6 +430,8 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     required this.onChanged,
     this.photoSection,
     this.hintCounts = const {},
+    this.custom = const DisplayMatrixCustom(),
+    this.onCustomChanged,
   });
 
   /// Đọc `counts` từ giá trị đã lưu (nháp / phiếu cũ): `{counts: {...}}`; bỏ ô không phải số.
@@ -249,6 +504,22 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     return null;
   }
 
+  /// Lỗi ẢNH theo loại (cùng luật server — hợp đồng §5): quá `max_photos`; thiếu `min_photos` khi loại có số > 0, hoặc
+  /// LUÔN thiếu khi bật `photos_when_zero`. [cfg] là cấu hình HIỆU LỰC (có loại gõ tay — tối thiểu 1). Ô hoàn toàn rỗng (không
+  /// số, không ảnh) không bị đòi ảnh — bắt buộc hay không do luật "bắt buộc" của ô. Hợp lệ ⇒ `null`; lỗi ⇒ `"<loại>: …"`.
+  static String? photosError(DisplayMatrixCounts counts, Map photos, DisplayMatrixConfig cfg) {
+    if (counts.isEmpty && photos.values.every((l) => l is! List || l.isEmpty)) return null;
+    for (final t in cfg.types) {
+      final n = photos[t.code] is List ? (photos[t.code] as List).length : 0;
+      if (t.maxPhotos > 0 && n > t.maxPhotos) return '${t.name}: tối đa ${t.maxPhotos} ảnh.';
+      // Loại gõ tay chỉ xét khi ĐƯỢC DÙNG trong giá trị (có ô số — kể cả 0 — hoặc ảnh), như server.
+      if (t.custom && n == 0 && !counts.values.any((r) => r.containsKey(t.code))) continue;
+      final can = t.effectiveMinPhotos > 0 && (cfg.photosWhenZero || DisplayMatrixTotals.sumOfType(counts, t.code) > 0);
+      if (can && n < t.effectiveMinPhotos) return '${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
+    }
+    return null;
+  }
+
   /// Lỗi của MỘT ô đếm; hợp lệ ⇒ `null`.
   static String? cellError(num n, DisplayMatrixType t) {
     if (n < 0 || n > kDisplayMatrixMaxCount) return 'phải trong khoảng 0 đến ${fmtMatrixNumber(kDisplayMatrixMaxCount)}';
@@ -276,6 +547,15 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
 
   DisplayMatrixConfig get _config;
   DisplayMatrixCounts get _hints;
+
+  /// Hàng thương hiệu ĐANG hiện ("của ta" đứng đầu) — đợt 2: thương hiệu thêm dần, không phải cả danh mục.
+  List<DisplayMatrixBrand> get _brandsShown;
+
+  /// Xoá được hàng thương hiệu / cột loại không — `null` = bảng không có nút xoá (màn phóng to).
+  bool Function(DisplayMatrixBrand b)? get _canRemoveBrand => null;
+  bool Function(DisplayMatrixType t)? get _canRemoveType => null;
+  void Function(String code)? get _removeBrand => null;
+  void Function(String code)? get _removeType => null;
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged;
 
   /// Còn ô gõ sai dạng số (số không vào bộ đếm).
@@ -378,8 +658,11 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
 
   /// Bảng nhập ([keyPrefix] khác nhau giữa phiếu và màn phóng to: hai bảng cùng nằm trong cây khi màn phóng to mở).
   Widget _table({required String keyPrefix, required double cellWidth, required DisplayMatrixTotals totals}) => _MatrixTable(
-        // "Của ta" đứng đầu (đếm VTHM trước rồi lần lượt đối thủ); còn lại giữ thứ tự danh mục.
-        brands: [..._config.brands.where((b) => b.isOwn), ..._config.brands.where((b) => !b.isOwn)],
+        brands: _brandsShown,
+        canRemoveBrand: _canRemoveBrand,
+        canRemoveType: _canRemoveType,
+        onRemoveBrand: _removeBrand,
+        onRemoveType: _removeType,
         types: _config.types,
         totals: totals,
         controller: _controller,
@@ -434,10 +717,164 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
   @override
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
 
+  /// Thương hiệu DANH MỤC người dùng vừa thêm (chưa gõ số nên chưa có trong [_counts]).
+  final Set<String> _added = {};
+
+  /// D1: hàng hiện = "của ta" + thương hiệu đã có số (giá trị / hiện trạng) + thương hiệu gõ tay + thương hiệu vừa thêm. Bảng
+  /// không sửa được cấu trúc (không có nút thêm) hiện ĐỦ danh mục như trước.
+  @override
+  List<DisplayMatrixBrand> get _brandsShown {
+    bool hien(DisplayMatrixBrand b) =>
+        !_editable ||
+        b.custom || _added.contains(b.code) || _counts.containsKey(b.code) || _hints.containsKey(b.code);
+    return [..._config.brands.where((b) => b.isOwn), ..._config.brands.where((b) => !b.isOwn && hien(b))];
+  }
+
+  /// Thương hiệu danh mục còn có thể thêm.
+  List<DisplayMatrixBrand> get _brandsAddable {
+    final hien = {for (final b in _brandsShown) b.code};
+    return [for (final b in _config.brands) if (!b.custom && b.active && !hien.contains(b.code)) b];
+  }
+
+  bool get _editable => widget.onCustomChanged != null;
+
+  /// Hàng có số HIỆN TRẠNG (hồ sơ điểm bán) không xoá được: ô trống giữ số cũ khi nộp — muốn gỡ thì gõ 0.
+  @override
+  bool Function(DisplayMatrixBrand b)? get _canRemoveBrand =>
+      _editable ? (b) => !b.isOwn && !_hints.containsKey(b.code) : null;
+
+  /// Chỉ cột loại GÕ TAY, và không phải cột đang mang số hiện trạng của hồ sơ (ô trống giữ số cũ — gỡ cột không xoá được số).
+  @override
+  bool Function(DisplayMatrixType t)? get _canRemoveType =>
+      _editable ? (t) => t.custom && !_hints.values.any((r) => r.containsKey(t.code)) : null;
+
+  @override
+  void Function(String code)? get _removeBrand => _editable ? _xoaThuongHieu : null;
+
+  @override
+  void Function(String code)? get _removeType => _editable ? _xoaLoai : null;
+
+  /// Bỏ controller của hàng / cột vừa xoá — ô khác giữ nguyên chữ đang gõ (kể cả chữ sai dạng đang báo lỗi).
+  void _dropControllers(bool Function(String key) bo) {
+    final cu = [for (final k in _ctrl.keys.where(bo).toList()) _ctrl.remove(k)!];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final c in cu) {
+        c.dispose();
+      }
+    });
+  }
+
+  void _baoCauTruc(DisplayMatrixCustom custom, DisplayMatrixCounts counts) =>
+      widget.onCustomChanged?.call(custom, counts, _hasInvalidCell);
+
+  void _xoaThuongHieu(String code) {
+    final next = {for (final e in _counts.entries) if (e.key != code) e.key: Map.of(e.value)};
+    setState(() {
+      _added.remove(code);
+      _counts = next;
+      _cellErr.removeWhere((k, _) => k.startsWith('$code::'));
+      _dropControllers((k) => k.startsWith('$code::'));
+    });
+    _baoCauTruc(widget.custom.withoutBrand(code), next);
+  }
+
+  void _xoaLoai(String code) {
+    final next = <String, Map<String, num>>{};
+    _counts.forEach((b, row) {
+      final r = {for (final e in row.entries) if (e.key != code) e.key: e.value};
+      if (r.isNotEmpty) next[b] = r;
+    });
+    setState(() {
+      _counts = next;
+      _cellErr.removeWhere((k, _) => k.endsWith('::$code'));
+      _dropControllers((k) => k.endsWith('::$code'));
+    });
+    _baoCauTruc(widget.custom.withoutType(code), next);
+  }
+
+  void _thongBao(String text) => ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
+
+  /// "+ Thêm thương hiệu": danh sách thương hiệu danh mục còn lại + "Nhập tên khác…".
+  Future<void> _themThuongHieu() async {
+    FocusScope.of(context).unfocus();
+    final chon = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final b in _brandsAddable)
+              ListTile(key: ValueKey('matrix_add_brand_${b.code}'), title: Text(b.name), onTap: () => Navigator.of(ctx).pop(b.code)),
+            ListTile(
+              key: const ValueKey('matrix_add_brand_other'),
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Nhập tên khác…'),
+              onTap: () => Navigator.of(ctx).pop(''),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || chon == null) return;
+    if (chon.isNotEmpty) {
+      setState(() => _added.add(chon));
+      return;
+    }
+    final ten = await _hoiTen(tieuDe: 'Thêm thương hiệu', nhan: 'Tên thương hiệu');
+    if (!mounted || ten == null) return;
+    // Trùng thương hiệu danh mục theo tên chuẩn hoá ⇒ chọn thương hiệu đó (hợp đồng §2).
+    final trung = _config.catalogBrandNamed(ten.name);
+    if (trung != null) {
+      setState(() => _added.add(trung.code));
+      return;
+    }
+    final code = displayMatrixCustomCode(ten.name);
+    if (code == null) return _thongBao('Tên thương hiệu không hợp lệ.');
+    // Trùng mục gõ tay ĐÃ CÓ (kể cả mục đã lưu mang mã cũ) ⇒ dùng nguyên mục đó, không sinh mã mới (§2).
+    final daCo = widget.custom.brands.where((x) => x.code == code || displayMatrixSlug(x.name) == code.substring(2)).firstOrNull;
+    if (daCo != null) {
+      setState(() => _added.add(daCo.code));
+      return;
+    }
+    if (widget.custom.brands.length >= kDisplayMatrixMaxCustomBrands) {
+      return _thongBao('Tối đa $kDisplayMatrixMaxCustomBrands thương hiệu ngoài danh mục.');
+    }
+    _baoCauTruc(widget.custom.withBrand(code, displayMatrixNormName(ten.name)), _counts);
+  }
+
+  /// "+ Thêm loại trưng bày khác": tên + đơn vị ⇒ một cột chung cho mọi thương hiệu.
+  Future<void> _themLoai() async {
+    FocusScope.of(context).unfocus();
+    final ten = await _hoiTen(tieuDe: 'Thêm loại trưng bày khác', nhan: 'Tên loại trưng bày', donVi: _config.units);
+    if (!mounted || ten == null) return;
+    final trung = _config.catalogTypeNamed(ten.name);
+    if (trung != null) return _thongBao('"${trung.name}" đã có trong bảng.');
+    final code = displayMatrixCustomCode(ten.name);
+    if (code == null) return _thongBao('Tên loại trưng bày không hợp lệ.');
+    final daCo = widget.custom.types.where((x) => x.code == code || displayMatrixSlug(x.name) == code.substring(2)).firstOrNull;
+    if (daCo != null) return _thongBao('"${daCo.name}" đã có trong bảng.');
+    if (widget.custom.types.length >= kDisplayMatrixMaxCustomTypes) {
+      return _thongBao('Tối đa $kDisplayMatrixMaxCustomTypes loại trưng bày ngoài danh mục.');
+    }
+    _baoCauTruc(widget.custom.withType(code, displayMatrixNormName(ten.name), ten.unit), _counts);
+  }
+
+  /// Hộp nhập tên (và đơn vị khi có [donVi]) — trả `null` khi huỷ.
+  Future<({String name, String unit})?> _hoiTen({required String tieuDe, required String nhan, List<String>? donVi}) =>
+      showDialog<({String name, String unit})>(
+        context: context,
+        builder: (ctx) => _NameUnitDialog(title: tieuDe, label: nhan, units: donVi),
+      );
+
   @override
   void initState() {
     super.initState();
     _counts = DisplayMatrixFieldWidget.onlyAsked(widget.counts, widget.config);
+    // Hàng đang có số thì giữ hiện cả khi người dùng xoá trống hết ô của nó giữa lúc gõ.
+    _added.addAll(_counts.keys);
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchIllustrations());
   }
 
@@ -448,6 +885,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
     // Số do CHÍNH ô này gõ quay về y hệt ⇒ giữ nguyên (ô đang gõ dở "2," không bị viết lại); khác ⇒ đổi từ ngoài, ghi lại ô.
     if (!_sameCounts(moi, _counts)) {
       _counts = moi;
+      _added.addAll(moi.keys);
       _cellErr.clear();
       _resyncControllers();
     }
@@ -474,12 +912,14 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
     final nav = Navigator.of(context);
     DisplayMatrixCounts? ketQua;
     bool? baoCuoi; // cờ sai dạng màn phóng to báo phiếu lần cuối; null = không gõ gì
+    final hang = _brandsShown;
     try {
       await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       ketQua = await nav.push<DisplayMatrixCounts>(MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => _MatrixFullscreen(
           config: _config,
+          brands: hang,
           label: widget.label,
           counts: _counts,
           hints: _hints,
@@ -522,7 +962,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
       children: [
         FormFieldLabel(label: widget.label, isRequired: widget.isRequired, description: widget.description),
         const SizedBox(height: kFormLabelGap),
-        if (cfg.brands.isEmpty || cfg.types.isEmpty)
+        if (!cfg.brands.any((b) => !b.custom) || !cfg.types.any((t) => !t.custom))
           Text(
             'Biểu mẫu chưa có thương hiệu hoặc loại trưng bày nào — báo quản trị.',
             style: AppTypography.bodySmall(color: AppColors.error),
@@ -534,13 +974,31 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
               child: Text('Bấm tên cột để xem ảnh minh hoạ / cách đếm', style: AppTypography.labelSmall(color: muted)),
             ),
           _table(keyPrefix: 'matrix', cellWidth: 104, totals: totals),
+          if (_editable)
+            Wrap(
+              spacing: 4,
+              children: [
+                TextButton.icon(
+                  key: ValueKey('matrix_${widget.fieldCode}_add_brand'),
+                  onPressed: _themThuongHieu,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Thêm thương hiệu'),
+                ),
+                TextButton.icon(
+                  key: ValueKey('matrix_${widget.fieldCode}_add_type'),
+                  onPressed: _themLoai,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Thêm loại trưng bày khác'),
+                ),
+              ],
+            ),
         ],
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 8),
           child: Row(
             children: [
               Expanded(child: _totalLine(totals)),
-              if (cfg.brands.isNotEmpty && cfg.types.isNotEmpty)
+              if (_brandsShown.isNotEmpty && cfg.types.isNotEmpty)
                 TextButton.icon(
                   key: ValueKey('matrix_${widget.fieldCode}_fullscreen'),
                   onPressed: _openFullscreen,
@@ -564,6 +1022,9 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
 /// thì trả bộ số cuối cho bảng trong phiếu ghi lại ô.
 class _MatrixFullscreen extends StatefulWidget {
   final DisplayMatrixConfig config;
+
+  /// Hàng thương hiệu đang hiện trong phiếu lúc mở (thêm / xoá hàng chỉ làm ở bảng trong phiếu).
+  final List<DisplayMatrixBrand> brands;
   final String label;
   final DisplayMatrixCounts counts;
   final DisplayMatrixCounts hints;
@@ -571,6 +1032,7 @@ class _MatrixFullscreen extends StatefulWidget {
 
   const _MatrixFullscreen({
     required this.config,
+    required this.brands,
     required this.label,
     required this.counts,
     required this.onChanged,
@@ -588,6 +1050,8 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
   DisplayMatrixCounts get _hints => widget.hints;
   @override
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
+  @override
+  List<DisplayMatrixBrand> get _brandsShown => widget.brands;
 
   @override
   void initState() {
@@ -651,6 +1115,12 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
 /// cắt sau 2 dòng, lỗi ô hiện dưới bảng (không trong ô).
 class _MatrixTable extends StatefulWidget {
   final List<DisplayMatrixBrand> brands;
+
+  /// Hàng nào có nút xoá + việc xoá; cột loại GÕ TAY có nút gỡ ([onRemoveType]). `null` = không có nút.
+  final bool Function(DisplayMatrixBrand b)? canRemoveBrand;
+  final bool Function(DisplayMatrixType t)? canRemoveType;
+  final void Function(String code)? onRemoveBrand;
+  final void Function(String code)? onRemoveType;
   final List<DisplayMatrixType> types;
   final DisplayMatrixTotals totals;
   final TextEditingController Function(String brand, String type) controller;
@@ -665,6 +1135,10 @@ class _MatrixTable extends StatefulWidget {
 
   const _MatrixTable({
     required this.brands,
+    this.canRemoveBrand,
+    this.canRemoveType,
+    this.onRemoveBrand,
+    this.onRemoveType,
     required this.types,
     required this.totals,
     required this.controller,
@@ -748,11 +1222,26 @@ class _MatrixTableState extends State<_MatrixTable> {
                 width: _leftW,
                 height: rowH,
                 bg: rowBg(b),
-                child: Text(
-                  b.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodyMedium(color: onSurface).copyWith(fontWeight: b.isOwn ? FontWeight.w700 : FontWeight.w500),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        b.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium(color: onSurface).copyWith(
+                          fontWeight: b.isOwn ? FontWeight.w700 : FontWeight.w500,
+                          fontStyle: b.custom ? FontStyle.italic : null,
+                        ),
+                      ),
+                    ),
+                    if (w.onRemoveBrand != null && (w.canRemoveBrand?.call(b) ?? false))
+                      InkWell(
+                        key: ValueKey('${w.keyPrefix}_remove_brand_${b.code}'),
+                        onTap: () => w.onRemoveBrand!(b.code),
+                        child: Icon(Icons.close_rounded, size: 16, color: muted),
+                      ),
+                  ],
                 ),
               ),
           ],
@@ -786,6 +1275,15 @@ class _MatrixTableState extends State<_MatrixTable> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (t.unit.isNotEmpty) Text(t.unit, style: AppTypography.labelSmall(color: muted)),
+                              if (w.onRemoveType != null && (w.canRemoveType?.call(t) ?? false))
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 4),
+                                  child: InkWell(
+                                    key: ValueKey('${w.keyPrefix}_remove_type_${t.code}'),
+                                    onTap: () => w.onRemoveType!(t.code),
+                                    child: Icon(Icons.close_rounded, size: 14, color: muted),
+                                  ),
+                                ),
                               if (t.illustrationTokens.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(left: 3),
@@ -1074,5 +1572,79 @@ class _ZoomableImageState extends State<_ZoomableImage> {
         maxScale: 4,
         onInteractionEnd: (_) => widget.onZoomChanged(_ctrl.value.getMaxScaleOnAxis() > 1.01),
         child: Center(child: RichImageView(token: widget.token)),
+      );
+}
+
+/// Hộp nhập tên mục gõ tay (+ đơn vị khi [units] khác `null`): đơn vị chọn nhanh từ gợi ý hoặc gõ đơn vị khác.
+class _NameUnitDialog extends StatefulWidget {
+  final String title;
+  final String label;
+  final List<String>? units;
+
+  const _NameUnitDialog({required this.title, required this.label, this.units});
+
+  @override
+  State<_NameUnitDialog> createState() => _NameUnitDialogState();
+}
+
+class _NameUnitDialogState extends State<_NameUnitDialog> {
+  final _ten = TextEditingController();
+  final _donVi = TextEditingController();
+  String? _loi;
+
+  @override
+  void dispose() {
+    _ten.dispose();
+    _donVi.dispose();
+    super.dispose();
+  }
+
+  void _xong() {
+    final ten = displayMatrixNormName(_ten.text);
+    final donVi = _donVi.text.trim();
+    if (displayMatrixSlug(ten).isEmpty) return setState(() => _loi = 'Nhập tên.');
+    if (widget.units != null && donVi.isEmpty) return setState(() => _loi = 'Chọn hoặc nhập đơn vị.');
+    Navigator.of(context).pop((name: ten, unit: donVi.length > 20 ? donVi.substring(0, 20) : donVi));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                key: const ValueKey('matrix_name_input'),
+                controller: _ten,
+                autofocus: true,
+                maxLength: 60,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(labelText: widget.label),
+              ),
+              if (widget.units != null) ...[
+                TextField(
+                  key: const ValueKey('matrix_unit_input'),
+                  controller: _donVi,
+                  maxLength: 20,
+                  decoration: const InputDecoration(labelText: 'Đơn vị (tấm, ô, m²…)'),
+                ),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final u in widget.units!)
+                      ActionChip(label: Text(u), onPressed: () => setState(() => _donVi.text = u)),
+                  ],
+                ),
+              ],
+              if (_loi != null) Padding(padding: const EdgeInsets.only(top: 6), child: FormFieldErrorText(_loi!)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Huỷ')),
+          FilledButton(key: const ValueKey('matrix_name_ok'), onPressed: _xong, child: const Text('Thêm')),
+        ],
       );
 }

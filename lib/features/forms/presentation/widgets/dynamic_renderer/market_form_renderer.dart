@@ -159,16 +159,39 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, dynamic> _matrixConfirm = {};
 
   /// Số hiện trạng điểm bán cho ô ma trận có ô đích `config.update_customer_field` (#24789); không có ⇒ rỗng.
-  DisplayMatrixCounts _hintCountsOf(dynamic config) {
+  DisplayMatrixCounts _hintCountsOf(dynamic config) => DisplayMatrixFieldWidget.countsOf(_hintValueOf(config));
+
+  /// Giá trị ô ma trận ĐÍCH của hồ sơ điểm bán (`config.update_customer_field`, #24789); không có ⇒ `null`.
+  dynamic _hintValueOf(dynamic config) {
     final target = config is Map ? config['update_customer_field'] : null;
-    return target is String && target.isNotEmpty ? DisplayMatrixFieldWidget.countsOf(widget.customerData[target]) : const {};
+    return target is String && target.isNotEmpty ? widget.customerData[target] : null;
   }
+
+  /// Mục GÕ TAY của hồ sơ điểm bán (số hiện trạng) — hàng / cột của chúng hiện cùng số cũ (đợt 2).
+  /// Chỉ mục có SỐ hiện trạng (mục chỉ có ảnh thì phiếu không hiện / không gửi — khỏi cột gỡ được mà hiện lại).
+  DisplayMatrixCustom _hintCustomOf(MarketFormBlockEntity block) {
+    final v = _hintValueOf(block.resolved.configMap);
+    return DisplayMatrixCustom.fromValue(v).onlyUsed(DisplayMatrixFieldWidget.countsOf(v), const {});
+  }
+
+  /// Mục gõ tay HIỆU LỰC của ô: của câu trả lời (người dùng thêm) ∪ của hồ sơ điểm bán.
+  DisplayMatrixCustom _matrixCustomOf(MarketFormBlockEntity block) =>
+      DisplayMatrixCustom.fromValue(_answers[block.resolved.code]).merge(_hintCustomOf(block));
+
+  /// Cấu hình HIỆU LỰC (danh mục + mục gõ tay) — bảng, kiểm số, khối ảnh dùng cái này.
+  DisplayMatrixConfig _matrixEff(MarketFormBlockEntity block) => _matrixOf(block).withCustom(_matrixCustomOf(block));
+
+  /// Mục gõ tay GỬI LÊN: mọi mục người dùng thêm + mục của hồ sơ mà phiếu có dùng (server đòi mọi mã `x_…` có trong `custom`).
+  DisplayMatrixCustom _sendCustom(MarketFormBlockEntity block, DisplayMatrixCustom c, DisplayMatrixCounts counts, Map photos) =>
+      c.minusUnused(_hintCustomOf(block), counts, photos);
 
   /// Danh mục ô ma trận đã đọc từ `config` — bất biến suốt màn điền, đọc một lần mỗi ô.
   final Map<String, DisplayMatrixConfig> _matrixCfg = {};
 
   DisplayMatrixConfig _matrixOf(MarketFormBlockEntity block) =>
       _matrixCfg.putIfAbsent(block.resolved.code, () => DisplayMatrixConfig.fromConfig(block.resolved.configMap));
+
+  Set<String> get _matrixCodes => {for (final b in widget.blocks) if (_isMatrixBlock(b)) b.resolved.code};
 
   bool _isMatrixBlock(MarketFormBlockEntity block) => block.resolved.inputType.toLowerCase() == 'display_matrix';
 
@@ -268,7 +291,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       final raw = _answers[block.resolved.code];
       final photos = raw is Map ? raw['photos'] : null;
       if (photos is! Map) continue;
-      final nhanAnh = {for (final t in _matrixOf(block).types) if (t.maxPhotos > 0) t.code};
+      final nhanAnh = {for (final t in _matrixEff(block).types) if (t.maxPhotos > 0) t.code};
       photos.forEach((type, list) {
         // Loại đã thôi nhận ảnh / không còn trong ô: ảnh cũ của bản nháp không nạp — gửi đi là server từ chối.
         if (list is! List || !nhanAnh.contains('$type')) return;
@@ -685,9 +708,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         .map((b) => b.resolved.code)
         .toSet();
 
+    final maTran = _matrixCodes;
+
     // Làm sạch: Bỏ các trường rỗng, ô trình bày, và ô đang ẩn (§5, §9)
     return MarketFormSubmissionModel.sanitizeAnswers(
-      {..._answers, ..._matrixConfirm, ...nhomGon}..removeWhere((_, v) => v == null),
+      // Ô ma trận chỉ mang `custom` (thêm thẻ / cột mà chưa nhập gì) là ô rỗng — server coi là rỗng.
+      {..._answers, ..._matrixConfirm, ...nhomGon}
+        ..removeWhere((k, v) => v == null || (maTran.contains(k) && !displayMatrixHasData(v))),
       presentationCodes: _presentationCodes,
       allowedCodes: visibleCodes,
       imageCodes: imageCodes,
@@ -1466,7 +1493,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Widget _buildDisplayMatrixField(BuildContext context, MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
-    final cfg = _matrixOf(block);
+    final custom = _matrixCustomOf(block);
+    final cfg = _matrixOf(block).withCustom(custom);
     return DisplayMatrixFieldWidget(
       fieldCode: code,
       label: block.resolved.label,
@@ -1477,13 +1505,30 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Số hiện trạng của điểm bán (ô đích của "Cập nhật hiện trạng điểm bán") — ô chưa sửa hiện số này, Tổng / % SOS tính cả
       // ma trận; câu trả lời chỉ mang ô đã sửa (chốt 06/11/2026).
       hintCounts: _hintCountsOf(block.resolved.configMap),
+      custom: custom,
       errorText: _errors[code],
       onChanged: (counts, invalid) {
         _matrixInvalid[code] = invalid;
         final cur = _answers[code];
         final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
-        // Xoá hết số và không ảnh ⇒ ô RỖNG (điều kiện hiển thị "có giá trị" và bản nháp đọc đúng).
-        _updateValue(code, counts.isEmpty && photos.isEmpty ? null : {'counts': counts, 'photos': photos});
+        // Xoá hết số, không ảnh, không mục gõ tay ⇒ ô RỖNG (điều kiện hiển thị "có giá trị" và bản nháp đọc đúng).
+        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos)));
+      },
+      // Thêm / bỏ mục gõ tay, xoá hàng / cột: ghép lại câu trả lời rồi lọc ảnh theo cấu hình mới.
+      onCustomChanged: (c, counts, invalid) {
+        _matrixInvalid[code] = invalid;
+        // Ảnh của cột vừa gỡ bỏ luôn — thêm lại loại cùng tên không hiện lại ảnh cũ, bản nháp không mang ảnh mồ côi.
+        final con = {for (final t in _matrixOf(block).withCustom(c.merge(_hintCustomOf(block))).types) t.code};
+        _photoEntries.removeWhere((k, _) {
+          final p = splitMatrixPhotoKey(k);
+          return p != null && p.$1 == code && !con.contains(p.$2);
+        });
+        final cur = _answers[code];
+        final photos = cur is Map && cur['photos'] is Map
+            ? (Map.of(cur['photos'] as Map)..removeWhere((k, _) => !con.contains('$k')))
+            : const {};
+        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, c, counts, photos)));
+        setState(() => _syncMatrixAnswer(block));
       },
       photoSection: (t) => _buildPhotoPicker(
         context,
@@ -1498,11 +1543,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-  /// Ghép số đếm + ảnh theo loại vào câu trả lời của ô ma trận; [validate] ⇒ trả câu lỗi (cùng luật server) hoặc `null`.
-  /// Không nhập ô nào và không ảnh nào ⇒ gỡ câu trả lời (rỗng — luật bắt buộc quyết).
+  /// Ghép số đếm + ảnh theo loại (+ mục gõ tay) vào câu trả lời của ô ma trận; [validate] ⇒ trả câu lỗi (cùng luật server)
+  /// hoặc `null`. Không số, không ảnh, không mục gõ tay ⇒ gỡ câu trả lời (rỗng — luật bắt buộc quyết).
   String? _syncMatrixAnswer(MarketFormBlockEntity block, {bool validate = false}) {
     final code = block.resolved.code;
-    final cfg = _matrixOf(block);
+    final custom = _matrixCustomOf(block);
+    final cfg = _matrixOf(block).withCustom(custom);
     var counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_answers[code]), cfg);
     final photos = <String, List<String>>{};
     for (final t in cfg.types) {
@@ -1514,10 +1560,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           .toList();
       if (list.isNotEmpty) photos[t.code] = list;
     }
-    if (counts.isEmpty && photos.isEmpty) {
+    final value = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos));
+    if (value == null) {
       _answers.remove(code);
     } else {
-      _answers[code] = {'counts': counts, 'photos': photos};
+      _answers[code] = value;
     }
     if (!validate) return null;
 
@@ -1526,7 +1573,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // [_answers] thì lượt nộp hỏng vì ô khác biến cả ma trận số cũ thành "đã sửa" — sửa thêm một ô là gửi số cũ đè số mới.
     if (_req(block) && counts.isEmpty) {
       counts = DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg);
-      if (counts.isNotEmpty) _matrixConfirm[code] = {'counts': counts, 'photos': photos};
+      if (counts.isNotEmpty) _matrixConfirm[code] = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos));
     }
 
     final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
@@ -1534,14 +1581,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     if (_matrixInvalid[code] == true) return '$label – có ô đếm nhập sai dạng số.';
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '$label – $cellErr';
-    for (final t in cfg.types) {
-      final n = (photos[t.code] ?? const []).length;
-      if (t.maxPhotos > 0 && n > t.maxPhotos) return '$label – ${t.name}: tối đa ${t.maxPhotos} ảnh.';
-      if (t.effectiveMinPhotos > 0 && DisplayMatrixTotals.sumOfType(counts, t.code) > 0 && n < t.effectiveMinPhotos) {
-        return '$label – ${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
-      }
-    }
-    return null;
+    final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
+    return anhErr == null ? null : '$label – $anhErr';
   }
 
   Widget _buildPhotoThumbnail(

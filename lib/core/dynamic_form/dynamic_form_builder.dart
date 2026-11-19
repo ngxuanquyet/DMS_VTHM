@@ -288,7 +288,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
   /// Giá trị RỖNG (null, chuỗi trắng, danh sách/map rỗng) — cùng nghĩa «trống» của lỗi bắt buộc.
   static bool _rong(dynamic v) =>
-      v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty) || (v is Map && v.isEmpty);
+      v == null ||
+      (v is String && v.trim().isEmpty) ||
+      (v is List && v.isEmpty) ||
+      (v is Map && (v.isEmpty || (v.containsKey('counts') && v.containsKey('photos') && !displayMatrixHasData(v))));
 
   /// Mã ô đang bắt buộc theo điều kiện ([DynamicFormBuilder.requiredFieldsOf]) trên dữ liệu đang nhập + ô công thức.
   Set<String> _requiredIfWith(Map<String, num?> formulas) {
@@ -321,6 +324,10 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final hidden = hiddenFieldCodes;
     final congThuc = {for (final f in widget.fields) if (f.type == DynamicFormFieldType.formula) f.code};
     final out = Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
+    // Ô ma trận chỉ mang `custom` (thêm thẻ / cột mà chưa nhập gì) là ô rỗng — gửi `null` như khi xoá hết số.
+    for (final f in widget.fields.where((f) => f.type == DynamicFormFieldType.displayMatrix)) {
+      if (out[f.code] != null && !displayMatrixHasData(out[f.code])) out[f.code] = null;
+    }
     // Nhóm trường lặp: bỏ dòng không điền gì (bấm nhầm "+ Thêm"). Không bỏ dòng nào ⇒ giữ nguyên tham chiếu (màn sửa so
     // tham chiếu để biết ô có đổi không).
     for (final f in widget.fields.where((f) => f.type == DynamicFormFieldType.repeatGroup)) {
@@ -475,7 +482,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
       // 1. Kiểm tra bắt buộc nhập (Required check)
       if (field.isRequired) {
-        if (value == null) {
+        if (value == null || (field.type == DynamicFormFieldType.displayMatrix && !displayMatrixHasData(value))) {
           newErrors[field.code] = '${field.label} là bắt buộc';
           isValid = false;
           firstInvalidCode ??= field.code;
@@ -877,14 +884,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   /// Ô MA TRẬN TRƯNG BÀY (#24773) ở form điểm bán: thẻ theo thương hiệu + ảnh theo loại (bộ chụp ảnh của form điểm bán,
   /// chỉ máy ảnh). Giá trị `{counts, photos}`; ảnh là đường dẫn máy / token — màn gửi đổi ra token trước khi lưu.
   Widget _buildDisplayMatrix(DynamicFormField field, dynamic value, String? errorText) {
-    final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
+    final base = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
+    // Mục GÕ TAY (đợt 2): khoá `custom` của bản đang nhập hoặc mục `custom: true` của `snapshot` giá trị đang lưu.
+    final custom = DisplayMatrixCustom.fromValue(value);
+    final cfg = base.withCustom(custom);
     // Chỉ loại ĐANG hỏi và còn nhận ảnh (max > 0): ảnh của loại đã thôi chụp không có ô để xoá, gửi lại thì server từ chối.
-    final hoi = {for (final t in cfg.types) if (t.maxPhotos > 0) t.code};
-    final photos = value is Map && value['photos'] is Map
-        ? (Map<String, dynamic>.from(value['photos'] as Map)..removeWhere((k, _) => !hoi.contains(k)))
-        : <String, dynamic>{};
-    void ghi(DisplayMatrixCounts counts, Map<String, dynamic> anh) =>
-        updateFieldValue(field.code, counts.isEmpty && anh.isEmpty ? null : {'counts': counts, 'photos': anh});
+    Map<String, dynamic> anhCua(dynamic v, DisplayMatrixConfig c) {
+      final hoi = {for (final t in c.types) if (t.maxPhotos > 0) t.code};
+      return v is Map && v['photos'] is Map
+          ? (Map<String, dynamic>.from(v['photos'] as Map)..removeWhere((k, _) => !hoi.contains(k)))
+          : <String, dynamic>{};
+    }
+
+    final photos = anhCua(value, cfg);
+    void ghi(DisplayMatrixCounts counts, Map<String, dynamic> anh, DisplayMatrixCustom c) =>
+        updateFieldValue(field.code, displayMatrixValue(counts, anh, c));
 
     return DisplayMatrixFieldWidget(
       fieldCode: field.code,
@@ -893,11 +907,20 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       isRequired: field.isRequired,
       config: cfg,
       counts: DisplayMatrixFieldWidget.countsOf(value),
+      custom: custom,
       errorText: errorText,
       onChanged: (counts, invalid) {
         _matrixInvalid[field.code] = invalid;
-        ghi(counts, photos);
+        ghi(counts, photos, custom);
       },
+      // Thêm / bỏ thương hiệu – loại gõ tay, xoá một hàng / cột: ghép lại cả giá trị theo cấu hình MỚI (ảnh của loại vừa gỡ bỏ).
+      onCustomChanged: field.isReadOnly
+          ? null
+          : (c, counts, invalid) {
+              _matrixInvalid[field.code] = invalid;
+              final moi = base.withCustom(c);
+              ghi(DisplayMatrixFieldWidget.onlyAsked(counts, moi), anhCua(_formData[field.code], moi), c);
+            },
       photoSection: (t) => DynamicPhotoFieldWidget(
         field: DynamicFormField(
           code: '${field.code}::${t.code}',
@@ -910,37 +933,33 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         onChanged: (list) {
           // Đọc giá trị MỚI NHẤT (ảnh loại khác có thể vừa thêm trong lúc máy ảnh/đóng dấu đang chạy).
           final cur = _formData[field.code];
-          final anh = cur is Map && cur['photos'] is Map
-              ? (Map<String, dynamic>.from(cur['photos'] as Map)..removeWhere((k, _) => !hoi.contains(k)))
-              : <String, dynamic>{};
+          final c = DisplayMatrixCustom.fromValue(cur);
+          final moi = base.withCustom(c);
+          // Cột vừa bị gỡ trong lúc máy ảnh / đóng dấu đang chạy ⇒ bỏ ảnh về muộn (server từ chối loại không khai).
+          if (!moi.types.any((x) => x.code == t.code && x.maxPhotos > 0)) return;
+          final anh = anhCua(cur, moi);
           if (list.isEmpty) {
             anh.remove(t.code);
           } else {
             anh[t.code] = list;
           }
-          ghi(DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_formData[field.code]), cfg), anh);
+          ghi(DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(cur), moi), anh, c);
         },
       ),
     );
   }
 
-  /// Lỗi của ô ma trận theo luật server (C2 ảnh tối thiểu khi loại có số > 0, số lẻ/trần, ô gõ sai dạng); hợp lệ ⇒ `null`.
+  /// Lỗi của ô ma trận theo luật server (ảnh — hợp đồng đợt 2 §5, số lẻ/trần, ô gõ sai dạng); hợp lệ ⇒ `null`.
   String? _matrixError(DynamicFormField field, dynamic value) {
     if (_matrixInvalid[field.code] == true) return '${field.label} – có ô đếm nhập sai dạng số.';
-    final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix});
+    final cfg = DisplayMatrixConfig.fromConfig({'matrix': field.matrix}).withCustom(DisplayMatrixCustom.fromValue(value));
     // Chỉ thương hiệu/loại ĐANG hỏi — số của thương hiệu đã tắt không hiện để sửa, không gửi đi (C3).
     final counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(value), cfg);
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '${field.label} – $cellErr';
     final photos = value is Map && value['photos'] is Map ? value['photos'] as Map : const {};
-    for (final t in cfg.types) {
-      final n = photos[t.code] is List ? (photos[t.code] as List).length : 0;
-      if (t.maxPhotos > 0 && n > t.maxPhotos) return '${field.label} – ${t.name}: tối đa ${t.maxPhotos} ảnh.';
-      if (t.effectiveMinPhotos > 0 && DisplayMatrixTotals.sumOfType(counts, t.code) > 0 && n < t.effectiveMinPhotos) {
-        return '${field.label} – ${t.name}: cần ít nhất ${t.effectiveMinPhotos} ảnh.';
-      }
-    }
-    return null;
+    final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
+    return anhErr == null ? null : '${field.label} – $anhErr';
   }
 
   /// Kết quả ô công thức của lần dựng hiện tại (tính một lần mỗi `build`).

@@ -141,6 +141,13 @@ class DynamicRuleEvaluator {
     if (v is List) return v.isEmpty;
     if (v is Map) {
       if (v.isEmpty) return true;
+      // Ô ma trận trưng bày `{counts, photos, custom?}`: rỗng khi không có số và không có ảnh (thêm thẻ / cột mà chưa nhập gì).
+      if (v.containsKey('counts') && v.containsKey('photos')) {
+        final c = v['counts'];
+        final p = v['photos'];
+        return !(c is Map && c.values.any((r) => r is Map && r.isNotEmpty)) &&
+            !(p is Map && p.values.any((l) => l is List && l.isNotEmpty));
+      }
       return v.values.every((val) => val == null || (val is String && val.trim().isEmpty));
     }
     return false;
