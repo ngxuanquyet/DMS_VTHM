@@ -35,6 +35,7 @@ import '../widgets/checkout_confirmation_dialog.dart';
 import '../widgets/checkout_success_dialog.dart';
 import '../widgets/visit_exit_options_dialog.dart';
 import '../../../forms/presentation/screens/market_form_fill_screen.dart';
+import '../../../forms/domain/entities/market_form_entity.dart';
 import '../../../forms/presentation/widgets/market_form_card.dart';
 import '../../../customer/domain/entities/customer_entity.dart';
 import '../../../../core/utils/string_utils.dart';
@@ -1339,6 +1340,38 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       regionId: customer?.regionId,
     );
 
+    Future<void> openForm(MarketFormConfigEntity item) async {
+      final result = await context.push<bool>(
+        '/forms/fill',
+        extra: MarketFormFillArgs(
+          config: item,
+          kind: 'survey',
+          customerId: customerId,
+          visitId: state.visitId,
+          dealerName: dealerName,
+          customerCode: customerCode,
+          customerAddress: customerAddress,
+          customerContext: customerContext,
+          lockCustomer: true,
+          visitClientUuid: vm.sessionClientUuid,
+          customerData: customer?.dynamicFields ?? const {},
+          routeIds: [
+            if (state.visitEntity?.routeId != null) state.visitEntity!.routeId!,
+            ...?customer?.routeIds,
+          ],
+        ),
+      );
+      if (result == true && mounted) {
+        vm.markSurveySubmitted(item.configId, item.formId);
+      }
+    }
+
+    // Lượt chỉ gắn MỘT phiếu ⇒ vào thẳng phiếu, khỏi bảng chọn (chủ hệ thống chốt 19/11/2026); 0 hoặc ≥ 2 phiếu vẫn mở bảng.
+    if (surveys.length == 1) {
+      openForm(surveys.first);
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1406,31 +1439,9 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                       return MarketFormCard(
                         config: item,
                         isSubmitted: isSubmitted,
-                        onTap: () async {
+                        onTap: () {
                           Navigator.of(ctx).pop();
-                          final result = await context.push<bool>(
-                            '/forms/fill',
-                            extra: MarketFormFillArgs(
-                              config: item,
-                              kind: 'survey',
-                              customerId: customerId,
-                              visitId: state.visitId,
-                              dealerName: dealerName,
-                              customerCode: customerCode,
-                              customerAddress: customerAddress,
-                              customerContext: customerContext,
-                              lockCustomer: true,
-                              visitClientUuid: vm.sessionClientUuid,
-                              customerData: customer?.dynamicFields ?? const {},
-                              routeIds: [
-                                if (state.visitEntity?.routeId != null) state.visitEntity!.routeId!,
-                                ...?customer?.routeIds,
-                              ],
-                            ),
-                          );
-                          if (result == true) {
-                            vm.markSurveySubmitted(item.configId, item.formId);
-                          }
+                          openForm(item);
                         },
                       );
                     },

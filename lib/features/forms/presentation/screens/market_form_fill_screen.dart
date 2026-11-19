@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/services/location_service.dart';
@@ -11,6 +15,7 @@ import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
+import '../../data/services/form_draft_store.dart';
 import '../../domain/entities/market_form_entity.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../widgets/dynamic_renderer/market_form_renderer.dart';
@@ -88,10 +93,121 @@ class MarketFormFillScreen extends ConsumerStatefulWidget {
   ConsumerState<MarketFormFillScreen> createState() => _MarketFormFillScreenState();
 }
 
-class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
-  final GlobalKey<MarketFormRendererState> _rendererKey = GlobalKey();
+class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> with WidgetsBindingObserver {
+  GlobalKey<MarketFormRendererState> _rendererKey = GlobalKey();
   bool _isSubmitting = false;
   bool _isExiting = false;
+
+  /// Nháp ([FormDraftStore]) chỉ cho phiếu khảo sát trong lượt viếng thăm, mở mới (không mang sẵn câu trả lời).
+  late final bool _draftEnabled = widget.args.kind == 'survey' &&
+      widget.args.initialAnswers == null &&
+      ((widget.args.visitClientUuid?.isNotEmpty ?? false) || (widget.args.visitId ?? 0) > 0);
+  late bool _draftLoaded = !_draftEnabled;
+  Map<String, dynamic>? _draftAnswers;
+  DateTime? _draftSavedAt;
+  Map<String, dynamic>? _pendingDraft;
+  Timer? _draftTimer;
+  Map<String, String> _draftPhotoMemo = {};
+
+  /// Tăng khi "Xoá nháp, làm lại" — kết quả của lần ghi bắt đầu TRƯỚC đó không được ghi đè [_lastDraftSaveOk].
+  int _draftGen = 0;
+
+  /// Lần ghi nháp gần nhất có thành công không — hỏng thì rời màn phải hỏi như khi chưa có nháp.
+  bool _lastDraftSaveOk = true;
+
+  int get _visitId => widget.args.visitId ?? 0;
+  String get _visitUuid => widget.args.visitClientUuid ?? '';
+  int get _configId => widget.args.config.configId;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_draftEnabled) return;
+    WidgetsBinding.instance.addObserver(this);
+    FormDraftStore.load(visitId: _visitId, clientUuid: _visitUuid, configId: _configId).then((d) {
+      if (!mounted) return;
+      setState(() {
+        _draftAnswers = d?.answers;
+        _draftSavedAt = d?.savedAt;
+        _draftLoaded = true;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_draftEnabled) {
+      WidgetsBinding.instance.removeObserver(this);
+      _flushDraft();
+    }
+    super.dispose();
+  }
+
+  /// App xuống nền / sắp bị đóng ⇒ ghi nháp ngay, không đợi nhịp tự lưu.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _flushDraft();
+  }
+
+  void _onAnswersChanged(Map<String, dynamic> answers) {
+    if (!_draftEnabled || _isSubmitting || _isExiting) return;
+    _pendingDraft = answers;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(seconds: 1), _flushDraft);
+  }
+
+  /// Ghi nháp đang chờ (nhịp tự lưu / app xuống nền / rời màn); kết quả vào [_lastDraftSaveOk].
+  void _flushDraft() {
+    _draftTimer?.cancel();
+    final pending = _pendingDraft;
+    if (pending == null) return;
+    _pendingDraft = null;
+    // Bản chụp ĐỘC LẬP (cả map lồng), chụp đồng bộ tại đây: biểu mẫu sửa tại chỗ giá trị ma trận / nhóm lặp trong lúc kho
+    // nháp còn chờ chép tệp. Không mã hoá được ⇒ coi như không lưu được.
+    final Map<String, dynamic> answers;
+    try {
+      answers = jsonDecode(jsonEncode(pending)) as Map<String, dynamic>;
+    } catch (_) {
+      _lastDraftSaveOk = false;
+      return;
+    }
+    // Kho nháp ghi nối tiếp ⇒ các lần ghi xong theo thứ tự gọi, [_lastDraftSaveOk] là kết quả lần mới nhất.
+    final gen = _draftGen;
+    FormDraftStore.save(
+      visitId: _visitId,
+      clientUuid: _visitUuid,
+      configId: _configId,
+      answers: answers,
+      photoMemo: _draftPhotoMemo,
+    ).then((ok) {
+      if (gen == _draftGen) _lastDraftSaveOk = ok;
+    });
+  }
+
+  void _discardDraft() {
+    _draftTimer?.cancel();
+    _pendingDraft = null;
+    FormDraftStore.remove(visitId: _visitId, clientUuid: _visitUuid, configId: _configId);
+  }
+
+  /// "Xoá nháp, làm lại": bỏ nháp rồi dựng lại biểu mẫu trống.
+  void _restartWithoutDraft() {
+    // Ảnh đang tải lên của biểu mẫu cũ: dựng lại lúc này là lượt tải xong ghi nháp mới mang ảnh cũ.
+    if (_rendererKey.currentState?.hasUploadingPhotos ?? false) {
+      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi làm lại.');
+      return;
+    }
+    _discardDraft();
+    _draftGen++;
+    _lastDraftSaveOk = true;
+    // Map MỚI: lần ghi cũ còn chạy vẫn ghi vào map của nó, không lẫn vào biểu mẫu mới.
+    _draftPhotoMemo = {};
+    setState(() {
+      _draftAnswers = null;
+      _draftSavedAt = null;
+      _rendererKey = GlobalKey();
+    });
+  }
 
   void _safePop([bool result = false]) {
     if (!mounted) return;
@@ -122,7 +238,21 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
   Future<void> _handleExit() async {
     if (_isSubmitting || _isExiting) return;
 
+    // Ảnh đang đóng dấu / tải lên chưa vào câu trả lời (cũng chưa vào nháp) — rời lúc này là mất ảnh.
+    if (_draftEnabled && (_rendererKey.currentState?.hasUploadingPhotos ?? false)) {
+      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi thoát.');
+      return;
+    }
+
     if (!_hasEnteredData()) {
+      // Biểu mẫu trống (kể cả người dùng xoá trắng nháp) ⇒ không giữ nháp nào.
+      if (_draftEnabled) _discardDraft();
+      _safePop(false);
+      return;
+    }
+    // Có nháp tự lưu ⇒ rời màn không mất gì, khỏi hỏi (phần còn chờ ghi nốt ở dispose) — trừ khi lần ghi gần nhất hỏng:
+    // khi đó hỏi như chưa có nháp.
+    if (_draftEnabled && _lastDraftSaveOk) {
       _safePop(false);
       return;
     }
@@ -195,6 +325,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
     );
 
     if (confirmed == true && mounted) {
+      // Người dùng đã chấp nhận bỏ phần vừa nhập ⇒ nháp cũ hơn (lần ghi trước) cũng không khôi phục lại.
+      if (_draftEnabled) _discardDraft();
       _safePop(false);
     }
   }
@@ -306,6 +438,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
 
         if (mounted) {
           if (result.success) {
+            if (_draftEnabled) _discardDraft();
             AppSnackBar.showSuccess(context, result.message);
             _safePop(true);
           } else {
@@ -321,6 +454,41 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
         AppSnackBar.showError(context, e);
       }
     }
+  }
+
+  Widget _buildDraftBanner(bool isDark) {
+    final at = _draftSavedAt!;
+    final now = DateTime.now();
+    // Lượt vắt qua nửa đêm: nháp của hôm trước ghi kèm ngày.
+    final hhmm = DateFormat(at.year == now.year && at.month == now.month && at.day == now.day ? 'HH:mm' : 'HH:mm dd/MM')
+        .format(at);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.history_rounded, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Đã khôi phục nháp lúc $hhmm',
+              style: AppTypography.bodyMedium(
+                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+              ).copyWith(fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(
+            onPressed: _isSubmitting ? null : _restartWithoutDraft,
+            child: const Text('Xoá nháp, làm lại'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -483,21 +651,30 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> {
             ),
             const SizedBox(height: AppSpacing.stackLg),
 
+            if (_draftSavedAt != null) ...[
+              _buildDraftBanner(isDark),
+              const SizedBox(height: AppSpacing.stackLg),
+            ],
+
             // Form Renderer
-            MarketFormRenderer(
-              key: _rendererKey,
-              blocks: config.schema.blocks,
-              initialAnswers: widget.args.initialAnswers ?? const {},
-              customerContext: widget.args.customerContext ?? const {},
-              defaultCustomerId: widget.args.customerId,
-              defaultCustomerName: widget.args.dealerName,
-              defaultCustomerCode: widget.args.customerCode,
-              defaultCustomerAddress: widget.args.customerAddress,
-              lockCustomer: widget.args.isCustomerLocked,
-              defaultRouteIds: widget.args.routeIds,
-              customerData: widget.args.customerData,
-              onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
-            ),
+            if (!_draftLoaded)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Center(child: AppLoading()))
+            else
+              MarketFormRenderer(
+                key: _rendererKey,
+                blocks: config.schema.blocks,
+                initialAnswers: widget.args.initialAnswers ?? _draftAnswers ?? const {},
+                onChanged: _draftEnabled ? _onAnswersChanged : null,
+                customerContext: widget.args.customerContext ?? const {},
+                defaultCustomerId: widget.args.customerId,
+                defaultCustomerName: widget.args.dealerName,
+                defaultCustomerCode: widget.args.customerCode,
+                defaultCustomerAddress: widget.args.customerAddress,
+                lockCustomer: widget.args.isCustomerLocked,
+                defaultRouteIds: widget.args.routeIds,
+                customerData: widget.args.customerData,
+                onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
+              ),
             const SizedBox(height: 80),
           ],
         ),

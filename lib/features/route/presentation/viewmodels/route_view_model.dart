@@ -30,6 +30,7 @@ import '../../../visit/data/models/checkin_request_model.dart';
 import '../../../visit/data/models/checkout_request_model.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../../../visit/data/services/visit_progress_store.dart';
+import '../../../forms/data/services/form_draft_store.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../visit/domain/entities/visit_photo_entity.dart';
 import '../../../visit/domain/repositories/visit_repository.dart';
@@ -1383,6 +1384,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     stopGeofenceWatcher();
     _elapsedSeconds = 0;
     _targetDoneTime = null;
+    // Nháp phiếu khớp theo uuid CŨ của lượt (lượt ngoại tuyến chưa có id server) ⇒ xoá trước khi sinh uuid mới.
+    FormDraftStore.clearVisit(visitId: state.visitId, clientUuid: _sessionClientUuid);
     _sessionClientUuid = const Uuid().v4();
     _setLiveDuration('00:00:00');
     _cancelRestores();
@@ -2957,6 +2960,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             } catch (_) {}
           }
           VisitProgressStore.clear();
+          FormDraftStore.clearVisit(visitId: cId, clientUuid: uuid);
           state = state.copyWith(visitId: 0, visitEntity: null);
         }
         if (!_isNetworkError(e)) {
@@ -3249,6 +3253,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
       stopGeofenceWatcher();
       await visitRepository.clearActiveVisit();
       await visitRepository.saveLocalVisit(completedVisit);
+      // Check-out trực tuyến không qua [resetSession] — nháp phiếu của lượt đã đóng bỏ tại đây.
+      FormDraftStore.clearVisit(visitId: state.visitId, clientUuid: _sessionClientUuid);
       if (ref != null) {
         try {
           ref!.read(routeViewModelProvider.notifier).setActiveVisit(null);
@@ -3400,6 +3406,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
 
       await visitRepository.saveLocalVisit(completedVisit);
       await visitRepository.clearActiveVisit();
+      // Như check-out trực tuyến: không qua [resetSession] — bỏ nháp phiếu của lượt đã đóng tại đây.
+      FormDraftStore.clearVisit(visitId: state.visitId, clientUuid: _sessionClientUuid);
 
       _visitTimer?.cancel();
       stopGeofenceWatcher();

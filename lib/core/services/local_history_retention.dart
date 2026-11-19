@@ -37,6 +37,8 @@ class LocalHistoryRetention {
     'attendance_photos',
     'offline_form_photos',
     'offline_declaration_photos',
+    // Lưới an toàn cho tệp nháp phiếu (FormDraftStore) — bình thường xoá khi nộp / kết thúc lượt / lưu cho lượt khác.
+    'form_draft_photos',
   ];
   static const _imageExts = {'.jpg', '.jpeg', '.png', '.heic', '.webp'};
 

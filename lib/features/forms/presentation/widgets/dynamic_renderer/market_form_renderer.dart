@@ -152,6 +152,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     return map;
   }
 
+  /// Còn ảnh đang đóng dấu / tải lên — chưa vào câu trả lời, rời màn lúc này là mất ảnh.
+  bool get hasUploadingPhotos => _photoEntries.values.any((l) => l.any((e) => e.isUploading));
+
   /// Ô ma trận đang có ô đếm gõ sai dạng (vd `2,5,`) — bước Lưu chặn, không lặng lẽ bỏ số khỏi tổng.
   final Map<String, bool> _matrixInvalid = {};
 
