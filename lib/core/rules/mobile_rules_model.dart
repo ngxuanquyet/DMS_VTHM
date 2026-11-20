@@ -83,15 +83,26 @@ class FormsRules {
   /// Chờ server tối đa chừng này giây khi tải biểu mẫu; quá thì dùng bản đã lưu trong máy + làm mới ngầm.
   final int fetchTimeoutSeconds;
 
-  const FormsRules({this.fetchTimeoutSeconds = 5});
+  /// Mã biểu mẫu THU THẬP mà nút «Thêm mới NPP» trên trang chủ mở (tham số server `dms.form_home_npp_form`); rỗng = chưa
+  /// cấu hình. Server cũ không gửi ⇒ mặc định `create_npp` (Khảo sát NPP Mới VTHM).
+  final String homeNppFormCode;
+
+  /// Mặc định khi server không gửi — trùng `DmsSettingProvider::DEFAULT_HOME_NPP_FORM` phía server.
+  static const String defaultHomeNppFormCode = 'create_npp';
+
+  const FormsRules({this.fetchTimeoutSeconds = 5, this.homeNppFormCode = defaultHomeNppFormCode});
 
   factory FormsRules.fromJson(Map<String, dynamic> json) {
     return FormsRules(
       fetchTimeoutSeconds: ((json['fetch_timeout_seconds'] as num?)?.toInt() ?? 5).clamp(1, 15),
+      homeNppFormCode: json['home_npp_form_code'] is String ? (json['home_npp_form_code'] as String).trim() : defaultHomeNppFormCode,
     );
   }
 
-  Map<String, dynamic> toJson() => {'fetch_timeout_seconds': fetchTimeoutSeconds};
+  Map<String, dynamic> toJson() => {
+        'fetch_timeout_seconds': fetchTimeoutSeconds,
+        'home_npp_form_code': homeNppFormCode,
+      };
 }
 
 class ClockRules {

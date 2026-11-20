@@ -14,11 +14,14 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/sync_progress.dart';
 import '../../../customer/data/repositories/customer_repository_impl.dart';
 import '../../../customer/presentation/screens/add_customer_screen.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../forms/data/services/route_customers_service.dart';
+import '../../../forms/domain/entities/market_form_entity.dart';
+import '../../../forms/presentation/screens/market_form_fill_screen.dart';
 import '../../../forms/presentation/viewmodels/forms_view_model.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../../../core/services/anti_fraud_service.dart';
@@ -54,6 +57,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   bool _isSyncing = false;
+  bool _isOpeningNpp = false;
   static DateTime? _lastAutoSyncTime;
   final GlobalKey _attendanceActionKey = GlobalKey();
   Timer? _punchReminderTimer;
@@ -200,6 +204,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           );
       ref.invalidate(unreadNotificationCountProvider);
     } catch (_) {}
+  }
+
+  /// Nút «Thêm mới NPP»: mở biểu mẫu thu thập có mã cấu hình ở server (`forms.home_npp_form_code`, mobile-rules) trong
+  /// danh sách biểu mẫu thu thập được giao cho người dùng (có mạng tải mới, mất mạng dùng bản lưu).
+  Future<void> _openNppForm() async {
+    if (_isOpeningNpp) return;
+    final code = ref.read(mobileRulesProvider).forms.homeNppFormCode;
+    if (code.isEmpty) {
+      AppSnackBar.showInvalid(context, 'Chưa cấu hình biểu mẫu cho nút Thêm mới NPP.');
+      return;
+    }
+    setState(() => _isOpeningNpp = true);
+    MarketFormConfigEntity? form;
+    try {
+      final forms = await ref.read(getAvailableFormsUseCaseProvider)(kind: 'collect');
+      form = forms.where((f) => f.code == code).firstOrNull;
+    } catch (e) {
+      // Mất mạng mà máy chưa từng tải biểu mẫu (cài mới / tài khoản mới), hoặc server lỗi.
+      if (mounted) AppSnackBar.showError(context, 'Không tải được biểu mẫu Thêm mới NPP. Kiểm tra mạng rồi thử lại.');
+      return;
+    } finally {
+      if (mounted) setState(() => _isOpeningNpp = false);
+    }
+    if (!mounted) return;
+    if (form == null) {
+      AppSnackBar.showInvalid(context, 'Bạn chưa được giao biểu mẫu Thêm mới NPP.');
+      return;
+    }
+    final nop = await context.push<bool>('/forms/fill', extra: MarketFormFillArgs(config: form, kind: 'collect'));
+    if (nop == true && mounted) ref.read(homeViewModelProvider.notifier).loadDashboard(isRefresh: true);
+  }
+
+  /// Nút «Thêm mới điểm bán»: như màn Điểm bán / Tuyến — đóng màn thêm thì nạp lại danh sách điểm bán (điểm vừa thêm hiện ngay).
+  Future<void> _openAddOutlet() async {
+    await context.push('/customers/add');
+    if (mounted) ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: false);
   }
 
   /// Gọi tất cả các API để đồng bộ dữ liệu mới nhất:
@@ -423,11 +463,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         AttendanceSummaryCard(attendance: homeState.dashboard?.attendance),
                         const SizedBox(height: AppSpacing.stackMd),
 
-                        // Thao tác nhanh dạng card màu (Chấm công & Báo cáo & Viếng thăm & Đồng bộ)
+                        // Thao tác nhanh dạng card màu (Chấm công · Viếng thăm / Thêm mới NPP · Thêm mới điểm bán / Báo cáo · Đồng bộ)
                         HomeQuickActions(
                           isSyncing: _isSyncing,
                           onSync: _handleSyncAll,
                           onAttendanceReturn: () => homeVM.loadDashboard(isRefresh: true),
+                          onAddNpp: _openNppForm,
+                          onAddOutlet: _openAddOutlet,
+                          isOpeningNpp: _isOpeningNpp,
                           attendanceKey: _attendanceActionKey,
                         ),
                         const SizedBox(height: AppSpacing.stackLg),

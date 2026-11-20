@@ -2,18 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'report_menu_bottom_sheet.dart';
 
-/// Danh mục thao tác nhanh dạng card màu trên màn hình trang chủ
-/// Thiết kế theo phong cách UI thẻ màu thanh lịch, tone màu nhạt (pastel) hiện đại:
-/// - Cột trái:
-///   + "Chấm công" (Tone vàng nhạt / soft amber) -> chuyển đến màn hình chấm công (/attendance)
-///   + "Báo cáo" (Tone chàm nhạt / soft indigo) -> mở menu danh mục báo cáo & lịch sử
-/// - Cột phải:
-///   + "Viếng thăm" (Tone xanh ngọc nhạt / soft teal) -> chuyển đến màn hình tuyến viếng thăm (/routes)
-///   + "Đồng bộ" (Tone xanh da trời nhạt / soft sky blue) -> kích hoạt đồng bộ dữ liệu
+/// Danh mục thao tác nhanh dạng card màu trên màn hình trang chủ — lưới 3 hàng × 2 ô, tone pastel:
+/// - Hàng 1: "Chấm công" (vàng nhạt, /attendance) · "Viếng thăm" (xanh ngọc nhạt, /routes)
+/// - Hàng 2 (thêm 20/11/2026): "Thêm mới NPP" (tím nhạt — mở biểu mẫu thu thập cấu hình ở tham số server
+///   `dms.form_home_npp_form`, mặc định Khảo sát NPP Mới VTHM) · "Thêm mới điểm bán" (xanh lá nhạt, /customers/add — màn chứa mở)
+/// - Hàng 3: "Báo cáo" (chàm nhạt, menu báo cáo) · "Đồng bộ" (xanh da trời nhạt, đồng bộ dữ liệu)
 class HomeQuickActions extends StatelessWidget {
   final bool isSyncing;
   final VoidCallback? onSync;
   final VoidCallback? onAttendanceReturn;
+
+  /// Bấm "Thêm mới NPP" — màn chứa tìm biểu mẫu đã cấu hình rồi mở phiếu.
+  final VoidCallback? onAddNpp;
+
+  /// Bấm "Thêm mới điểm bán" — màn chứa mở /customers/add rồi nạp lại danh sách điểm bán.
+  final VoidCallback? onAddOutlet;
+
+  /// Đang tìm biểu mẫu của nút "Thêm mới NPP" (tải danh sách biểu mẫu có thể chờ mạng).
+  final bool isOpeningNpp;
 
   /// Gắn vào ô "Chấm công" để lớp phủ nhắc chấm công khoét sáng đúng chỗ.
   final GlobalKey? attendanceKey;
@@ -23,73 +29,88 @@ class HomeQuickActions extends StatelessWidget {
     this.isSyncing = false,
     this.onSync,
     this.onAttendanceReturn,
+    this.onAddNpp,
+    this.onAddOutlet,
+    this.isOpeningNpp = false,
     this.attendanceKey,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    Widget hang(Widget trai, Widget phai) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Expanded(child: trai), const SizedBox(width: 14), Expanded(child: phai)],
+        );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Cột trái: Chấm công (trên) & Báo cáo (dưới)
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _QuickActionCard(
-                key: attendanceKey,
-                title: 'Chấm công',
-                icon: Icons.access_time_filled_rounded,
-                backgroundColor: const Color(0xFFFEF3C7),
-                foregroundColor: const Color(0xFFD97706),
-                borderColor: const Color(0xFFFDE68A),
-                onTap: () async {
-                  await context.push('/attendance');
-                  onAttendanceReturn?.call();
-                },
-              ),
-              const SizedBox(height: 14),
-              _QuickActionCard(
-                title: 'Báo cáo',
-                icon: Icons.bar_chart_rounded,
-                backgroundColor: const Color(0xFFEEF2FF),
-                foregroundColor: const Color(0xFF4F46E5),
-                borderColor: const Color(0xFFC7D2FE),
-                onTap: () => showReportMenuBottomSheet(context),
-              ),
-            ],
+        hang(
+          _QuickActionCard(
+            key: attendanceKey,
+            title: 'Chấm công',
+            icon: Icons.access_time_filled_rounded,
+            backgroundColor: const Color(0xFFFEF3C7),
+            foregroundColor: const Color(0xFFD97706),
+            borderColor: const Color(0xFFFDE68A),
+            onTap: () async {
+              await context.push('/attendance');
+              onAttendanceReturn?.call();
+            },
+          ),
+          _QuickActionCard(
+            title: 'Viếng thăm',
+            icon: Icons.storefront_rounded,
+            backgroundColor: const Color(0xFFCCFBF1),
+            foregroundColor: const Color(0xFF0D9488),
+            borderColor: const Color(0xFF99F6E4),
+            onTap: () => context.go('/routes'),
           ),
         ),
-        const SizedBox(width: 14),
-
-        // Cột phải: Viếng thăm (trên) & Đồng bộ (dưới ô viếng thăm)
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _QuickActionCard(
-                title: 'Viếng thăm',
-                icon: Icons.storefront_rounded,
-                backgroundColor: const Color(0xFFCCFBF1),
-                foregroundColor: const Color(0xFF0D9488),
-                borderColor: const Color(0xFF99F6E4),
-                onTap: () => context.go('/routes'),
-              ),
-              const SizedBox(height: 14),
-              _QuickActionCard(
-                title: isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ',
-                icon: Icons.sync_rounded,
-                isLoading: isSyncing,
-                backgroundColor: const Color(0xFFE0F2FE),
-                foregroundColor: const Color(0xFF0284C7),
-                borderColor: const Color(0xFFBAE6FD),
-                onTap: () {
-                  if (!isSyncing && onSync != null) {
-                    onSync!();
-                  }
-                },
-              ),
-            ],
+        const SizedBox(height: 14),
+        hang(
+          _QuickActionCard(
+            key: const ValueKey('home_add_npp'),
+            title: 'Thêm mới NPP',
+            icon: Icons.handshake_rounded,
+            isLoading: isOpeningNpp,
+            backgroundColor: const Color(0xFFF3E8FF),
+            foregroundColor: const Color(0xFF9333EA),
+            borderColor: const Color(0xFFE9D5FF),
+            onTap: () => onAddNpp?.call(),
+          ),
+          _QuickActionCard(
+            key: const ValueKey('home_add_outlet'),
+            title: 'Thêm mới điểm bán',
+            icon: Icons.add_business_rounded,
+            backgroundColor: const Color(0xFFDCFCE7),
+            foregroundColor: const Color(0xFF16A34A),
+            borderColor: const Color(0xFFBBF7D0),
+            onTap: () => onAddOutlet?.call(),
+          ),
+        ),
+        const SizedBox(height: 14),
+        hang(
+          _QuickActionCard(
+            title: 'Báo cáo',
+            icon: Icons.bar_chart_rounded,
+            backgroundColor: const Color(0xFFEEF2FF),
+            foregroundColor: const Color(0xFF4F46E5),
+            borderColor: const Color(0xFFC7D2FE),
+            onTap: () => showReportMenuBottomSheet(context),
+          ),
+          _QuickActionCard(
+            title: isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ',
+            icon: Icons.sync_rounded,
+            isLoading: isSyncing,
+            backgroundColor: const Color(0xFFE0F2FE),
+            foregroundColor: const Color(0xFF0284C7),
+            borderColor: const Color(0xFFBAE6FD),
+            onTap: () {
+              if (!isSyncing && onSync != null) {
+                onSync!();
+              }
+            },
           ),
         ),
       ],
