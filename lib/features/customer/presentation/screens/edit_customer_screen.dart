@@ -285,7 +285,11 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       if (isValid) {
         _handleSubmit(_formKey.currentState!.getFormData());
       } else {
-        AppSnackBar.showInvalid(context, 'Vui lòng hoàn thành các trường thông tin bắt buộc (*).');
+        // Báo ĐÚNG lý do (vd ma trận SOS thiếu ảnh / chưa đủ số thương hiệu), không chỉ câu chung.
+        AppSnackBar.showInvalid(
+          context,
+          _formKey.currentState!.firstErrorMessage ?? 'Vui lòng hoàn thành các trường thông tin bắt buộc (*).',
+        );
       }
     }
   }

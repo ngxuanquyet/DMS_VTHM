@@ -411,7 +411,11 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     }
     final answers = _rendererKey.currentState?.validateAndGetAnswers();
     if (answers == null) {
-      AppSnackBar.showInvalid(context, 'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.');
+      // Báo ĐÚNG lý do (vd ma trận SOS thiếu ảnh / chưa đủ số thương hiệu), không chỉ câu chung.
+      AppSnackBar.showInvalid(
+        context,
+        _rendererKey.currentState?.firstErrorMessage ?? 'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.',
+      );
       return;
     }
 

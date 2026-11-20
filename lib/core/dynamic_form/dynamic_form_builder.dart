@@ -111,6 +111,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
   final Map<String, FocusNode> _fieldFocusNodes = {};
   final Map<String, GlobalKey> _fieldKeys = {};
 
+  /// Khoá dòng lỗi của ô ma trận SOS — dòng lỗi nằm cuối ô, cuộn tới đầu ô thì câu báo khuất ([focusField]).
+  final Map<String, GlobalKey> _matrixErrorKeys = {};
+
   /// Ô chọn đang chọn «Khác…» (xem [ChoiceOther]): mã ô → chuỗi đang gõ (đã trim, có thể rỗng). Trạng thái giao diện —
   /// [_formData] chỉ chứa giá trị THẬT (chuỗi gõ tay đặt thẳng làm giá trị).
   final Map<String, String> _otherText = {};
@@ -393,22 +396,26 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       targetCode = 'photo';
     }
 
+    // Ô MA TRẬN (20/11/2026): câu báo nằm CUỐI ô (dưới bảng + các ô ảnh), ô thường cao hơn màn hình ⇒ cuộn tới CHÍNH dòng
+    // lỗi, đặt thấp trên màn để ô ảnh ngay trên nó cũng hiện; KHÔNG giành focus (focus vào bảng kéo màn về đầu ô, bật bàn phím).
+    final loiMaTran = _matrixErrorKeys[targetCode];
+
     // 1. Request focus trên FocusNode nếu trường hỗ trợ input
     final node = _fieldFocusNodes[targetCode];
-    if (node != null && node.canRequestFocus) {
+    if (loiMaTran == null && node != null && node.canRequestFocus) {
       node.requestFocus();
     }
 
-    // 2. Cuộn viewport tới widget của trường đó
+    // 2. Cuộn viewport tới widget của trường đó (ô ma trận: tới dòng lỗi)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final key = _fieldKeys[targetCode];
-      final targetContext = key?.currentContext;
+      final loi = loiMaTran?.currentContext;
+      final targetContext = loi ?? _fieldKeys[targetCode]?.currentContext;
       if (targetContext != null && targetContext.mounted) {
         Scrollable.ensureVisible(
           targetContext,
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeInOutCubic,
-          alignment: 0.15,
+          alignment: loi != null ? 0.75 : 0.15,
         );
       }
     });
@@ -607,12 +614,19 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       _errors.addAll(newErrors);
     });
 
+    _firstInvalidCode = firstInvalidCode;
     if (!isValid && focusFirstError && firstInvalidCode != null) {
       focusField(firstInvalidCode);
     }
 
     return isValid;
   }
+
+  String? _firstInvalidCode;
+
+  /// Câu lỗi của ô lỗi ĐẦU TIÊN ở lần [validate] gần nhất — để màn chứa báo đúng lý do (thiếu ảnh ma trận, chưa đủ số thương
+  /// hiệu…) thay vì câu chung "điền trường bắt buộc"; `null` khi hợp lệ.
+  String? get firstErrorMessage => _firstInvalidCode == null ? null : _errors[_firstInvalidCode!];
 
   /// Lấy toàn bộ dữ liệu form hiện tại
   Map<String, dynamic> getFormData() {
@@ -922,6 +936,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       counts: DisplayMatrixFieldWidget.countsOf(value),
       custom: custom,
       errorText: errorText,
+      errorKey: _matrixErrorKeys.putIfAbsent(field.code, GlobalKey.new),
       onChanged: (counts, invalid) {
         _matrixInvalid[field.code] = invalid;
         ghi(counts, photos, custom);

@@ -786,6 +786,16 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   FocusNode _focusNodeOf(String code) => _focusNodes.putIfAbsent(code, FocusNode.new);
 
+  /// Câu lỗi của ô lỗi ĐẦU TIÊN (theo thứ tự biểu mẫu) sau lần [validateAndGetAnswers] gần nhất — để màn chứa báo đúng lý do
+  /// (thiếu ảnh ma trận, chưa đủ số thương hiệu…) thay vì câu chung; `null` khi không có lỗi.
+  String? get firstErrorMessage {
+    for (final b in widget.blocks) {
+      final e = _errors[b.resolved.code];
+      if (e != null) return e;
+    }
+    return null;
+  }
+
   /// Cuộn tới ô [code]; ô gõ chữ/số thì focus luôn (bật bàn phím). Ô khác KHÔNG cất bàn phím: ô đang gõ (vd ô số ma
   /// trận) ghi giá trị khi mất focus ⇒ xoá luôn lỗi vừa báo.
   void _focusBlock(String code) {
