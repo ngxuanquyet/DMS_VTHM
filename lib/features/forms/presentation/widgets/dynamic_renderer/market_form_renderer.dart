@@ -551,9 +551,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (block.resolved.isRepeatGroup) {
         final spec = block.resolved.repeatGroup;
         final gon = spec.pruneEmpty(RepeatGroupSpec.rowsOf(_answers[code]));
-        nhomGon[code] = gon.isEmpty ? null : gon;
         final err = spec.validate(gon, label: label, isRequired: _req(block));
         if (err != null) newErrors[code] = err;
+        // Ô SĐT của dòng gửi số ĐÃ chuẩn hoá (chỉ chữ số) như ô SĐT đơn.
+        nhomGon[code] = gon.isEmpty ? null : spec.normalizePhones(gon);
         continue;
       }
 

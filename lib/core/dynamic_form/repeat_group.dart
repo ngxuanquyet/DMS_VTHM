@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import '../services/geo_catalog_service.dart';
+import '../utils/phone_utils.dart';
 import '../widgets/geo_select_field_widget.dart';
 import 'choice_other.dart';
 
@@ -191,9 +192,54 @@ class RepeatGroupSpec {
   /// Ô trống theo cùng luật server (`FormValidator::isBlank`): null, chuỗi trắng, mảng rỗng.
   static bool isBlank(dynamic v) => v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty);
 
+  /// Dòng đang lưu theo `line_id` (màn sửa) — để nhận ra ô SĐT còn y giá trị đang lưu.
+  static Map<String, Map<String, dynamic>> _savedByLine(dynamic saved) => {
+        for (final r in rowsOf(saved))
+          if (r['line_id'] != null) '${r['line_id']}': r,
+      };
+
+  /// Ô SĐT [code] của [row] còn đúng giá trị đang lưu (cùng `line_id`) — màn sửa không kiểm, không chuẩn hoá (như ô SĐT đơn).
+  static bool _phoneKept(Map<String, dynamic> row, String code, Map<String, Map<String, dynamic>> savedByLine) {
+    final cu = savedByLine['${row['line_id']}'];
+    return cu != null && cu.containsKey(code) && '${cu[code]}' == '${row[code]}';
+  }
+
+  /// Câu lỗi của ô SĐT [c] trong [row] ([PhoneUtils] — cùng luật ô SĐT đơn); trống / không phải ô SĐT / còn y giá trị
+  /// đang lưu ([saved] = giá trị nhóm đang lưu, màn sửa) ⇒ `null`. Ô con hiện câu này ngay dưới ô của dòng.
+  static String? phoneErrorOf(Map<String, dynamic> row, DynamicFormField c, {dynamic saved}) {
+    if (c.type != DynamicFormFieldType.phone || isBlank(row[c.code])) return null;
+    if (saved != null && _phoneKept(row, c.code, _savedByLine(saved))) return null;
+    return PhoneUtils.validate(row[c.code]);
+  }
+
+  /// Bản gửi đi: ô SĐT của từng dòng ĐÃ chuẩn hoá (chỉ chữ số, +84 → 0); ô còn y giá trị đang lưu ([saved]) để nguyên.
+  /// Không đổi ô nào ⇒ trả CHÍNH danh sách cũ.
+  List<Map<String, dynamic>> normalizePhones(List<Map<String, dynamic>> rows, {dynamic saved}) {
+    final sdt = columns.where((c) => c.type == DynamicFormFieldType.phone).toList();
+    if (sdt.isEmpty) return rows;
+    final luu = _savedByLine(saved);
+    var doi = false;
+    final out = [
+      for (final r in rows)
+        () {
+          Map<String, dynamic>? moi;
+          for (final c in sdt) {
+            final v = r[c.code];
+            if (isBlank(v) || _phoneKept(r, c.code, luu)) continue;
+            final n = PhoneUtils.normalize(v.toString());
+            if (n != null && n != v) (moi ??= Map<String, dynamic>.from(r))[c.code] = n;
+          }
+          if (moi != null) doi = true;
+          return moi ?? r;
+        }(),
+    ];
+    return doi ? out : rows;
+  }
+
   /// Lỗi đầu tiên của nhóm (cùng luật server): đủ/thừa số dòng, ô con bắt buộc của từng dòng, độ dài, số ngoài khoảng,
-  /// giá trị «Khác…» quá trần; `null` = hợp lệ. Nhóm không đổi ở màn sửa thì màn chứa tự bỏ qua ([sameRows]).
-  String? validate(dynamic value, {required String label, required bool isRequired}) {
+  /// giá trị «Khác…» quá trần, SĐT sai dạng; `null` = hợp lệ. Nhóm không đổi ở màn sửa thì màn chứa tự bỏ qua ([sameRows]);
+  /// [saved] = giá trị nhóm đang lưu (màn sửa) — ô SĐT còn y giá trị đang lưu không bị chặn.
+  String? validate(dynamic value, {required String label, required bool isRequired, dynamic saved}) {
     final rows = rowsOf(value);
     final need = effectiveMin(isRequired);
     if (rows.length < need) return '$label: cần ít nhất $need dòng';
@@ -202,6 +248,8 @@ class RepeatGroupSpec {
       for (final c in columns) {
         final v = rows[i][c.code];
         if (c.isRequired && isBlank(v)) return '$label, dòng ${i + 1}: ${c.label} không được để trống';
+        final loiSdt = phoneErrorOf(rows[i], c, saved: saved);
+        if (loiSdt != null) return '$label, dòng ${i + 1}: ${c.label}: $loiSdt';
         // Chuỗi «Khác…» gõ tay (ngoài danh sách lựa chọn) — cùng trần server (`ChoiceOtherConfig::MAX_LENGTH`).
         if (c.allowOther) {
           final opts = c.options.map((o) => o.value);

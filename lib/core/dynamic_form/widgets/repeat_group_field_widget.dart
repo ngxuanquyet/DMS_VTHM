@@ -43,6 +43,9 @@ class RepeatGroupFieldWidget extends StatefulWidget {
   /// Báo mảng dòng MỚI (luôn là bản sao).
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
 
+  /// Giá trị nhóm đang lưu (màn sửa điểm bán) — ô SĐT của dòng còn y giá trị đang lưu không báo lỗi; `null` = không.
+  final dynamic savedValue;
+
   const RepeatGroupFieldWidget({
     super.key,
     required this.field,
@@ -50,6 +53,7 @@ class RepeatGroupFieldWidget extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.savedValue,
   });
 
   @override
@@ -266,6 +270,14 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
       case DynamicFormFieldType.time:
       case DynamicFormFieldType.datetime:
         return DynamicDateTimeFieldWidget(field: c, value: v?.toString(), onChanged: set);
+      case DynamicFormFieldType.phone:
+        // Lỗi dạng số hiện ngay dưới ô của DÒNG này — sau lần kiểm (nhóm đang báo lỗi), giống ô SĐT đơn.
+        return DynamicTextFieldWidget(
+          field: c,
+          value: v?.toString(),
+          onChanged: set,
+          errorText: widget.errorText == null ? null : RepeatGroupSpec.phoneErrorOf(_rows[i], c, saved: widget.savedValue),
+        );
       case DynamicFormFieldType.boolean:
         return DynamicBooleanFieldWidget(
           field: c,

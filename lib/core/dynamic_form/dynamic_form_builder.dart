@@ -346,7 +346,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       if (widget.editing && RepeatGroupSpec.sameRows(v, widget.savedData[f.code])) continue;
       final rows = RepeatGroupSpec.rowsOf(v);
       final gon = spec.pruneEmpty(rows);
-      if (gon.length != rows.length) out[f.code] = gon;
+      // Ô SĐT của dòng gửi số đã chuẩn hoá (ô còn y giá trị đang lưu để nguyên).
+      final chuan = spec.normalizePhones(gon, saved: widget.editing ? widget.savedData[f.code] : null);
+      if (gon.length != rows.length || !identical(chuan, gon)) out[f.code] = chuan;
     }
     // Ô số điện thoại: gửi số ĐÃ chuẩn hoá (chỉ chữ số, +84 → 0) như server lưu. Màn sửa: giá trị còn y như đang lưu thì
     // để nguyên (không biến ô không đụng tới thành "đã đổi").
@@ -479,7 +481,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         final gon = spec.pruneEmpty(RepeatGroupSpec.rowsOf(value));
         // So bản ĐÃ bỏ dòng trống — đúng bản sẽ gửi: thẻ trống bấm nhầm không biến nhóm thành "đã đổi".
         if (widget.editing && RepeatGroupSpec.sameRows(gon, widget.savedData[field.code])) continue;
-        final loi = spec.validate(gon, label: field.label, isRequired: field.isRequired);
+        final loi = spec.validate(
+          gon,
+          label: field.label,
+          isRequired: field.isRequired,
+          saved: widget.editing ? widget.savedData[field.code] : null,
+        );
         if (loi != null) {
           newErrors[field.code] = loi;
           isValid = false;
@@ -1119,6 +1126,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           spec: spec,
           value: value,
           errorText: errorText,
+          savedValue: widget.editing ? widget.savedData[field.code] : null,
           onChanged: (rows) => updateFieldValue(field.code, rows),
         );
 
