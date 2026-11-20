@@ -171,7 +171,7 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
 
     _overlayEntry = OverlayEntry(
       builder: (ctx) {
-        return _VoiceRecordingOverlayWidget(
+        return VoiceRecordingOverlay(
           strings: s,
           fieldName: widget.fieldName,
           recognizedText: _recognizedText,
@@ -448,7 +448,9 @@ class _VoiceInputMicButtonState extends State<VoiceInputMicButton>
 }
 
 /// Bảng điều khiển nổi hiển thị trạng thái đang ghi âm giọng nói (Floating Voice HUD Overlay)
-class _VoiceRecordingOverlayWidget extends StatelessWidget {
+/// Thẻ ghi âm nổi (chữ nhận diện + sóng âm + Huỷ / Hoàn tất) — mở cho test chụp giao diện sáng / tối.
+@visibleForTesting
+class VoiceRecordingOverlay extends StatelessWidget {
   final AppStrings strings;
   final String? fieldName;
   final String recognizedText;
@@ -459,7 +461,7 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
   final VoidCallback onDonePressed;
   final VoidCallback onCancelPressed;
 
-  const _VoiceRecordingOverlayWidget({
+  const VoiceRecordingOverlay({
     required this.strings,
     required this.fieldName,
     required this.recognizedText,
@@ -474,6 +476,16 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    // Theo chế độ sáng/tối của app (20/11/2026: thẻ đen cứng lạc tone ở chế độ sáng) — chỉ dùng token màu của app.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest;
+    final borderColor = isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant;
+    final textColor = isDark ? AppColors.darkOnSurface : AppColors.onSurface;
+    final mutedColor = isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
+    final boxColor = isDark ? AppColors.darkSurfaceContainerLowest : AppColors.surfaceContainerLow;
+    final accent = isDark ? AppColors.primaryFixedDim : AppColors.primary;
+    // Đỏ của app tối quá trên nền tối ⇒ chế độ tối dùng tông đỏ nhạt cho chữ / chấm ghi âm / nút Huỷ.
+    final danger = isDark ? AppColors.errorContainer : AppColors.error;
 
     return Stack(
       children: [
@@ -481,13 +493,11 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
         Positioned.fill(
           child: GestureDetector(
             onTap: isTapMode ? onCancelPressed : null,
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.35),
-            ),
+            child: Container(color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.25)),
           ),
         ),
 
-        // Hộp bảng nổi ghi âm (Floating HUD Card) đặt ở phần dưới màn hình, trên bàn phím
+        // Thẻ ghi âm nổi ở phần dưới màn hình, trên bàn phím
         Positioned(
           left: 16,
           right: 16,
@@ -497,22 +507,14 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
               decoration: BoxDecoration(
-                color: const Color(0xFF181D1A), // Dark surface sang trọng, tương phản cao
+                color: cardColor,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.4),
-                  width: 1.5,
-                ),
+                border: Border.all(color: borderColor),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.15),
-                    blurRadius: 30,
-                    spreadRadius: 2,
+                    color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -520,16 +522,14 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Hàng tiêu đề: Badge REC nhấp nháy + Tên trường
+                  // Hàng tiêu đề: nhãn đang ghi (chấm nhấp nháy) + tên trường
                   Row(
                     children: [
-                      // Badge REC
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.error.withValues(alpha: 0.2),
+                          color: (isFinalizing ? AppColors.warning : AppColors.error).withValues(alpha: isDark ? 0.2 : 0.1),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.error, width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -543,10 +543,8 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: isFinalizing
-                                        ? Colors.amberAccent
-                                        : (waveAnimation.value > 0.5
-                                            ? AppColors.error
-                                            : AppColors.error.withValues(alpha: 0.3)),
+                                        ? AppColors.warning
+                                        : danger.withValues(alpha: waveAnimation.value > 0.5 ? 1 : 0.3),
                                   ),
                                 );
                               },
@@ -554,8 +552,8 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                             const SizedBox(width: 6),
                             Text(
                               isFinalizing ? strings.recFinalizing : strings.recRecording,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: isFinalizing ? AppColors.warning : danger,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.6,
@@ -564,34 +562,24 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 12),
 
-                      // Tên trường đang nhập
+                      // Tên trường đang nhập — dùng hết phần còn lại của hàng, dài quá mới cắt
                       if (fieldName != null && fieldName!.isNotEmpty)
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${strings.inputForFieldPrefix}$fieldName',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFE2E7E2),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        Expanded(
+                          child: Text(
+                            '${strings.inputForFieldPrefix}$fieldName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: TextStyle(color: mutedColor, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ),
                     ],
                   ),
                   const SizedBox(height: 14),
 
-                  // Bộ hiển thị sóng âm sống động (Sound Wave Equalizer)
+                  // Sóng âm — một màu chủ đạo của app, cột giữa đậm hơn
                   SizedBox(
                     height: 38,
                     child: AnimatedBuilder(
@@ -608,16 +596,13 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                             final height = (baseHeight + (isFinalizing ? 0 : levelBoost)).clamp(4.0, 36.0);
 
                             final isCenter = (index >= 5 && index <= 9);
+                            final barColor = isFinalizing ? AppColors.warning : accent;
                             return Container(
                               width: 3.5,
                               height: height,
                               margin: const EdgeInsets.symmetric(horizontal: 2.5),
                               decoration: BoxDecoration(
-                                color: isFinalizing
-                                    ? Colors.amberAccent
-                                    : (isCenter
-                                        ? const Color(0xFF00E676)
-                                        : AppColors.primaryFixedDim),
+                                color: isCenter ? barColor : barColor.withValues(alpha: 0.45),
                                 borderRadius: BorderRadius.circular(3),
                               ),
                             );
@@ -628,17 +613,13 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
 
-                  // Khung hiển thị chữ nhận diện thời gian thực (Live Transcription Box)
+                  // Chữ nhận diện thời gian thực
                   Container(
                     constraints: const BoxConstraints(minHeight: 52, maxHeight: 110),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
+                      color: boxColor,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        width: 1,
-                      ),
                     ),
                     child: SingleChildScrollView(
                       reverse: true,
@@ -646,85 +627,67 @@ class _VoiceRecordingOverlayWidget extends StatelessWidget {
                           ? Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.graphic_eq_rounded,
-                                  size: 18,
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                ),
+                                Icon(Icons.graphic_eq_rounded, size: 18, color: mutedColor),
                                 const SizedBox(width: 8),
-                                Text(
-                                  isFinalizing
-                                      ? strings.voiceRecognizing
-                                      : strings.speakIntoMicHint,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    fontSize: 13,
-                                    fontStyle: FontStyle.italic,
+                                Flexible(
+                                  child: Text(
+                                    isFinalizing ? strings.voiceRecognizing : strings.speakIntoMicHint,
+                                    style: TextStyle(color: mutedColor, fontSize: 13, fontStyle: FontStyle.italic),
                                   ),
                                 ),
                               ],
                             )
                           : SelectableText(
                               recognizedText,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                height: 1.4,
-                              ),
+                              style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w600, height: 1.4),
                             ),
                     ),
                   ),
                   const SizedBox(height: 14),
 
-                  // Hàng chân: Hướng dẫn hoặc nút bấm rảnh tay
+                  // Hàng chân: Huỷ + Hoàn tất (chế độ chạm) hoặc hướng dẫn thả tay (chế độ nhấn giữ)
                   Row(
                     children: [
-                      // Nút Hủy
                       TextButton.icon(
                         onPressed: onCancelPressed,
-                        icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFFFF8A80)),
-                        label: Text(
-                          strings.cancel,
-                          style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 13),
-                        ),
+                        icon: Icon(Icons.close_rounded, size: 16, color: danger),
+                        label: Text(strings.cancel, style: TextStyle(color: danger, fontSize: 13)),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           visualDensity: VisualDensity.compact,
                         ),
                       ),
                       const Spacer(),
-
-                      // Chế độ Nhấn giữ vs Chế độ Chạm
                       if (isTapMode)
                         ElevatedButton.icon(
                           onPressed: onDonePressed,
-                          icon: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
-                          label: Text(strings.completeActionCaps, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          icon: const Icon(Icons.check_rounded, size: 16, color: AppColors.onPrimary),
+                          label: Text(
+                            strings.completeActionCaps,
+                            style: const TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.bold),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
+                            elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         )
                       else
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.touch_app_rounded,
-                              size: 15,
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              isFinalizing ? strings.updatingInput : strings.releaseToInsertText,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                        Flexible(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.touch_app_rounded, size: 15, color: mutedColor),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  isFinalizing ? strings.updatingInput : strings.releaseToInsertText,
+                                  style: TextStyle(color: mutedColor, fontSize: 12, fontWeight: FontWeight.w500),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                     ],
                   ),
