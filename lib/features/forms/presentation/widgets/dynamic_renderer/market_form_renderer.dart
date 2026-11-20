@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/theme/app_colors.dart';
@@ -28,6 +29,7 @@ import '../../../../../core/dynamic_form/repeat_group.dart';
 import '../../../../../core/dynamic_form/widgets/repeat_group_field_widget.dart';
 import '../../../../../core/dynamic_form/widgets/choice_other_input.dart';
 import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
+import '../../../../../core/utils/phone_utils.dart';
 import '../../../../../core/utils/string_utils.dart';
 import '../../../data/services/form_suggest_store.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
@@ -695,6 +697,16 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         continue;
       }
 
+      // Ô số điện thoại (theo LOẠI ô): chuẩn hoá rồi kiểm dạng số VN như server; gửi số ĐÃ chuẩn hoá (chỉ chữ số).
+      if (!isEmpty && block.resolved.inputType.toLowerCase() == 'phone') {
+        final loi = PhoneUtils.validate(val);
+        if (loi != null) {
+          newErrors[code] = loi;
+          continue;
+        }
+        val = _answers[code] = PhoneUtils.normalize(val.toString());
+      }
+
       // 2. Kiểm tra validation nếu có giá trị
       if (!isEmpty && block.resolved.validation != null) {
         final v = block.resolved.validation!;
@@ -908,6 +920,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return _buildNote(block, isDark);
       case 'text':
         return _buildTextField(block, isDark, isMultiline: false);
+      case 'phone':
+        return _buildTextField(block, isDark, isMultiline: false, isPhone: true);
       case 'textarea':
         return _buildTextField(block, isDark, isMultiline: true);
       case 'number':
@@ -998,6 +1012,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         );
       case 'ref_province':
       case 'ref_ward':
+      case 'ref_old_province':
+      case 'ref_old_district':
         return _buildGeoField(block);
       case 'ref_dms_route':
         return RouteFieldWidget(
@@ -1017,32 +1033,32 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   // ==========================================
-  // Ô TỈNH/THÀNH → XÃ/PHƯỜNG (#24072)
+  // Ô TỈNH/THÀNH → XÃ/PHƯỜNG (#24072) · TỈNH CŨ → QUẬN/HUYỆN CŨ
   // ==========================================
 
-  /// Ô Tỉnh/Xã theo danh mục đã lưu máy (chạy offline). Ô xã lọc theo ô tỉnh ở `config.depends_on` (server tự nối với ô
-  /// tỉnh đứng trên); đổi tỉnh ⇒ bỏ giá trị mọi ô xã phụ thuộc. Giá trị là ID.
+  /// Ô Tỉnh/Xã (và Tỉnh cũ/Huyện cũ) theo danh mục đã lưu máy (chạy offline). Ô con lọc theo ô tỉnh ở `config.depends_on`
+  /// (server tự nối với ô tỉnh đứng trên); đổi tỉnh ⇒ bỏ giá trị mọi ô con phụ thuộc. Giá trị là ID.
   Widget _buildGeoField(MarketFormBlockEntity block) {
     final r = block.resolved;
-    final laXa = r.inputType.toLowerCase() == 'ref_ward';
+    final level = GeoLevel.fromInputType(r.inputType) ?? GeoLevel.province;
     final cha = _geoParentOf(block);
     final field = DynamicFormField(
       code: r.code,
       label: r.label.isNotEmpty ? r.label : r.code,
-      type: laXa ? DynamicFormFieldType.geoWard : DynamicFormFieldType.geoProvince,
+      type: DynamicFormFieldType.fromString(r.inputType),
       helperText: r.description,
       isRequired: _req(block),
     );
     return GeoSelectFieldWidget(
       field: field,
-      wardLevel: laXa,
-      provinceId: cha == null ? null : GeoSelectFieldWidget.idOf(_answers[cha]),
+      level: level,
+      provinceId: !level.isChild || cha == null ? null : GeoSelectFieldWidget.idOf(_answers[cha]),
       value: _answers[r.code],
       errorText: _errors[r.code],
       onChanged: (id) {
         final truoc = GeoSelectFieldWidget.idOf(_answers[r.code]);
         _updateValue(r.code, id);
-        if (!laXa && truoc != id) {
+        if (!level.isChild && truoc != id) {
           for (final b in widget.blocks) {
             if (_geoParentOf(b) == r.code && _answers.containsKey(b.resolved.code)) {
               _updateValue(b.resolved.code, null);
@@ -1126,6 +1142,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     MarketFormBlockEntity block,
     bool isDark, {
     required bool isMultiline,
+    bool isPhone = false,
   }) {
     final isCustomerField = _isCustomerBlock(block) ||
         _isCustomerNameBlock(block) ||
@@ -1144,12 +1161,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           minLines: isMultiline ? 3 : 1,
           keyboardType: isMultiline
               ? TextInputType.multiline
-              : TextInputType.text,
+              : (isPhone ? TextInputType.phone : TextInputType.text),
+          // Ô số điện thoại: chỉ nhận chữ số + ký tự định dạng thường gặp; chuẩn hoá/kiểm lúc nộp ([PhoneUtils]).
+          inputFormatters: isPhone ? [FilteringTextInputFormatter.allow(RegExp(r'[\d+ ().-]'))] : null,
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
           ),
           decoration: _inputDecoration(
-            hintText: 'Nhập ${block.resolved.label.toLowerCase()}...',
+            hintText: isPhone ? 'Nhập số điện thoại...' : 'Nhập ${block.resolved.label.toLowerCase()}...',
             isDark: isDark,
             errorText: _errors[code],
             suffixIcon: isLocked

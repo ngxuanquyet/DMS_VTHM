@@ -29,6 +29,7 @@ import '../widgets/location_field_widget.dart';
 import '../widgets/erp_partner_field_widget.dart';
 import '../widgets/geo_select_field_widget.dart';
 import '../widgets/note_field_widget.dart';
+import '../utils/phone_utils.dart';
 import '../map/app_map_location_card.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
@@ -268,12 +269,13 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
-  /// Ô Tỉnh/Xã (#24072): đổi tỉnh ⇒ BỎ giá trị mọi ô xã lọc theo ô tỉnh này (xã cũ không còn thuộc tỉnh mới — server
-  /// cũng từ chối cặp lệch). Chọn lại đúng tỉnh cũ thì không bỏ.
+  /// Ô Tỉnh/Xã (#24072) và Tỉnh cũ/Huyện cũ: đổi tỉnh ⇒ BỎ giá trị mọi ô con lọc theo ô tỉnh này (xã/huyện cũ không còn
+  /// thuộc tỉnh mới — server cũng từ chối cặp lệch). Chọn lại đúng tỉnh cũ thì không bỏ.
   void _updateGeo(DynamicFormField field, int? id) {
     final truoc = GeoSelectFieldWidget.idOf(_formData[field.code]);
     updateFieldValue(field.code, id);
-    if (field.type == DynamicFormFieldType.geoProvince && truoc != id) {
+    final laTinh = field.type == DynamicFormFieldType.geoProvince || field.type == DynamicFormFieldType.geoOldProvince;
+    if (laTinh && truoc != id) {
       for (final f in widget.fields) {
         if (f.dependsOn == field.code && _formData[f.code] != null) updateFieldValue(f.code, null);
       }
@@ -346,8 +348,19 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       final gon = spec.pruneEmpty(rows);
       if (gon.length != rows.length) out[f.code] = gon;
     }
+    // Ô số điện thoại: gửi số ĐÃ chuẩn hoá (chỉ chữ số, +84 → 0) như server lưu. Màn sửa: giá trị còn y như đang lưu thì
+    // để nguyên (không biến ô không đụng tới thành "đã đổi").
+    for (final f in widget.fields.where((f) => f.type == DynamicFormFieldType.phone)) {
+      final v = out[f.code];
+      if (v == null || _phoneUnchanged(f.code, v)) continue;
+      out[f.code] = PhoneUtils.normalize(v.toString());
+    }
     return out;
   }
+
+  /// Màn sửa: ô số điện thoại còn đúng giá trị đang lưu — không kiểm, không chuẩn hoá (màn sửa không gửi ô không đổi).
+  bool _phoneUnchanged(String code, dynamic value) =>
+      widget.editing && widget.savedData.containsKey(code) && '${widget.savedData[code]}' == '$value';
 
   /// Ô [code] là NHÓM TRƯỜNG LẶP — màn sửa so nhóm theo NỘI DUNG ([RepeatGroupSpec.sameRows]), không theo tham chiếu.
   bool isRepeatGroup(String code) =>
@@ -512,6 +525,17 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         }
         if (value is List && value.isEmpty) {
           newErrors[field.code] = 'Vui lòng chọn ít nhất 1 ${field.label.toLowerCase()}';
+          isValid = false;
+          firstInvalidCode ??= field.code;
+          continue;
+        }
+      }
+
+      // Ô số điện thoại: chuẩn hoá rồi kiểm dạng số VN (cùng luật server — [PhoneUtils]); trống thì phép kiểm bắt buộc ở trên lo.
+      if (field.type == DynamicFormFieldType.phone && !_phoneUnchanged(field.code, value)) {
+        final loi = PhoneUtils.validate(value);
+        if (loi != null) {
+          newErrors[field.code] = loi;
           isValid = false;
           firstInvalidCode ??= field.code;
           continue;
@@ -1007,6 +1031,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
     switch (field.type) {
       case DynamicFormFieldType.text:
+      case DynamicFormFieldType.phone: // bàn phím số + biểu tượng điện thoại theo LOẠI ô (DynamicTextFieldWidget)
         return DynamicTextFieldWidget(
           field: field,
           value: value?.toString(),
@@ -1244,12 +1269,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
       case DynamicFormFieldType.geoProvince:
       case DynamicFormFieldType.geoWard:
-        // Tỉnh/Xã theo danh mục đã lưu máy (chạy offline). Ô xã đọc tỉnh đang chọn ở ô cha (`dependsOn`).
-        final laXa = field.type == DynamicFormFieldType.geoWard;
+      case DynamicFormFieldType.geoOldProvince:
+      case DynamicFormFieldType.geoOldDistrict:
+        // Tỉnh/Xã (và Tỉnh cũ/Huyện cũ) theo danh mục đã lưu máy (chạy offline). Ô con đọc tỉnh đang chọn ở ô cha
+        // (`dependsOn`; ô xã cứng của điểm bán mặc định `province_id`, ô huyện cũ không có ô cha ⇒ khoá).
+        final level = switch (field.type) {
+          DynamicFormFieldType.geoWard => GeoLevel.ward,
+          DynamicFormFieldType.geoOldProvince => GeoLevel.oldProvince,
+          DynamicFormFieldType.geoOldDistrict => GeoLevel.oldDistrict,
+          _ => GeoLevel.province,
+        };
+        final cha = level == GeoLevel.ward ? (field.dependsOn ?? 'province_id') : field.dependsOn;
         return GeoSelectFieldWidget(
           field: field,
-          wardLevel: laXa,
-          provinceId: laXa ? GeoSelectFieldWidget.idOf(_formData[field.dependsOn ?? 'province_id']) : null,
+          level: level,
+          provinceId: level.isChild && cha != null ? GeoSelectFieldWidget.idOf(_formData[cha]) : null,
           value: value,
           errorText: errorText,
           onChanged: (id) => _updateGeo(field, id),

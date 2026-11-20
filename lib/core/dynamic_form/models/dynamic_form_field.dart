@@ -55,6 +55,15 @@ enum DynamicFormFieldType {
   /// Xã/phường (`ref_ward`) — lọc theo ô tỉnh ở [DynamicFormField.dependsOn], giá trị là ID
   geoWard,
 
+  /// Tỉnh CŨ trước 01/07/2025 (`ref_old_province`) — giá trị là ID, danh sách ở danh mục đã lưu máy (`old_provinces`)
+  geoOldProvince,
+
+  /// Quận/huyện CŨ (`ref_old_district`) — lọc theo ô tỉnh cũ ở [DynamicFormField.dependsOn], giá trị là ID
+  geoOldDistrict,
+
+  /// Số điện thoại (`phone`) — bàn phím số, chuẩn hoá + kiểm dạng số VN (`PhoneUtils`), gửi chuỗi chỉ chữ số
+  phone,
+
   /// Ô CÔNG THỨC (`formula`) — chỉ đọc, app tự tính từ các ô khác theo [DynamicFormField.formula]; không gửi lên
   /// (server tự tính lại và lưu)
   formula,
@@ -190,6 +199,15 @@ enum DynamicFormFieldType {
 
       case 'ref_ward':
         return DynamicFormFieldType.geoWard;
+
+      case 'ref_old_province':
+        return DynamicFormFieldType.geoOldProvince;
+
+      case 'ref_old_district':
+        return DynamicFormFieldType.geoOldDistrict;
+
+      case 'phone':
+        return DynamicFormFieldType.phone;
 
       case 'formula':
         return DynamicFormFieldType.formula;

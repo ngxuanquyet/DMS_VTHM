@@ -47,9 +47,9 @@ class _DynamicTextFieldWidgetState extends State<DynamicTextFieldWidget> {
   // vẽ theo LOẠI TRƯỜNG, không theo tên).
   bool get _isAddressField => widget.field.code == 'address' || widget.field.code == 'delivery_address';
 
-  // Cột cứng SĐT / email của điểm bán (mã cố định server). Ô động có nhãn "Loại điện thoại"… từng bị khoá chỉ gõ số — không
-  // đoán theo nhãn/mã nữa (05/11/2026).
-  bool get _isPhoneField => widget.field.code == 'phone';
+  // Cột cứng SĐT / email của điểm bán (mã cố định server) + ô LOẠI `phone` (kiểm/chuẩn hoá ở DynamicFormBuilder). Ô động có
+  // nhãn "Loại điện thoại"… từng bị khoá chỉ gõ số — không đoán theo nhãn/mã nữa (05/11/2026).
+  bool get _isPhoneField => widget.field.code == 'phone' || widget.field.type == DynamicFormFieldType.phone;
 
   bool get _isEmailField => widget.field.code == 'email';
 

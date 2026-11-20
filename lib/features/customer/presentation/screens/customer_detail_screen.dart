@@ -12,6 +12,8 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_error_dialog.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/location_field_widget.dart';
+import '../../../../core/services/geo_catalog_service.dart';
+import '../../../../core/widgets/geo_select_field_widget.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
@@ -1599,8 +1601,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
   Widget _buildDynamicFieldsCard(bool isDark) {
     final columns = ref.watch(customerViewModelProvider.select((s) => s.dynamicColumns));
+    // Ô địa giới (tỉnh/xã, tỉnh cũ/huyện cũ) lưu ID — tên hiện thay cho số; khoá `<mã>_label` server kèm theo không thành dòng riêng.
+    final geoCodes = {for (final c in columns) if (GeoLevel.fromInputType(c.inputType) != null) c.code};
     final entries = _customer.dynamicFields.entries
         .where((e) => !_detailIgnoredDynamicKeys.contains(e.key) && e.value != null && e.value.toString().isNotEmpty)
+        .where((e) => !(e.key.endsWith('_label') && geoCodes.contains(e.key.substring(0, e.key.length - 6))))
         .toList();
 
     return _buildSectionCard(
@@ -1639,6 +1644,19 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           );
         }
 
+        final geoLevel = col == null ? null : GeoLevel.fromInputType(col.inputType);
+        if (geoLevel != null) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10.0),
+            child: _buildInfoRow(
+              label: label,
+              value: _geoName(e.key, e.value, geoLevel),
+              icon: Icons.fiber_manual_record_rounded,
+              isDark: isDark,
+            ),
+          );
+        }
+
         // Ô công thức: số server đã tính + lưu, định dạng như lúc nhập (hàng nghìn, tiền tệ, số lẻ).
         final congThuc = col != null && col.isFormula ? FormulaEvaluator.toNum(e.value) : null;
         return Padding(
@@ -1657,6 +1675,14 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         );
       }).toList(),
     );
+  }
+
+  /// Tên đơn vị của ô địa giới [code] (giá trị là ID): danh mục đã lưu máy → nhãn server gửi kèm (`<mã>_label`) → ID thô.
+  String _geoName(String code, dynamic value, GeoLevel level) {
+    final tuDanhMuc = GeoCatalogService.memory?.unitOf(level, GeoSelectFieldWidget.idOf(value))?.fullName;
+    if (tuDanhMuc != null && tuDanhMuc.isNotEmpty) return tuDanhMuc;
+    final nhan = _customer.dynamicFields['${code}_label']?.toString().trim();
+    return nhan != null && nhan.isNotEmpty ? nhan : value.toString();
   }
 
   // ===========================================================================

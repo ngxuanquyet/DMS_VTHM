@@ -9,20 +9,24 @@ import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../utils/string_utils.dart';
 
-/// Ô chọn TỈNH/THÀNH (`ref_province`) hoặc XÃ/PHƯỜNG (`ref_ward`) theo danh mục đơn vị hành chính (#24072).
+export '../services/geo_catalog_service.dart' show GeoLevel;
+
+/// Ô chọn TỈNH/THÀNH (`ref_province`) hoặc XÃ/PHƯỜNG (`ref_ward`) theo danh mục đơn vị hành chính (#24072), và cặp
+/// TỈNH CŨ (`ref_old_province`) → QUẬN/HUYỆN CŨ (`ref_old_district`) theo đơn vị hành chính trước 01/07/2025.
 ///
-/// Danh sách lấy từ danh mục đã lưu trên máy ([GeoCatalogService]) — CHẠY ĐƯỢC KHI MẤT MẠNG. Ô xã chỉ bày xã của
-/// [provinceId] (tỉnh đang chọn ở ô cha), khoá lại khi chưa chọn tỉnh. Chỉ bày đơn vị CÒN DÙNG; giá trị đang giữ mà đã
-/// tắt vẫn hiện tên kèm "(ngừng dùng)". Tìm KHÔNG DẤU ("viet tri" ra "Phường Việt Trì").
+/// Danh sách lấy từ danh mục đã lưu trên máy ([GeoCatalogService]) — CHẠY ĐƯỢC KHI MẤT MẠNG. Ô con (xã / huyện cũ) chỉ
+/// bày đơn vị của [provinceId] (tỉnh đang chọn ở ô cha), khoá lại khi chưa chọn tỉnh. Chỉ bày đơn vị CÒN DÙNG; giá trị
+/// đang giữ mà đã tắt vẫn hiện tên kèm "(ngừng dùng)" (danh mục cũ không tắt đơn vị nào). Tìm KHÔNG DẤU ("viet tri" ra
+/// "Phường Việt Trì").
 ///
-/// Giá trị là ID (số). Việc BỎ xã khi tỉnh đổi do màn chứa ô làm (nó biết ô nào phụ thuộc ô nào) — ô này chỉ hiện.
+/// Giá trị là ID (số). Việc BỎ ô con khi tỉnh đổi do màn chứa ô làm (nó biết ô nào phụ thuộc ô nào) — ô này chỉ hiện.
 class GeoSelectFieldWidget extends ConsumerStatefulWidget {
   final DynamicFormField field;
 
-  /// `true` = ô xã, `false` = ô tỉnh.
-  final bool wardLevel;
+  /// Cấp đơn vị của ô.
+  final GeoLevel level;
 
-  /// Tỉnh đang chọn ở ô cha — chỉ dùng khi [wardLevel].
+  /// Tỉnh (mới hoặc cũ) đang chọn ở ô cha — chỉ dùng khi [GeoLevel.isChild].
   final int? provinceId;
   final dynamic value;
   final String? errorText;
@@ -31,7 +35,7 @@ class GeoSelectFieldWidget extends ConsumerStatefulWidget {
   const GeoSelectFieldWidget({
     super.key,
     required this.field,
-    required this.wardLevel,
+    required this.level,
     required this.value,
     required this.onChanged,
     this.provinceId,
@@ -71,18 +75,18 @@ class _GeoSelectFieldWidgetState extends ConsumerState<GeoSelectFieldWidget> {
     });
   }
 
-  /// Đơn vị cho ô này: tỉnh, hoặc xã của tỉnh đang chọn.
+  /// Đơn vị cho ô này: tỉnh (mới/cũ), hoặc đơn vị con của tỉnh đang chọn.
   List<GeoUnit> _units() {
     final c = _catalog;
     if (c == null) return const [];
-    return widget.wardLevel ? c.wardsOf(widget.provinceId) : c.provinces;
+    return c.unitsOf(widget.level, parentId: widget.provinceId);
   }
 
   GeoUnit? _selected() {
     final id = GeoSelectFieldWidget.idOf(widget.value);
     final c = _catalog;
     if (id == null || c == null) return null;
-    return widget.wardLevel ? c.ward(id) : c.province(id);
+    return c.unitOf(widget.level, id);
   }
 
   String _labelOf(GeoUnit u) => u.isActive ? u.fullName : '${u.fullName} (ngừng dùng)';
@@ -113,8 +117,9 @@ class _GeoSelectFieldWidgetState extends ConsumerState<GeoSelectFieldWidget> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final selected = _selected();
-    final chuaChonTinh = widget.wardLevel && widget.provinceId == null;
-    final chuaCoDanhMuc = _catalog == null;
+    final chuaChonTinh = widget.level.isChild && widget.provinceId == null;
+    // Ô địa giới CŨ cần thêm danh mục cũ — bản lưu của app đời trước / server chưa gửi thì coi như chưa có danh mục.
+    final chuaCoDanhMuc = _catalog == null || (widget.level.isOld && !_catalog!.hasOldUnits);
     final khoa = widget.field.isReadOnly || chuaChonTinh || chuaCoDanhMuc;
 
     final String text;
@@ -123,7 +128,7 @@ class _GeoSelectFieldWidgetState extends ConsumerState<GeoSelectFieldWidget> {
     } else if (chuaCoDanhMuc) {
       text = _loading ? 'Đang tải danh mục…' : 'Chưa có danh mục — kết nối mạng một lần để tải (chạm để thử lại)';
     } else if (chuaChonTinh) {
-      text = 'Chọn tỉnh/thành trước';
+      text = widget.level == GeoLevel.oldDistrict ? 'Chọn tỉnh cũ trước' : 'Chọn tỉnh/thành trước';
     } else {
       text = widget.field.placeholder ?? 'Chọn ${widget.field.label.toLowerCase()}';
     }
@@ -154,7 +159,7 @@ class _GeoSelectFieldWidgetState extends ConsumerState<GeoSelectFieldWidget> {
           child: Row(
             children: [
               Icon(
-                widget.wardLevel ? Icons.location_city_rounded : Icons.map_rounded,
+                widget.level.isChild ? Icons.location_city_rounded : Icons.map_rounded,
                 size: 18,
                 color: selected != null
                     ? AppColors.primary
