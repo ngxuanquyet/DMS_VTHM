@@ -330,6 +330,10 @@ class DynamicFormField {
   /// đúng (xem `customerRequiredIfCodes`). `null` = không (ô cứng, schema cũ).
   final dynamic requiredIf;
 
+  /// «Ẩn trên app (vẫn gửi dữ liệu)» (`hidden_on_app`, chốt 20/11/2026): form KHÔNG vẽ ô nhưng giữ widget sống ngoài màn hình
+  /// để giá trị điền sẵn / giá trị đang lưu vẫn gửi; app không kiểm ô này (server kiểm).
+  final bool hiddenOnApp;
+
   /// Cấu hình ô công thức (khoá `formula` của schema: `{expr, format, decimals, blank}`); `null` = không phải ô công thức
   /// (ô khác / server hoặc bản lưu máy cũ không có khoá).
   final FormulaConfig? formula;
@@ -397,6 +401,7 @@ class DynamicFormField {
     this.dependsOn,
     this.showIf,
     this.requiredIf,
+    this.hiddenOnApp = false,
     this.formula,
     this.section,
     this.badge,
@@ -557,6 +562,7 @@ class DynamicFormField {
           : null,
       showIf: json['show_if'],
       requiredIf: json['required_if'],
+      hiddenOnApp: json['hidden_on_app'] == true,
       formula: formula,
       section: section,
       badge: json['badge']?.toString(),
@@ -596,6 +602,7 @@ class DynamicFormField {
     String? dependsOn,
     dynamic showIf,
     dynamic requiredIf,
+    bool? hiddenOnApp,
     FormulaConfig? formula,
     String? section,
     String? badge,
@@ -634,6 +641,7 @@ class DynamicFormField {
       dependsOn: dependsOn ?? this.dependsOn,
       showIf: showIf ?? this.showIf,
       requiredIf: requiredIf ?? this.requiredIf,
+      hiddenOnApp: hiddenOnApp ?? this.hiddenOnApp,
       formula: formula ?? this.formula,
       section: section ?? this.section,
       badge: badge ?? this.badge,

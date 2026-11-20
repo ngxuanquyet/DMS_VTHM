@@ -124,11 +124,12 @@ class CustomerApiService {
   /// Lấy cấu hình schema form nhập liệu khách hàng động
   /// GET /crm/customer-form/schema?with_scope=1&with_geo=1 — `with_scope` xin thêm hai ô cứng Kênh/Tuyến tự khai (21/10/2026);
   /// `with_geo` xin cặp ô cứng Tỉnh → Xã theo danh mục `province_id`/`ward_id` (#24072); `with_erp` xin ô ảo "Khách hàng ERP"
-  /// `erp_links` (#24331); `with_materials` xin ô ảo "Vật tư tại điểm" (bật/tắt bước vật tư lúc tạo). Server đời cũ bỏ qua
+  /// `erp_links` (#24331); `with_materials` xin ô ảo "Vật tư tại điểm" (bật/tắt bước vật tư lúc tạo); `with_route` xin ô ảo
+  /// "Tuyến bán hàng" `route_ids` (cấu hình được, 20/11/2026 — trước app tự chèn). Server đời cũ bỏ qua
   /// tham số.
   Future<Map<String, dynamic>> getCustomerFormSchema() async {
     final response = await _apiClient.get('/crm/customer-form/schema',
-        queryParameters: {'with_scope': '1', 'with_geo': '1', 'with_erp': '1', 'with_materials': '1'});
+        queryParameters: {'with_scope': '1', 'with_geo': '1', 'with_erp': '1', 'with_materials': '1', 'with_route': '1'});
     if (response is Map<String, dynamic>) {
       return response;
     }

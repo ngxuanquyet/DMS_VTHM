@@ -534,8 +534,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (!_isBlockVisible(block)) continue;
       // Ô công thức: chỉ đọc, không bắt buộc, không gửi (server tự tính)
       if (_isFormulaBlock(block)) continue;
-
       final code = block.resolved.code;
+      // Ô «Ẩn trên app (vẫn gửi dữ liệu)»: nhân viên không thấy ô nên app không kiểm (server kiểm) — TRỪ ô đang bắt buộc (kể cả
+      // theo điều kiện) mà nguồn tự điền không ra giá trị: HIỆN ô ra (giữ hiện suốt phiên) và kiểm như ô thường.
+      if (block.hiddenOnApp && !_hienLai.contains(code)) {
+        if (!(_req(block) && DynamicRuleEvaluator.isEmptyValue(_answers[code]))) continue;
+        _hienLai.add(code);
+      }
+
       final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
 
       // Nhóm trường lặp: bỏ dòng không điền gì, rồi kiểm số dòng + ô con bắt buộc của từng dòng (cùng luật server); nhóm
@@ -806,7 +812,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final visibleBlocks = widget.blocks.where(_isBlockVisible).toList();
+    final visibleBlocks = _dropEmptySections(widget.blocks.where(_isBlockVisible).toList());
 
     // Ô sau tiêu đề con vào khung riêng — cùng bộ gom với form điểm bán ([groupUnderSubheadings]).
     return Column(
@@ -815,19 +821,57 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             headingLevel: block.resolved.inputType.toLowerCase() == 'heading'
                 ? DynamicFormField.headingLevelOf({'config': block.resolved.configMap})
                 : null,
-            child: Padding(
-              // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng
-              // dẫn, đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
-              key: ValueKey('block_${block.resolved.code}'),
-              padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-              child: KeyedSubtree(
-                key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
-                child: _buildBlock(context, block, isDark),
+            child: _hideOnApp(
+              block,
+              Padding(
+                // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng
+                // dẫn, đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
+                key: ValueKey('block_${block.resolved.code}'),
+                padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
+                child: KeyedSubtree(
+                  key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
+                  child: _buildBlock(context, block, isDark),
+                ),
               ),
             ),
           ))),
     );
   }
+
+  /// Ô «Ẩn trên app (vẫn gửi dữ liệu)»: giữ widget SỐNG ngoài màn hình (không chiếm chỗ, không vẽ, không bấm / focus được) —
+  /// widget vẫn tự điền (ô Tuyến chọn tuyến của lượt ngay trong widget), giá trị vẫn vào câu trả lời.
+  Widget _hideOnApp(MarketFormBlockEntity block, Widget child) =>
+      _anTrenApp(block) ? Offstage(child: ExcludeFocus(child: child)) : child;
+
+  /// Mục (tiêu đề cấp 1 tới tiêu đề cấp 1 kế) mà MỌI ô nhập đều «Ẩn trên app» ⇒ bỏ luôn ô trình bày của mục (tiêu đề, ghi
+  /// chú, tiêu đề con) — không vẽ một khung chỉ có chữ. Ô ẩn vẫn giữ (sống ngoài màn hình để tự điền). Cùng luật form điểm bán.
+  List<MarketFormBlockEntity> _dropEmptySections(List<MarketFormBlockEntity> blocks) {
+    bool moMuc(MarketFormBlockEntity b) =>
+        b.resolved.inputType.toLowerCase() == 'heading' &&
+        DynamicFormField.headingLevelOf({'config': b.resolved.configMap}) != 2;
+    final out = <MarketFormBlockEntity>[];
+    var i = 0;
+    while (i < blocks.length) {
+      if (!moMuc(blocks[i])) {
+        out.add(blocks[i++]);
+        continue;
+      }
+      var j = i + 1;
+      while (j < blocks.length && !moMuc(blocks[j])) {
+        j++;
+      }
+      final muc = blocks.sublist(i, j);
+      final coNhapHien = muc.any((b) => !b.isPresentation && !_anTrenApp(b));
+      out.addAll(coNhapHien || muc.every((b) => b.isPresentation) ? muc : muc.where((b) => !b.isPresentation));
+      i = j;
+    }
+    return out;
+  }
+
+  /// Ô «Ẩn trên app» đã phải HIỆN RA vì bắt buộc mà trống lúc nộp ([validateAndGetAnswers]) — giữ hiện suốt phiên.
+  final Set<String> _hienLai = {};
+
+  bool _anTrenApp(MarketFormBlockEntity block) => block.hiddenOnApp && !_hienLai.contains(block.resolved.code);
 
   Widget _buildBlock(
     BuildContext context,

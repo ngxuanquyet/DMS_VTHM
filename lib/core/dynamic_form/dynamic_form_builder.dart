@@ -286,6 +286,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     return f(Map<String, dynamic>.unmodifiable(formulas.isEmpty ? _formData : {..._formData, ...formulas}));
   }
 
+  /// Ô «Ẩn trên app» đã phải HIỆN RA vì bắt buộc mà trống lúc Lưu ([validate]) — giữ hiện suốt phiên để không biến mất khi gõ.
+  final Set<String> _hienLai = {};
+
   /// Giá trị RỖNG (null, chuỗi trắng, danh sách/map rỗng) — cùng nghĩa «trống» của lỗi bắt buộc.
   static bool _rong(dynamic v) =>
       v == null ||
@@ -424,6 +427,12 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       // Ô đang ẩn theo `show_if` được MIỄN mọi phép kiểm (kể cả bắt buộc); ô công thức chỉ đọc, không kiểm.
       if (hidden.contains(field.code) || field.type == DynamicFormFieldType.formula || field.isDisplayOnly) continue;
       final value = _formData[field.code];
+      // «Ẩn trên app (vẫn gửi dữ liệu)»: nhân viên không thấy ô nên không kiểm (server kiểm) — TRỪ ô đang bắt buộc mà nguồn tự
+      // điền không ra giá trị: HIỆN ô ra (giữ hiện suốt phiên) và kiểm như ô thường, không để một ô vô hình chặn Lưu.
+      if (field.hiddenOnApp && !_hienLai.contains(field.code)) {
+        if (!(field.isRequired && _rong(value))) continue;
+        _hienLai.add(field.code);
+      }
 
       // 0. Ô có phép kiểm riêng (màn gọi cung cấp) — thay cho kiểm "bắt buộc" mặc định.
       final kiemRieng = widget.customValidators?[field.code];
@@ -652,7 +661,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     // Mục theo cấu hình (danh tính [DynamicFormField.sectionKey], không thì tên mục) KHÔNG còn ô nhập nào được vẽ (kể cả
     // bản đồ) ⇒ bỏ luôn ô trình bày của mục (mô tả, tiêu đề con, ghi chú) — không vẽ khung chỉ có chữ trình bày.
     String mucCua(DynamicFormField f) => f.sectionKey != null ? 'h:${f.sectionKey}' : 's:${f.section ?? 'Thông tin chung'}';
-    final dangHien = _effectiveFields(_formulaValuesCache).where((f) => !hidden.contains(f.code)).toList();
+    // Ô «Ẩn trên app (vẫn gửi dữ liệu)» không vẽ — giá trị của nó (điền sẵn / đang lưu) đã nằm trong [_formData] từ lúc khởi tạo
+    // nên vẫn gửi đi.
+    final dangHien = _effectiveFields(_formulaValuesCache)
+        .where((f) => !hidden.contains(f.code) && (!f.hiddenOnApp || _hienLai.contains(f.code)))
+        .toList();
     final mucCoNhap = {for (final f in dangHien) if (!f.isDisplayOnly) mucCua(f)};
 
     // Chia khúc theo thứ tự cấu hình. Khoá khúc = danh tính mục; bản đồ (coords) luôn là khúc riêng.

@@ -62,6 +62,9 @@ class MarketFormBlockEntity {
   final dynamic showIf;
   /// Bắt buộc THEO ĐIỀU KIỆN (`required_if`, #25067) — ô vẫn hiện, chỉ đòi điền khi cây đúng; `null` = không.
   final dynamic requiredIf;
+  /// «Ẩn trên app (vẫn gửi dữ liệu)» (`hidden_on_app`, chốt 20/11/2026): KHÔNG vẽ ô nhưng vẫn gửi giá trị tự điền (mặc định theo
+  /// phòng, công thức, điểm bán / tuyến của lượt) — renderer giữ widget sống ngoài màn hình để nó vẫn tự điền.
+  final bool hiddenOnApp;
   final MarketFormResolvedEntity resolved;
 
   const MarketFormBlockEntity({
@@ -71,6 +74,7 @@ class MarketFormBlockEntity {
     this.colSpan = 12,
     this.showIf,
     this.requiredIf,
+    this.hiddenOnApp = false,
     required this.resolved,
   });
 

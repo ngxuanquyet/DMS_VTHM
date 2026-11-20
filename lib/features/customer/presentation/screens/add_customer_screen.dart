@@ -119,6 +119,7 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         type: nhieuKenh ? DynamicFormFieldType.multipleChoice : DynamicFormFieldType.singleChoice,
         isRequired: kenhCH.isRequired && !khoaKenh,
         isReadOnly: khoaKenh,
+        hiddenOnApp: kenhCH.hiddenOnApp,
         options: channels.map((c) => DynamicFormOption(label: optionLabel(c.code, c.name), value: c.id)).toList(),
         // Chọn một mà phòng có nhiều kênh ⇒ không đoán, để trống.
         initialValue: nhieuKenh ? defaultChannels : (defaultChannels.length == 1 ? defaultChannels.first : null),
@@ -133,6 +134,7 @@ List<DynamicFormField> ownChannelTerritoryFields(CustomerMetaData meta, {require
         type: DynamicFormFieldType.singleChoice,
         isRequired: tuyenCH.isRequired && !khoaTuyen,
         isReadOnly: khoaTuyen,
+        hiddenOnApp: tuyenCH.hiddenOnApp,
         // "Toàn kênh" đứng đầu (chốt 21/10/2026): không gắn tuyến — server lưu trống, không gán tuyến mặc định; ô Tuyến bắt buộc
         // vẫn điền được với phòng phụ trách cả kênh. Server điền sẵn mục này cho phòng chỉ có dòng toàn kênh.
         options: [
@@ -338,9 +340,13 @@ List<DynamicFormField> buildCustomerFormFields(
     } else if (f.code == 'region_id') {
       fields[i] = f.copyWith(options: regionOptions(f.options), clearInitialValue: c == null);
     } else if (f.code == 'route_ids' || f.code == 'route_id') {
+      // Ô ảo «Tuyến bán hàng» của Cấu hình trường điểm bán (`with_route`, 20/11/2026): server gửi kiểu `ref_dms_route` ⇒ vẽ
+      // thành ô chọn các tuyến của chính nhân viên, nhãn / bắt buộc / ẩn trên app theo cấu hình.
       fields[i] = f.copyWith(
+        type: DynamicFormFieldType.singleChoice,
         options: routeOptions,
         initialValue: defaultRouteId,
+        placeholder: 'Chọn tuyến bán hàng...',
         catalog: 'dropdown',
       );
     }
@@ -398,8 +404,10 @@ List<DynamicFormField> buildCustomerFormFields(
     );
   }
 
-  // 🔴 Bắt buộc theo API spec 22/09/2026: route_ids (mảng tuyến bán hàng cho nhân viên thị trường từ GET /dms/routes/mine)
-  if (!fields.any((f) => f.code == 'route_ids' || f.code == 'route_id')) {
+  // 🔴 Bắt buộc theo API spec 22/09/2026: route_ids (mảng tuyến bán hàng cho nhân viên thị trường từ GET /dms/routes/mine).
+  // Server mới (`route_fields`, 20/11/2026) cấu hình ô này ở Cấu hình trường điểm bán ⇒ vắng ô = admin ẩn, KHÔNG tự chèn;
+  // server cũ / bản lưu máy cũ / bộ mặc định ngoại tuyến (không có cờ) ⇒ chèn như trước.
+  if (schemaData['data']?['route_fields'] != true && !fields.any((f) => f.code == 'route_ids' || f.code == 'route_id')) {
     final insertIdx = fields.indexWhere((f) => f.code == 'region_id');
     fields.insert(
       insertIdx != -1 ? insertIdx + 1 : 1,
