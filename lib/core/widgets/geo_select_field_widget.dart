@@ -42,6 +42,15 @@ class GeoSelectFieldWidget extends ConsumerStatefulWidget {
     this.errorText,
   });
 
+  /// Cấp đơn vị theo loại ô của form động; loại không phải ô địa giới ⇒ `null`.
+  static GeoLevel? levelOf(DynamicFormFieldType type) => switch (type) {
+        DynamicFormFieldType.geoProvince => GeoLevel.province,
+        DynamicFormFieldType.geoWard => GeoLevel.ward,
+        DynamicFormFieldType.geoOldProvince => GeoLevel.oldProvince,
+        DynamicFormFieldType.geoOldDistrict => GeoLevel.oldDistrict,
+        _ => null,
+      };
+
   /// Id từ giá trị ô (server có thể trả số hoặc chuỗi số); rác ⇒ null.
   static int? idOf(dynamic v) {
     if (v == null) return null;

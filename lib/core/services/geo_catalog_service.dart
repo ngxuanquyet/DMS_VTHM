@@ -2,6 +2,7 @@ import 'dart:isolate';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -198,6 +199,10 @@ class GeoCatalogService {
 
   /// Như [cached] nhưng gọi được ở nơi không có `ref` (repository cập nhật bản nhớ điểm bán sau khi sửa).
   static GeoCatalog? get memory => _memory;
+
+  /// Đặt bản nhớ trong test (màn xem đọc [memory] không qua provider).
+  @visibleForTesting
+  static set memoryForTest(GeoCatalog? catalog) => _memory = catalog;
 
   /// Nạp danh mục: bộ nhớ → tệp trên máy → server (nếu tới hạn hỏi lại hoặc chưa có gì). Lỗi mạng KHÔNG ném — trả bản
   /// đang có (có thể `null`).

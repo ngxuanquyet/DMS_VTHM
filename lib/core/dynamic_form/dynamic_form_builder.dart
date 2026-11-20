@@ -1273,12 +1273,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       case DynamicFormFieldType.geoOldDistrict:
         // Tỉnh/Xã (và Tỉnh cũ/Huyện cũ) theo danh mục đã lưu máy (chạy offline). Ô con đọc tỉnh đang chọn ở ô cha
         // (`dependsOn`; ô xã cứng của điểm bán mặc định `province_id`, ô huyện cũ không có ô cha ⇒ khoá).
-        final level = switch (field.type) {
-          DynamicFormFieldType.geoWard => GeoLevel.ward,
-          DynamicFormFieldType.geoOldProvince => GeoLevel.oldProvince,
-          DynamicFormFieldType.geoOldDistrict => GeoLevel.oldDistrict,
-          _ => GeoLevel.province,
-        };
+        final level = GeoSelectFieldWidget.levelOf(field.type)!;
         final cha = level == GeoLevel.ward ? (field.dependsOn ?? 'province_id') : field.dependsOn;
         return GeoSelectFieldWidget(
           field: field,

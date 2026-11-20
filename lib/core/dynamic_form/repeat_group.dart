@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../services/geo_catalog_service.dart';
+import '../widgets/geo_select_field_widget.dart';
 import 'choice_other.dart';
 
 import 'models/dynamic_form_field.dart';
@@ -21,7 +23,8 @@ class RepeatGroupSpec {
   /// Số dòng tối đa (0 = không giới hạn).
   final int maxRows;
 
-  /// Ô con theo thứ tự — chỉ ô cơ bản (chữ, số, tiền, ngày, chọn, có/không).
+  /// Ô con theo thứ tự — ô cơ bản (chữ, số, tiền, ngày, chọn, có/không) và ô địa giới (tỉnh/xã, tỉnh cũ/huyện cũ — ô con
+  /// lọc theo ô tỉnh CÙNG DÒNG ở [DynamicFormField.dependsOn]).
   final List<DynamicFormField> columns;
 
   /// Độ dài tối thiểu / tối đa (ký tự) của ô con chữ theo mã ô — [DynamicFormField] không mang hai ràng buộc này nhưng
@@ -98,6 +101,8 @@ class RepeatGroupSpec {
       'required': it['required'] == true,
       'options': cfg['options'] ?? const [],
       'config': cfg,
+      // Ô địa giới con (xã / huyện cũ) lọc theo ô tỉnh CÙNG DÒNG: `config.depends_on` → khoá phẳng mà fromJson đọc.
+      'depends_on': cfg['depends_on'],
       'min': val['min'],
       'max': val['max'],
       'min_length': val['min_length'],
@@ -232,6 +237,12 @@ class RepeatGroupSpec {
       parts.add(items
           .map((x) {
             if (x is bool) return x ? 'Có' : 'Không';
+            // Ô địa giới lưu ID — in TÊN tra từ danh mục đã lưu máy (chưa có danh mục ⇒ ID).
+            final geo = col == null ? null : GeoSelectFieldWidget.levelOf(col.type);
+            if (geo != null) {
+              final ten = GeoCatalogService.memory?.unitOf(geo, GeoSelectFieldWidget.idOf(x))?.fullName;
+              if (ten != null && ten.isNotEmpty) return ten;
+            }
             final hit = col?.options.where((o) => o.value.toString() == x.toString()).firstOrNull;
             return hit?.label ?? x.toString();
           })

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/geo_select_field_widget.dart';
 import '../choice_other.dart';
 import '../models/dynamic_form_field.dart';
 import '../repeat_group.dart';
@@ -111,6 +112,23 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
     _emit(moi);
   }
 
+  /// Ô địa giới con của dòng [i]: ghi id; đổi TỈNH (mới/cũ) ⇒ bỏ ô con (xã / huyện cũ) CÙNG DÒNG lọc theo ô này. Một lần báo.
+  void _setGeo(int i, DynamicFormField c, GeoLevel level, int? id) {
+    final moi = [for (final r in _rows) Map<String, dynamic>.from(r)];
+    final truoc = GeoSelectFieldWidget.idOf(moi[i][c.code]);
+    if (id == null) {
+      moi[i].remove(c.code);
+    } else {
+      moi[i][c.code] = id;
+    }
+    if (!level.isChild && truoc != id) {
+      for (final con in widget.spec.columns.where((x) => x.dependsOn == c.code)) {
+        moi[i].remove(con.code);
+      }
+    }
+    _emit(moi);
+  }
+
   /// Khoá «Khác…» của ô con: theo `line_id`; dòng thiếu `line_id` (dữ liệu lạ) theo vị trí — không để nhiều dòng dùng chung.
   String _otherKey(int i, String code) => '${_rows[i]['line_id'] ?? '#$i'}|$code';
 
@@ -179,9 +197,21 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
     );
   }
 
-  /// Một ô con — chỉ loại cơ bản (server không cho loại khác vào nhóm).
+  /// Một ô con — loại cơ bản + ô địa giới (server không cho loại khác vào nhóm).
   Widget _cell(int i, DynamicFormField c) {
     final v = _rows[i][c.code];
+    final geo = GeoSelectFieldWidget.levelOf(c.type);
+    if (geo != null) {
+      // Ô con (xã / huyện cũ) lọc theo ô tỉnh của CHÍNH dòng này; không có ô cha ⇒ khoá.
+      final cha = c.dependsOn;
+      return GeoSelectFieldWidget(
+        field: c,
+        level: geo,
+        provinceId: geo.isChild && cha != null ? GeoSelectFieldWidget.idOf(_rows[i][cha]) : null,
+        value: v,
+        onChanged: (id) => _setGeo(i, c, geo, id),
+      );
+    }
     void set(dynamic x) => _set(i, c.code, x);
     final khoaKhac = _otherKey(i, c.code);
     final coKhac = c.allowOther && !c.isReadOnly;
