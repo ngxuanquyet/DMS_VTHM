@@ -107,6 +107,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Khoá + FocusNode theo mã ô — nộp còn lỗi thì cuộn tới ô lỗi ĐẦU TIÊN, ô gõ chữ/số thì focus luôn.
   final Map<String, GlobalKey> _blockKeys = {};
+
+  /// Khoá dòng lỗi của ô ma trận SOS — dòng lỗi nằm cuối ô (dưới bảng + ô ảnh), cuộn tới đầu ô thì câu lỗi khuất.
+  final Map<String, GlobalKey> _matrixErrorKeys = {};
   final Map<String, FocusNode> _focusNodes = {};
   final Map<String, List<FormPhotoEntry>> _photoEntries = {};
   Map<String, bool> _visibilityMap = {};
@@ -779,13 +782,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       node.requestFocus();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final target = _blockKeys[code]?.currentContext;
+      // Ô ma trận: cuộn tới DÒNG LỖI (cuối ô), đặt thấp trên màn để ô ảnh ngay trên nó cũng hiện.
+      final loi = _matrixErrorKeys[code]?.currentContext;
+      final target = loi ?? _blockKeys[code]?.currentContext;
       if (target != null && target.mounted) {
         Scrollable.ensureVisible(
           target,
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeInOutCubic,
-          alignment: 0.15,
+          alignment: loi != null ? 0.75 : 0.15,
         );
       }
     });
@@ -1519,6 +1524,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       hintCounts: _hintCountsOf(block.resolved.configMap),
       custom: custom,
       errorText: _errors[code],
+      errorKey: _matrixErrorKeys.putIfAbsent(code, GlobalKey.new),
       onChanged: (counts, invalid) {
         _matrixInvalid[code] = invalid;
         final cur = _answers[code];

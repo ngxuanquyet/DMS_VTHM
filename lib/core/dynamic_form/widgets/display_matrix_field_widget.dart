@@ -408,6 +408,10 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   final DisplayMatrixConfig config;
   final DisplayMatrixCounts counts;
   final String? errorText;
+
+  /// Khoá gắn vào dòng [errorText] — dòng này nằm DƯỚI bảng + các ô ảnh, ô ma trận thường cao hơn màn hình ⇒ màn chứa
+  /// cuộn tới chính dòng lỗi khi nộp, không cuộn tới đầu ô (đầu ô hiện, câu báo lỗi khuất).
+  final Key? errorKey;
   /// Số đếm mới + có ô nào đang gõ sai dạng không (màn chứa chặn bước Lưu).
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
   final Widget Function(DisplayMatrixType type)? photoSection;
@@ -433,6 +437,7 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     required this.config,
     required this.counts,
     this.errorText,
+    this.errorKey,
     required this.onChanged,
     this.photoSection,
     this.hintCounts = const {},
@@ -1020,7 +1025,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
         if (widget.photoSection != null)
           for (final t in cfg.types)
             if (t.maxPhotos > 0) Padding(padding: const EdgeInsets.only(bottom: 8), child: widget.photoSection!(t)),
-        if (widget.errorText != null) FormFieldErrorText(widget.errorText!),
+        if (widget.errorText != null) FormFieldErrorText(widget.errorText!, key: widget.errorKey),
       ],
     );
   }
