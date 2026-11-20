@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/network/api_client.dart';
 import '../../data/repositories/forms_repository_impl.dart';
+import '../../data/services/form_suggest_store.dart';
 import '../../data/services/forms_api_service.dart';
 import '../../domain/repositories/forms_repository.dart';
 import '../../domain/usecases/get_available_forms_usecase.dart';
@@ -17,6 +18,13 @@ final formsRepositoryProvider = Provider<FormsRepository>((ref) {
   return FormsRepositoryImpl(
     ref.read(formsApiServiceProvider),
     ref.read(appDatabaseProvider),
+    fetchTimeout: () => Duration(seconds: ref.read(mobileRulesProvider).forms.fetchTimeoutSeconds),
+  );
+});
+
+final formSuggestStoreProvider = Provider<FormSuggestStore>((ref) {
+  return FormSuggestStore(
+    ref.read(formsApiServiceProvider),
     fetchTimeout: () => Duration(seconds: ref.read(mobileRulesProvider).forms.fetchTimeoutSeconds),
   );
 });

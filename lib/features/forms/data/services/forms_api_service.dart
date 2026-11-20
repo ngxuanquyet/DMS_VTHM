@@ -95,6 +95,20 @@ class FormsApiService {
     );
   }
 
+  /// Gợi ý từ các phiếu đã nộp của mọi ô bật `suggest_from_history` trong biểu mẫu:
+  /// GET /dms/form-submissions/suggest?form_id= → `{data: {fields: {mã ô: [giá trị…]}}}`.
+  Future<Map<String, List<String>>> getSuggestions(int formId) async {
+    final response = await _apiClient.get('/dms/form-submissions/suggest?form_id=$formId');
+    final data = response is Map ? response['data'] : null;
+    final fields = data is Map ? data['fields'] : null;
+    if (fields is! Map) return {};
+
+    return {
+      for (final e in fields.entries)
+        if (e.value is List) '${e.key}': [for (final v in e.value as List) if (v is String) v],
+    };
+  }
+
   /// Xem lại chi tiết phiếu đã nộp kèm khoá answer_photos theo đặc tả §4.3:
   /// GET /dms/form-submissions/{id}
   Future<MarketFormSubmissionDetailModel> getSubmissionDetail(int id) async {

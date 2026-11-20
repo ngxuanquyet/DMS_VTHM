@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/database/app_database.dart' show collectFilePaths, looksLikeFilePath;
+import '../../../../core/services/local_history_retention.dart';
 import '../../../../core/utils/offline_photo_store.dart';
 
 /// Nháp phiếu khảo sát ĐANG ĐIỀN trong lượt viếng thăm — thoát màn / tắt app / app bị đóng giữa chừng không mất phần đã
@@ -14,10 +15,23 @@ import '../../../../core/utils/offline_photo_store.dart';
 /// nằm ở thư mục tạm, hệ điều hành dọn được; ảnh đã tải lên giữ token trong câu trả lời, tệp gốc của nó chép vào
 /// `token_files` (token → tệp) — phiếu nộp muộn khi token đã hết hạn trên server thì tải lại từ tệp này.
 /// Xoá: nộp thành công ([remove]), kết thúc lượt ([clearVisit]), lưu cho lượt khác; nháp quá [maxAge] không khôi phục.
+///
+/// Phiếu THU THẬP (không gắn lượt, chủ hệ thống chốt 20/11/2026): mỗi biểu mẫu một nháp, cùng luật lưu / hạn, ở ngăn RIÊNG
+/// của từng tài khoản ([collectSlot]) với lượt giả [collectVisitId] / [collectUuid] — không đụng ngăn của lượt viếng thăm.
 class FormDraftStore {
   FormDraftStore._();
 
   static const String _key = 'form_drafts_v1';
+
+  /// Ngăn nháp của lượt viếng thăm (phiếu khảo sát).
+  static const String visitSlot = _key;
+
+  /// Ngăn nháp phiếu thu thập của [account] — tiền tố `dms_market_forms_` ⇒ đăng xuất xoá theo (máy dùng chung).
+  static String collectSlot(String account) => 'dms_market_forms_draft_collect_v1_$account';
+
+  /// "Lượt" của ngăn thu thập — ngăn chỉ chứa phiếu thu thập, khoá lượt chỉ để dùng chung luật khớp ô.
+  static const int collectVisitId = 0;
+  static const String collectUuid = 'collect';
   static const String photoDir = 'form_draft_photos';
 
   /// Nháp lâu hơn mức này không khôi phục — tính từ lần lưu ĐẦU (`created_at`) của phiếu, không theo ngày lịch (lượt vắt
@@ -34,8 +48,8 @@ class FormDraftStore {
     return (visitId > 0 && savedId == visitId) || (clientUuid.isNotEmpty && savedUuid == clientUuid);
   }
 
-  static Map? _read(SharedPreferences prefs) {
-    final raw = prefs.getString(_key);
+  static Map? _read(SharedPreferences prefs, [String slotKey = _key]) {
+    final raw = prefs.getString(slotKey);
     if (raw == null) return null;
     try {
       final m = jsonDecode(raw);
@@ -84,6 +98,7 @@ class FormDraftStore {
     required Map<String, dynamic> answers,
     required Map<String, String> photoMemo,
     Map<String, String> tokenFiles = const {},
+    String slotKey = _key,
   }) {
     final done = _chain.then((_) async {
       try {
@@ -95,7 +110,7 @@ class FormDraftStore {
         final keep = {for (final e in tokenFiles.entries) if (encoded.contains('"${e.key}"')) e.key: e.value};
         if (keep.isNotEmpty) draft['token_files'] = await _persistFiles(keep, photoMemo, prefix);
         final prefs = await SharedPreferences.getInstance();
-        final slot = _read(prefs);
+        final slot = _read(prefs, slotKey);
         final old = slot?['drafts'] is Map ? slot!['drafts'] as Map : const {};
         final cu = slot != null && _sameVisit(slot, visitId, clientUuid) ? old['$configId'] : null;
         // Giữ mốc lần lưu đầu — trừ khi bản cũ đã quá [maxAge] (load không khôi phục nó): bắt đầu nháp mới, không thì
@@ -107,7 +122,9 @@ class FormDraftStore {
           if (slot != null && _sameVisit(slot, visitId, clientUuid)) ...Map<String, dynamic>.from(old),
           '$configId': draft,
         };
-        await prefs.setString(_key, jsonEncode({'visit_id': visitId, 'client_uuid': clientUuid, 'drafts': drafts}));
+        await prefs.setString(slotKey, jsonEncode({'visit_id': visitId, 'client_uuid': clientUuid, 'drafts': drafts}));
+        // Ngăn thu thập mang tiền tố bản lưu biểu mẫu ⇒ đóng mốc mỗi lần lưu, kẻo bị dọn như bản lưu biểu mẫu quá hạn.
+        if (slotKey != _key) await LocalHistoryRetention.touchFormsCache(prefs, slotKey);
         // Tệp không còn nháp nào trỏ tới (ô bỏ đi / lượt cũ). Nháp mới có thể trỏ CHÍNH tệp của bản cũ (nháp khôi phục
         // đã nằm trong thư mục nháp) ⇒ chỉ xoá phần chênh.
         await _deleteFiles(_draftFiles(old).difference(_draftFiles(drafts)));
@@ -125,11 +142,12 @@ class FormDraftStore {
     required int visitId,
     required String clientUuid,
     required int configId,
+    String slotKey = _key,
   }) async {
     await _chain;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final slot = _read(prefs);
+      final slot = _read(prefs, slotKey);
       if (slot == null || !_sameVisit(slot, visitId, clientUuid)) return null;
       final d = slot['drafts'] is Map ? (slot['drafts'] as Map)['$configId'] : null;
       if (d is! Map || d['answers'] is! Map) return null;
@@ -148,17 +166,37 @@ class FormDraftStore {
   }
 
   /// Bỏ nháp của MỘT phiếu (đã nộp / người dùng chọn làm lại) cùng tệp của nó.
-  static Future<void> remove({required int visitId, required String clientUuid, required int configId}) {
+  static Future<void> remove({
+    required int visitId,
+    required String clientUuid,
+    required int configId,
+    String slotKey = _key,
+  }) {
     return _chain = _chain.then((_) async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        final slot = _read(prefs);
+        final slot = _read(prefs, slotKey);
         if (slot == null || !_sameVisit(slot, visitId, clientUuid) || slot['drafts'] is! Map) return;
         final drafts = Map<String, dynamic>.from(slot['drafts'] as Map);
         final removed = drafts.remove('$configId');
         if (removed == null) return;
-        await prefs.setString(_key, jsonEncode({...slot, 'drafts': drafts}));
+        await prefs.setString(slotKey, jsonEncode({...slot, 'drafts': drafts}));
         await _deleteFiles(_draftFiles(removed).difference(_draftFiles(drafts)));
+      } catch (_) {}
+    });
+  }
+
+  /// Đăng xuất: xoá ngăn nháp thu thập của MỌI tài khoản cùng ảnh nháp của chúng — máy dùng chung không giữ ảnh của người
+  /// trước (khoá ngăn cũng bị đăng xuất xoá theo tiền tố `dms_market_forms_`, nhưng tệp ảnh thì không).
+  static Future<void> clearCollect() {
+    return _chain = _chain.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        for (final k in prefs.getKeys().where((k) => k.startsWith(collectSlot('')))) {
+          final slot = _read(prefs, k);
+          await prefs.remove(k);
+          await _deleteFiles(_draftFiles(slot?['drafts']));
+        }
       } catch (_) {}
     });
   }

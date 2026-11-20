@@ -28,6 +28,8 @@ import '../../../../../core/dynamic_form/repeat_group.dart';
 import '../../../../../core/dynamic_form/widgets/repeat_group_field_widget.dart';
 import '../../../../../core/dynamic_form/widgets/choice_other_input.dart';
 import '../../../../../core/dynamic_form/widgets/formula_field_widget.dart';
+import '../../../../../core/utils/string_utils.dart';
+import '../../../data/services/form_suggest_store.dart';
 import '../../../../../core/widgets/voice_input_mic_button.dart';
 import '../../../../../core/utils/photo_watermark_helper.dart';
 import '../../../../../core/widgets/camera_permission_dialog.dart';
@@ -79,6 +81,9 @@ class MarketFormRenderer extends StatefulWidget {
   final int defaultMaxPhotos;
   final Future<FormPhotoModel> Function(File file)? onUploadPhoto;
 
+  /// Gợi ý từ các phiếu đã nộp theo mã ô (ô chữ bật `config.suggest_from_history`, [FormSuggestStore]) — rỗng ⇒ ô chữ thường.
+  final Map<String, List<String>> suggestions;
+
   const MarketFormRenderer({
     super.key,
     required this.blocks,
@@ -94,6 +99,7 @@ class MarketFormRenderer extends StatefulWidget {
     this.customerData = const {},
     this.defaultMaxPhotos = 10,
     this.onUploadPhoto,
+    this.suggestions = const {},
   });
 
   @override
@@ -1076,14 +1082,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final initial = _answers[code]?.toString() ?? '';
     final controller = _getController(code, initial);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel(block, isDark),
-        const SizedBox(height: 8),
-        TextFormField(
+    Widget field(TextEditingController controller, FocusNode? focusNode) => TextFormField(
           controller: controller,
-          focusNode: isLocked ? null : _focusNodeOf(code),
+          focusNode: focusNode,
           readOnly: isLocked,
           maxLines: isMultiline ? 4 : 1,
           minLines: isMultiline ? 3 : 1,
@@ -1116,8 +1117,91 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   ),
           ),
           onChanged: isLocked ? null : (val) => _updateTypedValue(code, val),
-        ),
+        );
+
+    // Theo CỜ của ô, không theo danh sách: gợi ý tải về muộn (mạng chậm) mà đổi cây widget thì ô đang gõ bị dựng lại —
+    // mất focus, bàn phím, chữ đang ghép dấu.
+    final coGoiY = !isMultiline && !isLocked && FormSuggestStore.isEnabled(block);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(block, isDark),
+        const SizedBox(height: 8),
+        if (coGoiY)
+          _buildSuggestField(code, controller, isDark, field)
+        else
+          field(controller, isLocked ? null : _focusNodeOf(code)),
       ],
+    );
+  }
+
+  /// Trần số gợi ý hiện trong khung thả xuống — bố cục (khung cao ~5 dòng, cuộn được), không phải tham số nghiệp vụ:
+  /// số giá trị tải về máy do tham số server `form_suggest_max_values` quyết.
+  static const int _maxSuggestShown = 20;
+
+  /// Ô chữ có gợi ý từ các phiếu đã nộp (chủ hệ thống chốt 20/11/2026): ô trống không hiện gì, BẮT ĐẦU GÕ thì hiện các giá
+  /// trị chứa chữ đang gõ (so không dấu); chạm một gợi ý ⇒ điền vào ô, vẫn gõ tay được giá trị mới.
+  Widget _buildSuggestField(
+    String code,
+    TextEditingController controller,
+    bool isDark,
+    Widget Function(TextEditingController, FocusNode?) field,
+  ) {
+    return LayoutBuilder(
+      builder: (context, box) => RawAutocomplete<String>(
+        textEditingController: controller,
+        focusNode: _focusNodeOf(code),
+        optionsBuilder: (value) {
+          // Ô đang báo lỗi (nộp hỏng ⇒ focus vào ô): không mở khung gợi ý đè lên câu lỗi; gõ tiếp là lỗi tự gỡ.
+          if (_errors[code] != null) return const Iterable<String>.empty();
+          final q = StringUtils.toUnaccentedLower(value.text.trim());
+          if (q.isEmpty) return const Iterable<String>.empty();
+          final dang = value.text.trim().toLowerCase();
+          return (widget.suggestions[code] ?? const <String>[])
+              .where((s) => s.trim().toLowerCase() != dang && StringUtils.toUnaccentedLower(s).contains(q))
+              .take(_maxSuggestShown);
+        },
+        onSelected: (s) => _updateValue(code, s),
+        fieldViewBuilder: (context, c, f, _) => field(c, f),
+        optionsViewBuilder: (context, onSelected, options) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            key: ValueKey('suggest_$code'),
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: 240, maxWidth: box.maxWidth),
+              child: ListView(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: [
+                  for (final s in options)
+                    InkWell(
+                      onTap: () => onSelected(s),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.history_rounded, size: 18, color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                s,
+                                style: AppTypography.bodyMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

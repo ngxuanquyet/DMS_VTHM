@@ -9,6 +9,7 @@ import '../models/user_model.dart';
 import '../services/auth_api_service.dart';
 import '../../../visit/data/repositories/visit_material_repository.dart' show visitMaterialsCachePrefix;
 import '../../../../core/utils/rich_image_cache.dart';
+import '../../../forms/data/services/form_draft_store.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthApiService _apiService;
@@ -121,6 +122,9 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyAuthToken);
     await prefs.remove(AppConstants.keyRefreshToken);
     await prefs.remove(AppConstants.keyUserData);
+
+    // Nháp phiếu thu thập theo tài khoản: xoá cả ảnh nháp TRƯỚC khi khoá ngăn bị xoá theo tiền tố dưới (mất khoá là mất dấu tệp).
+    await FormDraftStore.clearCollect();
 
     // Xoá cache cấu hình + lịch sử chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
     // Cùng lý do: biểu mẫu điểm bán / thị trường mang giá trị "tự điền theo phòng ban" tính riêng cho người này

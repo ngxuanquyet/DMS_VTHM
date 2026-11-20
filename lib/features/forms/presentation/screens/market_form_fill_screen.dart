@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/account_key.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
@@ -16,6 +18,7 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
 import '../../data/services/form_draft_store.dart';
+import '../../data/services/form_suggest_store.dart';
 import '../../domain/entities/market_form_entity.dart';
 import '../viewmodels/forms_view_model.dart';
 import '../widgets/dynamic_renderer/market_form_renderer.dart';
@@ -98,11 +101,23 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   bool _isSubmitting = false;
   bool _isExiting = false;
 
-  /// Nháp ([FormDraftStore]) chỉ cho phiếu khảo sát trong lượt viếng thăm, mở mới (không mang sẵn câu trả lời).
-  late final bool _draftEnabled = widget.args.kind == 'survey' &&
-      widget.args.initialAnswers == null &&
-      ((widget.args.visitClientUuid?.isNotEmpty ?? false) || (widget.args.visitId ?? 0) > 0);
+  /// Nháp phiếu THU THẬP (chủ hệ thống chốt 20/11/2026): mỗi biểu mẫu một nháp, ngăn riêng theo tài khoản
+  /// ([FormDraftStore.collectSlot]) — chưa rõ tài khoản thì tắt nháp ở [initState].
+  late final bool _isCollectDraft = widget.args.kind == 'collect' && widget.args.initialAnswers == null;
+
+  /// Nháp ([FormDraftStore]): phiếu khảo sát trong lượt viếng thăm, hoặc phiếu thu thập — mở mới (không mang sẵn câu trả lời).
+  late bool _draftEnabled = _isCollectDraft ||
+      (widget.args.kind == 'survey' &&
+          widget.args.initialAnswers == null &&
+          ((widget.args.visitClientUuid?.isNotEmpty ?? false) || (widget.args.visitId ?? 0) > 0));
   late bool _draftLoaded = !_draftEnabled;
+
+  /// Ngăn lưu nháp: ngăn lượt viếng thăm (mặc định) hoặc ngăn thu thập của tài khoản.
+  String? _draftSlot;
+
+  /// Gợi ý từ các phiếu đã nộp cho ô chữ bật `suggest_from_history` ([FormSuggestStore]).
+  Map<String, List<String>> _suggestions = const {};
+  late final Set<String> _suggestCodes = FormSuggestStore.enabledCodes(widget.args.config.schema.blocks);
   Map<String, dynamic>? _draftAnswers;
   DateTime? _draftSavedAt;
   Map<String, dynamic>? _pendingDraft;
@@ -118,25 +133,61 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   /// Lần ghi nháp gần nhất có thành công không — hỏng thì rời màn phải hỏi như khi chưa có nháp.
   bool _lastDraftSaveOk = true;
 
-  int get _visitId => widget.args.visitId ?? 0;
-  String get _visitUuid => widget.args.visitClientUuid ?? '';
+  int get _visitId => _isCollectDraft ? FormDraftStore.collectVisitId : widget.args.visitId ?? 0;
+  String get _visitUuid => _isCollectDraft ? FormDraftStore.collectUuid : widget.args.visitClientUuid ?? '';
   int get _configId => widget.args.config.configId;
 
   @override
   void initState() {
     super.initState();
+    if (_suggestCodes.isNotEmpty) _loadSuggestions();
     if (!_draftEnabled) return;
     WidgetsBinding.instance.addObserver(this);
-    FormDraftStore.load(visitId: _visitId, clientUuid: _visitUuid, configId: _configId).then((d) {
+    _openDraft();
+  }
+
+  /// Bản lưu trong máy dùng NGAY (mất mạng không phải chờ trần tải), rồi thay bằng bản mới từ server khi có.
+  Future<void> _loadSuggestions() async {
+    try {
+      final store = ref.read(formSuggestStoreProvider);
+      final formId = widget.args.config.formId;
+      final cached = await store.cached(formId);
+      if (mounted && cached.isNotEmpty) setState(() => _suggestions = cached);
+      final fresh = await store.load(formId);
+      if (mounted) setState(() => _suggestions = fresh);
+    } catch (e) {
+      // Không có gợi ý thì ô vẫn là ô chữ thường — không làm hỏng màn điền phiếu.
+      debugPrint('[MarketFormFill] Không nạp được gợi ý: $e');
+    }
+  }
+
+  Future<void> _openDraft() async {
+    if (_isCollectDraft) {
+      final account = cacheAccountKey(await SharedPreferences.getInstance());
       if (!mounted) return;
-      setState(() {
-        _draftAnswers = d?.answers;
-        _draftSavedAt = d?.savedAt;
-        _draftTokenFiles = d?.tokenFiles ?? {};
-        _draftLoaded = true;
-      });
+      if (account == null) {
+        WidgetsBinding.instance.removeObserver(this);
+        setState(() {
+          _draftEnabled = false;
+          _draftLoaded = true;
+        });
+        return;
+      }
+      _draftSlot = FormDraftStore.collectSlot(account);
+    }
+    final d = await FormDraftStore.load(visitId: _visitId, clientUuid: _visitUuid, configId: _configId, slotKey: _slot!);
+    if (!mounted) return;
+    setState(() {
+      _draftAnswers = d?.answers;
+      _draftSavedAt = d?.savedAt;
+      _draftTokenFiles = d?.tokenFiles ?? {};
+      _draftLoaded = true;
     });
   }
+
+  /// Ngăn nháp đang dùng; `null` = phiếu thu thập chưa rõ ngăn (đang đọc tài khoản) ⇒ KHÔNG ghi / xoá gì — rơi về ngăn
+  /// lượt là ghi đè cả ngăn của lượt đang mở (mất nháp khảo sát).
+  String? get _slot => _isCollectDraft ? _draftSlot : FormDraftStore.visitSlot;
 
   @override
   void dispose() {
@@ -177,8 +228,19 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       _lastDraftSaveOk = false;
       return;
     }
+    final slot = _slot;
+    if (slot == null) return;
     // Kho nháp ghi nối tiếp ⇒ các lần ghi xong theo thứ tự gọi, [_lastDraftSaveOk] là kết quả lần mới nhất.
     final gen = _draftGen;
+    _saveDraft(slot, gen, answers);
+  }
+
+  Future<void> _saveDraft(String slot, int gen, Map<String, dynamic> answers) async {
+    // Bị đăng xuất khi màn còn mở (logout đã xoá ngăn + ảnh nháp của người này) ⇒ không ghi lại nháp của tài khoản cũ.
+    if (_isCollectDraft && slot != FormDraftStore.collectSlot(cacheAccountKey(await SharedPreferences.getInstance()) ?? '')) {
+      if (gen == _draftGen) _lastDraftSaveOk = false;
+      return;
+    }
     FormDraftStore.save(
       visitId: _visitId,
       clientUuid: _visitUuid,
@@ -186,6 +248,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       answers: answers,
       photoMemo: _draftPhotoMemo,
       tokenFiles: _pendingTokenFiles,
+      slotKey: slot,
     ).then((ok) {
       if (gen == _draftGen) _lastDraftSaveOk = ok;
     });
@@ -194,7 +257,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   void _discardDraft() {
     _draftTimer?.cancel();
     _pendingDraft = null;
-    FormDraftStore.remove(visitId: _visitId, clientUuid: _visitUuid, configId: _configId);
+    final slot = _slot;
+    if (slot != null) FormDraftStore.remove(visitId: _visitId, clientUuid: _visitUuid, configId: _configId, slotKey: slot);
   }
 
   /// "Xoá nháp, làm lại": bỏ nháp rồi dựng lại biểu mẫu trống.
@@ -446,8 +510,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
           _isSubmitting = false;
         });
 
-        if (result.success) {
-          // Thành công
+        if (result.success && _suggestCodes.isNotEmpty) {
+          unawaited(ref.read(formSuggestStoreProvider).remember(widget.args.config.formId, answers, _suggestCodes));
         }
 
         if (mounted) {
@@ -688,6 +752,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
                 defaultRouteIds: widget.args.routeIds,
                 customerData: widget.args.customerData,
                 onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
+                suggestions: _suggestions,
               ),
             const SizedBox(height: 80),
           ],
