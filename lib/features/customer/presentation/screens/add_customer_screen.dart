@@ -226,9 +226,15 @@ Map<String, bool> _customerVisibility(List<DynamicFormField> fields, Map<String,
       items: fields,
       showIfOf: (f) => f.kind == 'dynamic' ? f.showIf : null,
       keysOf: (f) => [f.code],
+      isListOf: _customerListField,
       answers: formData,
       customerContext: _customerRuleContext(formData, c),
     );
+
+/// Ô điểm bán lưu DANH SÁCH (chọn nhiều, khách pháp nhân chọn nhiều) — điều kiện đọc như danh sách (#24038).
+bool _customerListField(DynamicFormField f) =>
+    f.type == DynamicFormFieldType.multipleChoice ||
+    (f.type == DynamicFormFieldType.erpPartner && f.erpPartnerMultiple);
 
 /// Mã các ô ĐỘNG đang BẮT BUỘC THEO ĐIỀU KIỆN (`required_if`, #25067 — server `FormValidator::conditionallyRequiredCodes()`)
 /// — truyền vào `DynamicFormBuilder.requiredFieldsOf` ở màn Thêm mới và Sửa. Cùng ngữ cảnh + cùng luật ô ẩn (đọc rỗng, không
@@ -248,6 +254,7 @@ Set<String> customerRequiredIfCodes(
     keysOf: (f) => [f.code],
     visibility: _customerVisibility(fields, formData, editing),
     answers: formData,
+    isListOf: _customerListField,
     customerContext: _customerRuleContext(formData, editing),
   );
 }

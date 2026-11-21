@@ -3,10 +3,18 @@ import '../../domain/entities/market_form_entity.dart';
 /// Bộ đánh giá cây điều kiện hiển thị biểu mẫu động `show_if`
 /// Tuân thủ đặc tả kỹ thuật: specs/api/API-DIEU-KIEN-HIEN-THI-BIEU-MAU-2026-09-25.md
 class DynamicRuleEvaluator {
+  /// Ô lưu DANH SÁCH giá trị (chọn nhiều) — bản app của `RuleEvaluator::isListType()` (server) / `isListType` (SPA, #24038).
+  static bool isListType(String inputType, {bool hasOptions = false, bool multiple = false}) =>
+      inputType == 'multiselect' ||
+      (inputType == 'checkbox' && hasOptions) ||
+      (multiple && (inputType == 'ref_customer' || inputType == 'ref_erp_partner'));
+
   /// Đánh giá cây điều kiện hiển thị của một block
   /// - `rule`: dynamic (Map, List, hoặc null)
   /// - `read`: hàm đọc giá trị của trường hoặc biến ngữ cảnh theo path
-  static bool evalRule(dynamic rule, dynamic Function(String path) read) {
+  /// - `lists`: mã các ô DANH SÁCH ([isListType]) — đọc như danh sách: rỗng ⇒ `[]`, vô hướng ⇒ một phần tử. Cùng luật server
+  ///   (`RuleEvaluator`) và SPA (`lib/dynamicRule.ts`) — bảng ca chung `test/fixtures/dynamicRule.cases.json` (#24038).
+  static bool evalRule(dynamic rule, dynamic Function(String path) read, [Set<String> lists = const {}]) {
     // null / vắng mặt / {} => true (luôn hiện theo §2)
     if (rule == null) return true;
     if (rule is Map && rule.isEmpty) return true;
@@ -14,7 +22,7 @@ class DynamicRuleEvaluator {
     // [ ... ] (mảng tuần tự, không có all/any) => AND ngầm (hiểu như all)
     if (rule is List) {
       if (rule.isEmpty) return true;
-      return rule.every((child) => evalRule(child, read));
+      return rule.every((child) => evalRule(child, read, lists));
     }
 
     if (rule is Map) {
@@ -23,7 +31,7 @@ class DynamicRuleEvaluator {
         final children = rule['all'];
         if (children is List) {
           if (children.isEmpty) return true;
-          return children.every((child) => evalRule(child, read));
+          return children.every((child) => evalRule(child, read, lists));
         }
         return false;
       }
@@ -33,7 +41,7 @@ class DynamicRuleEvaluator {
         final children = rule['any'];
         if (children is List) {
           if (children.isEmpty) return false;
-          return children.any((child) => evalRule(child, read));
+          return children.any((child) => evalRule(child, read, lists));
         }
         return false;
       }
@@ -47,7 +55,8 @@ class DynamicRuleEvaluator {
         if (op == null || op.isEmpty) return false;
 
         final expected = rule['value'];
-        final actual = read(field);
+        final raw = read(field);
+        final actual = lists.contains(field) ? _toList(raw) : raw;
 
         return _evalLeaf(op, actual, expected);
       }
@@ -57,6 +66,12 @@ class DynamicRuleEvaluator {
     }
 
     return false;
+  }
+
+  /// Đọc như DANH SÁCH: mảng giữ nguyên, rỗng ⇒ `[]`, vô hướng ⇒ một phần tử.
+  static List _toList(dynamic v) {
+    if (v is List) return v;
+    return isEmptyValue(v) ? const [] : [v];
   }
 
   /// Đánh giá phép so sánh tại một nút lá
@@ -84,39 +99,28 @@ class DynamicRuleEvaluator {
         final cmp = compareOrder(actual, expected);
         return cmp != null && cmp <= 0;
 
-      // Thuộc / không thuộc danh sách
+      // Thuộc / không thuộc danh sách — giá trị so không phải danh sách ⇒ cả hai không trúng (như server).
       case 'in':
-        if (expected is! List) return false;
-        if (actual == null) return false;
-        if (actual is List) {
-          return actual.any((item) => expected.any((exp) => looseEquals(item, exp)));
-        }
-        return expected.any((exp) => looseEquals(actual, exp));
-
       case 'not_in':
         if (expected is! List) return false;
-        if (actual == null) return true;
-        if (actual is List) {
-          return !actual.any((item) => expected.any((exp) => looseEquals(item, exp)));
-        }
-        return !expected.any((exp) => looseEquals(actual, exp));
+        final items = actual is List ? actual : [actual];
+        final hit = items.any((item) => expected.any((exp) => looseEquals(item, exp)));
+        return op == 'in' ? hit : !hit;
 
-      // Chuỗi chứa chuỗi con, hoặc mảng có phần tử (vô hướng)
+      // Mảng: so PHẦN TỬ. Chuỗi: chuỗi con, không phân biệt hoa thường; chuỗi tìm rỗng không trúng.
       case 'contains':
-        if (actual == null || expected == null) return false;
         if (actual is List) {
           return actual.any((item) => looseEquals(item, expected));
         }
-        return actual.toString().contains(expected.toString());
+        if (actual is! String || (expected is! String && expected is! num)) return false;
+        final needle = expected.toString().toLowerCase();
+        return needle.isNotEmpty && actual.toLowerCase().contains(needle);
 
       // Trong khoảng đóng [a, b] (mảng đúng 2 phần tử)
       case 'between':
-        if (expected is! List || expected.length != 2) return false;
-        if (actual == null) return false;
-        final low = expected[0];
-        final high = expected[1];
-        final cmpLow = compareOrder(actual, low);
-        final cmpHigh = compareOrder(actual, high);
+        if (expected is! List || expected.length < 2) return false;
+        final cmpLow = compareOrder(actual, expected[0]);
+        final cmpHigh = compareOrder(actual, expected[1]);
         if (cmpLow == null || cmpHigh == null) return false;
         return cmpLow >= 0 && cmpHigh <= 0;
 
@@ -153,32 +157,50 @@ class DynamicRuleEvaluator {
     return false;
   }
 
-  /// Luật 2 (§2): So bằng thì nới lỏng kiểu số <-> chuỗi ("2" và 2 bằng nhau).
+  /// So bằng — bản app của `RuleEvaluator::looseEquals()`: một vế là mảng ⇒ so hai danh sách theo thứ tự (vế vô hướng = danh
+  /// sách một phần tử); một vế đúng/sai ⇒ so đúng/sai (1/true/yes/co/có); hai vế là số thập phân (kể cả chuỗi số) ⇒ so số;
+  /// còn lại so chuỗi.
   static bool looseEquals(dynamic a, dynamic b) {
-    if (a == b) return true;
-    if (a == null || b == null) return false;
-
-    // Nới lỏng số ↔ chuỗi
-    final numA = a is num ? a : num.tryParse(a.toString().trim());
-    final numB = b is num ? b : num.tryParse(b.toString().trim());
-    if (numA != null && numB != null) {
-      return numA == numB;
+    if (a is List || b is List) {
+      final la = _toList(a);
+      final lb = _toList(b);
+      if (la.length != lb.length) return false;
+      for (var i = 0; i < la.length; i++) {
+        if (!looseEquals(la[i], lb[i])) return false;
+      }
+      return true;
     }
-
-    return a.toString().trim() == b.toString().trim();
+    if (a is bool || b is bool) return _toBool(a) == _toBool(b);
+    final numA = _num(a);
+    final numB = _num(b);
+    if (numA != null && numB != null) return numA == numB;
+    return (a ?? '').toString() == (b ?? '').toString();
   }
 
-  /// So sánh thứ tự: ưu tiên số; không phải số thì so chuỗi (ngày ISO YYYY-MM-DD so chuỗi vẫn đúng thứ tự).
+  static bool _toBool(dynamic v) {
+    if (v is String) return const ['1', 'true', 'yes', 'co', 'có'].contains(v.trim().toLowerCase());
+    if (v is num) return v != 0;
+    if (v is bool) return v;
+    return v != null;
+  }
+
+  /// Chuỗi số THẬP PHÂN như `is_numeric()` của PHP — `num.tryParse` còn nhận `0x10` mà server coi là chữ.
+  static final RegExp _decimal = RegExp(r'^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$');
+
+  static num? _num(dynamic v) {
+    if (v is num) return v.isFinite ? v : null;
+    if (v is String && _decimal.hasMatch(v.trim())) return num.tryParse(v.trim());
+    return null;
+  }
+
+  /// So sánh thứ tự: ưu tiên số; rỗng hoặc lệch kiểu (một bên số, một bên không) ⇒ `null` (mọi toán tử thứ tự ra false, như
+  /// `RuleEvaluator::compare()`); còn lại so chuỗi (ngày ISO YYYY-MM-DD so chuỗi vẫn đúng thứ tự).
   static int? compareOrder(dynamic a, dynamic b) {
-    if (a == null || b == null) return null;
-
-    final numA = a is num ? a : num.tryParse(a.toString().trim());
-    final numB = b is num ? b : num.tryParse(b.toString().trim());
-    if (numA != null && numB != null) {
-      return numA.compareTo(numB);
-    }
-
-    return a.toString().trim().compareTo(b.toString().trim());
+    final numA = _num(a);
+    final numB = _num(b);
+    if (numA != null && numB != null) return numA.compareTo(numB);
+    if (isEmptyValue(a) || isEmptyValue(b) || (numA == null) != (numB == null)) return null;
+    return a.toString().compareTo(b.toString());
   }
 
   /// Đọc đường dẫn lồng nhau dạng `@customer.type_id` từ map ngữ cảnh (§4 & §7)
@@ -210,6 +232,7 @@ class DynamicRuleEvaluator {
       items: blocks,
       showIfOf: (b) => b.showIf,
       keysOf: (b) => [b.resolved.code, b.ref],
+      isListOf: (b) => b.resolved.isListValued,
       answers: answers,
       customerContext: customerContext,
     );
@@ -225,8 +248,10 @@ class DynamicRuleEvaluator {
     required Map<String, bool> visibility,
     required Map<String, dynamic> answers,
     Map<String, dynamic> customerContext = const {},
+    bool Function(T item)? isListOf,
   }) {
     final out = <String>{};
+    final lists = _listKeys(items, keysOf, isListOf);
     dynamic read(String path) {
       if (path.startsWith('@')) return readPath(customerContext, path);
       if (visibility[path] == false) return null;
@@ -238,7 +263,7 @@ class DynamicRuleEvaluator {
       if (rule == null || (rule is Map && rule.isEmpty) || (rule is List && rule.isEmpty)) continue;
       final keys = keysOf(item).where((k) => k.isNotEmpty).toList();
       if (keys.any((k) => visibility[k] == false)) continue;
-      if (evalRule(rule, read)) out.addAll(keys);
+      if (evalRule(rule, read, lists)) out.addAll(keys);
     }
 
     return out;
@@ -252,9 +277,11 @@ class DynamicRuleEvaluator {
     required List<String> Function(T item) keysOf,
     required Map<String, dynamic> answers,
     Map<String, dynamic> customerContext = const {},
+    bool Function(T item)? isListOf,
   }) {
     final out = <String, bool>{};
     final hidden = <String>{};
+    final lists = _listKeys(items, keysOf, isListOf);
 
     dynamic read(String path) {
       // 1. Biến ngữ cảnh @customer.*
@@ -270,7 +297,7 @@ class DynamicRuleEvaluator {
     }
 
     for (final item in items) {
-      final shown = evalRule(showIfOf(item), read);
+      final shown = evalRule(showIfOf(item), read, lists);
       final keys = keysOf(item).where((k) => k.isNotEmpty).toSet();
 
       for (final k in keys) {
@@ -280,5 +307,14 @@ class DynamicRuleEvaluator {
     }
 
     return out;
+  }
+
+  /// Mã các ô DANH SÁCH trong [items] (mọi mã nhận diện của ô).
+  static Set<String> _listKeys<T>(List<T> items, List<String> Function(T item) keysOf, bool Function(T item)? isListOf) {
+    if (isListOf == null) return const {};
+    return {
+      for (final item in items)
+        if (isListOf(item)) ...keysOf(item).where((k) => k.isNotEmpty),
+    };
   }
 }

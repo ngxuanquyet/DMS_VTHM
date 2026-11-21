@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../../../core/dynamic_form/choice_other.dart';
 import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/dynamic_form/repeat_group.dart';
+import '../services/dynamic_rule_evaluator.dart';
 
 /// Entity cấu hình biểu mẫu thị trường
 class MarketFormConfigEntity {
@@ -124,6 +125,14 @@ class MarketFormResolvedEntity {
 
   bool get isImage => inputType.toLowerCase() == 'image';
   bool get isLocation => inputType.toLowerCase() == 'location';
+
+  /// Ô lưu DANH SÁCH giá trị — điều kiện hiển thị đọc nó như danh sách (#24038, cùng luật server/SPA).
+  bool get isListValued {
+    final c = _configMap;
+    final hasOptions = options.isNotEmpty || (c?['options'] is List && (c!['options'] as List).isNotEmpty) ||
+        (c?['catalog'] != null && '${c!['catalog']}'.isNotEmpty);
+    return DynamicRuleEvaluator.isListType(inputType.toLowerCase(), hasOptions: hasOptions, multiple: c?['multiple'] == true);
+  }
 
   /// Ô CÔNG THỨC (`input_type = formula`): cấu hình `config.formula` / `format` / `decimals` / `blank_if_missing`;
   /// `null` = ô khác hoặc thiếu biểu thức.
