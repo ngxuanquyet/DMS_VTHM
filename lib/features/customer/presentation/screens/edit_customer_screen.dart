@@ -21,6 +21,35 @@ import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
 import '../../../../core/utils/offline_photo_store.dart';
 import '../../../../core/dynamic_form/repeat_group.dart';
 
+/// So một ô của form Sửa điểm bán với giá trị ban đầu (#24755).
+///
+/// Rỗng (null, chuỗi trắng, danh sách/map rỗng) coi là CÙNG một giá trị — form dựng ô ảnh chưa có ảnh thành `[]`
+/// trong khi dữ liệu gốc không có khoá, trước đây làm bấm HỦY BỎ vẫn hỏi «Rời khỏi màn hình?».
+@visibleForTesting
+bool editCustomerValueChanged(String key, Object? val, Object? initialVal) {
+  bool isEmpty(Object? v) =>
+      v == null || (v is String && v.trim().isEmpty) || (v is Iterable && v.isEmpty) || (v is Map && v.isEmpty);
+  if (isEmpty(val) && isEmpty(initialVal)) return false;
+  if (val is List && initialVal is List) {
+    if (val.length != initialVal.length) return true;
+    for (int i = 0; i < val.length; i++) {
+      if (val[i].toString() != initialVal[i].toString()) return true;
+    }
+    return false;
+  }
+  if (val is Map && initialVal is Map) {
+    if (key == 'coords') {
+      final lat1 = (val['lat'] as num?)?.toDouble();
+      final lng1 = (val['lng'] as num?)?.toDouble();
+      final lat2 = (initialVal['lat'] as num?)?.toDouble();
+      final lng2 = (initialVal['lng'] as num?)?.toDouble();
+      return lat1 != lat2 || lng1 != lng2;
+    }
+    return val.toString() != initialVal.toString();
+  }
+  return val?.toString().trim() != initialVal?.toString().trim();
+}
+
 /// Màn hình chỉnh sửa thông tin khách hàng / Điểm bán
 /// Tuân theo 100% schema biểu mẫu động giống màn Thêm mới (AddCustomerScreen),
 /// với dữ liệu của khách hàng hiện tại được điền sẵn (pre-filled).
@@ -199,24 +228,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         if (!RepeatGroupSpec.sameRows(val, initialVal)) return true;
         continue;
       }
-      if (val is List && initialVal is List) {
-        if (val.length != initialVal.length) return true;
-        for (int i = 0; i < val.length; i++) {
-          if (val[i].toString() != initialVal[i].toString()) return true;
-        }
-      } else if (val is Map && initialVal is Map) {
-        if (key == 'coords') {
-          final lat1 = (val['lat'] as num?)?.toDouble();
-          final lng1 = (val['lng'] as num?)?.toDouble();
-          final lat2 = (initialVal['lat'] as num?)?.toDouble();
-          final lng2 = (initialVal['lng'] as num?)?.toDouble();
-          if (lat1 != lat2 || lng1 != lng2) return true;
-        } else if (val.toString() != initialVal.toString()) {
-          return true;
-        }
-      } else if (val?.toString().trim() != initialVal?.toString().trim()) {
-        return true;
-      }
+      if (editCustomerValueChanged(key, val, initialVal)) return true;
     }
     return false;
   }
