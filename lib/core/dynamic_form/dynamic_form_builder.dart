@@ -334,6 +334,11 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final out = Map<String, dynamic>.from(_formData)..removeWhere((k, _) => hidden.contains(k) || congThuc.contains(k));
     // Ô ma trận chỉ mang `custom` (thêm thẻ / cột mà chưa nhập gì) là ô rỗng — gửi `null` như khi xoá hết số.
     for (final f in widget.fields.where((f) => f.type == DynamicFormFieldType.displayMatrix)) {
+      // Ô ma trận CHỈ ĐỌC không gửi (#25612) — server giữ số đang lưu; gửi bản trong máy (có thể cũ) là đè số mới.
+      if (f.isReadOnly) {
+        out.remove(f.code);
+        continue;
+      }
       if (out[f.code] != null && !displayMatrixHasData(out[f.code])) out[f.code] = null;
     }
     // Nhóm trường lặp: bỏ dòng không điền gì (bấm nhầm "+ Thêm"). Không bỏ dòng nào ⇒ giữ nguyên tham chiếu (màn sửa so
@@ -553,6 +558,8 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       // Ô ma trận trùng giá trị đang lưu ([DynamicFormBuilder.savedData]) không gửi đi ⇒ không kiểm (C3) — trừ ô đếm gõ sai
       // dạng (số bị gỡ khỏi giá trị nên giá trị trông như chưa đổi).
       if (field.type == DynamicFormFieldType.displayMatrix) {
+        // Ô chỉ đọc không gửi đi ⇒ không kiểm (#25612).
+        if (field.isReadOnly) continue;
         if (value != null &&
             _matrixInvalid[field.code] != true &&
             DisplayMatrixFieldWidget.sameValue(value, widget.savedData[field.code])) {
@@ -972,6 +979,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
         _matrixInvalid[field.code] = invalid;
         ghi(counts, photos, custom);
       },
+      readOnly: field.isReadOnly,
       // Thêm / bỏ thương hiệu – loại gõ tay, xoá một hàng / cột: ghép lại cả giá trị theo cấu hình MỚI (ảnh của loại vừa gỡ bỏ).
       onCustomChanged: field.isReadOnly
           ? null
@@ -987,6 +995,7 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           type: DynamicFormFieldType.photo,
           maxPhotos: t.maxPhotos.clamp(1, 10),
           allowGallery: false,
+          isReadOnly: field.isReadOnly,
         ),
         photoPaths: (photos[t.code] is List ? photos[t.code] as List : const []).map((e) => e.toString()).toList(),
         onChanged: (list) {

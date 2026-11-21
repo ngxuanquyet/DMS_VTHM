@@ -428,6 +428,9 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   /// (`custom` + `counts`). `null` ⇒ bảng chỉ nhập số, không có nút thêm / xoá (giữ hành vi cũ).
   final void Function(DisplayMatrixCustom custom, DisplayMatrixCounts counts, bool hasInvalidCell)? onCustomChanged;
 
+  /// Ô CHỈ ĐỌC (#25612): ô số không gõ được (cả màn phóng to) — chỉ xem. Ảnh do [photoSection] của màn chứa tự khoá.
+  final bool readOnly;
+
   const DisplayMatrixFieldWidget({
     super.key,
     this.fieldCode = '',
@@ -443,6 +446,7 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     this.hintCounts = const {},
     this.custom = const DisplayMatrixCustom(),
     this.onCustomChanged,
+    this.readOnly = false,
   });
 
   /// Đọc `counts` từ giá trị đã lưu (nháp / phiếu cũ): `{counts: {...}}`; bỏ ô không phải số.
@@ -578,6 +582,9 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
   void Function(String code)? get _removeType => null;
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged;
 
+  /// Ô chỉ đọc — bảng không cho gõ (#25612).
+  bool get _readOnly => false;
+
   /// Còn ô gõ sai dạng số (số không vào bộ đếm).
   bool get _hasInvalidCell => _cellErr.values.contains(_loiSaiDang);
 
@@ -685,6 +692,7 @@ mixin _MatrixEditing<T extends StatefulWidget> on State<T> {
         cellWidth: cellWidth,
         onCell: _set,
         onHeaderTap: _showGuide,
+        readOnly: _readOnly,
       );
 
   /// Dòng "Tổng N mặt ngành hàng · SOS của ta X%".
@@ -749,7 +757,9 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
     return [for (final b in _config.brands) if (!b.custom && b.active && !hien.contains(b.code)) b];
   }
 
-  bool get _editable => widget.onCustomChanged != null;
+  bool get _editable => widget.onCustomChanged != null && !widget.readOnly;
+  @override
+  bool get _readOnly => widget.readOnly;
 
   /// Hàng có số HIỆN TRẠNG (hồ sơ điểm bán) không xoá được: ô trống giữ số cũ khi nộp — muốn gỡ thì gõ 0.
   @override
@@ -936,6 +946,7 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
           label: widget.label,
           counts: _counts,
           hints: _hints,
+          readOnly: widget.readOnly,
           onChanged: (c, invalid) {
             baoCuoi = invalid;
             _onChanged(c, invalid);
@@ -1042,6 +1053,7 @@ class _MatrixFullscreen extends StatefulWidget {
   final DisplayMatrixCounts counts;
   final DisplayMatrixCounts hints;
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
+  final bool readOnly;
 
   const _MatrixFullscreen({
     required this.config,
@@ -1050,6 +1062,7 @@ class _MatrixFullscreen extends StatefulWidget {
     required this.counts,
     required this.onChanged,
     this.hints = const {},
+    this.readOnly = false,
   });
 
   @override
@@ -1065,6 +1078,8 @@ class _MatrixFullscreenState extends State<_MatrixFullscreen> with _MatrixEditin
   void Function(DisplayMatrixCounts counts, bool hasInvalidCell) get _onChanged => widget.onChanged;
   @override
   List<DisplayMatrixBrand> get _brandsShown => widget.brands;
+  @override
+  bool get _readOnly => widget.readOnly;
 
   @override
   void initState() {
@@ -1145,6 +1160,7 @@ class _MatrixTable extends StatefulWidget {
   final double cellWidth;
   final void Function(String brand, DisplayMatrixType type, String text) onCell;
   final void Function(DisplayMatrixType type) onHeaderTap;
+  final bool readOnly;
 
   const _MatrixTable({
     required this.brands,
@@ -1161,6 +1177,7 @@ class _MatrixTable extends StatefulWidget {
     required this.cellWidth,
     required this.onCell,
     required this.onHeaderTap,
+    this.readOnly = false,
   });
 
   @override
@@ -1327,6 +1344,7 @@ class _MatrixTableState extends State<_MatrixTable> {
                       child: TextField(
                         key: ValueKey('${w.keyPrefix}_${b.code}_${t.code}'),
                         controller: w.controller(b.code, t.code),
+                        readOnly: w.readOnly,
                         keyboardType: TextInputType.numberWithOptions(decimal: t.decimals > 0),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(t.decimals > 0 ? r'[0-9.,]' : r'[0-9]'))],
                         textAlign: TextAlign.center,
