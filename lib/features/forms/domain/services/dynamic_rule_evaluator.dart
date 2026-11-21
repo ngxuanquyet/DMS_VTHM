@@ -3,16 +3,10 @@ import '../../domain/entities/market_form_entity.dart';
 /// Bộ đánh giá cây điều kiện hiển thị biểu mẫu động `show_if`
 /// Tuân thủ đặc tả kỹ thuật: specs/api/API-DIEU-KIEN-HIEN-THI-BIEU-MAU-2026-09-25.md
 class DynamicRuleEvaluator {
-  /// Ô lưu DANH SÁCH giá trị (chọn nhiều) — bản app của `RuleEvaluator::isListType()` (server) / `isListType` (SPA, #24038).
-  static bool isListType(String inputType, {bool hasOptions = false, bool multiple = false}) =>
-      inputType == 'multiselect' ||
-      (inputType == 'checkbox' && hasOptions) ||
-      (multiple && (inputType == 'ref_customer' || inputType == 'ref_erp_partner'));
-
   /// Đánh giá cây điều kiện hiển thị của một block
   /// - `rule`: dynamic (Map, List, hoặc null)
   /// - `read`: hàm đọc giá trị của trường hoặc biến ngữ cảnh theo path
-  /// - `lists`: mã các ô DANH SÁCH ([isListType]) — đọc như danh sách: rỗng ⇒ `[]`, vô hướng ⇒ một phần tử. Cùng luật server
+  /// - `lists`: mã các ô DANH SÁCH (`isListFieldType`) — đọc như danh sách: rỗng ⇒ `[]`, vô hướng ⇒ một phần tử. Cùng luật server
   ///   (`RuleEvaluator`) và SPA (`lib/dynamicRule.ts`) — bảng ca chung `test/fixtures/dynamicRule.cases.json` (#24038).
   static bool evalRule(dynamic rule, dynamic Function(String path) read, [Set<String> lists = const {}]) {
     // null / vắng mặt / {} => true (luôn hiện theo §2)
@@ -118,7 +112,7 @@ class DynamicRuleEvaluator {
 
       // Trong khoảng đóng [a, b] (mảng đúng 2 phần tử)
       case 'between':
-        if (expected is! List || expected.length < 2) return false;
+        if (expected is! List || expected.length != 2) return false;
         final cmpLow = compareOrder(actual, expected[0]);
         final cmpHigh = compareOrder(actual, expected[1]);
         if (cmpLow == null || cmpHigh == null) return false;
@@ -193,14 +187,15 @@ class DynamicRuleEvaluator {
     return null;
   }
 
-  /// So sánh thứ tự: ưu tiên số; rỗng hoặc lệch kiểu (một bên số, một bên không) ⇒ `null` (mọi toán tử thứ tự ra false, như
-  /// `RuleEvaluator::compare()`); còn lại so chuỗi (ngày ISO YYYY-MM-DD so chuỗi vẫn đúng thứ tự).
+  /// So sánh thứ tự như `RuleEvaluator::compare()`: rỗng ⇒ `null`; hai số ⇒ so số; hai CHUỖI không phải số ⇒ so chuỗi (ngày ISO
+  /// YYYY-MM-DD so chuỗi vẫn đúng thứ tự); còn lại (đúng/sai, mảng, lệch kiểu) ⇒ `null` — mọi toán tử thứ tự ra false.
   static int? compareOrder(dynamic a, dynamic b) {
+    if (isEmptyValue(a) || isEmptyValue(b)) return null;
     final numA = _num(a);
     final numB = _num(b);
     if (numA != null && numB != null) return numA.compareTo(numB);
-    if (isEmptyValue(a) || isEmptyValue(b) || (numA == null) != (numB == null)) return null;
-    return a.toString().compareTo(b.toString());
+    if (a is String && b is String && numA == null && numB == null) return a.compareTo(b);
+    return null;
   }
 
   /// Đọc đường dẫn lồng nhau dạng `@customer.type_id` từ map ngữ cảnh (§4 & §7)

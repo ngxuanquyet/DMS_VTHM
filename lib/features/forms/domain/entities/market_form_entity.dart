@@ -3,7 +3,7 @@ import 'dart:convert';
 import '../../../../core/dynamic_form/choice_other.dart';
 import '../../../../core/dynamic_form/formula_evaluator.dart';
 import '../../../../core/dynamic_form/repeat_group.dart';
-import '../services/dynamic_rule_evaluator.dart';
+import '../../../../core/dynamic_form/list_field.dart';
 
 /// Entity cấu hình biểu mẫu thị trường
 class MarketFormConfigEntity {
@@ -126,12 +126,11 @@ class MarketFormResolvedEntity {
   bool get isImage => inputType.toLowerCase() == 'image';
   bool get isLocation => inputType.toLowerCase() == 'location';
 
-  /// Ô lưu DANH SÁCH giá trị — điều kiện hiển thị đọc nó như danh sách (#24038, cùng luật server/SPA).
+  /// Ô lưu DANH SÁCH giá trị — điều kiện hiển thị đọc nó như danh sách (#24038, cùng luật server `listFieldCodes`).
   bool get isListValued {
     final c = _configMap;
-    final hasOptions = options.isNotEmpty || (c?['options'] is List && (c!['options'] as List).isNotEmpty) ||
-        (c?['catalog'] != null && '${c!['catalog']}'.isNotEmpty);
-    return DynamicRuleEvaluator.isListType(inputType.toLowerCase(), hasOptions: hasOptions, multiple: c?['multiple'] == true);
+    final hasOptions = options.isNotEmpty || phpNotEmpty(c?['options']) || phpNotEmpty(c?['catalog']);
+    return isListFieldType(inputType.toLowerCase(), hasOptions: hasOptions, multiple: phpNotEmpty(c?['multiple']));
   }
 
   /// Ô CÔNG THỨC (`input_type = formula`): cấu hình `config.formula` / `format` / `decimals` / `blank_if_missing`;

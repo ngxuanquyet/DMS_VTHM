@@ -480,6 +480,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       items: widget.blocks,
       requiredIfOf: (b) => b.requiredIf,
       keysOf: (b) => [b.resolved.code, b.ref],
+      isListOf: (b) => b.resolved.isListValued,
       visibility: _visibilityMap,
       answers: answers,
       customerContext: widget.customerContext,

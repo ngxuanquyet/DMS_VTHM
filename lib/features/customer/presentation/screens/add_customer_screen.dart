@@ -231,9 +231,10 @@ Map<String, bool> _customerVisibility(List<DynamicFormField> fields, Map<String,
       customerContext: _customerRuleContext(formData, c),
     );
 
-/// Ô điểm bán lưu DANH SÁCH (chọn nhiều, khách pháp nhân chọn nhiều) — điều kiện đọc như danh sách (#24038).
+/// Ô điểm bán lưu DANH SÁCH (chọn nhiều, khách pháp nhân chọn nhiều) — điều kiện đọc như danh sách (#24038). Bộ đọc schema
+/// gộp `checkbox` vào chọn nhiều cả khi không có lựa chọn (server coi là ô tích đúng/sai) ⇒ chọn nhiều phải có lựa chọn.
 bool _customerListField(DynamicFormField f) =>
-    f.type == DynamicFormFieldType.multipleChoice ||
+    (f.type == DynamicFormFieldType.multipleChoice && (f.options.isNotEmpty || (f.catalog ?? '').isNotEmpty)) ||
     (f.type == DynamicFormFieldType.erpPartner && f.erpPartnerMultiple);
 
 /// Mã các ô ĐỘNG đang BẮT BUỘC THEO ĐIỀU KIỆN (`required_if`, #25067 — server `FormValidator::conditionallyRequiredCodes()`)
