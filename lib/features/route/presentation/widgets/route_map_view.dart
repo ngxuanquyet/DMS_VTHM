@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/utils/geo.dart';
 import '../../../../core/location/location_provider.dart';
 import '../../../../core/map/goong_config.dart';
 import '../../../../core/map/goong_models.dart';
@@ -1304,7 +1305,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       double actualDistance;
       final livePoint = ref.read(currentPointProvider).value;
       if (livePoint != null) {
-        actualDistance = Geolocator.distanceBetween(
+        actualDistance = haversineMeters(
           livePoint.lat,
           livePoint.lng,
           dealer.lat!,
@@ -1313,7 +1314,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
       } else {
         final cachedPos = LocationService.currentCachedPosition;
         if (cachedPos != null) {
-          actualDistance = Geolocator.distanceBetween(
+          actualDistance = haversineMeters(
             cachedPos.latitude,
             cachedPos.longitude,
             dealer.lat!,
@@ -1322,7 +1323,7 @@ class _RouteMapViewState extends ConsumerState<RouteMapView> {
         } else {
           final lastKnown = await Geolocator.getLastKnownPosition();
           actualDistance = lastKnown != null
-              ? Geolocator.distanceBetween(
+              ? haversineMeters(
                   lastKnown.latitude,
                   lastKnown.longitude,
                   dealer.lat!,

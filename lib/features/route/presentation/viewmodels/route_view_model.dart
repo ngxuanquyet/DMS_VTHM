@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/utils/geo.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/rules/mobile_rules_model.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
@@ -1468,7 +1469,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     required String dealerName,
     required double allowedRadius,
   }) {
-    final distanceM = Geolocator.distanceBetween(
+    final distanceM = haversineMeters(
       pos.latitude,
       pos.longitude,
       dealerLat,
@@ -2131,7 +2132,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         dealerLng != null &&
         lat != null &&
         lng != null) {
-      final distanceM = Geolocator.distanceBetween(
+      final distanceM = haversineMeters(
         lat,
         lng,
         dealerLat,
@@ -3246,7 +3247,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         dealerLng != null &&
         lat != null &&
         lng != null) {
-      final distanceM = Geolocator.distanceBetween(
+      final distanceM = haversineMeters(
         lat,
         lng,
         dealerLat,

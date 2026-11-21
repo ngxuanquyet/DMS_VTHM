@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/utils/geo.dart';
 import '../../../../core/location/location_provider.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/services/location_service.dart';
@@ -234,7 +235,7 @@ class RouteDealerTimeline extends ConsumerWidget {
     // Theo đặc tả §3: Điểm bán không có toạ độ trong hồ sơ -> Luật 4 luôn cho qua
     final cachedPos = LocationService.currentCachedPosition;
     if (dealer.lat != null && dealer.lng != null && cachedPos != null) {
-      final actualDistance = Geolocator.distanceBetween(
+      final actualDistance = haversineMeters(
         cachedPos.latitude,
         cachedPos.longitude,
         dealer.lat!,

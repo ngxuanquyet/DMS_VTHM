@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/utils/geo.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/localization/language_provider.dart';
@@ -25,7 +26,6 @@ import '../../../visit/domain/entities/visit_requirements_entity.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../states/route_state.dart';
 import '../viewmodels/route_view_model.dart';
-import 'package:geolocator/geolocator.dart';
 import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/rules/geofence_rule_helper.dart';
 import '../../../../core/utils/photo_watermark_helper.dart';
@@ -2865,7 +2865,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
                                   double? checkoutDistanceM;
                                   if (pos != null && dealerLat != null && dealerLng != null) {
-                                    checkoutDistanceM = Geolocator.distanceBetween(
+                                    checkoutDistanceM = haversineMeters(
                                       pos.latitude,
                                       pos.longitude,
                                       dealerLat,

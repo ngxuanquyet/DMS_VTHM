@@ -522,6 +522,32 @@ void main() {
       expect(pending.isEmpty, isTrue);
     });
 
+    // #25026: khoảng cách đo CÙNG công thức server (haversine R = 6 371 000 m). Geolocator.distanceBetween dùng R = 6 378 137 m
+    // (dài hơn ~0,11 %) ⇒ điểm cách 199,9 m theo server bị app chặn oan «cách 200m».
+    for (final (lat, chan) in [(21.030313240498263, true), (21.030308743890235, false)]) {
+      test('Check-in biên bán kính 200 m theo haversine của server — ${chan ? '200,4 m chặn' : '199,9 m cho qua'}', () async {
+        final vm = container.read(checkInViewModelProvider.notifier);
+        vm.initCheckinWithDealer(const DealerEntity(
+          id: '101',
+          order: '01',
+          name: 'Cửa hàng Hoàng Gia',
+          address: 'Hà Nội',
+          status: DealerVisitStatus.pending,
+          statusLabel: 'Chưa ghé',
+          isVip: false,
+          lat: 21.028511,
+          lng: 105.854444,
+          geofenceRadiusM: 200,
+        ));
+        final error = await vm.performCheckin(customerId: 101, lat: lat, lng: 105.854444);
+        if (chan) {
+          expect(error, contains('Bạn đang cách điểm bán'));
+        } else {
+          expect(error ?? '', isNot(contains('Bạn đang cách điểm bán')));
+        }
+      });
+    }
+
     test('Offline photo upload copies file to offline dir and enqueues sync entry', () async {
       final vm = container.read(checkInViewModelProvider.notifier);
 
