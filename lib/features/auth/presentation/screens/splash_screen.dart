@@ -183,9 +183,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
 
             const Spacer(flex: 3),
 
+            // Brand Tagline
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Đi để đồng hành — giúp mỗi đối tác tự tin ra quyết định tốt nhất '
+                'của chính họ, và mỗi quyết định ấy xây thêm một viên gạch cho '
+                'thịnh vượng chung',
+                textAlign: TextAlign.center,
+                style: AppTypography.labelSmall(
+                  color: AppColors.onSurfaceVariant,
+                ).copyWith(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w500,
+                  height: 1.5,
+                ),
+              ),
+            ),
+
             // Bottom Progress & Version Section
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 36),
+              padding: const EdgeInsets.fromLTRB(48, 24, 48, 36),
               child: Column(
                 children: [
                   // Animated Progress Bar (width: 220px, height: 5px)
