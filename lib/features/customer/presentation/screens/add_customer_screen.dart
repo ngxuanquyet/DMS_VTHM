@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
@@ -591,6 +592,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
   /// Lần ghi nháp gần nhất có thành công không — hỏng thì thoát màn phải hỏi như khi không có nháp.
   bool _lastDraftSaveOk = true;
 
+  /// `client_uuid` của điểm bán đang nhập — sinh MỘT lần cho mỗi nháp, lưu cùng nháp và gửi kèm khi tạo: app bị đóng giữa
+  /// lúc gửi (server đã ghi) rồi khôi phục nháp, Lưu lần nữa ⇒ server trả lại điểm bán cũ thay vì tạo TRÙNG (rà soát 24/11).
+  String _clientUuid = const Uuid().v4();
+
   /// Tăng khi bỏ nháp — kết quả của lần ghi bắt đầu TRƯỚC đó không được ghi đè [_lastDraftSaveOk].
   int _draftGen = 0;
 
@@ -641,9 +646,19 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
       d = null;
     }
     if (!mounted) return;
+    // Nháp của NGÀY KHÁC ⇒ bỏ (chủ hệ thống chốt 24/11/2026): tuyến / kênh điền sẵn của hôm đó không còn đúng.
+    final now = DateTime.now();
+    final savedAt = d?.savedAt;
+    if (d != null && slot != null && savedAt != null &&
+        (savedAt.year != now.year || savedAt.month != now.month || savedAt.day != now.day)) {
+      _removeDraft(slot);
+      d = null;
+    }
     final form = d?.answers['form'];
     final materials = d?.answers['materials'];
+    final uuid = d?.answers['client_uuid'];
     setState(() {
+      if (uuid is String && uuid.isNotEmpty) _clientUuid = uuid;
       _draftSlot = slot;
       if (form is Map) _savedFormData.addAll(Map<String, dynamic>.from(form));
       if (materials is List) {
@@ -681,6 +696,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
     final Map<String, dynamic> answers;
     try {
       answers = jsonDecode(jsonEncode({
+        'client_uuid': _clientUuid,
         'form': {..._savedFormData, ...?_formKey.currentState?.getFormData()},
         'materials': [for (final o in _materialOps.values) o.toJson()],
       })) as Map<String, dynamic>;
@@ -721,6 +737,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
     _lastDraftSaveOk = true;
     // Map MỚI: lần ghi cũ còn chạy vẫn ghi vào map của nó.
     _draftPhotoMemo = {};
+    // Điểm bán kế tiếp là điểm bán KHÁC ⇒ uuid mới.
+    _clientUuid = const Uuid().v4();
     final slot = _draftSlot;
     if (slot != null) _removeDraft(slot);
   }
@@ -1176,6 +1194,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
         }
       }
 
+      payload['client_uuid'] = _clientUuid;
       await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
       // Bỏ nháp NGAY khi đã tạo (trực tiếp hoặc vào hàng đợi) — kể cả khi màn đã đóng (không setState).
       _discardDraft();

@@ -123,7 +123,26 @@ void main() {
     await tester.pump();
     await tester.pumpWidget(const SizedBox());
     await choGhi(tester);
-    expect((await tester.runAsync(nhap))?['form'], containsPair('name', 'Rời ngay'));
+    final luu = await tester.runAsync(nhap);
+    expect(luu?['form'], containsPair('name', 'Rời ngay'));
+    // client_uuid đi cùng nháp — khôi phục rồi Lưu lại vẫn cùng uuid (server trả điểm bán cũ, không tạo trùng).
+    expect(luu?['client_uuid'], isA<String>().having((u) => u.length, 'độ dài', 36));
+
+    // Nháp của HÔM TRƯỚC ⇒ mở màn thì bỏ (chốt 24/11/2026): lùi `saved_at` về hôm qua.
+    await tester.runAsync(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final key = FormDraftStore.customerSlot('42');
+      final slot = jsonDecode(prefs.getString(key)!) as Map<String, dynamic>;
+      final draft = (slot['drafts'] as Map)['${FormDraftStore.customerConfigId}'] as Map;
+      draft['saved_at'] = DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch;
+      await prefs.setString(key, jsonEncode(slot));
+    });
+    await tester.pumpWidget(app(c));
+    await choGhi(tester);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Đã khôi phục nháp lúc'), findsNothing);
+    expect(find.text('Rời ngay'), findsNothing);
+    expect(await tester.runAsync(nhap), isNull);
 
     await tester.pumpWidget(const SizedBox());
     await choGhi(tester);
