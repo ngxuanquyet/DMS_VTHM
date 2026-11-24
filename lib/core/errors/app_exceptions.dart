@@ -146,7 +146,10 @@ String? nonApiErrorCode(int? statusCode, Object? data) {
 /// Máy chủ trả lỗi TẠM (cổng / k3s đang đổi bản: 502/503/504, 408, 429): gửi lại cùng client_uuid là đúng (server khử
 /// trùng) ⇒ đường gửi trực tuyến xếp hàng như mất mạng. 500 KHÔNG tính: thường là lỗi lặp lại theo dữ liệu — xếp hàng thì
 /// thử lại mãi mà người dùng tưởng đã lưu, báo ngay để họ biết.
+/// Trang 4xx không phải JSON của API ([nonApiResponseCode] — WAF / proxy / Traefik lúc deploy) cũng là lỗi tạm: hàng đợi đã
+/// coi nó là tạm ([isPermanentRejection]), đường trực tuyến phải cùng luật, không thì báo lỗi oan rồi người dùng bấm lại
+/// (rà soát 24/11/2026).
 bool isTemporaryServerError(Object e) {
   if (e is! AppException) return false;
-  return const {408, 429, 502, 503, 504}.contains(e.statusCode);
+  return const {408, 429, 502, 503, 504}.contains(e.statusCode) || e.code == nonApiResponseCode;
 }

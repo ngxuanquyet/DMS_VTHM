@@ -433,12 +433,19 @@ class ApiClient {
         error.type == DioExceptionType.connectionError ||
         error.error is SocketException ||
         error.error is HttpException) {
-      connectivityNotifier?.handleNetworkDisconnection();
       // Chưa kết nối được (quá giờ kết nối; lỗi mở socket) ⇒ chắc chắn chưa tới server. `connectionError` mang
       // HttpException (dio: "Connection closed before full header was received" — đã gửi trọn request) và các ca quá giờ
       // gửi/nhận thì server có thể đã nhận.
       final neverConnected = error.type == DioExceptionType.connectionTimeout ||
           (error.type == DioExceptionType.connectionError && error.error is! HttpException);
+      // CHỈ lỗi chưa kết nối được mới lật cờ "mất mạng" ngay. Quá giờ gửi/nhận, đứt giữa chừng = máy chủ chậm / tải ảnh
+      // lớn trên sóng yếu, KHÔNG chắc là mất mạng: lật cờ ở đây thì lô đồng bộ dừng, popup mất mạng nhấp nháy rồi tắt ở lần
+      // dò kế tiếp ⇒ chỉ nhờ dò lại thật (rà soát 24/11/2026).
+      if (neverConnected) {
+        connectivityNotifier?.handleNetworkDisconnection();
+      } else {
+        connectivityNotifier?.checkConnectivity();
+      }
       return neverConnected
           ? NetworkException('Không có kết nối mạng. Vui lòng kiểm tra lại.', errorId)
           : NetworkException.maybeSent('Không có kết nối mạng. Vui lòng kiểm tra lại.', errorId);

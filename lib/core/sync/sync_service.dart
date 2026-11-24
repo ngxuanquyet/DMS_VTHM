@@ -107,6 +107,40 @@ class _ParentPendingException extends AppException {
   const _ParentPendingException(super.message);
 }
 
+/// Phiếu trong hàng đợi còn ảnh CẦN TẢI: một ô ảnh có trong [photoKeys] (khoá `_local_photo_paths`, kể cả khoá ma trận
+/// `<ô>::<loại>`) đang giữ chuỗi chưa là token. Chỉ xét ô ảnh — ô chọn nhiều cũng là danh sách chuỗi (rà soát 24/11/2026).
+bool formAnswersNeedPhotoUpload(Map<String, dynamic> answers, Iterable<String> photoKeys) {
+  for (final key in photoKeys) {
+    if (!hasPhotoSlot(answers, key)) continue;
+    final m = splitMatrixPhotoKey(key);
+    final dynamic value = m == null ? answers[key] : ((answers[m.$1] as Map)['photos'] as Map)[m.$2];
+    final items = value is List ? value.map((e) => e.toString()) : (value is String ? [value] : const <String>[]);
+    if (items.any((s) => s.trim().isNotEmpty && !isUploadedPhotoToken(s.trim()))) return true;
+  }
+  return false;
+}
+
+/// Mã ô điểm bán mà màn điền khoá theo điểm bán của lượt (cùng danh sách `_isCustomerBlock` của MarketFormRenderer, trừ vế
+/// kiểu `ref_customer` — payload hàng đợi không mang kiểu ô).
+const Set<String> _outletAnswerCodes = {'customer_id', 'khach_hang_id', 'diem_ban_khao_sat'};
+
+/// Đổi id điểm bán TRONG MÁY [localId] sang [serverId] ở các ô điểm bán của [answers] (giá trị số / chuỗi số, hoặc danh
+/// sách). Chỉ ô có mã điểm bán ([_outletAnswerCodes]) — ô số có giá trị trùng [localId] (vd 0) không được đổi.
+Map<String, dynamic> replaceOfflineOutletInAnswers(Map<String, dynamic> answers, int localId, int serverId) {
+  bool same(dynamic v) => (v is num || v is String) && int.tryParse(v.toString().trim()) == localId;
+  final out = Map<String, dynamic>.from(answers);
+  for (final key in answers.keys) {
+    if (!_outletAnswerCodes.contains(key.toLowerCase())) continue;
+    final v = answers[key];
+    if (same(v)) {
+      out[key] = serverId;
+    } else if (v is List && v.any(same)) {
+      out[key] = [for (final x in v) same(x) ? serverId : x];
+    }
+  }
+  return out;
+}
+
 /// Tiến trình đồng bộ ngoại tuyến (§3, §4, §8 SPEC-DONG-BO-OFFLINE-2026-09-15.md)
 class SyncService {
   final AppDatabase _db;
@@ -575,11 +609,25 @@ class SyncService {
     } on DioException catch (dioErr) {
       return await _guardHandler(entry, () => _handleDioError(entry, dioErr, currentDeadErrors));
     } catch (e) {
+      // Payload hỏng / phản hồi không đọc được (FormatException, TypeError — ném THẲNG từ bước giải mã của app, lỗi mạng
+      // và phản hồi lạ qua ApiClient đều đã thành AppException): gửi lại y nguyên vẫn hỏng ⇒ dead kèm câu rõ. Đi nhánh lỗi
+      // tạm như trước là thử lại mãi, mục nằm `pending` chặn cả đăng xuất (rà soát 24/11/2026).
+      if (e is FormatException || e is TypeError) {
+        return await _guardHandler(entry, () async {
+          // Hỏng SAU khi mục đã gửi xong (bước cập nhật trong máy sau markDone) ⇒ mục đã xong, không đánh dead.
+          if ((await _db.getEntryById(entry.id))?.state == 'done') return _SyncItemStatus.success;
+          return _handleAppException(
+            entry,
+            AppException('Dữ liệu hỏng / phản hồi máy chủ không đọc được — không gửi được: $e', 422, 'CORRUPT_DATA'),
+            currentDeadErrors,
+          );
+        });
+      }
       return await _guardHandler(
         entry,
         () => e is AppException
             ? _handleAppException(entry, e, currentDeadErrors)
-            : _handleGenericError(entry, e.toString()),
+            : _handleGenericError(entry, e),
       );
     }
   }
@@ -1114,9 +1162,12 @@ class SyncService {
     final data = res is Map ? res['data'] : null;
     await _db.markDone(entry.id, serverId: data is Map && data['id'] is num ? (data['id'] as num).toInt() : null);
 
+    // Chỉ xoá khi không dòng hàng đợi chưa xong nào khác còn trỏ cùng tệp (so TÊN tệp, cùng luật
+    // [_deleteOfflineCustomerPhotos]) — xoá ngang là mục kia chết 410 "mất tệp" (rà soát 24/11/2026).
     if (file.path.contains('offline_visit_photos')) {
       try {
-        if (await file.exists()) await file.delete();
+        final needed = (await _db.referencedFilePaths(unfinishedOnly: true, exceptId: entry.id)).map(p.basename).toSet();
+        if (!needed.contains(p.basename(file.path)) && await file.exists()) await file.delete();
       } catch (err) {
         debugPrint('[SyncService] Xoá file lỗi: $err');
       }
@@ -1375,27 +1426,37 @@ class SyncService {
     payload['client_uuid'] = entry.clientUuid;
 
     // Nếu phiếu gắn với một lượt viếng thăm offline, giải quyết visit_id từ parent
+    SyncQueueEntry? visitParent;
     if (payload['visit_id'] != null) {
       final vId = int.tryParse(payload['visit_id'].toString()) ?? 0;
       if (vId <= 0 && entry.parentUuid != null) {
         final parent = await _db.getEntryByClientUuid(entry.parentUuid!);
         if (parent != null && parent.serverId != null && parent.serverId! > 0) {
           payload['visit_id'] = parent.serverId;
+          visitParent = parent;
         } else {
           _throwParentUnresolved(entry, parent, 'Chưa có serverId của lượt viếng thăm cha cho biểu mẫu');
         }
       }
     }
 
-    // §9.1: Bổ sung queued_seconds và client_boot_id cho phiếu offline
-    final queuedSec = SystemClock.calculateQueuedSeconds(
-      createdElapsedMs: entry.createdElapsed,
-      entryBootId: entry.bootId,
-    );
-    if (queuedSec != null) {
-      payload['queued_seconds'] = queuedSec;
+    // Phiếu khảo sát của lượt ở điểm bán TẠO NGOẠI TUYẾN: màn điền khoá ô điểm bán bằng id trong máy (0 — chưa có id server)
+    // ⇒ server 422 ô điểm bán. Đổi sang id server của điểm bán qua `customer_client_uuid` của lượt cha (rà soát 24/11/2026).
+    if (payload['visit_id'] != null && entry.parentUuid != null) {
+      visitParent ??= await _db.getEntryByClientUuid(entry.parentUuid!);
+      if (visitParent != null) await _resolveOfflineOutletInAnswers(payload, visitParent);
     }
+
+    // §9.1: client_boot_id cho phiếu offline; queued_seconds tính NGAY TRƯỚC mỗi lệnh gửi ([stampQueuedSeconds]) — tải ảnh
+    // có thể mất vài phút, số tính từ trước là lùi giờ nộp đúng bằng thời gian tải (rà soát 24/11/2026).
     payload['client_boot_id'] = entry.bootId;
+    void stampQueuedSeconds(Map<String, dynamic> body) {
+      final queuedSec = SystemClock.calculateQueuedSeconds(
+        createdElapsedMs: entry.createdElapsed,
+        entryBootId: entry.bootId,
+      );
+      if (queuedSec != null) body['queued_seconds'] = queuedSec;
+    }
 
     // §5: Trích xuất _local_photo_paths phục vụ tải ảnh lên hoặc tải lại khi bị dọn rác
     final localPhotoPaths = payload['_local_photo_paths'] as Map<String, dynamic>?;
@@ -1439,19 +1500,9 @@ class SyncService {
       payload['answers'] = answers;
     }
 
-    // Kiểm tra xem trong answers có trường ảnh nào còn đang giữ đường dẫn file cục bộ không
-    bool hasLocalPathsInAnswers = false;
-    answers.forEach((k, v) {
-      // Ô ma trận trưng bày: ảnh lồng trong `photos.<mã loại>`.
-      final items = v is List ? v.map((e) => e.toString()) : matrixPhotoStrings(v);
-      for (final str in items) {
-        if (str.contains('/') || str.contains(r'\') || str.length != 32) {
-          hasLocalPathsInAnswers = true;
-        }
-      }
-    });
-
-    if (hasLocalPathsInAnswers && localPhotoPaths != null) {
+    // Chỉ tải khi một Ô ẢNH (khoá của `_local_photo_paths`) còn giữ chuỗi chưa là token — đoán trên MỌI ô danh sách (ô chọn
+    // nhiều cũng là danh sách chuỗi) là phiếu nào có ô chọn nhiều cũng tải lại toàn bộ ảnh mỗi lần thử (rà soát 24/11/2026).
+    if (localPhotoPaths != null && formAnswersNeedPhotoUpload(answers, localPhotoPaths.keys)) {
       await uploadAllLocalPhotos();
     }
 
@@ -1464,6 +1515,7 @@ class SyncService {
 
     dynamic response;
     try {
+      stampQueuedSeconds(sendPayload);
       response = await _apiClient.post(
         '/dms/form-submissions',
         data: sendPayload,
@@ -1478,6 +1530,7 @@ class SyncService {
         debugPrint('[SyncService] Phát hiện ảnh bị dọn rác, tự động tải lại ảnh gốc từ máy...');
         await uploadAllLocalPhotos(replaceTokens: true);
         sendPayload['answers'] = payload['answers'];
+        stampQueuedSeconds(sendPayload);
         // Gửi lại cùng client_uuid (§3 & §5)
         response = await _apiClient.post(
           '/dms/form-submissions',
@@ -1503,6 +1556,34 @@ class SyncService {
     // §3 & §9: duplicate: true coi như thành công, xoá khỏi hàng đợi
     await _db.markDone(entry.id, serverId: serverId);
     debugPrint('[SyncService] Đồng bộ phiếu biểu mẫu thành công! UUID: ${entry.clientUuid}, Server ID: $serverId, Duplicate: $isDuplicate');
+  }
+
+  /// Phiếu khảo sát mang id điểm bán TRONG MÁY (≤ 0: điểm bán tạo ngoại tuyến) ⇒ đổi `customer_id` và các ô điểm bán trong
+  /// `answers` mang ĐÚNG id đó sang id server, tra qua `customer_client_uuid` của dòng tạo lượt [visitParent] (dòng tạo điểm
+  /// bán trong hàng đợi, hoặc điểm bán trong máy đã có id). Không tra được ⇒ giữ nguyên (server báo lỗi như trước).
+  Future<void> _resolveOfflineOutletInAnswers(Map<String, dynamic> payload, SyncQueueEntry visitParent) async {
+    final localId = int.tryParse(payload['customer_id']?.toString() ?? '');
+    if (localId == null || localId > 0) return;
+    String? customerUuid;
+    try {
+      customerUuid = (jsonDecode(visitParent.payload) as Map)['customer_client_uuid']?.toString();
+    } catch (_) {}
+    if (customerUuid == null || customerUuid.isEmpty) return;
+    int? serverId;
+    final createEntry = await _db.getEntryByClientUuid(customerUuid);
+    if (createEntry != null && (createEntry.serverId ?? 0) > 0) {
+      serverId = createEntry.serverId;
+    } else {
+      final localCust = await (_db.select(_db.localCustomers)
+            ..where((tbl) => tbl.clientUuid.equals(customerUuid!))
+            ..limit(1))
+          .getSingleOrNull();
+      if ((localCust?.id ?? 0) > 0) serverId = localCust!.id;
+    }
+    if (serverId == null) return;
+    payload['customer_id'] = serverId;
+    final answers = payload['answers'];
+    if (answers is Map) payload['answers'] = replaceOfflineOutletInAnswers(Map<String, dynamic>.from(answers), localId, serverId);
   }
 
   /// Đồng bộ bản ghi khai báo vị trí lên máy chủ (§4 & §5)
@@ -1726,6 +1807,7 @@ class SyncService {
     final errorMsg = _extractDioErrorMessage(dioErr);
     final data = dioErr.response?.data;
     return await _handleErrorByStatus(entry, statusCode, errorMsg, currentDeadErrors,
+        networkError: dioErr.response == null && _isDioNetworkError(dioErr),
         errorCode: data is Map ? data['code']?.toString() : nonApiErrorCode(statusCode, data),
         errorData: data is Map && data['data'] is Map ? Map<String, dynamic>.from(data['data'] as Map) : null);
   }
@@ -1737,12 +1819,27 @@ class SyncService {
     List<SyncDeadError> currentDeadErrors,
   ) async {
     return await _handleErrorByStatus(entry, appErr.statusCode, appErr.message, currentDeadErrors,
-        parentPending: appErr is _ParentPendingException, errorCode: appErr.code, errorData: appErr.data);
+        parentPending: appErr is _ParentPendingException,
+        networkError: appErr is NetworkException,
+        errorCode: appErr.code,
+        errorData: appErr.data);
   }
 
+  /// DioException KHÔNG qua ApiClient (không có phản hồi) là lỗi MẠNG: quá giờ, không kết nối được, đứt socket.
+  static bool _isDioNetworkError(DioException e) =>
+      const {
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.sendTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.connectionError,
+      }.contains(e.type) ||
+      e.error is SocketException ||
+      e.error is HttpException;
+
   /// Xử lý lỗi chung (ngoại lệ mạng hoặc không xác định)
-  Future<_SyncItemStatus> _handleGenericError(SyncQueueEntry entry, String errorMessage) async {
-    return await _handleErrorByStatus(entry, null, errorMessage, []);
+  Future<_SyncItemStatus> _handleGenericError(SyncQueueEntry entry, Object error) async {
+    return await _handleErrorByStatus(entry, null, error.toString(), [],
+        networkError: error is SocketException || error is HttpException || error is TimeoutException);
   }
 
   /// Xử lý lỗi tập trung theo status code:
@@ -1755,6 +1852,7 @@ class SyncService {
     String errorMsg,
     List<SyncDeadError> currentDeadErrors, {
     bool parentPending = false,
+    bool networkError = false,
     String? errorCode,
     Map<String, dynamic>? errorData,
   }) async {
@@ -1797,8 +1895,10 @@ class SyncService {
     // Lối thoát cho thao tác vật tư: lỗi máy chủ (5xx / trả sai) lặp lại tới trần thì bỏ cuộc (dead) — nếu không,
     // check-out của lượt bị giữ mãi sau nó ([AppDatabase.isCheckoutHeld]) và lượt treo trên server.
     // Ảnh / phiếu của lượt cũng ghi chuỗi lỗi (chỉ để thôi giữ check-out — [releasesCheckout]), không bỏ cuộc. Với
-    // chúng MỌI lần gửi hỏng đều đếm (5xx, quá giờ, lỗi nén ảnh/tệp…) — chỉ "đang chờ lượt cha" không đếm; vật tư giữ luật
-    // cũ (chỉ lỗi máy chủ đếm, lỗi mạng cắt chuỗi).
+    // chúng lần gửi hỏng KHÔNG do mạng đều đếm (5xx, trả sai, trang không phải API, lỗi nén ảnh/tệp…) — "đang chờ lượt cha"
+    // không đếm. Lỗi MẠNG ([networkError]: quá giờ, mất kết nối) cắt chuỗi như vật tư: ảnh lớn trên sóng yếu quá giờ nhiều
+    // lần là chưa gửi được, không phải hỏng — đếm vào thì check-out được thả TRƯỚC ảnh/phiếu, server 422 thiếu ảnh/phiếu
+    // bắt buộc ⇒ check-out chết hẳn (rà soát 24/11/2026).
     var giveUp = false;
     if (AppDatabase.checkoutGatedEntities.contains(entry.entity) &&
         !parentPending &&
@@ -1806,7 +1906,7 @@ class SyncService {
         (statusCode == null || statusCode >= 500 || errorCode == nonApiResponseCode)) {
       final (payload, stop) = recordVisitMaterialFailure(
         entry.payload,
-        serverError: statusCode != null || entry.entity != 'visit_material',
+        serverError: !networkError && (statusCode != null || entry.entity != 'visit_material'),
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       if (payload != entry.payload) await _db.updatePayload(entry.id, payload);
