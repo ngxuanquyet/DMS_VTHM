@@ -247,7 +247,8 @@ class FormsRepositoryImpl implements FormsRepository {
     return {
       for (final e in paths.entries)
         // Khoá ma trận `<ô>::<loại>` — bỏ ':' khỏi tên tệp.
-        e.key: await OfflinePhotoStore.persist(e.value, dirName: 'offline_form_photos', prefix: '${uuid}_${e.key.replaceAll(':', '_')}'),
+        e.key: await OfflinePhotoStore.persist(e.value,
+            dirName: 'offline_form_photos', prefix: '${uuid}_${e.key.replaceAll(':', '_')}', throwOnError: true),
     };
   }
 
@@ -273,7 +274,7 @@ class FormsRepositoryImpl implements FormsRepository {
     final tokenFiles = submission.tokenFiles;
     if (tokenFiles != null && tokenFiles.isNotEmpty) {
       final copied = await OfflinePhotoStore.persist(tokenFiles.values.toList(),
-          dirName: 'offline_form_photos', prefix: '${submission.clientUuid}_tf');
+          dirName: 'offline_form_photos', prefix: '${submission.clientUuid}_tf', throwOnError: true);
       offlinePayload['_token_files'] = {
         for (var i = 0; i < tokenFiles.length; i++) tokenFiles.keys.elementAt(i): copied[i],
       };

@@ -501,7 +501,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
             // đường dẫn — kho điểm bán tải lên ngay trước khi gửi thẳng; đi hàng đợi thì đồng bộ mới tải (token tải sẵn ở đây
             // bị server dọn sau 1 ngày ⇒ lệnh sửa chờ lâu chết, #24698 vòng 6).
             tokens.add(await OfflinePhotoStore.persistOnce(_banChepAnh, pTrim,
-                dirName: 'offline_customer_photos', prefix: 'front'));
+                dirName: 'offline_customer_photos', prefix: 'front', throwOnError: true));
           }
         }
         changes['photo_tokens'] = tokens;
@@ -540,7 +540,9 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       for (final key in dynamicChanges.keys.toList()) {
         dynamicChanges[key] = await resolveLocalPhotos(
           dynamicChanges[key],
-          (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn_$key')).first,
+          (path) async => (await OfflinePhotoStore.persist([path],
+                  dirName: 'offline_customer_photos', prefix: 'dyn_$key', throwOnError: true))
+              .first,
         );
       }
       if (dynamicChanges.isNotEmpty) {

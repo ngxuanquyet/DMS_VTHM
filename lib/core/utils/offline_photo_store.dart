@@ -4,7 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../errors/app_exceptions.dart';
 import 'photo_watermark_helper.dart';
+
+/// Mã lỗi khi không chép được ảnh vào thư mục lưu lâu dài ([OfflinePhotoStore.persist] với `throwOnError`).
+const String photoStoreFailedCode = 'PHOTO_STORE_FAILED';
 
 /// Chép ảnh chờ gửi vào thư mục lưu lâu dài trong Documents của app (#24698).
 ///
@@ -54,18 +58,22 @@ class OfflinePhotoStore {
   static int _dem = 0;
 
   static Future<String> persistOnce(Map<String, String> memo, String path,
-      {required String dirName, required String prefix}) async {
+      {required String dirName, required String prefix, bool throwOnError = false}) async {
     final daChep = memo[path];
     if (daChep != null && File(daChep).existsSync()) return daChep;
-    final out = (await persist([path], dirName: dirName, prefix: prefix)).first;
+    final out = (await persist([path], dirName: dirName, prefix: prefix, throwOnError: throwOnError)).first;
     if (out != path) memo[path] = out;
     return out;
   }
 
   /// Bản lưu lâu dài của từng ảnh trong [paths], cùng thứ tự: token ảnh (32 hex), tệp đã nằm trong [dirName], tệp không
   /// còn ⇒ giữ nguyên; tệp khác ⇒ chép vào `Documents/<dirName>/<prefix>_<mốc>_<i>.<ext>` (giữ dấu "đã đóng watermark"
-  /// — [PhotoWatermarkHelper.keepMarkerName] — không thì lúc gửi bị đóng thêm lớp thứ hai). Lỗi ⇒ trả nguyên [paths].
-  static Future<List<String>> persist(List<String> paths, {required String dirName, required String prefix}) async {
+  /// — [PhotoWatermarkHelper.keepMarkerName] — không thì lúc gửi bị đóng thêm lớp thứ hai). Lỗi ⇒ trả nguyên [paths];
+  /// [throwOnError] ⇒ lỗi ĐỌC/GHI tệp (chép hỏng, tạo thư mục hỏng) ném [photoStoreFailedCode] (thường là đầy bộ nhớ): luồng LƯU người dùng bấm (điểm bán, phiếu, khai
+  /// báo) báo ngay để giải phóng dung lượng — xếp hàng đường dẫn tạm thì hệ điều hành dọn ảnh, mục chết "mất ảnh" sau khi
+  /// người dùng đã thấy "đã lưu" (#25875).
+  static Future<List<String>> persist(List<String> paths,
+      {required String dirName, required String prefix, bool throwOnError = false}) async {
     if (paths.isEmpty) return paths;
     try {
       final docs = (await getApplicationDocumentsDirectory()).path;
@@ -92,10 +100,24 @@ class OfflinePhotoStore {
         }
         final ext = p.extension(path).isNotEmpty ? p.extension(path) : '.jpg';
         final name = PhotoWatermarkHelper.keepMarkerName(src, '${prefix}_${stamp}_$i$ext');
-        out.add((await src.copy(p.join(dir.path, name))).path);
+        try {
+          out.add((await src.copy(p.join(dir.path, name))).path);
+        } on FileSystemException {
+          // Tệp CÓ mà chép hỏng — thường là đầy bộ nhớ.
+          if (throwOnError) rethrow;
+          out.add(raw);
+        }
       }
       return out;
+    } on FileSystemException catch (e) {
+      debugPrint('[OfflinePhotoStore] Không chép được ảnh vào $dirName: $e');
+      if (throwOnError) {
+        throw const AppException(
+            'Không lưu được ảnh vào máy (có thể bộ nhớ đã đầy). Giải phóng dung lượng rồi lưu lại.', null, photoStoreFailedCode);
+      }
+      return [...paths];
     } catch (e) {
+      // Không lấy được thư mục của app (kênh nền tảng lỗi — môi trường test…): giữ nguyên như trước.
       debugPrint('[OfflinePhotoStore] Không chép được ảnh vào $dirName: $e');
       return [...paths];
     }

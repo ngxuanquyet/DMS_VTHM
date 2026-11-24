@@ -45,6 +45,10 @@ bool _otherAccount(SharedPreferences prefs, String? historyKey, [AppDatabase? db
   return current != null && current != historyKey;
 }
 
+/// Máy chủ ứng dụng lỗi khi xử lý lượt chấm (500 — #25873 chốt đúng mã này). Mã 5xx khác (502/503/504 lúc đổi bản, 520–524
+/// của cổng trước) vẫn là lỗi tạm: xếp hàng cùng client_uuid, server khử trùng.
+bool _isServerFault(AppException e) => e.statusCode == 500;
+
 class AttendanceRepositoryImpl implements AttendanceRepository {
   final AttendanceApiService _apiService;
   final AppDatabase? database;
@@ -194,10 +198,12 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
       } on ServerException catch (serverErr) {
         // 🔴 QUY TẮC §3.1: Nếu server trả về 422 (ngoài vùng, chưa khai địa điểm, chưa có mã nhân viên)
         // hoặc 4xx luật: TUYỆT ĐỐI KHÔNG đưa vào hàng đợi gửi lại! Ném lỗi ra để hiện nguyên văn cho người dùng.
-        // Lỗi TẠM (5xx, 408, 429, không mã — lỗi kết nối/TLS) thì vào hàng đợi như mất mạng: server khử trùng theo
-        // client_uuid nên gửi lại an toàn; báo lỗi là người dùng không chấm lại thì mất lượt chấm (#24698).
-        if (isPermanentRejection(serverErr)) {
-          debugPrint('[AttendanceRepo] Server từ chối chấm công (${serverErr.statusCode}): ${serverErr.message}');
+        // Lỗi TẠM (502/503/504 lúc đổi bản, 408, 429, trang không phải API, không mã — lỗi kết nối/TLS) thì vào hàng đợi
+        // như mất mạng: server khử trùng theo client_uuid nên gửi lại an toàn (#24698).
+        // 500 BÁO LỖI NGAY (chủ hệ thống chốt #25873, 24/11/2026): thường lặp lại theo dữ liệu — xếp hàng là
+        // hiện «Đã ghi nhận» rồi thử lại mãi, nhân viên tin đã chấm mà công không lên.
+        if (isPermanentRejection(serverErr) || _isServerFault(serverErr)) {
+          debugPrint('[AttendanceRepo] Server từ chối / lỗi khi chấm công (${serverErr.statusCode}): ${serverErr.message}');
           rethrow;
         }
         debugPrint('[AttendanceRepo] Server lỗi tạm khi chấm công (${serverErr.statusCode}) -> Đưa vào hàng đợi ngoại tuyến');

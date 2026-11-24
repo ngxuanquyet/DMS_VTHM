@@ -51,7 +51,8 @@ void main() {
 
   group('chấm công trực tuyến gặp lỗi máy chủ TẠM ⇒ vào hàng đợi (không mất lượt chấm)', () {
     for (final (label, err) in [
-      ('500', const ServerException('Lỗi máy chủ', 500)),
+      ('503', const ServerException('Đang đổi bản', 503)),
+      ('524 (cổng trước quá giờ)', const ServerException('Quá giờ', 524)),
       ('429', const ServerException('Quá tải', 429)),
       ('không mã (lỗi kết nối/TLS)', const ServerException('CONNECTION_ERROR')),
     ]) {
@@ -64,6 +65,16 @@ void main() {
             reason: 'lỗi cũ: ServerException nào cũng ném ra ⇒ không xếp hàng');
       });
     }
+
+    // Chủ hệ thống chốt #25873 (24/11/2026): 500 thường lặp lại theo dữ liệu — xếp hàng là hiện «Đã ghi nhận» mà công
+    // không lên ⇒ báo lỗi ngay.
+    test('500 ⇒ báo lỗi ngay, KHÔNG xếp hàng (#25873)', () async {
+      final repo = AttendanceRepositoryImpl(
+          AttendanceApiService(_FailingApiClient(const ServerException('Lỗi máy chủ', 500))),
+          database: db);
+      await expectLater(repo.punch(lat: 21, lng: 105.8, clientUuid: 'p500'), throwsA(isA<ServerException>()));
+      expect(await db.getAllPendingQueueEntries(), isEmpty);
+    });
 
     test('422 (ngoài vùng…) vẫn báo thẳng, KHÔNG xếp hàng', () async {
       final repo = AttendanceRepositoryImpl(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:dio/dio.dart';
@@ -305,6 +306,29 @@ class ApiClient {
     }
   }
 
+  /// Thân 2xx của lệnh GHI không phải JSON của API (trang đăng nhập của Wi-Fi công cộng, trang proxy / WAF trả 200 thay
+  /// cho API): KHÔNG phải lời của máy chủ ⇒ lỗi tạm [nonApiResponseCode] kèm mã HTTP thật (nơi gọi trực tuyến xếp hàng như
+  /// trang proxy 4xx — [isTemporaryServerError]). Coi là thành công thì hàng đợi đánh dấu ảnh / phiếu "đã gửi" rồi xoá tệp —
+  /// mất dữ liệu (#25875). Thân rỗng (204) / JSON (object, mảng) / không phải chuỗi là của API.
+  static dynamic _apiBody(Response response) {
+    final data = response.data;
+    // Phản hồi khai là JSON thì Dio đã giải; chuỗi ở đây là chuỗi JSON trần ("ok") — của API.
+    final isJson = Transformer.isJsonMimeType(response.headers[Headers.contentTypeHeader]?.first);
+    if (data is String && !isJson && data.trim().isNotEmpty) {
+      Object? decoded;
+      try {
+        decoded = jsonDecode(data);
+      } catch (_) {}
+      if (decoded is! Map && decoded is! List) {
+        throw AppException('Máy chủ trả trang không phải của ứng dụng (mạng Wi-Fi có thể đòi đăng nhập hoặc đang bị chặn).',
+            response.statusCode, nonApiResponseCode);
+      }
+      // JSON gửi kèm content-type khác (proxy đổi / bỏ header) ⇒ trả bản đã giải: nơi gọi đọc `is Map` để lấy mã bản ghi.
+      return decoded;
+    }
+    return data;
+  }
+
   Future<dynamic> post(
     String path, {
     dynamic data,
@@ -318,13 +342,15 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      final body = _apiBody(response);
       // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
-      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
-      return response.data;
+      RefreshOutcome.record(reachedServer: !(body is Map && body['success'] == false));
+      return body;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
       RefreshOutcome.record(reachedServer: false);
+      if (e is AppException) rethrow;
       throw AppException(e.toString());
     }
   }
@@ -349,13 +375,15 @@ class ApiClient {
         queryParameters: queryParameters,
         options: uploadOptions,
       );
+      final body = _apiBody(response);
       // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
-      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
-      return response.data;
+      RefreshOutcome.record(reachedServer: !(body is Map && body['success'] == false));
+      return body;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
       RefreshOutcome.record(reachedServer: false);
+      if (e is AppException) rethrow;
       throw AppException(e.toString());
     }
   }
@@ -373,13 +401,15 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      final body = _apiBody(response);
       // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
-      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
-      return response.data;
+      RefreshOutcome.record(reachedServer: !(body is Map && body['success'] == false));
+      return body;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
       RefreshOutcome.record(reachedServer: false);
+      if (e is AppException) rethrow;
       throw AppException(e.toString());
     }
   }
@@ -397,13 +427,15 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      final body = _apiBody(response);
       // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
-      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
-      return response.data;
+      RefreshOutcome.record(reachedServer: !(body is Map && body['success'] == false));
+      return body;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
       RefreshOutcome.record(reachedServer: false);
+      if (e is AppException) rethrow;
       throw AppException(e.toString());
     }
   }
@@ -421,13 +453,15 @@ class ApiClient {
         queryParameters: queryParameters,
         options: options,
       );
+      final body = _apiBody(response);
       // 200 mà body báo `success: false` cũng là không lấy được dữ liệu.
-      RefreshOutcome.record(reachedServer: !(response.data is Map && response.data['success'] == false));
-      return response.data;
+      RefreshOutcome.record(reachedServer: !(body is Map && body['success'] == false));
+      return body;
     } on DioException catch (e) {
       throw _handleDioError(e);
     } catch (e) {
       RefreshOutcome.record(reachedServer: false);
+      if (e is AppException) rethrow;
       throw AppException(e.toString());
     }
   }

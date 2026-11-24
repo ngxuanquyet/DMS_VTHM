@@ -571,7 +571,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
   final Map<String, String> _banChepAnh = {};
 
   Future<String> _anhLauDai(String path) =>
-      OfflinePhotoStore.persistOnce(_banChepAnh, path, dirName: 'offline_customer_photos', prefix: 'front');
+      OfflinePhotoStore.persistOnce(_banChepAnh, path,
+          dirName: 'offline_customer_photos', prefix: 'front', throwOnError: true);
 
   /// Bước "Vật tư tại điểm" (#24526): danh mục + luật "Tạo điểm bán" (cache dùng ngoại tuyến), thao tác đã khai.
   MaterialCreateCatalog? _materialCatalog;
@@ -1083,7 +1084,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
       // từ chối vì đường dẫn). Ảnh mặt tiền (khoá cố định) xử lý riêng bên dưới.
       payload.addAll(await CustomerPayloadHelper.resolveDynamicPhotos(
         payload,
-        (path) async => (await OfflinePhotoStore.persist([path], dirName: 'offline_customer_photos', prefix: 'dyn')).first,
+        (path) async => (await OfflinePhotoStore.persist([path],
+                dirName: 'offline_customer_photos', prefix: 'dyn', throwOnError: true))
+            .first,
       ));
 
       // Ảnh mặt tiền: chuẩn hoá về `photo_tokens`, GIỮ đường dẫn ảnh trên máy — kho điểm bán tải lên ngay trước khi gửi

@@ -26,6 +26,10 @@ class MarketFormSubmissionModel {
   /// #25869). null ⇒ không gửi (server kiểm chặt).
   final String? schemaToken;
 
+  /// Mã các ô điểm bán của biểu mẫu — CHỈ đi vào hàng đợi (`_outlet_codes`): đồng bộ đổi id điểm bán tạo ngoại tuyến sang id
+  /// server ở đúng các ô này (#25875). Không gửi lên server.
+  final List<String>? outletFieldCodes;
+
   MarketFormSubmissionModel({
     required this.configId,
     this.visitId,
@@ -43,6 +47,7 @@ class MarketFormSubmissionModel {
     this.localPhotoPaths,
     this.tokenFiles,
     this.schemaToken,
+    this.outletFieldCodes,
   })  : clientUuid = clientUuid ?? const Uuid().v4(),
         clientTime = clientTime ?? _formatIsoWithOffset(DateTime.now());
 
@@ -182,6 +187,7 @@ class MarketFormSubmissionModel {
       if (schemaToken?.isNotEmpty ?? false) 'schema_token': schemaToken,
       if (includeInternal && localPhotoPaths != null) '_local_photo_paths': localPhotoPaths,
       if (includeInternal && (tokenFiles?.isNotEmpty ?? false)) '_token_files': tokenFiles,
+      if (includeInternal && (outletFieldCodes?.isNotEmpty ?? false)) '_outlet_codes': outletFieldCodes,
     };
     return map;
   }

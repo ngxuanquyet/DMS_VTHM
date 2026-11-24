@@ -466,7 +466,7 @@ class CustomerLocalDataSource {
 
   /// Chép ảnh điểm bán chờ gửi vào `offline_customer_photos` ([OfflinePhotoStore.persist]); [prefix] theo client_uuid.
   Future<List<String>> persistOfflinePhotos(List<String> paths, String prefix) =>
-      OfflinePhotoStore.persist(paths, dirName: 'offline_customer_photos', prefix: prefix);
+      OfflinePhotoStore.persist(paths, dirName: 'offline_customer_photos', prefix: prefix, throwOnError: true);
 
   /// Ảnh của các thao tác vật tư (`photos` + ô ảnh trong `details` theo `detail_photo_fields`) ⇒ [persistOfflinePhotos].
   Future<List<dynamic>> _persistMaterialPhotos(List<dynamic> materials, String prefix) async {

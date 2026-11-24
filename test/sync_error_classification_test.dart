@@ -401,16 +401,18 @@ void main() {
       expect(pendingEntries.first.attempts, 1);
     });
 
-    test('409 Conflict is treated as success (Idempotency Rule)', () async {
+    // Dòng TẠO mà mục con cần mã (lượt / điểm bán / chấm công) nhận 409 thì thử lại để lấy mã — test ở
+    // core/sync_stuck_queue_2026_11_24_test.dart (#24401).
+    test('409 Conflict is treated as success (Idempotency Rule) — mục không phải dòng tạo cha', () async {
       const clientUuid = 'uuid-409-test';
       final nowMs = DateTime.now().millisecondsSinceEpoch;
 
       await database.enqueue(
         SyncQueueEntriesCompanion.insert(
-          entity: 'customer',
+          entity: 'form_submission',
           op: 'create',
           clientUuid: clientUuid,
-          payload: '{"name": "Existing Customer"}',
+          payload: '{"config_id": 1, "visit_id": 901, "answers": {}}',
           createdAt: nowMs,
           createdElapsed: nowMs,
           bootId: 'test_boot',

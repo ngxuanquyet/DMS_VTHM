@@ -136,6 +136,7 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
           declaration.localPhotoPaths,
           dirName: 'offline_declaration_photos',
           prefix: declaration.clientUuid,
+          throwOnError: true,
         ),
       );
     }

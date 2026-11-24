@@ -626,6 +626,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         tokenFiles: _draftTokenFiles,
         parentUuid: widget.args.kind == 'survey' ? widget.args.visitClientUuid : null,
         schemaToken: widget.args.config.schemaToken,
+        outletFieldCodes: _rendererKey.currentState?.outletFieldCodes().toList(),
       );
 
       final isOnline = ref.read(connectivityProvider).isOnline;

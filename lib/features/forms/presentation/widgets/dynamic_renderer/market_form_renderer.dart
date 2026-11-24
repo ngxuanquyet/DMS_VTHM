@@ -245,6 +245,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     super.dispose();
   }
 
+  /// Mã các ô điểm bán của biểu mẫu (kiểu `ref_customer` hoặc mã điểm bán quen) — hàng đợi cần để đổi id điểm bán tạo
+  /// ngoại tuyến sang id server ở ĐÚNG các ô này (#25875): payload hàng đợi không mang kiểu ô.
+  Set<String> outletFieldCodes() => {for (final b in widget.blocks) if (_isCustomerBlock(b)) b.resolved.code};
+
   bool _isCustomerBlock(MarketFormBlockEntity block) {
     final type = block.resolved.inputType.toLowerCase();
     if (type == 'ref_customer') return true;

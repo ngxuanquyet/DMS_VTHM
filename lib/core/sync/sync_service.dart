@@ -60,6 +60,64 @@ const int openVisitMaxAttempts = 24;
 /// Khoá nội bộ trong payload dòng tạo lượt: số lần server trả [openVisitErrorCode]. KHÔNG gửi lên server.
 const String openVisitCountKey = '_still_open_count';
 
+/// Trần cho lỗi LẶP LẠI TẤT ĐỊNH mà hàng đợi coi là tạm (#25874): trang không phải API (WAF 403 / 413 / mạng Wi-Fi đòi
+/// đăng nhập trả 200 HTML). Không có trần thì
+/// mục thử lại mãi: người dùng tưởng đã lưu, mục con chờ mãi, đăng xuất bị chặn. Cần CẢ HAI điều kiện (đủ số lần VÀ chuỗi
+/// kéo dài) — "Đồng bộ ngay" / kéo làm mới bỏ qua lịch thử lại, chỉ đếm lần thì vài phút sự cố là chết oan. Hàng đợi chỉ
+/// chạy khi có mạng nên mỗi lần đếm là một lần THẬT SỰ gửi được tới đâu đó. Tới trần ⇒ dead kèm câu rõ, hiện ở "Lỗi đồng
+/// bộ" có nút "Gửi lại" — CHỈ áp cho loại gửi lại được (AppDatabase.canRetryKind) mà KHÔNG phải dòng tạo cha (điểm bán,
+/// check-in, chấm công — thử lại mãi, xem _handleErrorByStatus). Luật chống kẹt của hàng đợi trên máy, không phải nghiệp vụ.
+const int stuckMaxFailures = 30;
+const Duration stuckGiveUpAfter = Duration(hours: 6);
+
+/// Khoá trong payload — tiền tố `_server_failure` để "Gửi lại" (AppDatabase.requeueDead) xoá sạch, và để
+/// [withoutQueueChainKeys] gỡ trước khi gửi.
+const String stuckFailuresKey = '_server_failure_stuck_count';
+const String stuckFirstMsKey = '_server_failure_stuck_first_ms';
+const String stuckLastMsKey = '_server_failure_stuck_last_ms';
+
+/// Hai lần lỗi cách nhau quá khoảng này thì chuỗi đứt, đếm lại từ đầu — vài lần lỗi lẻ tẻ trong nhiều ngày (sóng yếu, app
+/// tắt giữa chừng) không phải "lỗi lặp lại tất định". Lớn hơn trần lịch thử lại (5 phút) nhiều lần.
+const Duration stuckChainGap = Duration(minutes: 30);
+
+/// Ghi một lần lỗi lặp lại tất định vào [payload]. Trả payload mới và đã tới trần chưa ([stuckMaxFailures] lần VÀ kéo
+/// dài ≥ [stuckGiveUpAfter], không đứt quá [stuckChainGap]). Payload hỏng ⇒ giữ nguyên, không tới trần.
+(String, bool) recordStuckFailure(String payload, {required int nowMs}) {
+  Map<String, dynamic> p;
+  try {
+    final d = jsonDecode(payload);
+    if (d is! Map) return (payload, false);
+    p = Map<String, dynamic>.from(d);
+  } catch (_) {
+    return (payload, false);
+  }
+  final last = p[stuckLastMsKey] is num ? (p[stuckLastMsKey] as num).toInt() : null;
+  final broken = last == null || nowMs - last > stuckChainGap.inMilliseconds;
+  final count = (broken || p[stuckFailuresKey] is! num ? 0 : (p[stuckFailuresKey] as num).toInt()) + 1;
+  final first = !broken && p[stuckFirstMsKey] is num ? (p[stuckFirstMsKey] as num).toInt() : nowMs;
+  p[stuckFailuresKey] = count;
+  p[stuckFirstMsKey] = first;
+  p[stuckLastMsKey] = nowMs;
+  return (jsonEncode(p), count >= stuckMaxFailures && nowMs - first >= stuckGiveUpAfter.inMilliseconds);
+}
+
+/// Bản sao [payload] bỏ các khoá đếm lỗi nội bộ (`_server_failure*`). Loại mang các khoá này: loại đếm trần
+/// (AppDatabase.canRetryKind trừ dòng tạo cha — phiếu, ảnh viếng thăm, ảnh chấm công) và loại chặn check-out
+/// (AppDatabase.checkoutGatedEntities — cả thao tác vật tư); nơi gửi NGUYÊN payload của chúng phải gỡ (hiện chỉ phiếu).
+Map<String, dynamic> withoutQueueChainKeys(Map<String, dynamic> payload) =>
+    Map<String, dynamic>.from(payload)..removeWhere((k, _) => k.startsWith('_server_failure'));
+
+/// Dòng TẠO mà mục con cần mã server của nó (lượt viếng thăm, điểm bán, lượt chấm công).
+bool _isParentCreate(SyncQueueEntry e) =>
+    e.op == 'create' && const {'visit', 'customer', 'attendance_punch'}.contains(e.entity);
+
+/// Mã gắn cho phản hồi 2xx của dòng tạo mà KHÔNG có mã bản ghi (trang đăng nhập của Wi-Fi công cộng trả 200 HTML…).
+AppException _missingServerIdError(String what) => AppException(
+    'Máy chủ trả phản hồi không đúng khi gửi $what (không có mã bản ghi) — mạng có thể đang chặn hoặc đòi đăng nhập Wi-Fi. '
+    'Sẽ tự gửi lại.',
+    null,
+    nonApiResponseCode);
+
 class SyncDeadError {
   final int entryId;
   final String entity;
@@ -121,16 +179,19 @@ bool formAnswersNeedPhotoUpload(Map<String, dynamic> answers, Iterable<String> p
 }
 
 /// Mã ô điểm bán mà màn điền khoá theo điểm bán của lượt (cùng danh sách `_isCustomerBlock` của MarketFormRenderer, trừ vế
-/// kiểu `ref_customer` — payload hàng đợi không mang kiểu ô).
+/// kiểu `ref_customer` — payload hàng đợi không mang kiểu ô; phiếu xếp hàng từ bản này mang thêm `_outlet_codes`).
 const Set<String> _outletAnswerCodes = {'customer_id', 'khach_hang_id', 'diem_ban_khao_sat'};
 
 /// Đổi id điểm bán TRONG MÁY [localId] sang [serverId] ở các ô điểm bán của [answers] (giá trị số / chuỗi số, hoặc danh
-/// sách). Chỉ ô có mã điểm bán ([_outletAnswerCodes]) — ô số có giá trị trùng [localId] (vd 0) không được đổi.
-Map<String, dynamic> replaceOfflineOutletInAnswers(Map<String, dynamic> answers, int localId, int serverId) {
+/// sách). Chỉ ô có mã điểm bán ([_outletAnswerCodes]) hoặc nằm trong [outletCodes] (ô `ref_customer` mã khác — phiếu ghi
+/// lúc xếp hàng, `_outlet_codes`, #25875) — ô số có giá trị trùng [localId] (vd 0) không được đổi.
+Map<String, dynamic> replaceOfflineOutletInAnswers(Map<String, dynamic> answers, int localId, int serverId,
+    {Iterable<String> outletCodes = const []}) {
   bool same(dynamic v) => (v is num || v is String) && int.tryParse(v.toString().trim()) == localId;
+  final extra = outletCodes.map((c) => c.toLowerCase()).toSet();
   final out = Map<String, dynamic>.from(answers);
   for (final key in answers.keys) {
-    if (!_outletAnswerCodes.contains(key.toLowerCase())) continue;
+    if (!_outletAnswerCodes.contains(key.toLowerCase()) && !extra.contains(key.toLowerCase())) continue;
     final v = answers[key];
     if (same(v)) {
       out[key] = serverId;
@@ -184,13 +245,17 @@ class SyncService {
   /// - cha không còn trong máy (dọn mục lỗi / huỷ lượt; dòng done chỉ bị dọn sau AppDatabase.doneRetention và khi không
   ///   còn mục con chưa xong);
   /// - cha bị từ chối (dead) mà KHÔNG phải điểm bán — chỉ điểm bán được sửa rồi gửi lại (hồi dead → pending ở
-  ///   customer_local_data_source), nên con của điểm bán bị từ chối vẫn phải chờ.
-  /// Không ghi parentUuid (ảnh chấm công chờ "lượt chấm gần nhất", dòng cũ) hay cha done mà thiếu serverId (409) KHÔNG
-  /// tính là hết hy vọng — giữ như cũ (thử lại); 409 cần lấy lại id từ máy chủ (#24401).
+  ///   customer_local_data_source), nên con của điểm bán bị từ chối vẫn phải chờ;
+  /// - cha đã `done` mà KHÔNG có serverId (bản app cũ đánh dấu xong khi gặp 409 / phản hồi 200 không phải API) — không
+  ///   bao giờ có mã nữa (#24401). Bản này không còn đánh dấu xong dòng tạo thiếu mã.
+  /// Không ghi parentUuid (ảnh chấm công chờ "lượt chấm gần nhất", dòng cũ) KHÔNG tính là hết hy vọng (thử lại).
   Never _throwParentUnresolved(SyncQueueEntry entry, SyncQueueEntry? parent, String message, {String? parentUuid}) {
     final effectiveParentUuid = parentUuid ?? entry.parentUuid;
     final hopeless = effectiveParentUuid != null &&
-        (parent == null || (parent.state == 'dead' && parent.entity != 'customer'));
+        (parent == null ||
+            (parent.state == 'dead' && parent.entity != 'customer') ||
+            // Điểm bán: lần tải danh sách sau gắn được id theo client_uuid (nhánh tra điểm bán trong máy) ⇒ còn chờ được.
+            (parent.state == 'done' && (parent.serverId ?? 0) <= 0 && parent.entity != 'customer'));
     if (hopeless) throw AppException('$message — mục cha không còn hoặc không thể đồng bộ', 410);
     throw _ParentPendingException(message);
   }
@@ -848,49 +913,49 @@ class SyncService {
     }
 
     // 4. Đánh dấu hoàn thành trong hàng đợi (§3.2, §4.3, §7)
-    // Server trả về 200 kèm created: false (trùng client_uuid) cũng là thành công
+    // Server trả về 200 kèm created: false (trùng client_uuid) cũng là thành công. 2xx KHÔNG có mã (trang Wi-Fi đòi đăng
+    // nhập trả 200 HTML…) thì CHƯA xong: lệnh sửa / lượt viếng thăm của điểm bán chờ mã này (#24401, #25875).
+    if (serverId == null || serverId <= 0) throw _missingServerIdError('điểm bán');
     await _db.markDone(entry.id, serverId: serverId);
 
     // 5. Cập nhật trạng thái 'synced' trong bảng khách hàng cục bộ
-    if (serverId != null) {
-      String? updatedDynamicFieldsJson;
-      try {
-        final existingRows = await (_db.select(_db.localCustomers)..where((tbl) => tbl.clientUuid.equals(entry.clientUuid))).get();
-        if (existingRows.isNotEmpty) {
-          final row = existingRows.first;
-          Map<String, dynamic> dyn = {};
-          if (row.dynamicFieldsJson.isNotEmpty) {
-            dyn = jsonDecode(row.dynamicFieldsJson) as Map<String, dynamic>;
-          }
-          if (resolvedTokens.isNotEmpty) {
-            dyn['photo_tokens'] = resolvedTokens;
-            dyn['photo_urls'] = resolvedTokens;
-            dyn['photo_url'] = resolvedTokens.first;
-            dyn['photo_token'] = resolvedTokens.first;
-          }
-          updatedDynamicFieldsJson = jsonEncode(dyn);
+    String? updatedDynamicFieldsJson;
+    try {
+      final existingRows = await (_db.select(_db.localCustomers)..where((tbl) => tbl.clientUuid.equals(entry.clientUuid))).get();
+      if (existingRows.isNotEmpty) {
+        final row = existingRows.first;
+        Map<String, dynamic> dyn = {};
+        if (row.dynamicFieldsJson.isNotEmpty) {
+          dyn = jsonDecode(row.dynamicFieldsJson) as Map<String, dynamic>;
         }
-      } catch (_) {}
-
-      // KHÔNG dựng cache vật tư ở đây: lượt ngoại tuyến server BỎ thao tác sai mà vẫn trả 200 ⇒ không biết thao tác nào
-      // thật sự được ghi; lượt viếng thăm đầu có mạng sẽ GET hiện trạng thật.
-
-      await _db.markCustomerSynced(
-        entry.clientUuid,
-        serverId,
-        code: serverCode,
-        type: serverType,
-        dynamicFieldsJson: updatedDynamicFieldsJson,
-      );
-      try {
-        _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
-      } catch (_) {}
-      // Server vừa ghi lượt "Tạo điểm bán" ⇒ tải lại tuyến để điểm bán hiện "Đã ghé" (tiến độ tuyến)
-      if (newOutletVisitId != null) {
-        try {
-          _ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
-        } catch (_) {}
+        if (resolvedTokens.isNotEmpty) {
+          dyn['photo_tokens'] = resolvedTokens;
+          dyn['photo_urls'] = resolvedTokens;
+          dyn['photo_url'] = resolvedTokens.first;
+          dyn['photo_token'] = resolvedTokens.first;
+        }
+        updatedDynamicFieldsJson = jsonEncode(dyn);
       }
+    } catch (_) {}
+
+    // KHÔNG dựng cache vật tư ở đây: lượt ngoại tuyến server BỎ thao tác sai mà vẫn trả 200 ⇒ không biết thao tác nào
+    // thật sự được ghi; lượt viếng thăm đầu có mạng sẽ GET hiện trạng thật.
+
+    await _db.markCustomerSynced(
+      entry.clientUuid,
+      serverId,
+      code: serverCode,
+      type: serverType,
+      dynamicFieldsJson: updatedDynamicFieldsJson,
+    );
+    try {
+      _ref.read(customerViewModelProvider.notifier).loadCustomers(isRefresh: true);
+    } catch (_) {}
+    // Server vừa ghi lượt "Tạo điểm bán" ⇒ tải lại tuyến để điểm bán hiện "Đã ghé" (tiến độ tuyến)
+    if (newOutletVisitId != null) {
+      try {
+        _ref.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true);
+      } catch (_) {}
     }
 
     // 6. Dọn dẹp tệp ảnh offline tạm sau khi đã đồng bộ thành công lên server (cả ảnh vật tư khai lúc tạo — vòng 3), trừ
@@ -1068,6 +1133,8 @@ class SyncService {
         serverId = int.tryParse(data['id'].toString());
       }
     }
+    // 2xx KHÔNG có mã (trang Wi-Fi đòi đăng nhập trả 200 HTML…) thì CHƯA xong: ảnh / phiếu / check-out chờ mã lượt (#25875).
+    if (serverId == null || serverId <= 0) throw _missingServerIdError('check-in');
 
     await _db.markDone(entry.id, serverId: serverId);
 
@@ -1079,38 +1146,36 @@ class SyncService {
           id: serverId,
           customerId: v.customerId <= 0 && resolvedCustomerId > 0 ? resolvedCustomerId : null,
         );
-    if (serverId != null) {
-      try {
-        final visitRepo = _ref.read(visitRepositoryProvider);
-        final all = await visitRepo.getAllLocalVisits();
-        final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid);
-        if (idx >= 0) {
-          final updated = withServerIds(all[idx]);
-          await visitRepo.saveLocalVisit(updated);
-        }
-        final active = await visitRepo.getActiveVisit();
-        if (active != null && active.clientUuid == entry.clientUuid) {
-          final updatedActive = withServerIds(active);
-          await visitRepo.saveActiveVisit(updatedActive);
-
-          try {
-            _ref.read(routeViewModelProvider.notifier).setActiveVisit(updatedActive);
-          } catch (_) {}
-          try {
-            _ref
-                .read(checkInViewModelProvider.notifier)
-                .syncServerVisitId(serverId, clientUuid: entry.clientUuid, customerId: resolvedCustomerId);
-          } catch (_) {}
-          try {
-            // §1.3 SPEC-2026-10-18: Tải lại biểu mẫu khảo sát ngay khi đồng bộ xong check-in ngoại tuyến
-            _ref
-                .read(checkInViewModelProvider.notifier)
-                .loadSurveyForms(updatedActive.customerId);
-          } catch (_) {}
-        }
-      } catch (err) {
-        debugPrint('[SyncService] Cập nhật local visit serverId lỗi: $err');
+    try {
+      final visitRepo = _ref.read(visitRepositoryProvider);
+      final all = await visitRepo.getAllLocalVisits();
+      final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid);
+      if (idx >= 0) {
+        final updated = withServerIds(all[idx]);
+        await visitRepo.saveLocalVisit(updated);
       }
+      final active = await visitRepo.getActiveVisit();
+      if (active != null && active.clientUuid == entry.clientUuid) {
+        final updatedActive = withServerIds(active);
+        await visitRepo.saveActiveVisit(updatedActive);
+
+        try {
+          _ref.read(routeViewModelProvider.notifier).setActiveVisit(updatedActive);
+        } catch (_) {}
+        try {
+          _ref
+              .read(checkInViewModelProvider.notifier)
+              .syncServerVisitId(serverId, clientUuid: entry.clientUuid, customerId: resolvedCustomerId);
+        } catch (_) {}
+        try {
+          // §1.3 SPEC-2026-10-18: Tải lại biểu mẫu khảo sát ngay khi đồng bộ xong check-in ngoại tuyến
+          _ref
+              .read(checkInViewModelProvider.notifier)
+              .loadSurveyForms(updatedActive.customerId);
+        } catch (_) {}
+      }
+    } catch (err) {
+      debugPrint('[SyncService] Cập nhật local visit serverId lỗi: $err');
     }
 
     debugPrint('[SyncService] Đồng bộ Check-in thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
@@ -1507,11 +1572,11 @@ class SyncService {
     }
 
     // Payload gửi lên server loại bỏ các khoá nội bộ
-    final sendPayload = Map<String, dynamic>.from(payload);
+    // Bộ đếm lỗi của hàng đợi ([recordVisitMaterialFailure], [recordStuckFailure]) cũng là khoá nội bộ.
+    final sendPayload = withoutQueueChainKeys(payload);
     sendPayload.remove('_local_photo_paths');
     sendPayload.remove('_token_files');
-    // Bộ đếm lỗi máy chủ của hàng đợi ([recordVisitMaterialFailure]) là khoá nội bộ.
-    sendPayload.removeWhere((k, _) => k.startsWith('_server_failure'));
+    sendPayload.remove('_outlet_codes');
 
     dynamic response;
     try {
@@ -1583,7 +1648,11 @@ class SyncService {
     if (serverId == null) return;
     payload['customer_id'] = serverId;
     final answers = payload['answers'];
-    if (answers is Map) payload['answers'] = replaceOfflineOutletInAnswers(Map<String, dynamic>.from(answers), localId, serverId);
+    final codes = payload['_outlet_codes'];
+    if (answers is Map) {
+      payload['answers'] = replaceOfflineOutletInAnswers(Map<String, dynamic>.from(answers), localId, serverId,
+          outletCodes: codes is List ? codes.map((e) => '$e') : const []);
+    }
   }
 
   /// Đồng bộ bản ghi khai báo vị trí lên máy chủ (§4 & §5)
@@ -1725,6 +1794,8 @@ class SyncService {
         serverId = int.tryParse(data['id'].toString());
       }
     }
+    // 2xx KHÔNG có mã ⇒ chưa xong: ảnh chấm công chờ mã lượt (#24401, #25875).
+    if (serverId == null || serverId <= 0) throw _missingServerIdError('lượt chấm công');
     await _db.markDone(entry.id, serverId: serverId);
     debugPrint('[SyncService] Đồng bộ lượt chấm công thành công! UUID: ${entry.clientUuid}, Server ID: $serverId');
   }
@@ -1743,19 +1814,21 @@ class SyncService {
           punchId = parent.serverId;
         }
       }
-      // Dự phòng CHỈ cho dòng cũ không ghi lượt cha: lấy lượt chấm gần nhất đã đồng bộ. Có cha mà cha chưa lên
-      // server (đang chờ thử lại) thì CHỜ cha — lấy "lượt gần nhất" lúc đó là gắn ảnh ra ca vào lượt vào ca.
+      // Dòng đời cũ không ghi lượt cha: cha = lượt chấm xếp NGAY TRƯỚC ảnh (mọi trạng thái). Lượt đó chưa gửi thì CHỜ,
+      // bị từ chối / không có thì báo lỗi — KHÔNG lấy "lượt đã gửi gần nhất": gắn nhầm ảnh sang lượt chấm khác (#24401).
       if ((punchId == null || punchId <= 0) && entry.parentUuid == null) {
-        final lastPunch = await _db.findLastSyncedPunchEntry();
-        if (lastPunch != null && lastPunch.serverId != null && lastPunch.serverId! > 0) {
-          punchId = lastPunch.serverId;
+        parent = await _db.findPunchEntryBefore(entry);
+        if (parent == null) {
+          throw const AppException('Không tìm thấy lượt chấm công của ảnh này trên máy, không gửi được.', 410);
         }
+        if ((parent.serverId ?? 0) > 0) punchId = parent.serverId;
       }
     }
 
     if (punchId == null || punchId <= 0) {
       debugPrint('[SyncService] Chưa tìm thấy serverId của lượt chấm cho ảnh, giữ lại để retry sau');
-      _throwParentUnresolved(entry, parent, 'Lượt chấm công chưa được đồng bộ lên máy chủ');
+      _throwParentUnresolved(entry, parent, 'Lượt chấm công chưa được đồng bộ lên máy chủ',
+          parentUuid: entry.parentUuid ?? parent?.clientUuid);
     }
 
     final file = await OfflinePhotoStore.existingFile(entry.localPath ?? payload['local_path']?.toString());
@@ -1884,8 +1957,10 @@ class SyncService {
     }
 
     // 2. Ca đặc biệt: Server trả 409 hoặc đã tồn tại (ALREADY_EXISTS) (§4.3)
-    // Coi là THÀNH CÔNG để đảm bảo idempotency!
-    if (statusCode == 409) {
+    // Coi là THÀNH CÔNG để đảm bảo idempotency — TRỪ dòng tạo mà mục con cần mã server ([_isParentCreate]): 409 không mang
+    // mã ⇒ đánh dấu xong là mục con chờ mã mãi (#24401). Server khử trùng theo client_uuid (gửi lại ⇒ 200 kèm bản ghi cũ;
+    // máy chủ hiện không trả 409 cho các lệnh tạo này) ⇒ thử lại để lấy mã, KHÔNG trần (dòng tạo cha không bị cho chết).
+    if (statusCode == 409 && !_isParentCreate(entry)) {
       debugPrint('[SyncService] Mục #${entry.id} đã tồn tại trên server (409 ALREADY_EXISTS), đánh dấu done.');
       await _db.markDone(entry.id);
       return _SyncItemStatus.success;
@@ -1916,6 +1991,30 @@ class SyncService {
         giveUp = true;
         errorMsg = 'Máy chủ lỗi ${visitMaterialServerFailures(payload)} lần liên tiếp trong hơn '
             '${visitMaterialGiveUpAfter.inMinutes} phút khi lưu vật tư — đã dừng gửi: $errorMsg';
+      }
+    }
+
+    // Lỗi lặp lại TẤT ĐỊNH mà vẫn coi là tạm (#25874): trang không phải API (WAF / proxy / Wi-Fi đòi đăng nhập, kể cả trang
+    // trả 200). Lỗi MẠNG không đếm: không phân biệt được proxy cắt thân lớn với sóng yếu — đếm thì ảnh trên sóng yếu bị cho
+    // chết, check-out đi trước thiếu ảnh. Có trần để mục không thử lại mãi — tới trần thì dead kèm câu rõ.
+    // CHỈ loại mục chết rồi còn "Gửi lại" được ([AppDatabase.canRetryKind]) và KHÔNG phải dòng tạo cha ([_isParentCreate]):
+    // check-in, chấm công, khai báo, lệnh sửa chết là chỉ còn xoá — mất bản ghi thật (check-in chết kéo theo ảnh/phiếu/
+    // check-out của lượt); dòng tạo điểm bán có thể ĐÃ lên server (quá giờ giữa chừng, 200 thiếu mã) — cho chết thì sửa / xoá
+    // điểm bán trong máy hiểu nhầm "server từ chối". Chúng tiếp tục thử lại; điều kiện gây lỗi (Wi-Fi đòi đăng nhập, proxy)
+    // thường hết khi đổi mạng. Ảnh / phiếu của lượt chết ở trần thì thôi giữ check-out (server có thể từ chối check-out
+    // thiếu ảnh — đóng lại lượt từ tuyến; ảnh "Gửi lại" được): vẫn hơn kẹt vĩnh viễn chặn cả đăng xuất.
+    final parentCreate409 = statusCode == 409 && _isParentCreate(entry);
+    if (!giveUp &&
+        AppDatabase.canRetryKind(entry) &&
+        !_isParentCreate(entry) &&
+        errorCode == nonApiResponseCode) {
+      final current = (await _db.getEntryById(entry.id))?.payload ?? entry.payload;
+      final (payload, stop) = recordStuckFailure(current, nowMs: DateTime.now().millisecondsSinceEpoch);
+      if (payload != current) await _db.updatePayload(entry.id, payload);
+      if (stop) {
+        giveUp = true;
+        errorMsg = 'Gửi không thành công $stuckMaxFailures lần trong hơn ${stuckGiveUpAfter.inHours} giờ — đã '
+            'dừng tự gửi. Kiểm tra mạng (Wi-Fi có đòi đăng nhập không) rồi gửi lại, hoặc báo quản trị: $errorMsg';
       }
     }
 
@@ -1954,6 +2053,7 @@ class SyncService {
       }
     }
     final permanentClientError = !stillOpen &&
+        !parentCreate409 &&
         errorCode != nonApiResponseCode &&
         statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 429;
     if (giveUp || permanentClientError) {

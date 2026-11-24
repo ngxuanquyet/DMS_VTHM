@@ -652,9 +652,13 @@ class AppDatabase extends _$AppDatabase {
   ///   giờ bấm gửi lại;
   /// * lệnh của lượt viếng thăm — thứ tự giữa các lượt do hàng đợi tự giữ ([isHoldingLaterVisit], [isCheckoutHeld]); lượt
   ///   bị từ chối được đóng lại ở tuyến (lượt hiện lại là đang mở).
-  /// Ảnh chấm công đời cũ (không `parentUuid`) tìm lượt chấm theo "lượt gửi xong mới nhất" — gửi lại muộn là gắn nhầm lượt.
-  static bool canRetryDead(SyncQueueEntry row) =>
-      row.state == 'dead' &&
+  /// Ảnh chấm công đời cũ (không `parentUuid`) đoán lượt chấm theo vị trí trong hàng đợi ([findPunchEntryBefore]) — gửi
+  /// lại muộn (lượt đó đã bị dọn) là không tìm được / gắn nhầm.
+  static bool canRetryDead(SyncQueueEntry row) => row.state == 'dead' && canRetryKind(row);
+
+  /// Loại mục mà khi chết người dùng còn "Gửi lại" được ([canRetryDead]) — trần lỗi lặp lại của hàng đợi (SyncService) chỉ
+  /// được tự cho chết trong số này (trừ dòng tạo điểm bán — có thể đã lên server): loại khác chết là chỉ còn xoá, mất bản ghi.
+  static bool canRetryKind(SyncQueueEntry row) =>
       const {'customer:create', 'form_submission:create', 'visit_photo:upload', 'attendance_photo:upload'}
           .contains('${row.entity}:${row.op}') &&
       (row.entity != 'attendance_photo' || row.parentUuid != null);
@@ -1419,15 +1423,26 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
-  /// Tìm lượt chấm công đã đồng bộ gần nhất có serverId
-  Future<SyncQueueEntry?> findLastSyncedPunchEntry() async {
-    final entries = await (select(syncQueueEntries)
-          ..where((tbl) => isMine(tbl) & tbl.entity.equals('attendance_punch') & tbl.serverId.isNotNull())
+  /// Lượt chấm công (mọi trạng thái) xếp NGAY TRƯỚC dòng ảnh [photo] — cha của ảnh chấm công đời cũ không ghi `parentUuid`
+  /// (lượt chấm luôn được xếp / ghi nhật ký ngay trước ảnh của nó). Bản cũ lấy "lượt ĐÃ GỬI gần nhất" ⇒ lượt của ảnh chưa
+  /// gửi / bị từ chối thì ảnh gắn NHẦM sang lượt chấm khác (#24401). Lượt tìm được xếp trước ảnh quá [punchPhotoMaxGap]
+  /// ⇒ không phải lượt của ảnh (lượt thật đã bị dọn) ⇒ null.
+  Future<SyncQueueEntry?> findPunchEntryBefore(SyncQueueEntry photo) async {
+    final punch = await (select(syncQueueEntries)
+          ..where((tbl) =>
+              isMine(tbl) &
+              tbl.entity.equals('attendance_punch') &
+              tbl.op.equals('create') &
+              tbl.id.isSmallerThanValue(photo.id))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
           ..limit(1))
-        .get();
-    return entries.isNotEmpty ? entries.first : null;
+        .getSingleOrNull();
+    if (punch == null || photo.createdAt - punch.createdAt > punchPhotoMaxGap.inMilliseconds) return null;
+    return punch;
   }
+
+  /// Ảnh chấm công được chụp ngay lúc chấm — xếp sau lượt của nó quá khoảng này là không cùng lượt.
+  static const Duration punchPhotoMaxGap = Duration(minutes: 10);
 
   /// Huỷ lượt CHƯA lên server: xoá dòng tạo + mục con chờ gửi ([deletePendingVisitQueue]) — trong một transaction,
   /// và TỪ CHỐI (trả false, không xoá gì) khi dòng tạo đang được gửi: xoá lúc đó thì check-in vẫn lên server và lượt
