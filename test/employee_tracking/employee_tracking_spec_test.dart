@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vthm_dms/core/constants/app_constants.dart';
 import 'package:vthm_dms/features/employee_tracking/data/datasources/employee_tracking_api_service.dart';
 import 'package:vthm_dms/features/employee_tracking/data/datasources/employee_tracking_local_storage.dart';
 import 'package:vthm_dms/features/employee_tracking/data/models/location_access_log_model.dart';
@@ -17,7 +18,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // Hàng đợi GPS theo tài khoản (rà soát 24/11/2026) ⇒ cần người đang đăng nhập.
+    SharedPreferences.setMockInitialValues({AppConstants.keyUserData: jsonEncode({'id': 42})});
   });
 
   group('Employee Tracking Spec Tests (API-VI-TRI-NHAN-VIEN-MOBILE-2026-10-09.md)', () {

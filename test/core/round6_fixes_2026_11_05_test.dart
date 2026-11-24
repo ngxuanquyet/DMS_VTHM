@@ -223,7 +223,8 @@ void main() {
         }
         if (o.path == '/crm/customers' && o.method == 'POST') {
           return postFails
-              ? (500, {'success': false, 'message': 'lỗi CSDL tạm'})
+              // Lỗi TẠM của máy chủ (503) — 500 là lỗi theo dữ liệu, báo ngay không xếp hàng (rà soát 24/11/2026).
+              ? (503, {'success': false, 'message': 'lỗi CSDL tạm'})
               : (201, {'success': true, 'data': {'id': 9001, 'code': 'DMS0001', 'created': true}});
         }
         if (o.path.startsWith('/crm/customers/') && o.method == 'PATCH') {
