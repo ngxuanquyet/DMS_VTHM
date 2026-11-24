@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -13,19 +14,31 @@ import '../viewmodels/auth_view_model.dart';
 /// đồng ý điều khoản: tài khoản bị buộc đổi mật khẩu thì máy chủ chặn mọi API (403 `PASSWORD_CHANGE_REQUIRED`), kể cả API
 /// đồng ý điều khoản. Hiện khi đã đăng nhập và `user.mustChangePassword`; lối ra duy nhất ngoài đổi mật khẩu là Đăng xuất
 /// (giữ hàng đợi — đúng người đăng nhập lại là gửi tiếp).
-class ForcedPasswordChangeOverlay extends ConsumerWidget {
+class ForcedPasswordChangeOverlay extends ConsumerStatefulWidget {
   final Widget child;
 
   const ForcedPasswordChangeOverlay({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final show = ref.watch(authViewModelProvider
+  ConsumerState<ForcedPasswordChangeOverlay> createState() => _ForcedPasswordChangeOverlayState();
+}
+
+class _ForcedPasswordChangeOverlayState extends ConsumerState<ForcedPasswordChangeOverlay> {
+  /// Lớp phủ đang hiện — mạng chập chờn sau đó KHÔNG gỡ nó (đang gõ / đang gửi đổi mật khẩu thì mất trắng).
+  bool _shown = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final mustChange = ref.watch(authViewModelProvider
         .select((s) => s.status == AuthStatus.authenticated && (s.user?.mustChangePassword ?? false)));
+    // Chỉ MỞ khi có mạng: đổi mật khẩu cần mạng, còn việc ngoại tuyến (check-in, chấm công xếp hàng) vẫn làm được — hàng
+    // đợi giữ mục chờ tới khi đổi xong. Che cả app lúc mất mạng là chặn nhân viên ngoài hiện trường mà không có lối ra.
+    final online = ref.watch(connectivityProvider.select((s) => s.isOnline));
+    _shown = mustChange && (_shown || online);
     return Stack(
       children: [
-        child,
-        if (show)
+        widget.child,
+        if (_shown)
           // Overlay riêng: lớp phủ nằm TRÊN Navigator nên không có Overlay của nó — ô nhập cần Overlay cho tay kéo / menu
           // chọn chữ.
           Positioned.fill(

@@ -38,6 +38,7 @@ class _Repo implements AuthRepository {
   bool loggedOut = false;
   int refreshCalls = 0;
   bool mustChange = false;
+  bool appAccess = true;
 
   UserEntity get _user => UserEntity(
         id: '7',
@@ -53,7 +54,7 @@ class _Repo implements AuthRepository {
   @override
   Future<bool> checkAppAccess() async {
     if (appAccessError != null) throw appAccessError!;
-    return true;
+    return appAccess;
   }
 
   @override
@@ -104,8 +105,8 @@ class _Adapter implements HttpClientAdapter {
 }
 
 class _Online extends ConnectivityNotifier {
-  _Online() {
-    state = const ConnectivityState(isOnline: true);
+  _Online({bool online = true}) {
+    state = ConnectivityState(isOnline: online);
   }
 
   @override
@@ -180,6 +181,17 @@ void main() {
       await vm.checkAuth();
 
       expect(vm.state.user!.mustChangePassword, isFalse);
+    });
+
+    test('máy chủ không xác nhận quyền (trang Wi-Fi 200 ⇒ false) ⇒ GIỮ cờ', () async {
+      final repo = _Repo()
+        ..mustChange = true
+        ..appAccess = false;
+      final vm = _vm(repo);
+
+      await vm.checkAuth();
+
+      expect(vm.state.user!.mustChangePassword, isTrue);
     });
 
     test('đang dùng app thì gặp 403 ⇒ requirePasswordChange bật cờ; chưa đăng nhập thì bỏ qua', () async {
@@ -264,12 +276,15 @@ void main() {
   });
 
   group('Lớp phủ đổi mật khẩu bắt buộc', () {
-    Future<AuthViewModel> pump(WidgetTester tester, {required bool mustChange}) async {
+    Future<AuthViewModel> pump(WidgetTester tester, {required bool mustChange, bool online = true}) async {
       final repo = _Repo()..mustChange = mustChange;
       final vm = _vm(repo);
       await vm.login('TEST001', 'x');
       await tester.pumpWidget(ProviderScope(
-        overrides: [authViewModelProvider.overrideWith((ref) => vm)],
+        overrides: [
+          authViewModelProvider.overrideWith((ref) => vm),
+          connectivityProvider.overrideWith((ref) => _Online(online: online)),
+        ],
         child: MaterialApp(
           builder: (context, child) => ForcedPasswordChangeOverlay(child: child!),
           home: const Scaffold(body: Text('Trang chủ')),
@@ -289,6 +304,21 @@ void main() {
       await tester.pump();
 
       expect(find.text('Mật khẩu nhập lại không khớp mật khẩu mới.'), findsOneWidget);
+    });
+
+    testWidgets('mất mạng ⇒ KHÔNG che (việc ngoại tuyến vẫn làm được; đổi mật khẩu cần mạng)', (tester) async {
+      await pump(tester, mustChange: true, online: false);
+      expect(find.byKey(const Key('forced_pw_submit')), findsNothing);
+      expect(find.text('Trang chủ'), findsOneWidget);
+    });
+
+    testWidgets('đang hiện mà mạng chập chờn ⇒ KHÔNG gỡ lớp phủ (đang gõ / đang gửi)', (tester) async {
+      await pump(tester, mustChange: true);
+      expect(find.byKey(const Key('forced_pw_submit')), findsOneWidget);
+      final conn = ProviderScope.containerOf(tester.element(find.text('Trang chủ'))).read(connectivityProvider.notifier);
+      conn.state = const ConnectivityState(isOnline: false);
+      await tester.pump();
+      expect(find.byKey(const Key('forced_pw_submit')), findsOneWidget);
     });
 
     testWidgets('cờ tắt ⇒ không che; 403 giữa chừng (requirePasswordChange) ⇒ hiện lớp phủ', (tester) async {

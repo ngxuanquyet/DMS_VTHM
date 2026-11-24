@@ -130,9 +130,10 @@ class AuthViewModel extends StateNotifier<AuthState> {
       if (user != null) {
         // Kiểm tra quyền app-access (§2.3 spec 15/10/2026: GET /dms/app-access)
         try {
-          await checkAppAccessUseCase();
-          // Máy chủ trả lời được ⇒ KHÔNG còn bị buộc đổi mật khẩu (đã đổi ở web / máy khác) — hạ cờ cũ lưu trên máy.
-          if (user.mustChangePassword) {
+          final granted = await checkAppAccessUseCase();
+          // Máy chủ trả lời ĐƯỢC CẤP QUYỀN ⇒ KHÔNG còn bị buộc đổi mật khẩu (đã đổi ở web / máy khác) — hạ cờ cũ lưu trên máy.
+          // Trả lời khác (trang Wi-Fi đòi đăng nhập trả 200 HTML ⇒ false) không chứng minh gì — giữ cờ.
+          if (granted && user.mustChangePassword) {
             user = _withMustChange(user, false);
             unawaited(PasswordChangeService.persistFlag(false));
           }
@@ -210,12 +211,21 @@ class AuthViewModel extends StateNotifier<AuthState> {
   static UserEntity _withMustChange(UserEntity user, bool value) =>
       UserModel.fromEntity(user).copyWith(mustChangePassword: value).toEntity();
 
+  /// Mốc đổi mật khẩu bắt buộc thành công gần nhất — yêu cầu gửi bằng token CŨ đang bay lúc đổi trả 403 về sau, không được
+  /// bật lại cờ (người dùng phải đổi lần nữa với mật khẩu mới làm "hiện tại").
+  DateTime? _passwordChangedAt;
+
+  /// Khoảng sau khi đổi mật khẩu mà 403 PASSWORD_CHANGE_REQUIRED bị bỏ qua (yêu cầu cũ còn bay — trần chờ phản hồi).
+  static const Duration _staleChangeRequiredWindow = Duration(minutes: 2);
+
   /// Máy chủ báo tài khoản đang bị BUỘC đổi mật khẩu (403 `PASSWORD_CHANGE_REQUIRED` ở bất kỳ lời gọi nào — quản trị đặt
   /// lại mật khẩu khi người dùng đang đăng nhập) ⇒ bật cờ: lớp phủ đổi mật khẩu bắt buộc che app (#25831). Chưa đăng nhập
   /// (đang khôi phục phiên — [checkAuth] tự xử lý) thì bỏ qua.
   void requirePasswordChange() {
     final user = state.user;
     if (!mounted || state.status != AuthStatus.authenticated || user == null || user.mustChangePassword) return;
+    final changedAt = _passwordChangedAt;
+    if (changedAt != null && DateTime.now().difference(changedAt) < _staleChangeRequiredWindow) return;
     state = state.copyWith(status: AuthStatus.authenticated, user: _withMustChange(user, true));
     unawaited(PasswordChangeService.persistFlag(true));
   }
@@ -232,6 +242,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
     } catch (e) {
       return 'Không đổi được mật khẩu: $e';
     }
+    _passwordChangedAt = DateTime.now();
     final user = state.user;
     if (mounted && user != null) {
       state = state.copyWith(status: state.status, user: _withMustChange(user, false));
@@ -257,6 +268,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
   }
 
   Future<bool> login(String username, String password) async {
+    // Mốc đổi mật khẩu là của phiên trước — không được làm phiên mới (người khác) bỏ qua 403 PASSWORD_CHANGE_REQUIRED.
+    _passwordChangedAt = null;
     if (username.trim().isEmpty || password.trim().isEmpty) {
       state = state.copyWith(
         status: AuthStatus.error,
