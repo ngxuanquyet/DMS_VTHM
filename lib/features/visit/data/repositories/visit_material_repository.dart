@@ -179,8 +179,15 @@ Future<String?> Function(File file) skipRejectedMaterialPhotos(Future<String> Fu
         return await upload(file);
       } on AppException catch (e) {
         final code = e.statusCode;
-        // 401 (phiên hết hạn), 408 (quá giờ), 429 (quá tải) là lỗi TẠM ⇒ ném để thử lại, không bỏ ảnh vĩnh viễn.
-        if (code != null && code >= 400 && code < 500 && code != 401 && code != 408 && code != 429) {
+        // 401 (phiên hết hạn), 408 (quá giờ), 429 (quá tải) là lỗi TẠM ⇒ ném để thử lại, không bỏ ảnh vĩnh viễn. Trang
+        // proxy / WAF ([nonApiResponseCode]) cũng tạm — chưa tới API (rà soát 24/11/2026).
+        if (code != null &&
+            code >= 400 &&
+            code < 500 &&
+            code != 401 &&
+            code != 408 &&
+            code != 429 &&
+            e.code != nonApiResponseCode) {
           debugPrint('[VisitMaterial] Ảnh vật tư bị từ chối ($code), bỏ ảnh, vẫn tạo điểm bán: ${e.message}');
           return null;
         }
@@ -461,12 +468,25 @@ Future<MaterialOperation> resolveOperationPhotos(
   return op.withPhotos(photos, details: details);
 }
 
-/// Lỗi tạm (mất mạng / máy chủ 5xx / không rõ) ⇒ xếp hàng đợi; lỗi 4xx ⇒ báo thẳng câu của server.
+/// Lỗi tạm (mất mạng / máy chủ 5xx / trang proxy / không rõ) ⇒ xếp hàng đợi; lỗi 4xx của API ⇒ báo thẳng câu của server.
 bool isRetryableMaterialError(Object e) {
   if (e is SocketException || e is NetworkException) return true;
-  if (e is AppException) return e.statusCode == null || e.statusCode! >= 500;
+  if (e is AppException) {
+    return e.statusCode == null || e.statusCode! >= 500 || e.code == nonApiResponseCode;
+  }
   return true;
 }
+
+/// API TỪ CHỐI HẲN việc xem vật tư (403 mất quyền · 404/410 ngoài phạm vi xem / điểm bán đã xoá) ⇒ bỏ bản lưu / ẩn mục.
+/// Trang proxy / WAF cùng mã ([nonApiResponseCode]) KHÔNG tính: chưa tới API, coi như mất quyền là xoá bộ đệm vật tư
+/// của điểm bán chỉ vì một lần deploy (rà soát 24/11/2026). 4xx khác (408/429/409/401 lúc làm mới phiên…) là tạm.
+bool isMaterialViewRejected(Object e) =>
+    e is AppException &&
+    e.code != nonApiResponseCode &&
+    (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 410);
+
+/// 403 của API (mất quyền vật tư) — không tính trang proxy / WAF ([isMaterialViewRejected]).
+bool _isMaterialForbidden(Object e) => e is AppException && e.statusCode == 403 && e.code != nonApiResponseCode;
 
 class VisitMaterialRepository {
   final Ref _ref;
@@ -504,7 +524,7 @@ class VisitMaterialRepository {
         );
         return MaterialsLoadResult(data: overlayPendingQueue(data, queue));
       } catch (e) {
-        if (e is AppException && e.statusCode == 403) {
+        if (_isMaterialForbidden(e)) {
           return const MaterialsLoadResult(forbidden: true);
         }
         if (!isRetryableMaterialError(e)) {
@@ -575,7 +595,7 @@ class VisitMaterialRepository {
           catalogTypes: catalogTypes,
         );
       } catch (e) {
-        if (_isNoLongerViewable(e)) {
+        if (isMaterialViewRejected(e)) {
           // 403 mất quyền · 404/410 ngoài phạm vi xem / điểm bán đã xoá: KHÔNG hiện bản lưu cũ (kể cả khi mất mạng sau
           // đó) ⇒ bỏ bản lưu của điểm bán.
           // 403 chỉ là quyền XEM hiện trạng (lịch sử gác quyền riêng); 404/410 ⇒ bỏ cả lịch sử.
@@ -627,7 +647,7 @@ class VisitMaterialRepository {
         }
         return OutletMaterialHistoryLoadResult(page: result, fetchedAt: now);
       } catch (e) {
-        if (_isNoLongerViewable(e)) {
+        if (isMaterialViewRejected(e)) {
           // 403 chỉ là quyền XEM lịch sử ⇒ giữ bản lưu hiện trạng; 404/410 ⇒ bỏ hết của điểm bán.
           final forbidden = (e as AppException).statusCode == 403;
           await _forgetOutletCache(prefs, customerId, view: !forbidden);
@@ -663,7 +683,7 @@ class VisitMaterialRepository {
         await prefs?.setString(visitMaterialsCreateCatalogKey, jsonEncode(raw));
         return CreateCatalogLoadResult(catalog: catalog);
       } catch (e) {
-        if (e is AppException && e.statusCode == 403) return const CreateCatalogLoadResult(forbidden: true);
+        if (_isMaterialForbidden(e)) return const CreateCatalogLoadResult(forbidden: true);
       }
     }
     final cached = _decode((await _prefs())?.getString(visitMaterialsCreateCatalogKey));
@@ -766,11 +786,6 @@ class VisitMaterialRepository {
   }
 
   static String _outletKey(int customerId) => '$visitMaterialsCachePrefix$customerId';
-
-  /// Server từ chối HẲN việc xem vật tư điểm bán: 403 (mất quyền) · 404/410 (ngoài phạm vi xem / điểm bán đã xoá).
-  /// 4xx khác (408/429/409/401 lúc làm mới phiên…) là tạm — giữ bản lưu.
-  static bool _isNoLongerViewable(Object e) =>
-      e is AppException && (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 410);
 
   /// Bỏ bản lưu hiện trạng ([view]) và/hoặc lịch sử mọi loại ([history]) của một điểm bán.
   static Future<void> _forgetOutletCache(

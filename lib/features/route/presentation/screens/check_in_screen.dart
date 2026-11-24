@@ -166,6 +166,28 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     return ok == true;
   }
 
+  /// Lượt ngoại tuyến mà chưa đọc được danh sách biểu mẫu bắt buộc ([CheckInState.shouldWarnUnknownRequiredForms]) ⇒
+  /// hỏi lại trước khi check-out: máy không biết còn phiếu bắt buộc nào, đồng bộ có thể bị server từ chối. Vẫn cho
+  /// check-out nếu người dùng chọn tiếp tục (chủ hệ thống chốt, rà soát 24/11/2026).
+  Future<bool> _confirmCheckoutWithoutFormList() async {
+    final strings = ref.read(stringsProvider);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chưa tải được biểu mẫu bắt buộc'),
+        content: const Text(
+          'Chưa tải được danh sách biểu mẫu bắt buộc của điểm bán này (đang mất mạng). Nếu còn biểu mẫu bắt buộc chưa nộp, '
+          'check-out có thể bị từ chối khi đồng bộ. Bạn vẫn muốn check-out?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(strings.cancel)),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(strings.continueAction)),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   Future<void> _openMaterials(CheckInState state) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -2825,6 +2847,11 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                                       _materialsUnknown &&
                                       !_materialsHidden &&
                                       !await _confirmCheckoutWithoutMaterialList()) {
+                                    return;
+                                  }
+                                  if (!context.mounted) return;
+                                  if (ref.read(checkInViewModelProvider).shouldWarnUnknownRequiredForms &&
+                                      !await _confirmCheckoutWithoutFormList()) {
                                     return;
                                   }
                                   if (!context.mounted) return;

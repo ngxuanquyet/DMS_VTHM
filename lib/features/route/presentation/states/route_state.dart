@@ -155,6 +155,12 @@ class CheckInState {
   final CheckInStatus status;
   final DealerCheckinDataEntity? checkinData;
   final List<MarketFormConfigEntity> surveyForms;
+
+  /// [surveyForms] đã đọc được (từ server hoặc bản lưu trong máy) cho điểm bán của lượt — `false` khi chưa đọc được
+  /// (đang tải / mất mạng mà máy chưa từng lưu danh sách của điểm bán này). Phân biệt với danh sách RỖNG: rỗng là chắc
+  /// chắn không có biểu mẫu bắt buộc, còn chưa đọc được thì cổng biểu mẫu của lượt ngoại tuyến không biết gì (rà soát
+  /// 24/11/2026).
+  final bool surveyFormsLoaded;
   final Set<int> submittedSurveyConfigIds;
   final String? errorMessage;
   final String checkinTime;
@@ -177,6 +183,7 @@ class CheckInState {
     this.status = CheckInStatus.initial,
     this.checkinData,
     this.surveyForms = const [],
+    this.surveyFormsLoaded = false,
     this.submittedSurveyConfigIds = const {},
     this.errorMessage,
     this.checkinTime = '--:--:--',
@@ -208,6 +215,12 @@ class CheckInState {
   bool get hasUnsubmittedRequiredSurveys =>
       unsubmittedRequiredSurveys.isNotEmpty;
 
+  /// Check-out lượt NGOẠI TUYẾN (id âm — cổng biểu mẫu do máy tự dựng từ [surveyForms]) mà chưa đọc được danh sách biểu
+  /// mẫu ⇒ cảnh báo trước khi check-out: có thể còn phiếu bắt buộc chưa nộp, đồng bộ sẽ bị server từ chối. Vẫn cho
+  /// check-out (chủ hệ thống chốt, #25868). Lượt đã lên server: cổng biểu mẫu là danh sách của server. Đóng cửa: không có
+  /// cổng biểu mẫu.
+  bool get shouldWarnUnknownRequiredForms => visitId < 0 && visitResult != 'closed' && !surveyFormsLoaded;
+
   /// Đã thỏa mãn tất cả điều kiện theo requirements API (§6)
   bool get canCheckout => requirements?.satisfied == true;
 
@@ -218,6 +231,7 @@ class CheckInState {
     CheckInStatus? status,
     DealerCheckinDataEntity? checkinData,
     List<MarketFormConfigEntity>? surveyForms,
+    bool? surveyFormsLoaded,
     Set<int>? submittedSurveyConfigIds,
     String? errorMessage,
     String? checkinTime,
@@ -240,6 +254,7 @@ class CheckInState {
       status: status ?? this.status,
       checkinData: checkinData ?? this.checkinData,
       surveyForms: surveyForms ?? this.surveyForms,
+      surveyFormsLoaded: surveyFormsLoaded ?? this.surveyFormsLoaded,
       submittedSurveyConfigIds:
           submittedSurveyConfigIds ?? this.submittedSurveyConfigIds,
       errorMessage: errorMessage,

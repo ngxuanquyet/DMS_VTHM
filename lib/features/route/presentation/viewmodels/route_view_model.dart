@@ -1128,6 +1128,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
   StreamSubscription<Position>? _geofenceStreamSubscription;
   int _elapsedSeconds = 0;
   DateTime? _targetDoneTime;
+  // Điểm bán của lần tải biểu mẫu khảo sát thành công gần nhất — tải lại hỏng cho CÙNG điểm bán thì danh sách đang có
+  // vẫn đúng; khác điểm bán thì danh sách đang có không phải của lượt này ([CheckInState.surveyFormsLoaded]).
+  int? _surveyFormsCustomerId;
   String _sessionClientUuid = const Uuid().v4();
   // Lượt server chỉ ra đang chặn lần check-in vừa rồi (422 DMS_VISIT_STILL_OPEN, #25390) — màn lấy MỘT lần qua [takeBlockingVisit].
   VisitEntity? _blockingVisit;
@@ -1403,6 +1406,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     stopGeofenceWatcher();
     _elapsedSeconds = 0;
     _targetDoneTime = null;
+    _surveyFormsCustomerId = null;
     // Nháp phiếu khớp theo uuid CŨ của lượt (lượt ngoại tuyến chưa có id server) ⇒ xoá trước khi sinh uuid mới.
     FormDraftStore.clearVisit(visitId: state.visitId, clientUuid: _sessionClientUuid);
     _sessionClientUuid = const Uuid().v4();
@@ -1518,7 +1522,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         customerId: customerId,
       );
       final chuaCo = state.surveyForms.isEmpty;
-      state = state.copyWith(surveyForms: forms);
+      _surveyFormsCustomerId = customerId;
+      state = state.copyWith(surveyForms: forms, surveyFormsLoaded: true);
       // Biểu mẫu về SAU khi check-in ngoại tuyến (hoặc khi mở lại lượt ngoại tuyến) ⇒ dựng lại cổng biểu mẫu bắt buộc.
       if (state.visitId < 0 && state.requirements != null) {
         _recomputeOfflineRequirements(state.visitResult, activeMobileRules);
@@ -1535,7 +1540,13 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             .getSingleOrNull();
         if (coPhieuCho != null) unawaited(refreshRequirements());
       }
-    } catch (_) {}
+    } catch (_) {
+      // Không đọc được (mất mạng + máy chưa lưu danh sách của điểm bán): KHÔNG coi là "không có biểu mẫu" — đánh dấu chưa
+      // tải được để check-out ngoại tuyến cảnh báo (rà soát 24/11/2026). Danh sách đang có của CÙNG điểm bán thì giữ.
+      if (_surveyFormsCustomerId != customerId && mounted) {
+        state = state.copyWith(surveyFormsLoaded: false);
+      }
+    }
   }
 
   /// Cổng ② cho lượt NGOẠI TUYẾN: biểu mẫu khảo sát BẮT BUỘC (bản lưu trong máy của điểm bán — server đã lọc theo người,
@@ -1723,6 +1734,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           (state.visitId == existingVisit.id ? _sessionClientUuid : const Uuid().v4());
       final token = _beginRestore();
       _setupVisitTimer(existingVisit.checkinAt);
+      final resumedReq = _restoreMinDuration(existingVisit, existingVisit.requirements ?? state.requirements);
 
       state = CheckInState(
         status: CheckInStatus.loaded,
@@ -1732,7 +1744,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             : localTime,
         visitId: existingVisit.id,
         visitEntity: existingVisit,
-        requirements: existingVisit.requirements ?? state.requirements,
+        requirements: resumedReq,
         // Chỉ giữ ảnh / biểu mẫu trong bộ nhớ khi đúng là CÙNG lượt — không bê của lượt trước sang (rồi bị lưu xuống máy).
         photos: state.visitId == existingVisit.id ? state.photos : const [],
         submittedSurveyConfigIds: state.visitId == existingVisit.id ? state.submittedSurveyConfigIds : const {},
@@ -1849,6 +1861,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         _sessionClientUuid = saved.clientUuid ?? _sessionClientUuid;
         token = _beginRestore();
         _setupVisitTimer(saved.checkinAt);
+        final restoredReq = _restoreMinDuration(saved, saved.requirements);
 
         DealerCheckinDataEntity? checkinData = state.checkinData;
         checkinData ??= DealerCheckinDataEntity(
@@ -1868,7 +1881,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           checkinData: checkinData,
           visitId: saved.id,
           visitEntity: saved,
-          requirements: saved.requirements,
+          requirements: restoredReq,
           checkinTime: localTime,
           visitResult: saved.visitResult ?? 'visited',
           closedNote: saved.closedNote ?? '',
@@ -1908,7 +1921,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // Có mã HTTP = server ĐÃ trả lời. Lỗi TẠM (5xx cổng/k3s, 408, 429) ⇒ như mất mạng: hàng đợi gửi lại cùng client_uuid,
     // server khử trùng. Mã khác là từ chối thật — cờ mạng đang báo "offline" (sóng yếu, một lần kiểm hỏng) cũng không được
     // biến nó thành lượt/check-out/ảnh ngoại tuyến rồi chết trong hàng đợi (rà soát #24698 vòng 3).
-    if (e is AppException && e.statusCode != null) return isTemporaryServerError(e);
+    // Trang proxy / WAF (4xx thân không phải JSON API — [nonApiResponseCode]) cũng là lỗi TẠM: yêu cầu chưa tới nghiệp vụ,
+    // báo lỗi là mất check-in / check-out / ảnh của lần bấm đó (rà soát 24/11/2026).
+    if (e is AppException && e.statusCode != null) return isTemporaryServerError(e) || e.code == nonApiResponseCode;
     if (ref != null) {
       try {
         if (!ref!.read(connectivityProvider).isOnline) return true;
@@ -2413,6 +2428,40 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     }
   }
 
+  /// Mốc hết thời gian tối thiểu của lượt KHÔI PHỤC (mở lại app / vào lại lượt đang mở) — `null` = không đếm (lượt miễn,
+  /// hoặc số giây lưu đã về 0). Không đặt mốc thì đồng hồ đếm lại từ [savedSecondsRemaining] lưu lúc nào đó trước khi tắt
+  /// app, lượt ngoại tuyến phải chờ lại cả quãng đã ở (rà soát 24/11/2026). Mốc = giờ check-in + thời gian tối thiểu (cách
+  /// server tính), nhưng KHÔNG muộn hơn now + số giây đã lưu: thời gian chỉ trôi thêm nên số thật không thể lớn hơn bản lưu
+  /// (bản lưu của server đúng hơn luật cục bộ khi hai bên lệch).
+  @visibleForTesting
+  static DateTime? restoredMinDurationTarget({
+    required DateTime? checkinAt,
+    required int? savedSecondsRemaining,
+    required int minDurationMinutes,
+    DateTime? now,
+  }) {
+    final saved = savedSecondsRemaining ?? 0;
+    if (saved <= 0) return null;
+    final t = now ?? DateTime.now();
+    final capped = t.add(Duration(seconds: saved));
+    if (checkinAt == null) return capped;
+    final byCheckin = checkinAt.add(Duration(minutes: math.max(0, minDurationMinutes)));
+    return byCheckin.isBefore(capped) ? byCheckin : capped;
+  }
+
+  /// Đặt [_targetDoneTime] cho lượt khôi phục và trả điều kiện check-out với số giây còn lại ĐÚNG lúc này — ghi thẳng
+  /// vào state để lần tính ngoại tuyến ngay sau đó ([_recomputeOfflineRequirements]) không dựng câu chặn từ số cũ.
+  VisitRequirementsEntity? _restoreMinDuration(VisitEntity visit, VisitRequirementsEntity? req) {
+    _targetDoneTime = restoredMinDurationTarget(
+      checkinAt: visit.checkinAt,
+      savedSecondsRemaining: req?.secondsRemaining,
+      minDurationMinutes: activeMobileRules.visit.minDurationMinutes,
+    );
+    if (req == null || req.secondsRemaining <= 0) return req;
+    final diff = _targetDoneTime == null ? 0 : _targetDoneTime!.difference(DateTime.now()).inSeconds;
+    return req.copyWith(secondsRemaining: diff > 0 ? diff : 0);
+  }
+
   void _setupVisitTimer(DateTime? checkinTime) {
     _visitTimer?.cancel();
     if (checkinTime != null) {
@@ -2913,8 +2962,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     } catch (e) {
       // Lỗi máy chủ (kể cả tạm) thì ảnh còn đó — báo lỗi; 404/410 = đã xoá rồi ⇒ coi như xong. Lỗi mạng (không mã) giữ cách
       // cũ: bỏ khỏi màn, KHÔNG xếp lệnh xoá (nợ có sẵn).
+      // 404/410 của trang proxy (deploy nạp lại ingress) KHÔNG phải "đã xoá rồi" — ảnh còn trên server (rà soát 24/11/2026).
       final status = e is AppException ? e.statusCode : null;
-      if (status == 404 || status == 410 || (status == null && _isNetworkError(e))) {
+      final proxy = e is AppException && e.code == nonApiResponseCode;
+      if (!proxy && (status == 404 || status == 410 || (status == null && _isNetworkError(e)))) {
         final updatedPhotos =
             state.photos.where((p) => p.id != photoId).toList();
         state = state.copyWith(
@@ -2947,7 +2998,8 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     try {
       newReq = await deleteVisitPhotoUseCase(visitId: visitId, photoId: row.serverId!);
     } catch (e) {
-      final status = e is AppException ? e.statusCode : null;
+      // 404/410 của trang proxy không phải "đã xoá" — giữ dòng hàng đợi, báo lỗi (rà soát 24/11/2026).
+      final status = e is AppException && e.code != nonApiResponseCode ? e.statusCode : null;
       if (status != 404 && status != 410) {
         state = state.copyWith(isDeletingPhoto: false);
         return (false, e.toString().replaceAll('ServerException: ', '').replaceAll('AppException: ', ''));
@@ -3507,7 +3559,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
         return _checkoutOffline(request: request, lat: lat, lng: lng);
       }
 
-      final msg = rawMsg
+      // Câu báo lấy từ chuỗi GỐC — [rawMsg] đã hạ chữ thường chỉ để so khớp (rà soát 24/11/2026).
+      final msg = e
+          .toString()
           .replaceAll('ServerException: ', '')
           .replaceAll('AppException: ', '');
       state = state.copyWith(status: CheckInStatus.loaded, errorMessage: msg);
@@ -3840,7 +3894,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           return (true, null);
         }
 
-        final msg = rawMsg
+        // Câu báo lấy từ chuỗi GỐC — [rawMsg] đã hạ chữ thường chỉ để so khớp (rà soát 24/11/2026).
+        final msg = e
+            .toString()
             .replaceAll('ServerException: ', '')
             .replaceAll('AppException: ', '');
         return (false, msg);
