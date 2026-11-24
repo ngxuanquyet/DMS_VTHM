@@ -1195,7 +1195,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
       }
 
       payload['client_uuid'] = _clientUuid;
-      await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      final created = await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
       // Bỏ nháp NGAY khi đã tạo (trực tiếp hoặc vào hàng đợi) — kể cả khi màn đã đóng (không setState).
       _discardDraft();
 
@@ -1214,6 +1214,20 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
         final pendingCount = await ref.read(appDatabaseProvider).countPendingSync();
         if (!mounted) return;
         final hasPending = pendingCount > 0;
+        // Lưu lại sau một lần lỗi mà server thật ra đã ghi (cùng client_uuid) ⇒ server trả bản CŨ, phần vừa nhập không được
+        // ghi: báo rõ thay vì «tạo thành công» im lặng (rà soát 24/11/2026). Vẫn coi là xong — nháp đã bỏ.
+        if (created.alreadyCreated) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(addCustomerAlreadyCreatedMessage),
+              backgroundColor: Color(0xFFD97706),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 5),
+            ),
+          );
+          Navigator.of(context).pop(true);
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -1660,6 +1674,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
 );
   }
 }
+
+/// Thông báo khi server trả `created = false` (điểm bán đã tạo ở lần lưu trước, cùng client_uuid) — rà soát 24/11/2026.
+const addCustomerAlreadyCreatedMessage =
+    'Điểm bán này đã được tạo ở lần lưu trước — mở điểm bán để sửa nếu cần.';
 
 /// Thông báo sau khi tạo điểm bán (nghiệp vụ 21/10/2026: tạo điểm bán = tính luôn một lượt viếng thăm).
 /// Ngoại tuyến thì lượt được ghi khi hàng đợi đồng bộ xong.

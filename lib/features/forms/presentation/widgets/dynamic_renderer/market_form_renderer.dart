@@ -422,6 +422,16 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// trong hàng đợi (rà soát 24/11/2026). Bỏ giá trị lạ; ô cho nhập «Khác…» giữ MỘT giá trị lạ (đúng luật server).
   void _dropRemovedOptions() {
     for (final block in widget.blocks) {
+      // Bảng lặp: cùng luật cho ô chọn CON của từng dòng — chỉ xét ô cấp một thì dòng mang lựa chọn đã gỡ vẫn bị server
+      // từ chối (rà soát 24/11/2026).
+      if (block.resolved.isRepeatGroup) {
+        final code = block.resolved.code;
+        final rows = RepeatGroupSpec.rowsOf(_answers[code]);
+        if (rows.isEmpty) continue;
+        final kept = block.resolved.repeatGroup.dropRemovedOptions(rows);
+        if (!identical(kept, rows)) _answers[code] = kept;
+        continue;
+      }
       final type = block.resolved.inputType.toLowerCase();
       if (!const {'select', 'radio', 'checkbox', 'multiselect'}.contains(type) || block.resolved.options.isEmpty) continue;
       final code = block.resolved.code;

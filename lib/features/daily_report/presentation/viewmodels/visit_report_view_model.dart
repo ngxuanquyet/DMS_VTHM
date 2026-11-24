@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:vthm_dms/features/visit/data/repositories/visit_repository_impl.dart';
 import 'package:vthm_dms/features/visit/domain/entities/visit_entity.dart';
 import 'package:vthm_dms/features/visit/domain/repositories/visit_repository.dart';
@@ -114,12 +115,23 @@ class VisitReportState {
   }
 }
 
+/// autoDispose: màn báo cáo là route đẩy — đóng màn thì bỏ trạng thái, mở lại tính lại «hôm nay». Giữ mãi thì ngày mặc
+/// định đứng ở ngày tạo provider, qua đêm mở lại vẫn hiện hôm qua (rà soát 24/11/2026).
 final visitReportViewModelProvider =
-    StateNotifierProvider<VisitReportViewModel, VisitReportState>((ref) {
+    StateNotifierProvider.autoDispose<VisitReportViewModel, VisitReportState>((ref) {
   return VisitReportViewModel(
     visitRepository: ref.watch(visitRepositoryProvider),
   );
 });
+
+/// Lượt [v] thuộc ngày [date] — cùng luật lọc của `VisitRepositoryImpl.getVisitsByDate`: ưu tiên `visit_date` (server),
+/// không có thì theo giờ check-in.
+bool visitIsOnDate(VisitEntity v, DateTime date) {
+  final ngay = DateFormat('yyyy-MM-dd').format(date);
+  if (v.visitDate != null && v.visitDate!.isNotEmpty) return v.visitDate == ngay;
+  if (v.checkinAt != null) return DateFormat('yyyy-MM-dd').format(v.checkinAt!) == ngay;
+  return false;
+}
 
 class VisitReportViewModel extends StateNotifier<VisitReportState> {
   final VisitRepository visitRepository;
@@ -137,15 +149,19 @@ class VisitReportViewModel extends StateNotifier<VisitReportState> {
         state.selectedDate,
         forceRefresh: forceRefresh,
       );
+      if (!mounted) return;
       state = state.copyWith(
         visits: visits,
         isLoading: false,
       );
     } catch (e) {
-      // Trong trường hợp lỗi API, vẫn đọc dữ liệu cục bộ đã lưu
+      // Trong trường hợp lỗi API, vẫn đọc dữ liệu cục bộ đã lưu — CHỈ lượt của ngày đang chọn: lấy cả bộ nhớ máy là cộng
+      // lượt mọi ngày vào số liệu của một ngày (rà soát 24/11/2026).
+      final ngay = state.selectedDate;
       final all = await visitRepository.getAllLocalVisits();
+      if (!mounted) return;
       state = state.copyWith(
-        visits: all,
+        visits: all.where((v) => visitIsOnDate(v, ngay)).toList(),
         isLoading: false,
         errorMessage: 'Đang hiển thị dữ liệu lưu cục bộ',
       );

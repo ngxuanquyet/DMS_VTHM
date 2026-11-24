@@ -124,6 +124,10 @@ class CustomerEntity {
   final String? photoUrl;
   final List<String> photoUrls;
 
+  /// Chỉ có nghĩa ở kết quả TẠO trực tuyến: server đã có điểm bán cùng `client_uuid` từ lần lưu trước (`created = false`)
+  /// ⇒ phần vừa nhập KHÔNG được ghi, màn tạo phải báo người dùng (rà soát 24/11/2026). Không lưu SQLite.
+  final bool alreadyCreated;
+
   const CustomerEntity({
     required this.id,
     required this.code,
@@ -172,6 +176,7 @@ class CustomerEntity {
     this.assignees = const [],
     this.photoUrl,
     this.photoUrls = const [],
+    this.alreadyCreated = false,
   });
 
   /// Hiển thị Kênh và Tuyến theo Bravo (Spec 20/10/2026: Gợi ý `KPP, KBL · MN2`)
@@ -337,6 +342,7 @@ class CustomerEntity {
     List<CustomerAssigneeEntity>? assignees,
     String? photoUrl,
     List<String>? photoUrls,
+    bool? alreadyCreated,
   }) {
     return CustomerEntity(
       id: id ?? this.id,
@@ -386,6 +392,7 @@ class CustomerEntity {
       assignees: assignees ?? this.assignees,
       photoUrl: photoUrl ?? this.photoUrl,
       photoUrls: photoUrls ?? this.photoUrls,
+      alreadyCreated: alreadyCreated ?? this.alreadyCreated,
     );
   }
 

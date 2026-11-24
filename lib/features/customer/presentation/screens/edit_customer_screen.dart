@@ -566,7 +566,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
       if (widget.onSave != null) {
         await widget.onSave!(changes);
       } else {
-        await ref.read(customerViewModelProvider.notifier).updateCustomer(c.id, changes);
+        // Kèm client_uuid: điểm bán CHƯA đồng bộ có id 0 — sửa theo mỗi id là khớp nhầm điểm bán id 0 khác (rà soát 24/11/2026).
+        await ref.read(customerViewModelProvider.notifier).updateCustomer(c.id, changes, clientUuid: c.clientUuid);
       }
 
       // Làm mới dữ liệu

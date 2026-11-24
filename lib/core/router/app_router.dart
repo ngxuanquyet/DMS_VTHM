@@ -9,7 +9,6 @@ import '../../features/customer/domain/entities/customer_entity.dart';
 import '../../features/customer/presentation/screens/add_customer_screen.dart';
 import '../../features/customer/presentation/screens/customer_detail_screen.dart';
 import '../../features/customer/presentation/screens/customer_screen.dart';
-import '../../features/customer/presentation/screens/edit_customer_screen.dart';
 import '../../features/customer/presentation/screens/rejected_customers_screen.dart';
 import '../../features/daily_report/presentation/screens/daily_report_screen.dart';
 import '../../features/forms/presentation/screens/forms_screen.dart';
@@ -302,34 +301,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return ZoomPageTransition(
             key: state.pageKey,
             child: CustomerDetailScreen(customer: customer),
-          );
-        },
-      ),
-      GoRoute(
-        path: '/customers/edit',
-        parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) {
-          final customer = state.extra is CustomerEntity
-              ? state.extra as CustomerEntity
-              : null;
-          if (customer == null || customer.isRejectedApproval) {
-            return ZoomPageTransition(
-              key: state.pageKey,
-              child: Scaffold(
-                appBar: AppBar(title: const Text('Sửa điểm bán')),
-                body: Center(
-                  child: Text(
-                    customer?.isRejectedApproval == true
-                        ? 'Điểm bán đã bị từ chối duyệt, không thể chỉnh sửa lại.'
-                        : 'Không tìm thấy thông tin điểm bán',
-                  ),
-                ),
-              ),
-            );
-          }
-          return ZoomPageTransition(
-            key: state.pageKey,
-            child: EditCustomerScreen(customer: customer),
           );
         },
       ),

@@ -553,17 +553,21 @@ class CustomerLocalDataSource {
     final wardName = suaGeo
         ? (widMoi == null ? null : geoCatalog?.ward(widMoi)?.fullName)
         : (changes.containsKey('ward_name') ? changes['ward_name']?.toString() : existing.wardName);
-    final contactPerson = changes['contact_name']?.toString() ??
-        changes['contact_person']?.toString() ??
-        existing.contactPerson;
+    // Ô XOÁ TRẮNG đến đây là khoá có mặt với giá trị null (màn sửa gửi `null`) ⇒ xét `containsKey`, không `?? cũ`: lấy giá
+    // trị cũ thì bản trong máy và dòng tạo chờ gửi vẫn mang SĐT / người liên hệ đã xoá (rà soát 24/11/2026).
+    final contactPerson = changes.containsKey('contact_name')
+        ? (changes['contact_name']?.toString() ?? '')
+        : (changes.containsKey('contact_person')
+            ? (changes['contact_person']?.toString() ?? '')
+            : existing.contactPerson);
     final contactTitle = changes.containsKey('contact_title')
         ? changes['contact_title']?.toString()
         : existing.contactTitle;
-    final phone = changes['phone']?.toString() ?? existing.phone;
+    final phone = changes.containsKey('phone') ? (changes['phone']?.toString() ?? '') : existing.phone;
     final email = changes.containsKey('email')
         ? changes['email']?.toString()
         : existing.email;
-    final address = changes['address']?.toString() ?? existing.address;
+    final address = changes.containsKey('address') ? (changes['address']?.toString() ?? '') : existing.address;
     final lat = changes.containsKey('coords')
         ? (changes['coords'] is Map ? (changes['coords']['lat'] as num?)?.toDouble() : null)
         : (changes.containsKey('lat')
@@ -704,14 +708,18 @@ class CustomerLocalDataSource {
         queuePayload.remove('province_name');
         queuePayload.remove('ward_name');
       }
-      if (contactPerson.isNotEmpty) queuePayload['contact_name'] = contactPerson;
-      if (contactTitle != null) queuePayload['contact_title'] = contactTitle;
-      if (phone.isNotEmpty) queuePayload['phone'] = phone;
-      if (email != null) queuePayload['email'] = email;
+      // Ô trống / xoá trắng ⇒ GỠ khoá khỏi dòng tạo (server tạo với ô trống); chỉ «bỏ qua» thì giá trị cũ của lần tạo vẫn
+      // nằm trong payload và được gửi đi dù người dùng đã xoá (rà soát 24/11/2026).
+      void ganHoacGo(String k, String? v) => (v == null || v.isEmpty) ? queuePayload.remove(k) : queuePayload[k] = v;
+      ganHoacGo('contact_name', contactPerson);
+      queuePayload..remove('contact_person')..remove('contactPerson');
+      ganHoacGo('contact_title', contactTitle);
+      ganHoacGo('phone', phone);
+      ganHoacGo('email', email);
       // Sinh nhật là ô GỐC (không phải ô động trong `data`) — #24698 lỗi 11.
       if (changes['birthday'] != null) queuePayload['birthday'] = changes['birthday'];
       if (changes.containsKey('delivery_address')) queuePayload['delivery_address'] = changes['delivery_address'];
-      if (address.isNotEmpty) queuePayload['address'] = address;
+      ganHoacGo('address', address);
       // Màn sửa gửi toạ độ dạng `coords` ({lat, lng, accuracy, mock}) và bộ dựng payload ƯU TIÊN `coords` hơn lat/lng ⇒
       // phải thay chính `coords`; chỉ ghi lat/lng thì lúc đồng bộ vẫn gửi toạ độ cũ của lần tạo (#24698 lỗi 10).
       if (changes.containsKey('coords')) {

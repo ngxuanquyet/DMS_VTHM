@@ -15,6 +15,7 @@ import '../../../../core/services/geo_catalog_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/utils/account_key.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
+import '../models/customer_dto.dart';
 import '../../domain/entities/customer_entity.dart';
 import '../../domain/entities/customer_meta_entity.dart';
 import '../../domain/repositories/customer_repository.dart';
@@ -656,17 +657,21 @@ class CustomerRepositoryImpl implements CustomerRepository {
       wardName: changes.containsKey('ward_name')
           ? changes['ward_name']?.toString()
           : geoWardName,
-      contactPerson: changes['contact_name']?.toString() ??
-          changes['contact_person']?.toString() ??
-          current.contactPerson,
+      // Ô xoá trắng = khoá có mặt với null ⇒ xét `containsKey`; `?? cũ` giữ lại giá trị đã xoá. `copyWith` coi null là «giữ
+      // nguyên» ⇒ ô xoá ghi '' (rà soát 24/11/2026).
+      contactPerson: changes.containsKey('contact_name')
+          ? (changes['contact_name']?.toString() ?? '')
+          : (changes.containsKey('contact_person')
+              ? (changes['contact_person']?.toString() ?? '')
+              : current.contactPerson),
       contactTitle: changes.containsKey('contact_title')
-          ? changes['contact_title']?.toString()
+          ? (changes['contact_title']?.toString() ?? '')
           : current.contactTitle,
-      phone: changes['phone']?.toString() ?? current.phone,
+      phone: changes.containsKey('phone') ? (changes['phone']?.toString() ?? '') : current.phone,
       email: changes.containsKey('email')
-          ? changes['email']?.toString()
+          ? (changes['email']?.toString() ?? '')
           : current.email,
-      address: changes['address']?.toString() ?? current.address,
+      address: changes.containsKey('address') ? (changes['address']?.toString() ?? '') : current.address,
       lat: changes.containsKey('coords')
           ? (changes['coords'] is Map ? (changes['coords']['lat'] as num?)?.toDouble() : null)
           : (changes.containsKey('lat')
@@ -712,58 +717,23 @@ class CustomerRepositoryImpl implements CustomerRepository {
 
     if (isOnline) {
       var posted = false;
+      // Kết quả POST thành công (có mã server). Phần ghi sổ sau đó nằm NGOÀI khối try gửi: lỗi SQLite / xoá ảnh lúc ghi sổ
+      // rơi vào nhánh bắt lỗi gửi thì bị coi như gửi hỏng — báo lỗi hoặc xếp hàng với ảnh vừa xoá, trong khi điểm bán ĐÃ có
+      // trên server (rà soát 24/11/2026).
+      CustomerDto? createdDto;
+      Map<String, dynamic>? createdPayload;
       try {
         final cleanPayload = await _prepareCleanCustomerPayload(data);
         posted = true;
         final dto = await _apiService.createCustomer(cleanPayload);
 
-        final serverId = dto.id > 0 ? dto.id : 0;
-        final serverCode = dto.code.isNotEmpty ? dto.code : '';
-
-        if (serverId > 0) {
-          // Lệnh gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu).
-          await _localDataSource.db.logDirectSend(
-            entity: 'customer',
-            op: 'create',
-            clientUuid: data['client_uuid'].toString(),
-            payload: {'name': data['name'], 'address': data['address'], 'route': data['route']},
-            serverId: serverId,
-          );
-          // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) + ảnh mặt tiền màn tạo vừa chép đã lên server ⇒ dọn bản chép lâu
-          // dài trên máy (điểm bán mới — không dòng hàng đợi nào khác trỏ tới).
-          await deleteOfflineCustomerPhotos([
-            ...CustomerPayloadHelper.dynamicLocalPhotoPaths(data),
-            for (final k in const ['photo_tokens', 'photos'])
-              if (data[k] is List) ...(data[k] as List).map((e) => '$e'),
-          ]);
-          // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
-          if (cleanPayload['materials'] is List) {
-            await cacheCreatedOutletMaterials(
-              serverId,
-              (cleanPayload['materials'] as List)
-                  .whereType<Map>()
-                  .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m)))
-                  .toList(),
-            );
-          }
-          final entity = _buildSyncedCustomerEntity(
-            data: data,
-            serverId: serverId,
-            serverCode: serverCode,
-            cleanPayload: cleanPayload,
-          );
-
-          await _localDataSource.cacheRemoteCustomers([entity]);
-          _cachedCustomers.removeWhere((c) =>
-              (entity.clientUuid != null && c.clientUuid == entity.clientUuid) ||
-              (entity.id > 0 && c.id == entity.id) ||
-              (entity.code.isNotEmpty && !entity.code.startsWith('PENDING_') && c.code == entity.code));
-          _cachedCustomers.insert(0, entity);
-          _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
-          return entity;
+        if (dto.id > 0) {
+          createdDto = dto;
+          createdPayload = cleanPayload;
+        } else {
+          // Server đã trả lời 2xx mà không đọc được mã ⇒ chắc chắn đã nhận: dòng hàng đợi mang dấu như ca quá giờ.
+          data[queueMaybeOnServerKey] = true;
         }
-        // Server đã trả lời 2xx mà không đọc được mã ⇒ chắc chắn đã nhận: dòng hàng đợi mang dấu như ca quá giờ.
-        data[queueMaybeOnServerKey] = true;
       } catch (e) {
         debugPrint('[CustomerRepositoryImpl] Lỗi khi tạo online ($e)');
         // 🔴 Theo spec 30/09 §7: Lỗi 4xx từ chối hẳn (validate thất bại) — TUYỆT ĐỐI không fallback sang ghi offline để
@@ -777,6 +747,9 @@ class CustomerRepositoryImpl implements CustomerRepository {
         // Lỗi lúc GỬI tạo (không phải lúc chuẩn bị ảnh) mà không chắc chưa ra khỏi máy ⇒ server có thể đã ghi (lần sửa sau
         // không gộp vào dòng tạo). 401: server chắc chắn chưa ghi.
         if (posted && !phien && !(e is NetworkException && !e.mayHaveReachedServer)) data[queueMaybeOnServerKey] = true;
+      }
+      if (createdDto != null && createdPayload != null) {
+        return _afterOnlineCreate(data, createdDto, createdPayload);
       }
     }
 
@@ -877,6 +850,67 @@ class CustomerRepositoryImpl implements CustomerRepository {
       resolvedPhotoTokens: resolvedTokens.isNotEmpty ? resolvedTokens : null,
       isOfflineSync: false,
     );
+  }
+
+  /// Ghi sổ sau khi server ĐÃ tạo điểm bán (POST trả mã). Mọi bước ở đây là phụ: hỏng bước nào chỉ ghi log, vẫn trả
+  /// thực thể đã tạo — ném ra thì màn tạo báo lỗi / người dùng lưu lại trong khi điểm bán đã có (rà soát 24/11/2026).
+  /// Lần làm mới danh sách sau đó kéo bản server về nếu bước ghi máy hỏng.
+  Future<CustomerEntity> _afterOnlineCreate(
+      Map<String, dynamic> data, CustomerDto dto, Map<String, dynamic> cleanPayload) async {
+    final serverId = dto.id;
+    final serverCode = dto.code.isNotEmpty ? dto.code : '';
+    Future<void> ghiSo(String buoc, Future<void> Function() f) async {
+      try {
+        await f();
+      } catch (e) {
+        debugPrint('[CustomerRepositoryImpl] Điểm bán #$serverId đã tạo, bước "$buoc" lỗi ($e)');
+      }
+    }
+
+    // Lệnh gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu).
+    await ghiSo('nhật ký gửi', () => _localDataSource.db.logDirectSend(
+          entity: 'customer',
+          op: 'create',
+          clientUuid: data['client_uuid'].toString(),
+          payload: {'name': data['name'], 'address': data['address'], 'route': data['route']},
+          serverId: serverId,
+        ));
+    // Ảnh ô động (ô ma trận, ô chụp ảnh tự khai) + ảnh mặt tiền màn tạo vừa chép đã lên server ⇒ dọn bản chép lâu
+    // dài trên máy (điểm bán mới — không dòng hàng đợi nào khác trỏ tới).
+    await ghiSo('dọn ảnh', () => deleteOfflineCustomerPhotos([
+          ...CustomerPayloadHelper.dynamicLocalPhotoPaths(data),
+          for (final k in const ['photo_tokens', 'photos'])
+            if (data[k] is List) ...(data[k] as List).map((e) => '$e'),
+        ]));
+    // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
+    if (cleanPayload['materials'] is List) {
+      await ghiSo('cache vật tư', () => cacheCreatedOutletMaterials(
+            serverId,
+            (cleanPayload['materials'] as List)
+                .whereType<Map>()
+                .map((m) => MaterialOperation.fromJson(Map<String, dynamic>.from(m)))
+                .toList(),
+          ));
+    }
+    final built = _buildSyncedCustomerEntity(
+      data: data,
+      serverId: serverId,
+      serverCode: serverCode,
+      cleanPayload: cleanPayload,
+    );
+
+    await ghiSo('ghi máy', () => _localDataSource.cacheRemoteCustomers([built]));
+    _cachedCustomers.removeWhere((c) =>
+        (built.clientUuid != null && c.clientUuid == built.clientUuid) ||
+        (built.id > 0 && c.id == built.id) ||
+        (built.code.isNotEmpty && !built.code.startsWith('PENDING_') && c.code == built.code));
+    _cachedCustomers.insert(0, built);
+    _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
+    if (dto.created != false) return built;
+    // Gửi lại cùng client_uuid mà server đã có từ lần lưu trước ⇒ server trả bản CŨ, phần vừa nhập không được ghi: đánh dấu
+    // để màn tạo báo người dùng thay vì «tạo thành công» im lặng. Bản ghi máy ở trên là theo lần nhập — lần làm mới danh
+    // sách ngay sau đó thay bằng bản server.
+    return built.copyWith(alreadyCreated: true);
   }
 
   CustomerEntity _buildSyncedCustomerEntity({

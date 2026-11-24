@@ -38,6 +38,10 @@ class CustomerDto {
   final List<CustomerAssigneeEntity> assignees;
   final String? photoUrl;
   final List<String> photoUrls;
+
+  /// Cờ `created` của `POST /crm/customers`: false = server đã có điểm bán cùng `client_uuid` từ lần lưu trước và trả lại
+  /// bản CŨ (phần vừa nhập không được ghi). null = phản hồi không mang cờ (đọc danh sách, bản server cũ).
+  final bool? created;
   final String? route;
   final List<String> routes;
   final List<int> routeIds;
@@ -93,6 +97,7 @@ class CustomerDto {
     this.assignees = const [],
     this.photoUrl,
     this.photoUrls = const [],
+    this.created,
   });
 
   factory CustomerDto.fromJson(Map<String, dynamic> json, {Map<int, String>? customerTypeMap}) {
@@ -395,6 +400,7 @@ class CustomerDto {
       assignees: assigneesList,
       photoUrl: parsedPhotoUrl,
       photoUrls: parsedPhotoUrls,
+      created: json['created'] is bool ? json['created'] as bool : null,
     );
   }
 

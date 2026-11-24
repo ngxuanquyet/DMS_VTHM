@@ -236,6 +236,39 @@ class RepeatGroupSpec {
     return doi ? out : rows;
   }
 
+  /// Bỏ khỏi ô CHỌN của từng dòng lựa chọn admin ĐÃ GỠ (dòng dựng sẵn từ nháp / phiếu cũ / bản ghi cũ): ô con không hiện
+  /// nó nên người dùng không bỏ được, mà server từ chối «ngoài danh sách» ⇒ phiếu không bao giờ nộp được (rà soát
+  /// 24/11/2026). Cùng luật ô chọn cấp một: ô cho nhập «Khác…» giữ MỘT giá trị lạ. Không đổi gì ⇒ trả CHÍNH danh sách cũ.
+  List<Map<String, dynamic>> dropRemovedOptions(List<Map<String, dynamic>> rows) {
+    final chon = columns
+        .where((c) =>
+            c.options.isNotEmpty &&
+            (c.type == DynamicFormFieldType.singleChoice || c.type == DynamicFormFieldType.multipleChoice))
+        .toList();
+    if (chon.isEmpty) return rows;
+    var doi = false;
+    final out = [
+      for (final r in rows)
+        () {
+          Map<String, dynamic>? moi;
+          for (final c in chon) {
+            final v = r[c.code];
+            if (v == null) continue;
+            final opts = c.options.map((o) => o.value).toList();
+            if (v is List) {
+              final kept = ChoiceOther.composeMulti<dynamic>(v, opts, c.allowOther ? ChoiceOther.foreignMulti(v, opts) : null);
+              if (kept.length != v.length) (moi ??= Map<String, dynamic>.from(r))[c.code] = kept;
+            } else if (!c.allowOther && ChoiceOther.foreignSingle(v, opts) != null) {
+              (moi ??= Map<String, dynamic>.from(r)).remove(c.code);
+            }
+          }
+          if (moi != null) doi = true;
+          return moi ?? r;
+        }(),
+    ];
+    return doi ? out : rows;
+  }
+
   /// Lỗi đầu tiên của nhóm (cùng luật server): đủ/thừa số dòng, ô con bắt buộc của từng dòng, độ dài, số ngoài khoảng,
   /// giá trị «Khác…» quá trần, SĐT sai dạng; `null` = hợp lệ. Nhóm không đổi ở màn sửa thì màn chứa tự bỏ qua ([sameRows]);
   /// [saved] = giá trị nhóm đang lưu (màn sửa) — ô SĐT còn y giá trị đang lưu không bị chặn.
