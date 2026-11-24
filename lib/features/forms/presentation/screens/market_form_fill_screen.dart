@@ -625,6 +625,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         localPhotoPaths: localPhotos,
         tokenFiles: _draftTokenFiles,
         parentUuid: widget.args.kind == 'survey' ? widget.args.visitClientUuid : null,
+        schemaToken: widget.args.config.schemaToken,
       );
 
       final isOnline = ref.read(connectivityProvider).isOnline;

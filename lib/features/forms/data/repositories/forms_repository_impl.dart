@@ -219,6 +219,7 @@ class FormsRepositoryImpl implements FormsRepository {
             isOfflineSync: submission.isOfflineSync,
             localPhotoPaths: submission.localPhotoPaths,
             tokenFiles: submission.tokenFiles,
+            schemaToken: submission.schemaToken,
           );
           final retried = await _apiService.submitForm(retrySubmission);
           await _logDirectSend(retrySubmission);

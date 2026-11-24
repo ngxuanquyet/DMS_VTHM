@@ -14,6 +14,9 @@ class MarketFormConfigModel {
   final MarketFormSchemaModel schema;
   final String visitScope; // 'all' | 'first' | 'repeat' (§1 SPEC-2026-10-18)
 
+  /// Mốc tải bản biểu mẫu này CÓ CHỮ KÝ của server — gửi lại khi nộp phiếu ngoại tuyến (#25869).
+  final String? schemaToken;
+
   const MarketFormConfigModel({
     required this.configId,
     required this.formId,
@@ -25,6 +28,7 @@ class MarketFormConfigModel {
     required this.sortOrder,
     required this.schema,
     this.visitScope = 'all',
+    this.schemaToken,
   });
 
   factory MarketFormConfigModel.fromJson(Map<String, dynamic> json) {
@@ -47,6 +51,7 @@ class MarketFormConfigModel {
           ? MarketFormSchemaModel.fromJson(json['schema'] as Map<String, dynamic>)
           : const MarketFormSchemaModel(blocks: []),
       visitScope: json['visit_scope']?.toString() ?? 'all',
+      schemaToken: json['schema_token']?.toString(),
     );
   }
 
@@ -61,6 +66,7 @@ class MarketFormConfigModel {
         'sort_order': sortOrder,
         'schema': schema.toJson(),
         'visit_scope': visitScope,
+        if (schemaToken != null) 'schema_token': schemaToken,
       };
 
   MarketFormConfigEntity toEntity() {
@@ -75,6 +81,7 @@ class MarketFormConfigModel {
       sortOrder: sortOrder,
       schema: schema.toEntity(),
       visitScope: visitScope,
+      schemaToken: schemaToken,
     );
   }
 }

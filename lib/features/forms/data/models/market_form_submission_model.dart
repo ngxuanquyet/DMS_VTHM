@@ -21,6 +21,11 @@ class MarketFormSubmissionModel {
   /// Ảnh khôi phục từ nháp chỉ còn token: token → tệp gốc trên máy, chỉ dùng khi server báo token hết hạn.
   final Map<String, String>? tokenFiles;
 
+  /// Mốc tải bản biểu mẫu CÓ CHỮ KÝ (`schema_token` của `/dms/forms/available`) — phiếu đồng bộ ngoại tuyến theo bản cũ được
+  /// server kiểm theo bản lúc điền: ô admin thêm sau không bị đòi, lựa chọn đã gỡ vẫn nhận (chủ hệ thống chốt 24/11/2026,
+  /// #25869). null ⇒ không gửi (server kiểm chặt).
+  final String? schemaToken;
+
   MarketFormSubmissionModel({
     required this.configId,
     this.visitId,
@@ -37,6 +42,7 @@ class MarketFormSubmissionModel {
     this.clientBootId,
     this.localPhotoPaths,
     this.tokenFiles,
+    this.schemaToken,
   })  : clientUuid = clientUuid ?? const Uuid().v4(),
         clientTime = clientTime ?? _formatIsoWithOffset(DateTime.now());
 
@@ -154,6 +160,7 @@ class MarketFormSubmissionModel {
       queuedSeconds: json['queued_seconds'] as int?,
       clientBootId: json['client_boot_id']?.toString(),
       localPhotoPaths: parsedLocalPhotos,
+      schemaToken: json['schema_token']?.toString(),
     );
   }
 
@@ -172,6 +179,7 @@ class MarketFormSubmissionModel {
       'is_offline_sync': isOfflineSync,
       if (queuedSeconds != null) 'queued_seconds': queuedSeconds,
       if (clientBootId != null && clientBootId!.isNotEmpty) 'client_boot_id': clientBootId,
+      if (schemaToken?.isNotEmpty ?? false) 'schema_token': schemaToken,
       if (includeInternal && localPhotoPaths != null) '_local_photo_paths': localPhotoPaths,
       if (includeInternal && (tokenFiles?.isNotEmpty ?? false)) '_token_files': tokenFiles,
     };

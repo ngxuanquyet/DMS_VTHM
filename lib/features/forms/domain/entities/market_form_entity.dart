@@ -19,6 +19,10 @@ class MarketFormConfigEntity {
   final MarketFormSchemaEntity schema;
   final String visitScope; // 'all' | 'first' | 'repeat' (§1 SPEC-2026-10-18)
 
+  /// Mốc tải bản biểu mẫu này CÓ CHỮ KÝ của server (`schema_token`) — gửi kèm phiếu: phiếu ngoại tuyến theo bản cũ được kiểm
+  /// theo bản lúc điền (#25869). `null` = server cũ.
+  final String? schemaToken;
+
   const MarketFormConfigEntity({
     required this.configId,
     required this.formId,
@@ -30,6 +34,7 @@ class MarketFormConfigEntity {
     required this.sortOrder,
     required this.schema,
     this.visitScope = 'all',
+    this.schemaToken,
   });
 
   /// Mô tả đã cắt khoảng trắng; `null` khi không có gì để hiện.
