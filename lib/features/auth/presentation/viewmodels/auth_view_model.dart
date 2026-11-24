@@ -301,7 +301,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
     final owner = ref?.read(appDatabaseProvider).ownerUserId;
     await _setQueueOwner(null);
     try {
-      await logoutUseCase();
+      // Nháp phiếu thu thập / Thêm mới điểm bán theo tài khoản: chỉ TỰ đăng xuất ([requireCleared]) mới xoá — đăng xuất
+      // cưỡng bức (hết phiên, bị thu quyền) giữ như giữ hàng đợi, đúng người đăng nhập lại là điền tiếp (rà soát 24/11/2026).
+      await logoutUseCase(keepAccountDrafts: !requireCleared);
     } catch (_) {
       await _setQueueOwner(owner?.toString());
       rethrow;

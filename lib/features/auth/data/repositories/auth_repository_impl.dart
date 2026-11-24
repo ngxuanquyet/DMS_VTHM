@@ -116,7 +116,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<void> logout() async {
+  Future<void> logout({bool keepAccountDrafts = false}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.keyAccessToken);
     await prefs.remove(AppConstants.keyAuthToken);
@@ -124,7 +124,10 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyUserData);
 
     // Nháp phiếu thu thập theo tài khoản: xoá cả ảnh nháp TRƯỚC khi khoá ngăn bị xoá theo tiền tố dưới (mất khoá là mất dấu tệp).
-    await FormDraftStore.clearAccountDrafts();
+    // Đăng xuất CƯỠNG BỨC (hết phiên / bị thu quyền — người dùng không chọn rời máy) GIỮ nháp: ngăn nháp khoá theo tài khoản
+    // nên người khác đăng nhập không đọc được, đúng người đăng nhập lại là điền tiếp; xoá thì mất phiếu đang điền dở chỉ vì
+    // token hết hạn (rà soát 24/11/2026). Chỉ TỰ đăng xuất mới xoá.
+    if (!keepAccountDrafts) await FormDraftStore.clearAccountDrafts();
 
     // Xoá cache cấu hình + lịch sử chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
     // Cùng lý do: biểu mẫu điểm bán / thị trường mang giá trị "tự điền theo phòng ban" tính riêng cho người này
@@ -138,7 +141,7 @@ class AuthRepositoryImpl implements AuthRepository {
             k.startsWith('cached_customer_form_schema') ||
             k.startsWith('cached_customer_meta') ||
             k.startsWith('dms_route_customers_cache') ||
-            k.startsWith('dms_market_forms_') ||
+            (k.startsWith('dms_market_forms_') && !(keepAccountDrafts && _isAccountDraftSlot(k))) ||
             k.startsWith(visitMaterialsCachePrefix) ||
             // Bản sao thông báo đẩy + danh sách đã đọc, bộ đệm "Quãng đường của tôi": khoá chung mọi tài khoản ⇒ người sau
             // thấy thông báo / số km của người trước (rà soát 24/11/2026).
@@ -151,6 +154,11 @@ class AuthRepositoryImpl implements AuthRepository {
     // Ảnh của ô "Tài liệu hướng dẫn" (rich-image) tải về khi điền phiếu — máy dùng chung không giữ lại cho người sau.
     await RichImageCache.clear();
   }
+
+  /// Ngăn nháp theo tài khoản của [FormDraftStore] — cùng tiền tố `dms_market_forms_` với bộ đệm biểu mẫu nên phải tách ra
+  /// khi đăng xuất cưỡng bức giữ nháp.
+  static bool _isAccountDraftSlot(String k) =>
+      k.startsWith(FormDraftStore.collectSlot('')) || k.startsWith(FormDraftStore.customerSlot(''));
 
   @override
   Future<String?> getSavedUsername() async {

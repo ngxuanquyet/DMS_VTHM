@@ -63,8 +63,12 @@ class MockAuthRepository implements AuthRepository {
     );
   }
 
+  bool? lastKeepAccountDrafts;
+
   @override
-  Future<void> logout() async {}
+  Future<void> logout({bool keepAccountDrafts = false}) async {
+    lastKeepAccountDrafts = keepAccountDrafts;
+  }
 
   @override
   Future<String?> refreshToken() async => 'mock_new_token';
@@ -118,6 +122,33 @@ void main() {
       expect(isAuth, isFalse);
       expect(vm.state.status, equals(AuthStatus.error));
       expect(vm.state.errorMessage, contains('Tài khoản chưa được cấp quyền dùng app VTHM Đồng hành'));
+    });
+
+    test('4b. Đăng xuất CƯỠNG BỨC (thu quyền / hết phiên) giữ nháp theo tài khoản (rà soát 24/11/2026)', () async {
+      TestWidgetsFlutterBinding.ensureInitialized(); // đăng xuất cưỡng bức đọc rootNavigatorKey
+      final revoked = MockAuthRepository()..checkAppAccessShouldThrow403 = true;
+      final vm1 = AuthViewModel(
+        loginUseCase: LoginUseCase(revoked),
+        checkAuthUseCase: CheckAuthUseCase(revoked),
+        checkAppAccessUseCase: CheckAppAccessUseCase(revoked),
+        logoutUseCase: LogoutUseCase(revoked),
+        getSavedUsernameUseCase: GetSavedUsernameUseCase(revoked),
+      );
+      await vm1.checkAuth();
+      expect(revoked.lastKeepAccountDrafts, isTrue);
+
+      final expired = MockAuthRepository();
+      final vm2 = AuthViewModel(
+        loginUseCase: LoginUseCase(expired),
+        checkAuthUseCase: CheckAuthUseCase(expired),
+        checkAppAccessUseCase: CheckAppAccessUseCase(expired),
+        logoutUseCase: LogoutUseCase(expired),
+        getSavedUsernameUseCase: GetSavedUsernameUseCase(expired),
+      );
+      expect(await vm2.checkAuth(), isTrue);
+      await vm2.forceLogoutSessionRejected();
+      expect(expired.lastKeepAccountDrafts, isTrue);
+      expect(vm2.state.status, AuthStatus.error);
     });
 
     test('5. checkAuth retains session when offline or network error occurs during checkAppAccess', () async {

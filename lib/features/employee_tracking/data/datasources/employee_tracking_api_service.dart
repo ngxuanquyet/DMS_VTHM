@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/errors/app_exceptions.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/location_access_log_model.dart';
 import '../models/location_ping_point_model.dart';
@@ -117,7 +118,10 @@ class EmployeeTrackingApiService {
     final statusCode = e.response?.statusCode;
     final data = e.response?.data;
 
-    if (statusCode == 403) {
+    // 403 trang WAF / proxy (thân không phải JSON của API — [nonApiErrorCode]) KHÔNG phải bị thu quyền: coi là thu quyền thì
+    // dừng hẳn theo dõi vị trí tới lần mở app sau. Để rơi xuống lỗi thường ⇒ điểm nằm lại hàng đợi, nhịp sau gửi lại
+    // (rà soát 24/11/2026).
+    if (statusCode == 403 && nonApiErrorCode(statusCode, data) == null) {
       throw const LocationPermissionDeniedException(
         'Tài khoản không có quyền theo dõi vị trí (/dms/location/ping hoặc /pending).',
       );

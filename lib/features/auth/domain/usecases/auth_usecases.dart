@@ -34,8 +34,8 @@ class LogoutUseCase {
 
   LogoutUseCase(this._repository);
 
-  Future<void> call() {
-    return _repository.logout();
+  Future<void> call({bool keepAccountDrafts = false}) {
+    return _repository.logout(keepAccountDrafts: keepAccountDrafts);
   }
 }
 

@@ -11,7 +11,8 @@ abstract class AuthRepository {
 
   Future<String?> refreshToken();
 
-  Future<void> logout();
+  /// [keepAccountDrafts]: đăng xuất CƯỠNG BỨC (hết phiên / bị thu quyền) giữ nháp theo tài khoản (ngăn nháp khoá theo tài khoản, người khác không đọc được); chỉ TỰ đăng xuất mới xoá.
+  Future<void> logout({bool keepAccountDrafts = false});
 
   Future<String?> getSavedUsername();
 

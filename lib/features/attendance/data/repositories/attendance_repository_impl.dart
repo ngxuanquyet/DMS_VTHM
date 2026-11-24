@@ -92,7 +92,13 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
         return model.toEntity();
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi tải config từ server: $e');
-        if (e is ServerException && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+        // 4xx trang proxy / WAF (không phải JSON của API, [nonApiResponseCode]) là lỗi TẠM của đường truyền, không phải lời
+        // từ chối ⇒ dùng cấu hình đã lưu như 5xx; ném lỗi thì màn chấm công trống dù máy còn bản lưu (rà soát 24/11/2026).
+        if (e is ServerException &&
+            e.statusCode != null &&
+            e.statusCode! >= 400 &&
+            e.statusCode! < 500 &&
+            e.code != nonApiResponseCode) {
           rethrow;
         }
       }

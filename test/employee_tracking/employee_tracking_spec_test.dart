@@ -255,7 +255,12 @@ void main() {
         onRequest: (options, handler) {
           handler.reject(DioException(
             requestOptions: options,
-            response: Response(requestOptions: options, statusCode: 403),
+            // Thân JSON của API — 403 trang proxy (không JSON) không phải bị thu quyền (rà soát 24/11/2026).
+            response: Response(
+              requestOptions: options,
+              statusCode: 403,
+              data: <String, dynamic>{'success': false, 'message': 'Không có quyền'},
+            ),
           ));
         },
       ));

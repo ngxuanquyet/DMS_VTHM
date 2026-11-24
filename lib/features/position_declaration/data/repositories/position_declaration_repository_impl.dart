@@ -217,6 +217,9 @@ class PositionDeclarationRepositoryImpl implements PositionDeclarationRepository
     }
 
     // 3. Đưa vào hàng đợi SyncQueueEntries để đồng bộ ngoại tuyến
+    // CỐ Ý không mang token của ảnh vừa tải lên trong lượt trực tuyến hỏng: hàng đợi tải lại MỌI `local_photo_paths`
+    // (`_syncPositionDeclaration`, mỗi lần tải ra token mới) ⇒ thêm token là khai báo lên server với ảnh HAI lần. Ảnh đã
+    // chép vào Documents ở bước 0 nên hàng đợi vẫn tải lại được (rà soát 24/11/2026).
     await _enqueueOfflineDeclaration(declaration);
     return declaration.copyWith(syncStatus: 'pending');
   }

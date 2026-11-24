@@ -200,14 +200,12 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       if (pos == null) return;
       _lastKnownPosition = pos;
 
-      final point = LocationPingPointModel.create(
-        lat: pos.latitude,
-        lng: pos.longitude,
-        accuracyM: pos.accuracy,
-        isMockLocation: pos.isMocked,
-        source: 'auto',
-        appVersion: AppConstants.appVersion,
-      );
+      // Mất GPS ⇒ [_getCurrentPosition] trả vị trí lưu sẵn: quá cũ thì bỏ nhịp này (null), không gửi như vị trí hiện tại.
+      final point = pointFromPosition(pos, source: 'auto');
+      if (point == null) {
+        debugPrint('[EmployeeTracking] Vị trí gần nhất đo lúc ${pos.timestamp} — quá cũ, bỏ nhịp gửi định kỳ');
+        return;
+      }
 
       // Đưa vào hàng đợi và gửi bù (kèm các điểm offline trước đó nếu có)
       // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
@@ -239,14 +237,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
 
       if (pos == null) return;
 
-      final point = LocationPingPointModel.create(
-        lat: pos.latitude,
-        lng: pos.longitude,
-        accuracyM: pos.accuracy,
-        isMockLocation: pos.isMocked,
-        source: 'app_exit',
-        appVersion: AppConstants.appVersion,
-      );
+      final point = pointFromPosition(pos, source: 'app_exit')!;
 
       // Đưa vào hàng đợi
       // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
@@ -404,15 +395,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     // =========================================================================
     // BƯỚC 2: POST /dms/locations/ping với source: "requested" và request_id
     // =========================================================================
-    final point = LocationPingPointModel.create(
-      lat: pos.latitude,
-      lng: pos.longitude,
-      accuracyM: pos.accuracy,
-      isMockLocation: pos.isMocked,
-      source: 'requested',
-      requestId: request.id,
-      appVersion: AppConstants.appVersion,
-    );
+    final point = pointFromPosition(pos, source: 'requested', requestId: request.id)!;
 
     try {
       final res = await _apiService.pingLocations([point]);
@@ -481,6 +464,39 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     } catch (_) {
       return false;
     }
+  }
+
+  /// Vị trí lưu sẵn cũ hơn mức này KHÔNG gửi như điểm định kỳ (`auto`) — nhịp gửi mặc định 3 phút, quá 5 phút là đã lỡ ít
+  /// nhất một nhịp đo được: gửi lại toạ độ cũ chỉ vẽ "đứng yên" giả trên lộ trình (rà soát 24/11/2026).
+  static const Duration maxStaleAutoPositionAge = Duration(minutes: 5);
+
+  /// Dựng điểm gửi từ [pos] với `client_time` = LÚC ĐO của vị trí (`pos.timestamp`), KHÔNG phải lúc gửi: mất GPS / tắt dịch
+  /// vụ vị trí thì [_getCurrentPosition] trả vị trí lưu sẵn — đóng dấu giờ hiện tại là báo người ở chỗ cũ vào giờ mới
+  /// (rà soát 24/11/2026). Điểm `auto` có vị trí cũ hơn [maxStaleAutoPositionAge] ⇒ `null` (bỏ nhịp). `app_exit` /
+  /// `requested` vẫn gửi, kèm đúng giờ đo để người xem biết là vị trí cũ.
+  @visibleForTesting
+  static LocationPingPointModel? pointFromPosition(
+    Position pos, {
+    required String source,
+    int? requestId,
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
+    // geolocator trả giờ UTC — đổi về giờ máy cho cùng dạng `client_time` cũ (không hậu tố Z); giờ đo lệch VỀ SAU đồng hồ
+    // máy (GPS / đồng hồ máy lệch nhau) thì lấy giờ máy, không gửi điểm "ở tương lai".
+    var measuredAt = pos.timestamp.toLocal();
+    if (measuredAt.isAfter(at)) measuredAt = at;
+    if (source == 'auto' && at.difference(measuredAt) > maxStaleAutoPositionAge) return null;
+    return LocationPingPointModel.create(
+      lat: pos.latitude,
+      lng: pos.longitude,
+      accuracyM: pos.accuracy,
+      isMockLocation: pos.isMocked,
+      source: source,
+      requestId: requestId,
+      appVersion: AppConstants.appVersion,
+      measuredAt: measuredAt,
+    );
   }
 
   /// Đo GPS hiện tại an toàn, tối ưu cho cả foreground và background
