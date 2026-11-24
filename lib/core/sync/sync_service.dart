@@ -1321,7 +1321,8 @@ class SyncService {
                   raw.contains('already checked out') ||
                   raw.contains('already closed'))) ||
           // Mã HTTP, KHÔNG dò chuỗi '404': câu lỗi mạng mang mã tra cứu hex ngẫu nhiên có thể chứa '404' (#24698 vòng 4).
-          (e is AppException && e.statusCode == 404)) {
+          // 404 trang của proxy (Traefik lúc nạp lại ingress) KHÔNG phải "lượt không còn" (rà soát 24/11/2026).
+          (e is AppException && e.statusCode == 404 && e.code != nonApiResponseCode)) {
         // Cùng nhánh check-out: ghi "đã huỷ" xuống kho lượt trong máy trước khi đóng mục, không chỉ state tuyến.
         try {
           await _ref.read(visitRepositoryProvider).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
@@ -1801,7 +1802,8 @@ class SyncService {
     var giveUp = false;
     if (AppDatabase.checkoutGatedEntities.contains(entry.entity) &&
         !parentPending &&
-        (statusCode == null || statusCode >= 500)) {
+        // Trang không phải của API (413 / 400 của proxy…) lặp lại cũng tính như 5xx ⇒ có trần, không giữ check-out mãi.
+        (statusCode == null || statusCode >= 500 || errorCode == nonApiResponseCode)) {
       final (payload, stop) = recordVisitMaterialFailure(
         entry.payload,
         serverError: statusCode != null || entry.entity != 'visit_material',

@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
-import 'package:drift/drift.dart' hide isNotNull;
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/database/database_provider.dart';
+import 'package:vthm_dms/core/errors/app_exceptions.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
@@ -273,6 +274,35 @@ void main() {
       expect(result.hasDeadErrors, isFalse);
       expect(await database.getDeadQueueEntries(), isEmpty);
       expect(await database.countPendingSync(), 1);
+    });
+
+    test('nonApiErrorCode: thân bytes / chuỗi là JSON của API ⇒ KHÔNG phải non-API; HTML / rỗng ⇒ non-API; 401 / 5xx ⇒ null', () {
+      expect(nonApiErrorCode(404, utf8.encode('{"success":false,"message":"Không tìm thấy"}')), isNull);
+      expect(nonApiErrorCode(403, '{"success":false}'), isNull);
+      expect(nonApiErrorCode(404, {'success': false}), isNull);
+      expect(nonApiErrorCode(404, '<html>404 page not found</html>'), nonApiResponseCode);
+      expect(nonApiErrorCode(413, utf8.encode('<html>413</html>')), nonApiResponseCode);
+      expect(nonApiErrorCode(401, '<html/>'), isNull);
+      expect(nonApiErrorCode(502, '<html/>'), isNull);
+    });
+
+    test('deletePendingVisitQueue(keepId) chừa đúng lệnh huỷ vừa xếp, xoá các dòng chờ khác của lượt', () async {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      Future<int> them(String op, {String? parent, String uuid = 'x'}) => database.enqueue(SyncQueueEntriesCompanion.insert(
+            entity: 'visit_photo',
+            op: op,
+            clientUuid: uuid,
+            parentUuid: Value(parent),
+            payload: '{}',
+            createdAt: nowMs,
+            createdElapsed: nowMs,
+            bootId: 'b',
+          ));
+      await them('upload', parent: 'v1', uuid: 'p1');
+      final cancelId = await them('cancel', parent: 'v1', uuid: 'c1');
+      await database.deletePendingVisitQueue('v1', keepId: cancelId);
+      final rows = await database.select(database.syncQueueEntries).get();
+      expect(rows.map((r) => r.id), [cancelId]);
     });
 
     test('400 Bad Request error is classified as permanent dead -> NO RETRY', () async {

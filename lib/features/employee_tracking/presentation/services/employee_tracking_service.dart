@@ -210,6 +210,8 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       );
 
       // Đưa vào hàng đợi và gửi bù (kèm các điểm offline trước đó nếu có)
+      // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
+      if (_isDisposed) return;
       await _storage.enqueuePoint(point);
       await _flushQueue();
     } catch (e) {
@@ -247,6 +249,8 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       );
 
       // Đưa vào hàng đợi
+      // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
+      if (_isDisposed) return;
       await _storage.enqueuePoint(point);
 
       // Cố gắng gửi ngay trong vòng đời còn lại
@@ -423,6 +427,8 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     } catch (e) {
       debugPrint('[EmployeeTracking] Lỗi gửi trả lời requested ping: $e');
       // Nếu mất mạng, lưu vào queue kèm request_id
+      // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
+      if (_isDisposed) return;
       await _storage.enqueuePoint(point);
     }
   }

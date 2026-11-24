@@ -30,6 +30,7 @@ import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../customer/presentation/viewmodels/rejected_read_status_notifier.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
 import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
+import '../../../employee_tracking/data/datasources/employee_tracking_local_storage.dart';
 import '../states/auth_state.dart';
 
 final authApiServiceProvider = Provider<AuthApiService>((ref) {
@@ -143,7 +144,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
             );
             return false;
           }
-          if (e.statusCode == 403 || e.code == 'DMS_APP_FORBIDDEN') {
+          // 403 trang của WAF / proxy (không phải JSON của API) KHÔNG phải bị thu quyền app — đừng đăng xuất (rà soát 24/11).
+          if ((e.statusCode == 403 && e.code != nonApiResponseCode) || e.code == 'DMS_APP_FORBIDDEN') {
             await logout();
             state = state.copyWith(
               status: AuthStatus.error,
@@ -283,6 +285,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
       if (await findOpenVisit(ref!.read) != null) return false;
       // Chưa có chủ hàng đợi (không đặt được lúc đăng nhập) ⇒ không có dòng nào "của mình" để dọn — đừng chặn đăng xuất.
       if (db.ownerUserId != null && !await db.clearUserData()) return false;
+      // TỰ đăng xuất (máy có thể trao người khác): toạ độ chưa gửi của chính mình không nằm lại trên máy (dữ liệu vị trí —
+      // Luật 91/2025). Đăng xuất cưỡng bức giữ lại: đúng người đăng nhập lại là gửi tiếp.
+      await EmployeeTrackingLocalStorage().clearQueue();
     }
 
     // Nhả máy push (POST /notification/device-token/release) trước khi xóa access token (§3.2)

@@ -3724,7 +3724,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
             rawMsg.contains('đã hủy') ||
             rawMsg.contains('already cancelled') ||
             // Mã HTTP, KHÔNG dò chuỗi '404' (mã tra cứu lỗi mạng hex ngẫu nhiên có thể chứa nó — #24698 vòng 4).
-            (e is AppException && e.statusCode == 404);
+            (e is AppException && e.statusCode == 404 && e.code != nonApiResponseCode);
 
         // Trường hợp lượt đã check-out trên máy chủ (lỗi 422: lượt viếng thăm này đã check out rồi, không hủy được nữa)
         final isAlreadyCheckedOut =
@@ -3788,11 +3788,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
           if (ref != null) {
             try {
               final db = ref!.read(appDatabaseProvider);
-              // Xoá các queue upload ảnh pending của lượt đã huỷ
-              await db.deletePendingVisitQueue(clientUuid);
-
+              // Xếp lệnh huỷ TRƯỚC rồi mới xoá ảnh / phiếu chờ của lượt (chừa chính lệnh huỷ): xoá trước mà xếp hỏng thì lượt
+              // vẫn mở trên server mà dữ liệu chờ gửi đã mất (rà soát 24/11/2026).
               final nowMs = DateTime.now().millisecondsSinceEpoch;
-              await db.enqueue(
+              final cancelId = await db.enqueue(
                 SyncQueueEntriesCompanion(
                   entity: const drift.Value('visit'),
                   op: const drift.Value('cancel'),
@@ -3808,6 +3807,7 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
                   attempts: const drift.Value(0),
                 ),
               );
+              await db.deletePendingVisitQueue(clientUuid, keepId: cancelId);
             } catch (err) {
               // Không ghi được lệnh huỷ ⇒ KHÔNG ghi "đã huỷ" trên máy: server không bao giờ nhận lệnh huỷ, lượt treo mở
               // (rà soát 24/11/2026). Báo để người dùng thử lại.

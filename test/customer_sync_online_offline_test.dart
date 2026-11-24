@@ -106,6 +106,8 @@ void main() {
   late SyncService syncService;
 
   setUp(() {
+    // Lượt tải danh sách nền (sau đồng bộ) đọc SharedPreferences — thiếu bản giả thì lỗi chập chờn tuỳ thời điểm.
+    SharedPreferences.setMockInitialValues({});
     db = AppDatabase(NativeDatabase.memory(), 1);
     adapter = MockSyncDioAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = adapter;

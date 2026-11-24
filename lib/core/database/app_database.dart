@@ -1466,8 +1466,11 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// [keepVisitCreate]: GIỮ dòng tạo lượt (đang gửi dở, chưa biết đã lên server chưa) — lệnh huỷ xếp sau sẽ chờ nó có
   /// mã server rồi huỷ. Khi đó coi như lượt đã lên server: phiếu đã nộp cũng giữ.
-  Future<int> deletePendingVisitQueue(String clientUuid, {bool keepVisitCreate = false}) async {
-    final rows = await _deleteRows(await _pendingVisitRows(clientUuid, keepVisitCreate: keepVisitCreate));
+  Future<int> deletePendingVisitQueue(String clientUuid, {bool keepVisitCreate = false, int? keepId}) async {
+    final rows = await _deleteRows([
+      for (final r in await _pendingVisitRows(clientUuid, keepVisitCreate: keepVisitCreate))
+        if (r.id != keepId) r,
+    ]);
     await _deleteRowFiles(rows, const []);
     return rows.length;
   }

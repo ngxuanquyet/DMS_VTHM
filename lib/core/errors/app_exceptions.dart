@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Mã lỗi server khi mở lượt mới mà còn lượt cũ chưa check-out (`OpenVisitException::CODE`).
 const String openVisitErrorCode = 'DMS_VISIT_STILL_OPEN';
 
@@ -131,10 +133,15 @@ bool isPermanentRejection(Object e) {
 const String nonApiResponseCode = 'NON_API_RESPONSE';
 
 /// [statusCode] 4xx (trừ 401) với thân [data] không phải JSON của API ⇒ [nonApiResponseCode]; ngoài ra `null`.
-String? nonApiErrorCode(int? statusCode, Object? data) =>
-    statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 401 && data is! Map
-        ? nonApiResponseCode
-        : null;
+/// Thân dạng bytes / chuỗi (lời gọi `ResponseType.bytes` / `plain`) mà giải ra JSON object vẫn là lời của API.
+String? nonApiErrorCode(int? statusCode, Object? data) {
+  if (statusCode == null || statusCode < 400 || statusCode >= 500 || statusCode == 401 || data is Map) return null;
+  try {
+    final text = data is List<int> ? utf8.decode(data) : (data is String ? data : null);
+    if (text != null && jsonDecode(text) is Map) return null;
+  } catch (_) {}
+  return nonApiResponseCode;
+}
 
 /// Máy chủ trả lỗi TẠM (cổng / k3s đang đổi bản: 502/503/504, 408, 429): gửi lại cùng client_uuid là đúng (server khử
 /// trùng) ⇒ đường gửi trực tuyến xếp hàng như mất mạng. 500 KHÔNG tính: thường là lỗi lặp lại theo dữ liệu — xếp hàng thì
