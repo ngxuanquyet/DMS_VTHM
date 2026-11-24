@@ -122,8 +122,19 @@ bool isPermanentRejection(Object e) {
   final c = e.statusCode;
   if (c == null || c < 400 || c >= 500) return false;
   if (c == 401 || c == 408 || c == 409 || c == 429) return false;
-  return e.code != 'DMS_APP_FORBIDDEN';
+  return e.code != 'DMS_APP_FORBIDDEN' && e.code != nonApiResponseCode;
 }
+
+/// Mã gắn cho phản hồi 4xx mà thân KHÔNG phải JSON của API (trang HTML của WAF / proxy, Traefik 404 lúc nạp lại ingress khi
+/// deploy…) — không phải lời từ chối của nghiệp vụ ⇒ lỗi TẠM, thử lại; coi là vĩnh viễn thì cả lô hàng đợi chết cùng lúc,
+/// check-in / check-out / chấm công mất hẳn (rà soát 24/11/2026).
+const String nonApiResponseCode = 'NON_API_RESPONSE';
+
+/// [statusCode] 4xx (trừ 401) với thân [data] không phải JSON của API ⇒ [nonApiResponseCode]; ngoài ra `null`.
+String? nonApiErrorCode(int? statusCode, Object? data) =>
+    statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 401 && data is! Map
+        ? nonApiResponseCode
+        : null;
 
 /// Máy chủ trả lỗi TẠM (cổng / k3s đang đổi bản: 502/503/504, 408, 429): gửi lại cùng client_uuid là đúng (server khử
 /// trùng) ⇒ đường gửi trực tuyến xếp hàng như mất mạng. 500 KHÔNG tính: thường là lỗi lặp lại theo dữ liệu — xếp hàng thì

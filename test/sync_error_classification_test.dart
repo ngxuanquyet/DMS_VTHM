@@ -37,7 +37,7 @@ class ConfigurableDioAdapter implements HttpClientAdapter {
         response: Response(
           requestOptions: options,
           statusCode: statusCode,
-          data: jsonDecode(responseBody),
+          data: _decode(responseBody),
         ),
         type: DioExceptionType.badResponse,
       );
@@ -54,6 +54,15 @@ class ConfigurableDioAdapter implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+
+  /// Thân không phải JSON (trang HTML của WAF / proxy) ⇒ giữ chuỗi thô như Dio.
+  static Object? _decode(String body) {
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return body;
+    }
+  }
 }
 
 void main() {
@@ -241,6 +250,29 @@ void main() {
       final subsequentResult = await syncService.syncQueue(force: true);
       expect(subsequentResult.totalEntries, 0);
       expect(adapter.callCount, 1); // exactly 1 time, never retried!
+    });
+
+    test('403 kèm trang HTML của WAF (không phải JSON của API) ⇒ lỗi TẠM, giữ pending, không chết (rà soát 24/11/2026)', () async {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      await database.enqueue(
+        SyncQueueEntriesCompanion.insert(
+          entity: 'customer',
+          op: 'create',
+          clientUuid: 'uuid-waf-403',
+          payload: '{"name": "Điểm bán WAF"}',
+          createdAt: nowMs,
+          createdElapsed: nowMs,
+          bootId: 'test_boot',
+        ),
+      );
+      adapter.statusCode = 403;
+      adapter.responseBody = '<html><body>Attention Required! | Cloudflare</body></html>';
+
+      final result = await syncService.syncQueue(force: true);
+
+      expect(result.hasDeadErrors, isFalse);
+      expect(await database.getDeadQueueEntries(), isEmpty);
+      expect(await database.countPendingSync(), 1);
     });
 
     test('400 Bad Request error is classified as permanent dead -> NO RETRY', () async {

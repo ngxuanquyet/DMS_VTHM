@@ -447,7 +447,7 @@ class ApiClient {
       final statusCode = error.response?.statusCode;
       final data = error.response?.data;
       final rawCode = data is Map ? data['code']?.toString() : null;
-      final errCode = rawCode ?? _resolveDefaultCode(statusCode);
+      final errCode = rawCode ?? nonApiErrorCode(statusCode, data) ?? _resolveDefaultCode(statusCode);
       final errData = data is Map && data['data'] is Map ? Map<String, dynamic>.from(data['data'] as Map) : null;
       String? message;
       if (data is Map &&

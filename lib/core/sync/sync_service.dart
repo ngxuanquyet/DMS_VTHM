@@ -1725,7 +1725,7 @@ class SyncService {
     final errorMsg = _extractDioErrorMessage(dioErr);
     final data = dioErr.response?.data;
     return await _handleErrorByStatus(entry, statusCode, errorMsg, currentDeadErrors,
-        errorCode: data is Map ? data['code']?.toString() : null,
+        errorCode: data is Map ? data['code']?.toString() : nonApiErrorCode(statusCode, data),
         errorData: data is Map && data['data'] is Map ? Map<String, dynamic>.from(data['data'] as Map) : null);
   }
 
@@ -1850,6 +1850,7 @@ class SyncService {
       }
     }
     final permanentClientError = !stillOpen &&
+        errorCode != nonApiResponseCode &&
         statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 429;
     if (giveUp || permanentClientError) {
       debugPrint('[SyncService] [4xx - LỖI HỎNG VĨNH VIỄN] Mục #${entry.id} ($statusCode): $errorMsg -> Chuyển "dead", KHÔNG RETRY.');
