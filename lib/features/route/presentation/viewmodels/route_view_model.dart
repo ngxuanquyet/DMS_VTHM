@@ -2312,7 +2312,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
               ),
             );
           } catch (err) {
+            // Không ghi được dòng TẠO lượt (SQLite khoá / đầy bộ nhớ) ⇒ KHÔNG tạo lượt trên máy: lượt không bao giờ lên server,
+            // ảnh / phiếu / check-out sau đó chết vì "mục cha không còn" (rà soát 24/11/2026). Báo để người dùng thử lại.
             debugPrint('[RouteViewModel] Lỗi enqueue offline checkin: $err');
+            const msg = 'Không lưu được lượt check-in trên máy (bộ nhớ máy đầy hoặc đang bận). Vui lòng thử lại.';
+            state = state.copyWith(errorMessage: msg);
+            return msg;
           }
         }
 
@@ -3214,6 +3219,20 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     if (state.visitId == 0) {
       return (false, 'Chưa có lượt viếng thăm hợp lệ');
     }
+    // Check-in NGOẠI TUYẾN đã bị máy chủ từ chối (dòng tạo lượt "dead") ⇒ trên server KHÔNG có lượt nào: check-out ngoại tuyến
+    // "thành công" là lượt ma — ảnh / phiếu / check-out đều chết sau đó (rà soát 24/11/2026). Báo đúng lý do, dẫn sang huỷ lượt.
+    if (state.visitId < 0 && ref != null && _sessionClientUuid.isNotEmpty) {
+      try {
+        final tao = await ref!.read(appDatabaseProvider).findVisitQueueEntry(_sessionClientUuid);
+        if (tao != null && tao.op == 'create' && tao.state == 'dead') {
+          final lyDo = (tao.lastError ?? '').trim();
+          return (
+            false,
+            'Check-in của lượt này đã bị máy chủ từ chối${lyDo.isEmpty ? '' : ': $lyDo'}. Hãy huỷ lượt này rồi check-in lại.',
+          );
+        }
+      } catch (_) {}
+    }
 
     MobileRules? mobileRules = ref?.read(mobileRulesProvider);
     try {
@@ -3790,7 +3809,10 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
                 ),
               );
             } catch (err) {
+              // Không ghi được lệnh huỷ ⇒ KHÔNG ghi "đã huỷ" trên máy: server không bao giờ nhận lệnh huỷ, lượt treo mở
+              // (rà soát 24/11/2026). Báo để người dùng thử lại.
               debugPrint('[CheckInViewModel] Lỗi enqueue offline cancel: $err');
+              return (false, 'Không lưu được lệnh huỷ lượt trên máy (bộ nhớ máy đầy hoặc đang bận). Vui lòng thử lại.');
             }
 
             try {
