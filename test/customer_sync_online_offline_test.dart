@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vthm_dms/core/database/app_database.dart';
 import 'package:vthm_dms/core/database/database_provider.dart';
+import 'package:vthm_dms/core/errors/app_exceptions.dart';
 import 'package:vthm_dms/core/network/api_client.dart';
 import 'package:vthm_dms/core/network/connectivity_provider.dart';
 import 'package:vthm_dms/core/sync/sync_service.dart';
@@ -213,6 +214,26 @@ void main() {
     expect(localList.first.syncStatus, 'synced');
   });
 
+  // Rà soát 24/11/2026 (A8): 500 xếp hàng ⇒ thử lại mãi + dòng mang dấu "có thể đã tới" không xoá được ⇒ kẹt vĩnh viễn.
+  for (final (code, xepHang) in [(500, false), (401, true)]) {
+    test('createCustomer online gặp $code ⇒ ${xepHang ? 'xếp hàng (phiên — đăng nhập lại gửi được)' : 'báo NGAY, không xếp hàng'}',
+        () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://api-app.vthmgroup.vn'))..httpClientAdapter = _StatusDioAdapter(code);
+      final api = ApiClient(dio);
+      final r = CustomerRepositoryImpl(CustomerApiService(api), CustomerLocalDataSource(db), syncService, null, () => true);
+      final input = {'name': 'Cửa hàng $code', 'region_id': 12, 'route_ids': [5], 'phone': '0988888888', 'address': 'HN'};
+      if (xepHang) {
+        await r.createCustomer(input);
+        final rows = await db.select(db.syncQueueEntries).get();
+        expect(rows, hasLength(1));
+        expect(jsonDecode(rows.single.payload)[queueMaybeOnServerKey], isNull, reason: '401: server chắc chắn chưa ghi');
+      } else {
+        await expectLater(r.createCustomer(input), throwsA(isA<AppException>()));
+        expect(await db.countPendingSync(), 0);
+      }
+    });
+  }
+
   test('getCustomers offline seamlessly returns cached SQLite data without errors', () async {
     final localDataSource = CustomerLocalDataSource(db);
     final apiService = CustomerApiService(ApiClient(Dio()));
@@ -375,3 +396,26 @@ class MockFailingDioAdapter implements HttpClientAdapter {
   @override
   void close({bool force = false}) {}
 }
+
+/// Trả [statusCode] + JSON của API cho mọi lời gọi.
+class _StatusDioAdapter implements HttpClientAdapter {
+  final int statusCode;
+  _StatusDioAdapter(this.statusCode);
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
+    throw DioException(
+      requestOptions: options,
+      type: DioExceptionType.badResponse,
+      response: Response(
+        requestOptions: options,
+        statusCode: statusCode,
+        data: {'success': false, 'message': 'Lỗi $statusCode'},
+      ),
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+

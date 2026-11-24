@@ -769,9 +769,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
         // 🔴 Theo spec 30/09 §7: Lỗi 4xx từ chối hẳn (validate thất bại) — TUYỆT ĐỐI không fallback sang ghi offline để
         // tránh tạo rác và làm tắc hàng đợi SyncQueue! Cùng luật phân loại với hàng đợi ([isPermanentRejection]).
         if (isPermanentRejection(e)) rethrow;
+        // Chỉ lỗi MẠNG / tạm (502–504, 408, 429, trang không phải của API) và 401 (phiên — đăng nhập lại là gửi được) mới xếp
+        // hàng. 500 (lỗi theo dữ liệu, lặp lại) và ngoại lệ lập trình báo NGAY: xếp hàng thì thử lại mãi, dòng mang dấu "có thể
+        // đã tới" không xoá được ⇒ điểm bán kẹt "chờ đồng bộ" vĩnh viễn (rà soát 24/11/2026). Lưu lại an toàn: cùng client_uuid.
+        final phien = e is AppException && e.statusCode == 401;
+        if (!phien && !_isNetworkError(e) && !(e is AppException && e.code == nonApiResponseCode)) rethrow;
         // Lỗi lúc GỬI tạo (không phải lúc chuẩn bị ảnh) mà không chắc chưa ra khỏi máy ⇒ server có thể đã ghi (lần sửa sau
-        // không gộp vào dòng tạo).
-        if (posted && !(e is NetworkException && !e.mayHaveReachedServer)) data[queueMaybeOnServerKey] = true;
+        // không gộp vào dòng tạo). 401: server chắc chắn chưa ghi.
+        if (posted && !phien && !(e is NetworkException && !e.mayHaveReachedServer)) data[queueMaybeOnServerKey] = true;
       }
     }
 
