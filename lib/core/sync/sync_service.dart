@@ -1147,18 +1147,11 @@ class SyncService {
           customerId: v.customerId <= 0 && resolvedCustomerId > 0 ? resolvedCustomerId : null,
         );
     try {
-      final visitRepo = _ref.read(visitRepositoryProvider);
-      final all = await visitRepo.getAllLocalVisits();
-      final idx = all.indexWhere((v) => v.clientUuid == entry.clientUuid);
-      if (idx >= 0) {
-        final updated = withServerIds(all[idx]);
-        await visitRepo.saveLocalVisit(updated);
-      }
-      final active = await visitRepo.getActiveVisit();
-      if (active != null && active.clientUuid == entry.clientUuid) {
-        final updatedActive = withServerIds(active);
-        await visitRepo.saveActiveVisit(updatedActive);
-
+      final store = _visitStoreOf(entry);
+      await store.updateVisit((v) => v.clientUuid == entry.clientUuid, withServerIds);
+      final updatedActive = await store.updateActive((v) => v.clientUuid == entry.clientUuid, withServerIds);
+      // Màn tuyến / check-in là của người ĐANG đăng nhập — lượt của người trước (đổi tài khoản giữa lúc gửi) không đổ vào.
+      if (updatedActive != null && _isCurrentOwner(entry)) {
         try {
           _ref.read(routeViewModelProvider.notifier).setActiveVisit(updatedActive);
         } catch (_) {}
@@ -1345,12 +1338,14 @@ class SyncService {
         // Ghi xuống kho lượt trong máy TRƯỚC khi đóng mục (app bị kill giữa chừng thì mục còn đó, lần sau ghi lại) — không
         // chỉ state tuyến: mở lại app thì lượt vẫn phải là "đã huỷ".
         try {
-          await _ref.read(visitRepositoryProvider).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+          await _visitStoreOf(entry).markCancelled(visitId, clientUuid: entry.parentUuid);
         } catch (_) {}
         await _db.markDone(entry.id);
-        try {
-          _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
-        } catch (_) {}
+        if (_isCurrentOwner(entry)) {
+          try {
+            _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+          } catch (_) {}
+        }
         debugPrint('[SyncService] Lượt #$visitId đã bị huỷ trên server, bỏ gói check-out.');
         return;
       }
@@ -1394,25 +1389,16 @@ class SyncService {
 
       // Cập nhật trạng thái đã huỷ trong cache cục bộ
       try {
-        final visitRepo = _ref.read(visitRepositoryProvider);
-        await _clearActiveVisitIf(visitId, entry.parentUuid);
-        final all = await visitRepo.getAllLocalVisits();
-        final idx = all.indexWhere((v) =>
-            v.id == visitId || (entry.parentUuid != null && v.clientUuid == entry.parentUuid));
-        if (idx >= 0) {
-          final updated = all[idx].copyWith(
-            cancelledAt: DateTime.now(),
-            cancelledAtRaw: DateTime.now().toIso8601String(),
-          );
-          await visitRepo.saveLocalVisit(updated);
-        }
+        await _visitStoreOf(entry).markCancelled(visitId, clientUuid: entry.parentUuid);
       } catch (err) {
         debugPrint('[SyncService] Lỗi cập nhật local visit sau khi huỷ: $err');
       }
 
-      try {
-        _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
-      } catch (_) {}
+      if (_isCurrentOwner(entry)) {
+        try {
+          _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+        } catch (_) {}
+      }
 
       debugPrint('[SyncService] Đồng bộ Huỷ lượt thành công cho lượt #$visitId');
     } catch (e) {
@@ -1441,15 +1427,14 @@ class SyncService {
           (e is AppException && e.statusCode == 404 && e.code != nonApiResponseCode)) {
         // Cùng nhánh check-out: ghi "đã huỷ" xuống kho lượt trong máy trước khi đóng mục, không chỉ state tuyến.
         try {
-          await _ref.read(visitRepositoryProvider).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+          await _visitStoreOf(entry).markCancelled(visitId, clientUuid: entry.parentUuid);
         } catch (_) {}
         await _db.markDone(entry.id);
-        try {
-          await _clearActiveVisitIf(visitId, entry.parentUuid);
-        } catch (_) {}
-        try {
-          _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
-        } catch (_) {}
+        if (_isCurrentOwner(entry)) {
+          try {
+            _ref.read(routeViewModelProvider.notifier).markVisitCancelledLocally(visitId, clientUuid: entry.parentUuid);
+          } catch (_) {}
+        }
         debugPrint('[SyncService] Lượt #$visitId đã được đóng/huỷ trước đó trên server, đánh dấu hoàn tất.');
         return;
       }
@@ -1457,16 +1442,13 @@ class SyncService {
     }
   }
 
-  /// Bỏ bản lưu "lượt đang mở" CHỈ khi nó là lượt vừa huỷ ([visitId] / [visitClientUuid]). Lệnh huỷ lượt A thường tới
-  /// server SAU khi nhân viên đã check-in lượt B — xoá vô điều kiện là mất lượt B trên máy (#24698 vòng 2).
-  Future<void> _clearActiveVisitIf(int visitId, String? visitClientUuid) async {
-    final visitRepo = _ref.read(visitRepositoryProvider);
-    final active = await visitRepo.getActiveVisit();
-    if (active == null) return;
-    if (active.id == visitId || (visitClientUuid != null && active.clientUuid == visitClientUuid)) {
-      await visitRepo.clearActiveVisit();
-    }
-  }
+  /// Bộ đệm lượt trong máy của CHỦ dòng hàng đợi [entry] (#24728): đổi tài khoản giữa lúc gửi thì kết quả vẫn ghi vào ngăn
+  /// của người bấm, không rơi vào bộ đệm người mới. Dòng đời cũ không ghi chủ ⇒ chủ hiện tại. Lệnh huỷ lượt A tới server
+  /// SAU khi nhân viên đã check-in lượt B ⇒ [VisitLocalStore.markCancelled] chỉ bỏ "lượt đang mở" khi CHÍNH là lượt A.
+  static VisitLocalStore _visitStoreOf(SyncQueueEntry entry) => VisitLocalStore(entry.ownerUserId);
+
+  /// Dòng [entry] thuộc người đang đăng nhập (hoặc dòng đời cũ không ghi chủ) — mới được đổ vào state màn hình.
+  bool _isCurrentOwner(SyncQueueEntry entry) => entry.ownerUserId == null || entry.ownerUserId == _db.ownerUserId;
 
   /// Tải một ảnh lên [path] (kho ảnh tạm của biểu mẫu / khai báo vị trí), trả token. KHÔNG nuốt lỗi: lỗi mạng/5xx ném
   /// ra để cả mục thử lại — nuốt thì phiếu đi lên thiếu ảnh (hoặc mang đường dẫn trên máy ⇒ 422 ⇒ mất phiếu).

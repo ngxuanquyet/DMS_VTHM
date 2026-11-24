@@ -49,6 +49,19 @@ String? attendanceHistoryCacheKey(SharedPreferences prefs) {
 /// Tiền tố khoá lịch sử chấm công theo tài khoản — đăng xuất xoá theo tiền tố này.
 const String attendanceHistoryCachePrefix = 'dms_attendance_history_cache_v2';
 
+/// Khoá bộ đệm cấu hình chấm công (địa điểm, luật ảnh — lịch ca thêm hậu tố `_shifts`) của tài khoản đang đăng nhập;
+/// `null` khi chưa rõ tài khoản (đừng đọc/ghi). Bản cũ chưa rõ tài khoản thì rơi về khoá chung [attendanceConfigCachePrefix]
+/// ⇒ người sau trên máy dùng chung đọc địa điểm / lịch ca của người trước (#24456).
+String? attendanceConfigCacheKey(SharedPreferences prefs) {
+  final account = cacheAccountKey(prefs);
+
+  return account == null ? null : '${attendanceConfigCachePrefix}_$account';
+}
+
+/// Tiền tố khoá cấu hình chấm công theo tài khoản — đăng xuất xoá theo tiền tố `dms_attendance_config_cache`; khoá chung
+/// kiểu cũ (đúng tên tiền tố, không mã tài khoản, kể cả bản `_shifts`) bị [removeLegacySharedCaches] xoá.
+const String attendanceConfigCachePrefix = 'dms_attendance_config_cache_v2';
+
 /// Khoá lịch sử khai báo vị trí của tài khoản đang đăng nhập; `null` khi chưa rõ tài khoản (đừng đọc/ghi).
 ///
 /// Bản cũ dùng chung khoá `pos_declarations_local_list` cho mọi tài khoản và đăng xuất không xoá ⇒ người đăng nhập sau
@@ -76,6 +89,9 @@ Future<void> removeLegacySharedCaches(SharedPreferences prefs) async {
     // Chấm công: lịch sử dùng chung mọi tài khoản + phiên "đang làm việc" và lịch sử của bản cũ (không kiểm ngày ⇒
     // Trang chủ hiện giờ vào cũ mãi mãi).
     attendanceHistoryCachePrefix,
+    // Cấu hình + lịch ca chấm công rơi về khoá chung khi chưa rõ tài khoản (trước 24/11/2026, #24456).
+    attendanceConfigCachePrefix,
+    '${attendanceConfigCachePrefix}_shifts',
     'att_mobile_history_cache',
     'dms_local_attendance_session_v1',
     'dms_local_attendance_history_v1',

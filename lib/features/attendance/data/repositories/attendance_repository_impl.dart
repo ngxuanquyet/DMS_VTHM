@@ -54,8 +54,6 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   final AppDatabase? database;
   final Ref? ref;
 
-  static const String _configCacheKey = 'dms_attendance_config_cache_v2';
-
   AttendanceDetailEntity? _cachedEntity;
 
   AttendanceRepositoryImpl(
@@ -66,18 +64,11 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
 
   bool get _isOnline => ref?.read(connectivityProvider).isOnline ?? true;
 
-  String _getUserConfigCacheKey(SharedPreferences prefs) {
-    try {
-      final userJson = prefs.getString('vthm_user_data');
-      if (userJson != null) {
-        final map = jsonDecode(userJson) as Map<String, dynamic>;
-        final uid = map['id'] ?? map['username'];
-        if (uid != null) {
-          return '${_configCacheKey}_$uid';
-        }
-      }
-    } catch (_) {}
-    return _configCacheKey;
+  /// Ghi bộ đệm [key] (của tài khoản [account] chốt TRƯỚC `await` mạng) — chỉ khi đó vẫn là người đang đăng nhập: đổi người /
+  /// đăng xuất trong lúc chờ thì kết quả là của người cũ, ghi vào là người sau đọc được ([cacheAccountKey]).
+  static Future<void> _cacheIfStill(SharedPreferences prefs, String? account, String? key, String value) async {
+    if (key == null || account == null || cacheAccountKey(prefs) != account) return;
+    await prefs.setString(key, value);
   }
 
   // ===========================================================================
@@ -87,12 +78,14 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
   @override
   Future<AttendanceConfigEntity> getConfig({double? lat, double? lng}) async {
     final prefs = await SharedPreferences.getInstance();
-    final userCacheKey = _getUserConfigCacheKey(prefs);
+    // Chốt tài khoản TRƯỚC await mạng; chưa rõ tài khoản ⇒ không đọc/ghi bộ đệm (#24456).
+    final account = cacheAccountKey(prefs);
+    final userCacheKey = attendanceConfigCacheKey(prefs);
 
     if (_isOnline) {
       try {
         final model = await _apiService.getConfig(lat: lat, lng: lng);
-        await prefs.setString(userCacheKey, jsonEncode(model.toJson()));
+        await _cacheIfStill(prefs, account, userCacheKey, jsonEncode(model.toJson()));
         return model.toEntity();
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi tải config từ server: $e');
@@ -109,7 +102,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     }
 
     // Đọc từ cache nếu mất mạng hoặc lỗi server 5xx (tách theo từng tài khoản §3.2 & §5)
-    final cachedJson = prefs.getString(userCacheKey);
+    final cachedJson = userCacheKey == null ? null : prefs.getString(userCacheKey);
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final map = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -693,13 +686,15 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     int days = 7,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final userCacheKey = '${_getUserConfigCacheKey(prefs)}_shifts';
+    final account = cacheAccountKey(prefs);
+    final configKey = attendanceConfigCacheKey(prefs);
+    final userCacheKey = configKey == null ? null : '${configKey}_shifts';
 
     if (_isOnline) {
       try {
         final models = await _apiService.getMobileShifts(from: from, days: days);
         final jsonList = models.map((m) => m.toJson()).toList();
-        await prefs.setString(userCacheKey, jsonEncode(jsonList));
+        await _cacheIfStill(prefs, account, userCacheKey, jsonEncode(jsonList));
         return models.map((m) => m.toEntity()).toList();
       } catch (e) {
         debugPrint('[AttendanceRepo] Lỗi tải lịch ca làm việc ($from, $days ngày): $e');
@@ -707,7 +702,7 @@ class AttendanceRepositoryImpl implements AttendanceRepository {
     }
 
     // Đọc từ bộ nhớ cache cục bộ nếu mất mạng hoặc lỗi server
-    final cachedJson = prefs.getString(userCacheKey);
+    final cachedJson = userCacheKey == null ? null : prefs.getString(userCacheKey);
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final rawList = jsonDecode(cachedJson) as List<dynamic>;

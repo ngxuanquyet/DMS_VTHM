@@ -10,6 +10,7 @@ import '../database/app_database.dart';
 import '../utils/account_key.dart';
 
 import '../../features/position_declaration/domain/entities/position_declaration_entity.dart';
+import '../../features/visit/data/datasources/visit_local_store.dart';
 import '../../features/visit/domain/entities/visit_entity.dart';
 
 /// Dọn LỊCH SỬ lưu trong máy (SharedPreferences) quá [keep] — chủ hệ thống chốt 28/10/2026 giữ 60 ngày; dữ liệu cũ
@@ -21,7 +22,6 @@ class LocalHistoryRetention {
 
   static const keep = Duration(days: 60);
 
-  static const _visitsKey = 'dms_visits_local_cache_v2'; // visit_repository_impl
   static const _throttlePrefix = 'notify_throttle_'; // app_notification_service
   static const _travelLegsPrefix = 'dms_travel_legs_cache_v1_'; // travel_repository_impl: <prefix><userId>_<yyyy-MM-dd>
   static const _formsPrefix = 'dms_market_forms_'; // forms_repository_impl: <prefix><account>_<kind>_<customerId>
@@ -87,17 +87,46 @@ class LocalHistoryRetention {
     }
   }
 
+  /// Lịch sử lượt của chủ hiện tại VÀ ngăn đã cất của mọi tài khoản khác từng đăng nhập máy này (`<khoá>_u<id>` —
+  /// [VisitLocalStore.switchOwner]): người không quay lại máy thì ngăn của họ cũng không được giữ toạ độ quá hạn (#24728).
   static Future<void> _pruneVisits(SharedPreferences prefs, DateTime cutoff) async {
-    final raw = prefs.getString(_visitsKey);
-    if (raw == null || raw.isEmpty) return;
-    final all = (jsonDecode(raw) as List<dynamic>).whereType<Map<String, dynamic>>().map(VisitEntity.fromJson).toList();
-    final kept = all.where((v) {
-      if (v.isOpen || v.id <= 0) return true; // còn mở / chưa có id máy chủ = chưa đồng bộ
+    bool overdue(VisitEntity v) {
       final at = v.checkinAt ?? DateTime.tryParse(v.visitDate ?? '');
-      return at == null || !at.isBefore(cutoff);
-    }).toList();
-    if (kept.length == all.length) return;
-    await prefs.setString(_visitsKey, jsonEncode(kept.map((e) => e.toJson()).toList()));
+      return at != null && at.isBefore(cutoff);
+    }
+
+    // Chủ hiện tại: giữ lượt còn mở (đang làm) và lượt chưa có mã server (chưa đồng bộ). Ngăn đã cất của người khác: chỉ giữ
+    // lượt chưa có mã (hàng đợi của họ còn nó) — lượt «còn mở» đã lên server mà quá hạn thì cron đầu ngày đã đóng; giữ là
+    // giữ toạ độ mãi (cùng luật ngăn lượt đang mở đã cất bên dưới).
+    bool keep(VisitEntity v, {required bool stash}) =>
+        v.id <= 0 || (!stash && v.isOpen) || !overdue(v);
+
+    const list = VisitLocalStore.listKey;
+    for (final key in prefs.getKeys().where((k) => k == list || k.startsWith('${list}_u')).toList()) {
+      // Một ngăn hỏng (bị tắt giữa lúc ghi) không được chặn dọn các ngăn khác.
+      try {
+        final raw = prefs.getString(key);
+        if (raw == null || raw.isEmpty) continue;
+        final all = (jsonDecode(raw) as List<dynamic>).whereType<Map<String, dynamic>>().map(VisitEntity.fromJson).toList();
+        final kept = all.where((v) => keep(v, stash: key != list)).toList();
+        if (kept.length == all.length) continue;
+        if (kept.isEmpty && key != list) {
+          await prefs.remove(key);
+        } else {
+          await prefs.setString(key, jsonEncode(kept.map((e) => e.toJson()).toList()));
+        }
+      } catch (e) {
+        debugPrint('[LocalHistoryRetention] Bỏ qua ngăn lượt hỏng $key: $e');
+      }
+    }
+    // Lượt đang mở đã CẤT của người khác: đã lên server mà check-in quá hạn ⇒ bỏ (lượt chưa gửi giữ — hàng đợi còn nó).
+    const active = VisitLocalStore.activeKey;
+    for (final key in prefs.getKeys().where((k) => k.startsWith('${active}_u')).toList()) {
+      try {
+        final v = VisitEntity.fromJson(jsonDecode(prefs.getString(key) ?? '') as Map<String, dynamic>);
+        if (v.id > 0 && overdue(v)) await prefs.remove(key);
+      } catch (_) {}
+    }
   }
 
   /// Lịch sử khai báo của MỌI tài khoản từng đăng nhập máy này (`declarationsListKey`: <tiền tố>_<tài khoản>).

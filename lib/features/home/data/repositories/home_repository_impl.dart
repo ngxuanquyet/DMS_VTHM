@@ -8,6 +8,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/account_key.dart';
 import '../../../auth/data/models/user_model.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
+import '../../../visit/data/datasources/visit_local_store.dart';
 import '../../domain/entities/dashboard_entity.dart';
 import '../../domain/repositories/home_repository.dart';
 import '../services/home_api_service.dart';
@@ -17,7 +18,7 @@ class HomeRepositoryImpl implements HomeRepository {
   final HomeApiService? _apiService;
   final AppDatabase? _database;
 
-  static const String _visitsListKey = 'dms_visits_local_cache_v2';
+  static const String _visitsListKey = VisitLocalStore.listKey;
 
   HomeRepositoryImpl([this._apiService, this._database]);
 

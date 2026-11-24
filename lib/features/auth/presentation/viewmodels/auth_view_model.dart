@@ -358,12 +358,17 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
   Future<bool> _logout({required bool requireCleared, bool clearDrafts = false}) async {
     // Lỗi DB thì ném lên cho màn hình báo — đừng nuốt thành "còn mục chờ gửi" (người dùng đồng bộ lại mãi vô ích).
+    // Hàng đợi của người này đã được kiểm trống (clearUserData) ⇒ mới được xoá bộ đệm lượt của họ (#24728).
+    var queueCleared = false;
     if (requireCleared) {
       final db = ref?.read(appDatabaseProvider);
       if (db == null) return false;
       if (await findOpenVisit(ref!.read) != null) return false;
       // Chưa có chủ hàng đợi (không đặt được lúc đăng nhập) ⇒ không có dòng nào "của mình" để dọn — đừng chặn đăng xuất.
-      if (db.ownerUserId != null && !await db.clearUserData()) return false;
+      if (db.ownerUserId != null) {
+        if (!await db.clearUserData()) return false;
+        queueCleared = true;
+      }
       // TỰ đăng xuất (máy có thể trao người khác): toạ độ chưa gửi của chính mình không nằm lại trên máy (dữ liệu vị trí —
       // Luật 91/2025). Đăng xuất cưỡng bức giữ lại: đúng người đăng nhập lại là gửi tiếp.
       await EmployeeTrackingLocalStorage().clearQueue();
@@ -386,6 +391,17 @@ class AuthViewModel extends StateNotifier<AuthState> {
     } catch (_) {
       await _setQueueOwner(owner?.toString());
       rethrow;
+    }
+    // TỰ đăng xuất: lịch sử lượt viếng thăm (có toạ độ check-out) của chính người này không nằm lại máy (#24728). Chỉ khi đã
+    // kiểm không còn lượt đang mở và hàng đợi trống ở trên ⇒ không mất gì chưa gửi (chưa có chủ hàng đợi thì không kiểm được ⇒
+    // giữ). Làm SAU khi đăng xuất chắc chắn xong —
+    // đăng xuất hỏng thì người dùng vẫn ở trong phiên, mốc chủ bộ đệm phải còn nguyên.
+    if (queueCleared) {
+      try {
+        await VisitLocalStore.clearCurrentOwner();
+      } catch (e) {
+        debugPrint('[AuthViewModel] Không dọn được bộ đệm lượt viếng thăm: $e');
+      }
     }
 
     ref?.read(syncServiceProvider).clearRecentDeadErrors();
