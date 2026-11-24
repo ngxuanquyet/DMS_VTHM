@@ -218,6 +218,69 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
   }
 
+  /// Màn THÊM, ngay trước khi lưu: ô ĐỘNG chọn một / nhiều (không bật «Khác…») còn giữ lựa chọn admin ĐÃ GỠ (nháp lưu trước
+  /// khi gỡ) ⇒ bỏ khỏi ô (cập nhật form như người dùng chọn lại) và trả nhãn các ô bị đổi — màn gọi BÁO người dùng, cuộn tới ô
+  /// đầu tiên, rồi DỪNG lưu để họ chọn lại; không lưu im lặng (#25875). KHÔNG lọc lúc dựng / khi schema về: ô cố định (loại
+  /// khách, khu vực, tuyến) và danh mục chưa tải lúc ngoại tuyến có danh sách TẠM — lọc ở đó là xoá oan giá trị nháp hợp lệ.
+  ///
+  /// Không xét: ô ẩn theo điều kiện (không gửi — tính lại sau mỗi lần bỏ, vì bỏ một ô có thể ẩn ô sau), ô chỉ đọc (không sửa
+  /// được), ô lấy lựa chọn từ DANH MỤC (`catalog` — server thu hẹp theo người, giá trị ngoài danh sách đang thấy vẫn có thể
+  /// hợp lệ), bảng lặp (cột chỉ đọc / danh mục trong dòng chưa có luật — ghi nợ). Ô «Ẩn trên app» VẪN gửi ⇒ bỏ âm thầm (người
+  /// dùng không thấy để chọn lại). Rỗng = không có gì phải báo.
+  List<String> dropRemovedOptionsBeforeSave() {
+    final doiMa = <String>{};
+    // Lặp tới khi không còn gì đổi: bỏ một ô có thể làm HIỆN một ô đứng trước nó (điều kiện hiển thị). Mỗi vòng bỏ ít nhất
+    // một ô (ô đã bỏ không còn lựa chọn lạ) ⇒ tối đa số ô vòng.
+    for (var vong = 0; vong < widget.fields.length; vong++) {
+      var doi = false;
+      for (final f in widget.fields) {
+        if (f.kind != 'dynamic' || f.allowOther || f.isReadOnly || f.catalog != null) continue;
+        if (hiddenFieldCodes.contains(f.code)) continue;
+        final v = _formData[f.code];
+        if (!_hasRemovedOption(f, v)) continue;
+        updateFieldValue(f.code, withoutRemovedOptions(f, v));
+        doiMa.add(f.code);
+        doi = true;
+      }
+      if (!doi) break;
+    }
+    // Báo theo trạng thái CUỐI (ô bị ẩn sau đó / «Ẩn trên app» chưa hiện lại thì người dùng không thấy — bỏ âm thầm), xếp theo
+    // thứ tự trên màn; cuộn tới ô đầu tiên.
+    final an = hiddenFieldCodes;
+    final bao = [
+      for (final f in widget.fields)
+        if (doiMa.contains(f.code) && !an.contains(f.code) && !(f.hiddenOnApp && !_hienLai.contains(f.code))) f,
+    ];
+    if (bao.isNotEmpty) focusField(bao.first.code);
+    return [for (final f in bao) f.label];
+  }
+
+  /// [value] của ô chọn một / nhiều [field] có lựa chọn ngoài danh sách (danh sách RỖNG = admin gỡ hết) — CÙNG luật
+  /// [ChoiceOther] mà [withoutRemovedOptions] dùng để bỏ (một nguồn sự thật: phát hiện ⇔ bỏ được).
+  static bool _hasRemovedOption(DynamicFormField field, dynamic value) {
+    if (value == null ||
+        (field.type != DynamicFormFieldType.singleChoice && field.type != DynamicFormFieldType.multipleChoice)) {
+      return false;
+    }
+    final opts = field.options.map((o) => o.value);
+    return value is List ? ChoiceOther.foreignMulti(value, opts) != null : ChoiceOther.foreignSingle(value, opts) != null;
+  }
+
+  /// Giá trị ô chọn một / nhiều [field] bỏ lựa chọn ngoài danh sách (ô chọn nhiều: giữ các lựa chọn còn trong danh sách,
+  /// theo thứ tự). Không đổi gì ⇒ trả CHÍNH giá trị cũ. Ô loại khác ⇒ nguyên.
+  static dynamic withoutRemovedOptions(DynamicFormField field, dynamic value) {
+    if (value == null ||
+        (field.type != DynamicFormFieldType.singleChoice && field.type != DynamicFormFieldType.multipleChoice)) {
+      return value;
+    }
+    final opts = field.options.map((o) => o.value).toList();
+    if (value is List) {
+      final kept = ChoiceOther.composeMulti<dynamic>(value, opts, null);
+      return kept.length == value.length ? value : kept;
+    }
+    return ChoiceOther.foreignSingle(value, opts) != null ? null : value;
+  }
+
   bool _allowsOther(DynamicFormField field) =>
       field.allowOther &&
       (field.type == DynamicFormFieldType.singleChoice || field.type == DynamicFormFieldType.multipleChoice);

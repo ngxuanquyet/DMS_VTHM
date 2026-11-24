@@ -1649,6 +1649,16 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
                               ? null
                               : () {
                                   if (_formKey.currentState != null) {
+                                    // Nháp còn lựa chọn admin đã gỡ ⇒ bỏ, báo, dừng — người dùng chọn lại rồi lưu (#25875).
+                                    final daBo = _formKey.currentState!.dropRemovedOptionsBeforeSave();
+                                    if (daBo.isNotEmpty) {
+                                      AppSnackBar.showInvalid(
+                                        context,
+                                        'Lựa chọn không còn trong danh mục đã được bỏ ở: ${daBo.join(', ')}. '
+                                        'Vui lòng kiểm tra lại rồi lưu.',
+                                      );
+                                      return;
+                                    }
                                     final isValid = _formKey.currentState!.validate();
                                     if (isValid) {
                                       _handleSubmit(_formKey.currentState!.getFormData());
