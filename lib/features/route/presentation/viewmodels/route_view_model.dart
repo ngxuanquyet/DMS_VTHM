@@ -3807,7 +3807,12 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
                   attempts: const drift.Value(0),
                 ),
               );
-              await db.deletePendingVisitQueue(clientUuid, keepId: cancelId);
+              // Lệnh huỷ đã xếp được là đủ coi như đã huỷ — dọn dòng chờ hỏng chỉ ghi log (lô đồng bộ / huỷ sau vẫn dọn được).
+              try {
+                await db.deletePendingVisitQueue(clientUuid, keepId: cancelId);
+              } catch (err) {
+                debugPrint('[CheckInViewModel] Lỗi dọn dòng chờ của lượt đã huỷ: $err');
+              }
             } catch (err) {
               // Không ghi được lệnh huỷ ⇒ KHÔNG ghi "đã huỷ" trên máy: server không bao giờ nhận lệnh huỷ, lượt treo mở
               // (rà soát 24/11/2026). Báo để người dùng thử lại.
