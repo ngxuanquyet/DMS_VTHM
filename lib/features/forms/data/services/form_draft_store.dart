@@ -18,6 +18,9 @@ import '../../../../core/utils/offline_photo_store.dart';
 ///
 /// Phiếu THU THẬP (không gắn lượt, chủ hệ thống chốt 20/11/2026): mỗi biểu mẫu một nháp, cùng luật lưu / hạn, ở ngăn RIÊNG
 /// của từng tài khoản ([collectSlot]) với lượt giả [collectVisitId] / [collectUuid] — không đụng ngăn của lượt viếng thăm.
+///
+/// Màn "Thêm mới điểm bán" (chủ hệ thống chốt 24/11/2026): MỘT nháp mỗi tài khoản, cùng luật lưu / hạn, ở ngăn [customerSlot]
+/// (lượt giả [collectVisitId] / [customerUuid], phiếu [customerConfigId]).
 class FormDraftStore {
   FormDraftStore._();
 
@@ -29,9 +32,19 @@ class FormDraftStore {
   /// Ngăn nháp phiếu thu thập của [account] — tiền tố `dms_market_forms_` ⇒ đăng xuất xoá theo (máy dùng chung).
   static String collectSlot(String account) => 'dms_market_forms_draft_collect_v1_$account';
 
+  /// Ngăn nháp màn "Thêm mới điểm bán" của [account] — cùng tiền tố [_accountDraftPrefix] ⇒ đăng xuất xoá theo.
+  static String customerSlot(String account) => 'dms_market_forms_draft_customer_v1_$account';
+
+  /// Tiền tố chung của mọi ngăn nháp theo tài khoản ([collectSlot], [customerSlot]) — [clearAccountDrafts] dọn theo nó.
+  static const String _accountDraftPrefix = 'dms_market_forms_draft_';
+
   /// "Lượt" của ngăn thu thập — ngăn chỉ chứa phiếu thu thập, khoá lượt chỉ để dùng chung luật khớp ô.
   static const int collectVisitId = 0;
   static const String collectUuid = 'collect';
+
+  /// "Lượt" + "phiếu" của ngăn điểm bán — ngăn chỉ chứa một nháp.
+  static const String customerUuid = 'customer';
+  static const int customerConfigId = 0;
   static const String photoDir = 'form_draft_photos';
 
   /// Nháp lâu hơn mức này không khôi phục — tính từ lần lưu ĐẦU (`created_at`) của phiếu, không theo ngày lịch (lượt vắt
@@ -186,13 +199,14 @@ class FormDraftStore {
     });
   }
 
-  /// Đăng xuất: xoá ngăn nháp thu thập của MỌI tài khoản cùng ảnh nháp của chúng — máy dùng chung không giữ ảnh của người
-  /// trước (khoá ngăn cũng bị đăng xuất xoá theo tiền tố `dms_market_forms_`, nhưng tệp ảnh thì không).
-  static Future<void> clearCollect() {
+  /// Đăng xuất: xoá ngăn nháp theo tài khoản (phiếu thu thập + điểm bán) của MỌI tài khoản cùng ảnh nháp của chúng — máy
+  /// dùng chung không giữ ảnh của người trước (khoá ngăn cũng bị đăng xuất xoá theo tiền tố `dms_market_forms_`, nhưng tệp
+  /// ảnh thì không).
+  static Future<void> clearAccountDrafts() {
     return _chain = _chain.then((_) async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        for (final k in prefs.getKeys().where((k) => k.startsWith(collectSlot('')))) {
+        for (final k in prefs.getKeys().where((k) => k.startsWith(_accountDraftPrefix))) {
           final slot = _read(prefs, k);
           await prefs.remove(k);
           await _deleteFiles(_draftFiles(slot?['drafts']));

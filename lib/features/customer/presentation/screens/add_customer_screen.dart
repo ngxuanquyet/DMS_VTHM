@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
@@ -31,6 +32,10 @@ export '../../../route/presentation/providers/user_routes_provider.dart' show us
 import '../../../route/presentation/providers/user_routes_provider.dart';
 import '../../data/utils/customer_payload_helper.dart';
 import '../../../../core/utils/offline_photo_store.dart';
+import '../../../../core/utils/account_key.dart';
+import '../../../../core/widgets/draft_restored_banner.dart';
+import '../../../forms/data/services/form_draft_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Provider lấy schema form khách hàng (dùng chung màn thêm / sửa điểm bán + hộp sửa nhanh).
 /// Hiện bản cache NGAY (app phải chạy offline, mạng chậm không treo màn), rồi khi có mạng tải bản
@@ -556,8 +561,8 @@ class AddCustomerScreen extends ConsumerStatefulWidget {
   ConsumerState<AddCustomerScreen> createState() => _AddCustomerScreenState();
 }
 
-class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
-  final GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
+class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with WidgetsBindingObserver {
+  GlobalKey<DynamicFormBuilderState> _formKey = GlobalKey<DynamicFormBuilderState>();
   final Map<String, dynamic> _savedFormData = {};
   bool _isSubmitting = false;
 
@@ -573,12 +578,168 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   bool _materialsForbidden = false;
   Map<int, MaterialOperation> _materialOps = {};
 
+  /// Nháp tự lưu (chủ hệ thống chốt 24/11/2026): MỘT nháp mỗi tài khoản, lưu cả ảnh + vật tư, giữ [FormDraftStore.maxAge]
+  /// — thoát màn / app xuống nền / bị đóng không mất phần đã nhập; nộp xong hoặc "Xoá nháp, làm lại" thì bỏ.
+  /// [_draftSlot] null = chưa rõ tài khoản ⇒ không lưu nháp (hỏi khi thoát như cũ).
+  String? _draftSlot;
+  bool _draftLoaded = false;
+  DateTime? _draftSavedAt;
+  Timer? _draftTimer;
+  bool _draftDirty = false;
+  Map<String, String> _draftPhotoMemo = {};
+
+  /// Lần ghi nháp gần nhất có thành công không — hỏng thì thoát màn phải hỏi như khi không có nháp.
+  bool _lastDraftSaveOk = true;
+
+  /// Tăng khi bỏ nháp — kết quả của lần ghi bắt đầu TRƯỚC đó không được ghi đè [_lastDraftSaveOk].
+  int _draftGen = 0;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _openDraft();
     // Sau khung đầu: schema đã có sẵn (provider đang sống) thì tải ngay; chưa có thì bộ nghe schema trong build() lo.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadMaterialCatalog();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _flushDraft();
+    super.dispose();
+  }
+
+  /// App xuống nền / sắp bị đóng ⇒ ghi nháp ngay, không đợi nhịp tự lưu.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _flushDraft();
+  }
+
+  int get _draftVisitId => FormDraftStore.collectVisitId;
+
+  Future<void> _openDraft() async {
+    String? slot;
+    ({Map<String, dynamic> answers, DateTime savedAt, Map<String, String> tokenFiles})? d;
+    try {
+      final account = cacheAccountKey(await SharedPreferences.getInstance());
+      slot = account == null ? null : FormDraftStore.customerSlot(account);
+      d = slot == null
+          ? null
+          : await FormDraftStore.load(
+              visitId: _draftVisitId,
+              clientUuid: FormDraftStore.customerUuid,
+              configId: FormDraftStore.customerConfigId,
+              slotKey: slot,
+            );
+    } catch (e) {
+      // Không đọc được kho máy ⇒ màn trống, không nháp (hỏi khi thoát như cũ) — không được kẹt ở vòng chờ.
+      debugPrint('[AddCustomer] Không đọc được nháp: $e');
+      slot = null;
+      d = null;
+    }
+    if (!mounted) return;
+    final form = d?.answers['form'];
+    final materials = d?.answers['materials'];
+    setState(() {
+      _draftSlot = slot;
+      if (form is Map) _savedFormData.addAll(Map<String, dynamic>.from(form));
+      if (materials is List) {
+        _materialOps = {
+          for (final m in materials.whereType<Map>())
+            if (MaterialOperation.fromJson(Map<String, dynamic>.from(m)) case final op when op.materialTypeId > 0)
+              op.materialTypeId: op,
+        };
+      }
+      _draftSavedAt = d?.savedAt;
+      _draftLoaded = true;
+    });
+  }
+
+  /// Kênh / Tuyến điền sẵn chụp lúc màn còn sống — [_flushDraft] chạy cả trong dispose, khi `ref` đã cấm dùng.
+  ({Set<int>? kenh, String tuyen})? _kenhTuyenSanChup;
+
+  /// Có thay đổi ⇒ hẹn ghi nháp sau 1 giây (gõ liên tục chỉ ghi một lần).
+  void _markDraftDirty() {
+    if (!_draftLoaded || _draftSlot == null || _isSubmitting) return;
+    _kenhTuyenSanChup = _kenhTuyenDienSan();
+    _draftDirty = true;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(seconds: 1), _flushDraft);
+  }
+
+  /// Ghi nháp đang chờ (nhịp tự lưu / app xuống nền / rời màn). Màn trống ⇒ bỏ nháp thay vì lưu một nháp rỗng.
+  void _flushDraft() {
+    _draftTimer?.cancel();
+    final slot = _draftSlot;
+    if (!_draftDirty || slot == null) return;
+    _draftDirty = false;
+    final gen = _draftGen;
+    // Bản chụp ĐỘC LẬP, chụp đồng bộ tại đây (lúc dispose biểu mẫu con đã bị gỡ ⇒ chỉ còn [_savedFormData]).
+    final Map<String, dynamic> answers;
+    try {
+      answers = jsonDecode(jsonEncode({
+        'form': {..._savedFormData, ...?_formKey.currentState?.getFormData()},
+        'materials': [for (final o in _materialOps.values) o.toJson()],
+      })) as Map<String, dynamic>;
+    } catch (_) {
+      _lastDraftSaveOk = false;
+      return;
+    }
+    if (!_coDuLieu([answers['form'] as Map], _materialOps, _kenhTuyenSanChup)) {
+      _removeDraft(slot);
+      return;
+    }
+    _saveDraft(slot, gen, answers);
+  }
+
+  Future<void> _saveDraft(String slot, int gen, Map<String, dynamic> answers) async {
+    // Bị đăng xuất khi màn còn mở (logout đã xoá ngăn + ảnh nháp của người này) ⇒ không ghi lại nháp của tài khoản cũ.
+    if (slot != FormDraftStore.customerSlot(cacheAccountKey(await SharedPreferences.getInstance()) ?? '')) {
+      if (gen == _draftGen) _lastDraftSaveOk = false;
+      return;
+    }
+    FormDraftStore.save(
+      visitId: _draftVisitId,
+      clientUuid: FormDraftStore.customerUuid,
+      configId: FormDraftStore.customerConfigId,
+      answers: answers,
+      photoMemo: _draftPhotoMemo,
+      slotKey: slot,
+    ).then((ok) {
+      if (gen == _draftGen) _lastDraftSaveOk = ok;
+    });
+  }
+
+  /// Bỏ nháp (nộp xong / chấp nhận bỏ phần đã nhập / "Xoá nháp, làm lại").
+  void _discardDraft() {
+    _draftTimer?.cancel();
+    _draftDirty = false;
+    _draftGen++;
+    _lastDraftSaveOk = true;
+    // Map MỚI: lần ghi cũ còn chạy vẫn ghi vào map của nó.
+    _draftPhotoMemo = {};
+    final slot = _draftSlot;
+    if (slot != null) _removeDraft(slot);
+  }
+
+  void _removeDraft(String slot) => FormDraftStore.remove(
+        visitId: _draftVisitId,
+        clientUuid: FormDraftStore.customerUuid,
+        configId: FormDraftStore.customerConfigId,
+        slotKey: slot,
+      );
+
+  /// "Xoá nháp, làm lại": bỏ nháp rồi dựng lại biểu mẫu trống.
+  void _restartWithoutDraft() {
+    _discardDraft();
+    setState(() {
+      _savedFormData.clear();
+      _materialOps = {};
+      _draftSavedAt = null;
+      _formKey = GlobalKey<DynamicFormBuilderState>();
     });
   }
 
@@ -629,32 +790,62 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
   /// Bước khai vật tư lúc tạo có bật không ([customerCreateMaterialsEnabled]).
   bool get _vatTuKhiTao => customerCreateMaterialsEnabled(ref.read(customerFormSchemaProvider).valueOrNull);
 
-  bool _hasUserInput() {
-    if (_vatTuKhiTao && _materialOps.isNotEmpty) return true;
-    if (_formKey.currentState != null) {
-      final data = _formKey.currentState!.getFormData();
+  /// Kênh + Tuyến ĐIỀN SẴN cho điểm bán mới (không phụ thuộc admin ẩn ô nào — dựng như thể cả hai ô đều có mặt); null khi
+  /// meta chưa có bộ chọn lúc tạo. `kenh` null = không có giá trị điền sẵn.
+  ({Set<int>? kenh, String tuyen})? _kenhTuyenDienSan() {
+    final meta = ref.read(customerMetaProvider).valueOrNull;
+    if (meta?.createChoices == null) return null;
+    final dienSan = ownChannelTerritoryFields(meta!, schema: kScopeFieldStubs);
+    final kenhSanRaw = dienSan.where((f) => f.code == 'own_channel_ids').firstOrNull?.initialValue;
+    return (
+      kenh: kenhSanRaw == null ? null : _setKenh(kenhSanRaw),
+      tuyen: dienSan.where((f) => f.code == 'territory_code').firstOrNull?.initialValue?.toString() ?? '',
+    );
+  }
+
+  /// Ô Kênh "chọn một" giữ MỘT giá trị, "chọn nhiều" giữ danh sách — gom về tập id cho cả hai.
+  static Set<int> _setKenh(Object? raw) =>
+      (raw is List ? raw : [raw]).map((e) => int.tryParse('$e')).whereType<int>().toSet();
+
+  bool _hasUserInput() => _coDuLieu([
+        if (_formKey.currentState != null) _formKey.currentState!.getFormData(),
+        _savedFormData,
+      ], _vatTuKhiTao ? _materialOps : const {}, _kenhTuyenDienSan());
+
+  /// Người dùng đã nhập gì chưa — bỏ qua ô tuyến (điền sẵn tuyến mặc định) và Kênh / Tuyến còn đúng giá trị điền sẵn [san]
+  /// ([_kenhTuyenDienSan]). KHÔNG đọc `ref` — gọi được cả trong dispose.
+  static bool _coDuLieu(List<Map> forms, Map<int, MaterialOperation> ops, ({Set<int>? kenh, String tuyen})? san) {
+    if (ops.isNotEmpty) return true;
+    for (final data in forms) {
       for (final entry in data.entries) {
         if (entry.key == 'route_ids' || entry.key == 'route_id') continue;
+        if (san != null && entry.key == 'own_channel_ids' && san.kenh != null && setEquals(_setKenh(entry.value), san.kenh)) {
+          continue;
+        }
+        if (san != null && entry.key == 'territory_code') {
+          final t = entry.value?.toString().trim() ?? '';
+          if (t.isEmpty || t == san.tuyen) continue;
+        }
         final val = entry.value;
         if (val == null) continue;
         if (val is String && val.trim().isNotEmpty) return true;
         if (val is List && val.isNotEmpty) return true;
       }
     }
-    for (final entry in _savedFormData.entries) {
-      if (entry.key == 'route_ids' || entry.key == 'route_id') continue;
-      final val = entry.value;
-      if (val == null) continue;
-      if (val is String && val.trim().isNotEmpty) return true;
-      if (val is List && val.isNotEmpty) return true;
-    }
     return false;
   }
 
   Future<bool> _onWillExit() async {
+    // Đang nộp: rời lúc này thì nháp ghi lại ở dispose mà bước bỏ nháp sau khi nộp không chạy (màn đã đóng) ⇒ mở lại màn
+    // khôi phục nháp của điểm bán đã tạo, nộp lần nữa là trùng.
+    if (_isSubmitting) return false;
     if (!_hasUserInput()) {
+      // Màn trống (kể cả người dùng xoá trắng nháp) ⇒ không giữ nháp nào.
+      _discardDraft();
       return true;
     }
+    // Có nháp tự lưu ⇒ rời màn không mất gì, khỏi hỏi (phần còn chờ ghi nốt ở dispose) — trừ khi lần ghi gần nhất hỏng.
+    if (_draftSlot != null && _lastDraftSaveOk) return true;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final shouldLeave = await showDialog<bool>(
@@ -706,6 +897,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       ),
     );
 
+    // Người dùng đã chấp nhận bỏ phần vừa nhập ⇒ nháp cũ hơn (lần ghi trước) cũng không khôi phục lại.
+    if (shouldLeave == true) _discardDraft();
     return shouldLeave ?? false;
   }
 
@@ -762,22 +955,11 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
     // 3b. Kênh + Tuyến tự khai chọn tuỳ ý trong toàn danh mục (chốt 21/10/2026). Giữ nguyên giá trị điền sẵn ⇒ KHÔNG gửi,
     // server tự gán mặc định (danh sách kênh điền sẵn đã lọc theo danh mục đang dùng nên có thể ít hơn bộ mặc định của server).
     var boGuiKenhTuyen = false;
-    final meta3b = ref.read(customerMetaProvider).valueOrNull;
-    final createChoices = meta3b?.createChoices;
+    final san = _kenhTuyenDienSan();
     final rawKenh = formData['own_channel_ids'];
-    if (createChoices != null && rawKenh != null) {
-      // Ô Kênh "chọn một" giữ MỘT giá trị, "chọn nhiều" giữ danh sách — gom về tập id cho cả hai.
-      final kenh = (rawKenh is List ? rawKenh : [rawKenh]).map((e) => int.tryParse(e.toString())).whereType<int>().toSet();
+    if (san != null && rawKenh != null) {
       final tuyen = formData['territory_code']?.toString().trim() ?? '';
-      // Giá trị ĐIỀN SẴN (không phụ thuộc admin ẩn ô nào) — dựng như thể cả hai ô đều có mặt.
-      final dienSan = ownChannelTerritoryFields(meta3b!, schema: kScopeFieldStubs);
-      final kenhSanRaw = dienSan.where((f) => f.code == 'own_channel_ids').firstOrNull?.initialValue;
-      final kenhSan = kenhSanRaw == null ? null : (kenhSanRaw is List ? kenhSanRaw : [kenhSanRaw]);
-      final tuyenSan = dienSan.where((f) => f.code == 'territory_code').firstOrNull?.initialValue?.toString() ?? '';
-      final giuNguyen = kenhSan is List &&
-          kenh.length == kenhSan.length &&
-          kenh.containsAll(kenhSan.cast<int>()) &&
-          (tuyen.isEmpty || tuyen == tuyenSan);
+      final giuNguyen = san.kenh != null && setEquals(_setKenh(rawKenh), san.kenh) && (tuyen.isEmpty || tuyen == san.tuyen);
       if (giuNguyen) {
         boGuiKenhTuyen = true;
       }
@@ -995,6 +1177,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
       }
 
       await ref.read(customerViewModelProvider.notifier).createCustomer(payload);
+      // Bỏ nháp NGAY khi đã tạo (trực tiếp hoặc vào hàng đợi) — kể cả khi màn đã đóng (không setState).
+      _discardDraft();
 
       if (isOnline) {
         // Đồng bộ ngay lập tức lên server khi đang online để người dùng có mã và trạng thái đồng bộ ngay
@@ -1277,6 +1461,9 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                   : f)
               .toList();
 
+          // Biểu mẫu chỉ đọc giá trị đầu lúc dựng ⇒ chờ đọc nháp xong mới dựng (đọc kho máy, tức thì).
+          if (!_draftLoaded) return const Center(child: AppLoading());
+
           if (fields.isEmpty) {
             return const Center(
               child: Text('Không có trường dữ liệu nào trong cấu hình form.'),
@@ -1294,6 +1481,13 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (_draftSavedAt != null) ...[
+                          DraftRestoredBanner(
+                            savedAt: _draftSavedAt!,
+                            onRestart: _isSubmitting ? null : _restartWithoutDraft,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         // Form fields
                         DynamicFormBuilder(
                           key: _formKey,
@@ -1310,6 +1504,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                             );
                             _savedFormData.addAll(data);
                             if (axisChanged && _materialCatalog != null) setState(() {});
+                            _markDraftDirty();
                           },
                           onSubmit: _handleSubmit,
                           customFieldBuilders: {'erp_links': erpLinksFieldBuilder},
@@ -1335,7 +1530,10 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> {
                               );
                             }(),
                             ops: _materialOps,
-                            onChanged: (next) => setState(() => _materialOps = next),
+                            onChanged: (next) {
+                              setState(() => _materialOps = next);
+                              _markDraftDirty();
+                            },
                           )
                         else if (_materialCatalogLoaded && !_materialsForbidden && _materialCatalog == null)
                           Padding(

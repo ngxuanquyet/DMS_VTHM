@@ -7,6 +7,12 @@ import '../models/form_photo_model.dart';
 import '../models/market_form_model.dart';
 import '../models/market_form_submission_model.dart';
 
+/// Gợi ý của một biểu mẫu: giá trị theo mã ô + câu trả lời tự điền theo (mã ô, giá trị).
+typedef FormSuggestions = ({
+  Map<String, List<String>> fields,
+  Map<String, Map<String, Map<String, dynamic>>> fills,
+});
+
 class FormsApiService {
   final ApiClient _apiClient;
 
@@ -96,17 +102,31 @@ class FormsApiService {
   }
 
   /// Gợi ý từ các phiếu đã nộp của mọi ô bật `suggest_from_history` trong biểu mẫu:
-  /// GET /dms/form-submissions/suggest?form_id= → `{data: {fields: {mã ô: [giá trị…]}}}`.
-  Future<Map<String, List<String>>> getSuggestions(int formId) async {
+  /// GET /dms/form-submissions/suggest?form_id= → `{data: {fields: {mã ô: [giá trị…]}, fills: {mã ô: {giá trị: {câu trả lời}}}}}`.
+  /// `fills` (chốt 24/11/2026): câu trả lời (đã bỏ ảnh / tệp) của phiếu mới nhất mang giá trị đó — chọn gợi ý thì tự điền cả
+  /// phiếu; server cũ không gửi ⇒ rỗng.
+  Future<FormSuggestions> getSuggestions(int formId) async {
     final response = await _apiClient.get('/dms/form-submissions/suggest?form_id=$formId');
     final data = response is Map ? response['data'] : null;
     final fields = data is Map ? data['fields'] : null;
-    if (fields is! Map) return {};
+    final fills = data is Map ? data['fills'] : null;
 
-    return {
-      for (final e in fields.entries)
-        if (e.value is List) '${e.key}': [for (final v in e.value as List) if (v is String) v],
-    };
+    return (
+      fields: {
+        if (fields is Map)
+          for (final e in fields.entries)
+            if (e.value is List) '${e.key}': [for (final v in e.value as List) if (v is String) v],
+      },
+      fills: {
+        if (fills is Map)
+          for (final e in fills.entries)
+            if (e.value is Map)
+              '${e.key}': {
+                for (final f in (e.value as Map).entries)
+                  if (f.value is Map) '${f.key}': Map<String, dynamic>.from(f.value as Map),
+              },
+      },
+    );
   }
 
   /// Xem lại chi tiết phiếu đã nộp kèm khoá answer_photos theo đặc tả §4.3:

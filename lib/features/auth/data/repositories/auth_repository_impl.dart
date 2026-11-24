@@ -124,7 +124,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove(AppConstants.keyUserData);
 
     // Nháp phiếu thu thập theo tài khoản: xoá cả ảnh nháp TRƯỚC khi khoá ngăn bị xoá theo tiền tố dưới (mất khoá là mất dấu tệp).
-    await FormDraftStore.clearCollect();
+    await FormDraftStore.clearAccountDrafts();
 
     // Xoá cache cấu hình + lịch sử chấm công để tránh dùng nhầm giữa các tài khoản (§3.2 & §5)
     // Cùng lý do: biểu mẫu điểm bán / thị trường mang giá trị "tự điền theo phòng ban" tính riêng cho người này

@@ -2,9 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +12,8 @@ import 'package:vthm_dms/features/forms/data/services/form_suggest_store.dart';
 import 'package:vthm_dms/features/forms/data/services/forms_api_service.dart';
 import 'package:vthm_dms/features/forms/domain/entities/market_form_entity.dart';
 import 'package:vthm_dms/features/forms/presentation/widgets/dynamic_renderer/market_form_renderer.dart';
+
+import '../helpers/fake_inter_fonts.dart';
 
 /// Chốt 20/11/2026: (1) ô chữ «Gợi ý từ các phiếu đã nộp» — chỉ hiện khi bắt đầu gõ, lọc không dấu, mất mạng dùng bản lưu
 /// + giá trị chính máy vừa nộp; (2) nháp phiếu THU THẬP — mỗi biểu mẫu một nháp, ngăn riêng theo tài khoản.
@@ -30,30 +30,16 @@ class _Paths extends Fake with MockPlatformInterfaceMixin implements PathProvide
 
 class _Api extends Fake implements FormsApiService {
   Map<String, List<String>>? server;
+  Map<String, Map<String, Map<String, dynamic>>> fills = {};
   int calls = 0;
 
   @override
-  Future<Map<String, List<String>>> getSuggestions(int formId) async {
+  Future<FormSuggestions> getSuggestions(int formId) async {
     calls++;
     final s = server;
     if (s == null) throw const SocketException('mất mạng');
-    return s;
+    return (fields: s, fills: fills);
   }
-}
-
-/// Phông Inter của app lấy từ "tài sản" giả (DejaVu Sans) — test không tải mạng (cùng cách `form_ui_unify_shots_test`).
-void _fakeInterFonts() {
-  const reg = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-  if (!File(reg).existsSync()) return;
-  const keys = ['Regular', 'Medium', 'SemiBold', 'Bold'];
-  GoogleFonts.config.allowRuntimeFetching = false;
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMessageHandler('flutter/assets', (message) async {
-    final key = utf8.decode(message!.buffer.asUint8List(message.offsetInBytes, message.lengthInBytes));
-    if (key == 'AssetManifest.bin') {
-      return const StandardMessageCodec().encodeMessage(<String, Object>{for (final k in keys) 'google_fonts/Inter-$k.ttf': <Object>[]});
-    }
-    return key.startsWith('google_fonts/Inter-') ? ByteData.sublistView(File(reg).readAsBytesSync()) : null;
-  });
 }
 
 void main() {
@@ -92,6 +78,23 @@ void main() {
       expect(api.calls, 0);
     });
 
+    test('fillFor: câu trả lời của giá trị đã chọn (so không phân biệt hoa thường), mất mạng vẫn đọc bản lưu', () async {
+      final api = _Api()
+        ..server = {'ten': ['NPP Một']}
+        ..fills = {
+          'ten': {
+            'NPP Một': {'ten': 'NPP Một', 'sdt': '0909', 'toa_do': {'lat': 21.0, 'lng': 105.0}},
+          },
+        };
+      final store = FormSuggestStore(api);
+      await store.load(9);
+      api.server = null; // mất mạng
+      expect(await store.fillFor(9, 'ten', 'npp một'), {'ten': 'NPP Một', 'sdt': '0909', 'toa_do': {'lat': 21.0, 'lng': 105.0}});
+      expect(await store.fillFor(9, 'ten', 'NPP Khác'), isNull);
+      expect(await store.fillFor(9, 'o_khac', 'NPP Một'), isNull);
+      expect(await store.fillFor(8, 'ten', 'NPP Một'), isNull, reason: 'biểu mẫu khác');
+    });
+
     test('chưa rõ tài khoản ⇒ không đọc/ghi gì', () async {
       SharedPreferences.setMockInitialValues({});
       final store = FormSuggestStore(_Api()..server = {'ten': ['A']});
@@ -128,11 +131,19 @@ void main() {
         config: {'suggest_from_history': true},
       ),
     );
-    _fakeInterFonts();
+    fakeInterFonts();
     final key = GlobalKey<MarketFormRendererState>();
+    final daChon = <String>[];
     Widget app(Map<String, List<String>> goiY) => MaterialApp(
           home: Scaffold(
-            body: SingleChildScrollView(child: MarketFormRenderer(key: key, blocks: const [block], suggestions: goiY)),
+            body: SingleChildScrollView(
+              child: MarketFormRenderer(
+                key: key,
+                blocks: const [block],
+                suggestions: goiY,
+                onSuggestionSelected: (code, value) => daChon.add('$code=$value'),
+              ),
+            ),
           ),
         );
     // Gợi ý chưa về (mạng chậm): gõ trước, gợi ý về sau ⇒ ô KHÔNG bị dựng lại (giữ focus + chữ đang gõ).
@@ -152,9 +163,11 @@ void main() {
     expect(find.text('Nguyễn Thị Cúc'), findsOneWidget);
     expect(find.text('Trần Thị Bình'), findsNothing);
 
+    expect(daChon, isEmpty, reason: 'gõ tay không phải chọn gợi ý');
     await tester.tap(find.text('Nguyễn Thị Cúc'));
     await tester.pumpAndSettle();
     expect(key.currentState!.validateAndGetAnswers(), containsPair('ten', 'Nguyễn Thị Cúc'));
+    expect(daChon, ['ten=Nguyễn Thị Cúc'], reason: 'chạm gợi ý ⇒ báo màn chứa để tự điền cả phiếu');
   });
 
   group('nháp phiếu thu thập', () {
@@ -199,7 +212,7 @@ void main() {
       expect(await thuThap(a), isNull);
     });
 
-    test('đăng xuất (clearCollect) xoá ngăn thu thập + ảnh nháp, giữ ngăn lượt viếng thăm', () async {
+    test('đăng xuất (clearAccountDrafts) xoá ngăn thu thập + ảnh nháp, giữ ngăn lượt viếng thăm', () async {
       final cam = Directory('${docs.path}/cam')..createSync();
       final anh = File('${cam.path}/a.jpg')..writeAsBytesSync([1, 2, 3]);
       final a = FormDraftStore.collectSlot('42');
@@ -215,7 +228,7 @@ void main() {
       final draftDir = Directory('${docs.path}/${FormDraftStore.photoDir}');
       expect(draftDir.listSync(), isNotEmpty);
 
-      await FormDraftStore.clearCollect();
+      await FormDraftStore.clearAccountDrafts();
       expect((await SharedPreferences.getInstance()).getString(a), isNull);
       expect(draftDir.listSync(), isEmpty, reason: 'ảnh nháp thu thập phải xoá theo');
       expect((await FormDraftStore.load(visitId: 5, clientUuid: 'u5', configId: 7))?.answers, {'x': 'y'});

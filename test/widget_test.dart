@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:vthm_dms/core/widgets/app_loading.dart';
@@ -682,6 +683,8 @@ void main() {
   });
 
   testWidgets('AddCustomerScreen exits immediately when form is empty', (tester) async {
+    // Màn đọc kho máy để khôi phục nháp; chưa có tài khoản ⇒ không nháp, hỏi khi thoát như cũ.
+    SharedPreferences.setMockInitialValues({});
     final container = ProviderContainer(
       overrides: [
         customerFormSchemaProvider.overrideWith((ref) => Stream.value({
@@ -701,6 +704,7 @@ void main() {
           }
         })),
         customerMetaProvider.overrideWith((ref) async => kDefaultCustomerMeta),
+        userAssignedRoutesProvider.overrideWith((ref) async => const <UserRouteEntity>[]),
       ],
     );
 
@@ -733,6 +737,8 @@ void main() {
   });
 
   testWidgets('AddCustomerScreen shows warning dialog when data is entered and user taps HỦY BỎ', (tester) async {
+    // Màn đọc kho máy để khôi phục nháp; chưa có tài khoản ⇒ không nháp, hỏi khi thoát như cũ.
+    SharedPreferences.setMockInitialValues({});
     final container = ProviderContainer(
       overrides: [
         customerFormSchemaProvider.overrideWith((ref) => Stream.value({
@@ -752,6 +758,7 @@ void main() {
           }
         })),
         customerMetaProvider.overrideWith((ref) async => kDefaultCustomerMeta),
+        userAssignedRoutesProvider.overrideWith((ref) async => const <UserRouteEntity>[]),
       ],
     );
 

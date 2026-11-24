@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
@@ -15,6 +14,8 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/draft_restored_banner.dart';
+import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart' show DisplayMatrixCustom;
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
 import '../../data/services/form_draft_store.dart';
@@ -119,6 +120,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   Map<String, List<String>> _suggestions = const {};
   late final Set<String> _suggestCodes = FormSuggestStore.enabledCodes(widget.args.config.schema.blocks);
   Map<String, dynamic>? _draftAnswers;
+
+  /// Câu trả lời tự điền từ phiếu cũ khi chạm một gợi ý ([_fillFromSuggestion]) — dựng lại biểu mẫu với bộ này.
+  Map<String, dynamic>? _seedAnswers;
   DateTime? _draftSavedAt;
   Map<String, dynamic>? _pendingDraft;
   /// Ảnh khôi phục từ nháp: token → tệp gốc ([FormDraftStore] `token_files`) — renderer chỉ còn token của chúng.
@@ -276,9 +280,120 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     _draftTokenFiles = {};
     setState(() {
       _draftAnswers = null;
+      _seedAnswers = null;
       _draftSavedAt = null;
       _rendererKey = GlobalKey();
     });
+  }
+
+  /// Chạm gợi ý ô [code] ⇒ điền CẢ phiếu theo phiếu cũ mới nhất mang giá trị đó (chủ hệ thống chốt 24/11/2026): chép mọi ô
+  /// trừ ảnh / tệp (server đã bỏ); ảnh đã chụp trong phiếu đang điền giữ nguyên. Đã nhập ô khác ⇒ hỏi trước khi ghi đè.
+  Future<void> _fillFromSuggestion(String code, String value) async {
+    // Chỉ phiếu THU THẬP (Khảo sát NPP — chốt 24/11/2026): phiếu khảo sát gắn điểm bán của lượt, chép phiếu cũ là mang ô
+    // điểm bán / tuyến của lượt khác sang. Phiếu mở kèm câu trả lời sẵn (sửa / xem lại) — bộ đó thắng, không dựng lại.
+    if (widget.args.kind != 'collect' || widget.args.initialAnswers != null) return;
+    final fill = await ref.read(formSuggestStoreProvider).fillFor(widget.args.config.formId, code, value);
+    final renderer = _rendererKey.currentState;
+    if (!mounted || fill == null || fill.isEmpty || renderer == null) return;
+    if (renderer.hasUploadingPhotos) {
+      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, chờ xong rồi chọn lại để điền theo phiếu cũ.');
+      return;
+    }
+    final current = renderer.currentAnswers;
+    // Ô mang ảnh của phiếu đang điền — giữ nguyên ([_keepPhotos]); server đã bỏ ảnh khỏi phiếu cũ.
+    final kept = _keepPhotos(current, fill);
+    final others = {
+      for (final e in current.entries)
+        if (e.key != code && !kept.containsKey(e.key) && !renderer.isAutoDefault(e.key)) e.key: e.value,
+    };
+    if (_hasEnteredData(others) && await _confirmOverwrite(value) != true) return;
+    if (!mounted || !identical(renderer, _rendererKey.currentState)) return;
+
+    final seed = <String, dynamic>{...fill, ...kept, code: value};
+    // Tệp gốc của ảnh đã tải lên — renderer mới chỉ nhận token, nháp cần tệp này ([FormDraftStore] `token_files`).
+    _draftTokenFiles = {..._draftTokenFiles, ...renderer.uploadedPhotoFiles};
+    setState(() {
+      _seedAnswers = seed;
+      _rendererKey = GlobalKey();
+    });
+    _onAnswersChanged(seed);
+    AppSnackBar.showSuccess(context, 'Đã điền theo phiếu gần nhất của «$value» — kiểm tra lại trước khi nộp.');
+  }
+
+  /// Giá trị ô mang ẢNH của phiếu đang điền cần giữ khi tự điền: ô ảnh / tệp; ảnh (`photos`) của ô ma trận trưng bày ghép vào
+  /// giá trị lấy từ phiếu cũ; bảng lặp có ô con ảnh / tệp đã có dòng thì giữ cả bảng (không thay dòng đang chụp ảnh dở —
+  /// bảng đó vì thế không được tự điền).
+  Map<String, dynamic> _keepPhotos(Map<String, dynamic> current, Map<String, dynamic> fill) {
+    bool laAnh(Object? t) => const {'image', 'file'}.contains('$t'.toLowerCase());
+    final out = <String, dynamic>{};
+    for (final b in widget.args.config.schema.blocks) {
+      final c = b.resolved.code;
+      final cur = current[c];
+      if (cur == null) continue;
+      final type = b.resolved.inputType.toLowerCase();
+      if (laAnh(type)) {
+        out[c] = cur;
+      } else if (type == 'display_matrix' && cur is Map && cur['photos'] != null) {
+        // Loại tự thêm (`custom`): HỢP của phiếu cũ (đi kèm số đếm lấy từ phiếu cũ) và phiếu đang điền (đi kèm ảnh giữ lại) —
+        // thiếu bên nào thì renderer bỏ hàng / ảnh của loại lạ bên đó.
+        final custom = DisplayMatrixCustom.fromValue(fill[c]).merge(DisplayMatrixCustom.fromValue(cur));
+        out[c] = {
+          ...?(fill[c] is Map ? fill[c] as Map : null),
+          'photos': cur['photos'],
+          if (!custom.isEmpty) 'custom': custom.toJson(),
+        };
+      } else if (b.resolved.isRepeatGroup && cur is List && cur.isNotEmpty) {
+        final coAnh = b.resolved.groupItems.any((i) {
+          final r = i is Map && i['resolved'] is Map ? i['resolved'] as Map : (i is Map ? i : const {});
+          return laAnh(r['input_type']);
+        });
+        if (coAnh) out[c] = cur;
+      }
+    }
+    return out;
+  }
+
+  Future<bool?> _confirmOverwrite(String value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Điền theo phiếu cũ?',
+          style: AppTypography.titleLarge(
+            color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
+          ).copyWith(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Các ô bạn đã nhập sẽ được thay bằng nội dung phiếu gần nhất của «$value» (ảnh đã chụp giữ nguyên).',
+          style: AppTypography.bodyMedium(
+            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Chỉ điền tên',
+              style: AppTypography.labelLarge(
+                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Điền theo phiếu cũ'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _safePop([bool result = false]) {
@@ -538,41 +653,6 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     }
   }
 
-  Widget _buildDraftBanner(bool isDark) {
-    final at = _draftSavedAt!;
-    final now = DateTime.now();
-    // Lượt vắt qua nửa đêm: nháp của hôm trước ghi kèm ngày.
-    final hhmm = DateFormat(at.year == now.year && at.month == now.month && at.day == now.day ? 'HH:mm' : 'HH:mm dd/MM')
-        .format(at);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.history_rounded, size: 18, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Đã khôi phục nháp lúc $hhmm',
-              style: AppTypography.bodyMedium(
-                color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-              ).copyWith(fontWeight: FontWeight.w500),
-            ),
-          ),
-          TextButton(
-            onPressed: _isSubmitting ? null : _restartWithoutDraft,
-            child: const Text('Xoá nháp, làm lại'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -734,7 +814,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
             const SizedBox(height: AppSpacing.stackLg),
 
             if (_draftSavedAt != null) ...[
-              _buildDraftBanner(isDark),
+              DraftRestoredBanner(savedAt: _draftSavedAt!, onRestart: _isSubmitting ? null : _restartWithoutDraft),
               const SizedBox(height: AppSpacing.stackLg),
             ],
 
@@ -745,7 +825,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
               MarketFormRenderer(
                 key: _rendererKey,
                 blocks: config.schema.blocks,
-                initialAnswers: widget.args.initialAnswers ?? _draftAnswers ?? const {},
+                initialAnswers: widget.args.initialAnswers ?? _seedAnswers ?? _draftAnswers ?? const {},
                 onChanged: _draftEnabled ? _onAnswersChanged : null,
                 customerContext: widget.args.customerContext ?? const {},
                 defaultCustomerId: widget.args.customerId,
@@ -757,6 +837,7 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
                 customerData: widget.args.customerData,
                 onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
                 suggestions: _suggestions,
+                onSuggestionSelected: _fillFromSuggestion,
               ),
             const SizedBox(height: 80),
           ],

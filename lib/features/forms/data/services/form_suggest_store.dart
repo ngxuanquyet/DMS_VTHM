@@ -14,8 +14,12 @@ import 'forms_api_service.dart';
 /// lần cuối. Nộp phiếu ⇒ giá trị vừa nhập vào nhóm "chính máy vừa nhập" (đứng đầu, kể cả khi phiếu còn trong hàng đợi
 /// ngoại tuyến), tự rời nhóm khi server đã trả về giá trị đó.
 ///
+/// Chọn một gợi ý ⇒ tự điền cả phiếu theo phiếu cũ ([fillFor], chốt 24/11/2026): server gửi kèm câu trả lời (đã bỏ ảnh / tệp)
+/// của phiếu mới nhất mỗi giá trị, lưu máy cùng lúc với danh sách ⇒ mất mạng vẫn điền được. Giá trị "chính máy vừa nhập"
+/// chưa lên server thì chưa có câu trả lời để điền.
+///
 /// Khoá lưu theo TÀI KHOẢN và mang tiền tố `dms_market_forms_` ⇒ đăng xuất xoá theo (người dùng chung máy không thấy tên
-/// người khác nhập); dọn theo hạn cùng bản lưu biểu mẫu ([LocalHistoryRetention.touchFormsCache]).
+/// / nội dung phiếu người khác nhập); dọn theo hạn cùng bản lưu biểu mẫu ([LocalHistoryRetention.touchFormsCache]).
 class FormSuggestStore {
   final FormsApiService _api;
 
@@ -41,6 +45,7 @@ class FormSuggestStore {
 
   static String _key(String account, int formId) => 'dms_market_forms_suggest_${account}_$formId';
   static String _localKey(String account, int formId) => 'dms_market_forms_suggest_local_${account}_$formId';
+  static String _fillKey(String account, int formId) => 'dms_market_forms_suggest_fill_${account}_$formId';
 
   /// Đọc / ghi bản lưu nối tiếp — [load] (tỉa nhóm máy) và [remember] (thêm vào nhóm máy) chạy chồng nhau thì bản đọc cũ
   /// ghi đè giá trị vừa nộp.
@@ -66,7 +71,7 @@ class FormSuggestStore {
     final account = cacheAccountKey(prefs);
     if (account == null) return {};
 
-    Map<String, List<String>>? server;
+    FormSuggestions? server;
     try {
       server = await _api.getSuggestions(formId).timeout(_fetchTimeout());
     } catch (e) {
@@ -75,11 +80,14 @@ class FormSuggestStore {
     return _serial(() async {
       // Đổi tài khoản trong lúc chờ mạng ⇒ đây là gợi ý của người CŨ, không lưu, không dùng.
       if (cacheAccountKey(prefs) != account) return {};
-      if (server != null) {
-        await prefs.setString(_key(account, formId), jsonEncode(server));
+      final got = server;
+      if (got != null) {
+        await prefs.setString(_key(account, formId), jsonEncode(got.fields));
         await LocalHistoryRetention.touchFormsCache(prefs, _key(account, formId));
+        await prefs.setString(_fillKey(account, formId), jsonEncode(got.fills));
+        await LocalHistoryRetention.touchFormsCache(prefs, _fillKey(account, formId));
       }
-      return _merged(prefs, account, formId, server ?? _decode(prefs.getString(_key(account, formId))));
+      return _merged(prefs, account, formId, got?.fields ?? _decode(prefs.getString(_key(account, formId))));
     });
   }
 
@@ -130,6 +138,27 @@ class FormSuggestStore {
       }
     });
   }
+
+  /// Câu trả lời để tự điền khi chọn gợi ý [value] của ô [code] (bản lưu lần tải gần nhất, không gọi mạng) — so cùng khoá
+  /// gộp với danh sách gợi ý; không có ⇒ null (chỉ điền chữ vào ô như cũ).
+  Future<Map<String, dynamic>?> fillFor(int formId, String code, String value) => _serial(() async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final account = cacheAccountKey(prefs);
+          final raw = account == null ? null : prefs.getString(_fillKey(account, formId));
+          if (raw == null) return null;
+          final all = jsonDecode(raw);
+          final byValue = all is Map ? all[code] : null;
+          if (byValue is! Map) return null;
+          final key = _fold(value);
+          for (final e in byValue.entries) {
+            if (_fold('${e.key}') == key && e.value is Map) return Map<String, dynamic>.from(e.value as Map);
+          }
+        } catch (e) {
+          debugPrint('[FormSuggestStore] Không đọc được câu trả lời tự điền: $e');
+        }
+        return null;
+      });
 
   /// Ghép hai danh sách giữ thứ tự, bỏ trùng theo cùng khoá gộp với server (chữ thường, khoảng trắng liền gộp một).
   @visibleForTesting

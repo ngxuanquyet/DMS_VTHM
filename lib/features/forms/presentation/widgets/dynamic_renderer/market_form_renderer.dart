@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -86,6 +87,9 @@ class MarketFormRenderer extends StatefulWidget {
   /// Gợi ý từ các phiếu đã nộp theo mã ô (ô chữ bật `config.suggest_from_history`, [FormSuggestStore]) — rỗng ⇒ ô chữ thường.
   final Map<String, List<String>> suggestions;
 
+  /// Người dùng CHẠM một gợi ý của ô [code] (không phải gõ tay trùng chữ) — màn chứa tự điền cả phiếu theo phiếu cũ.
+  final void Function(String code, String value)? onSuggestionSelected;
+
   const MarketFormRenderer({
     super.key,
     required this.blocks,
@@ -102,6 +106,7 @@ class MarketFormRenderer extends StatefulWidget {
     this.defaultMaxPhotos = 10,
     this.onUploadPhoto,
     this.suggestions = const {},
+    this.onSuggestionSelected,
   });
 
   @override
@@ -390,7 +395,26 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     }
 
     _recomputeVisibility();
+    _autoDefaults = {
+      for (final e in _answers.entries)
+        if (!widget.initialAnswers.containsKey(e.key)) e.key: _encodeOrNull(e.value),
+    };
   }
+
+  /// Giá trị renderer TỰ điền lúc dựng (mặc định của ô, điểm bán / tuyến của lượt) — không phải người dùng nhập.
+  Map<String, String?> _autoDefaults = const {};
+
+  static String? _encodeOrNull(Object? v) {
+    try {
+      return jsonEncode(v);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Ô [code] còn đúng giá trị renderer tự điền lúc dựng ([_autoDefaults]) — màn chứa không coi là "người dùng đã nhập".
+  bool isAutoDefault(String code) =>
+      _autoDefaults.containsKey(code) && _autoDefaults[code] != null && _autoDefaults[code] == _encodeOrNull(_answers[code]);
 
   bool _isMultiChoice(MarketFormBlockEntity block) =>
       const {'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
@@ -1237,7 +1261,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               .where((s) => s.trim().toLowerCase() != dang && StringUtils.toUnaccentedLower(s).contains(q))
               .take(_maxSuggestShown);
         },
-        onSelected: (s) => _updateValue(code, s),
+        onSelected: (s) {
+          _updateValue(code, s);
+          widget.onSuggestionSelected?.call(code, s);
+        },
         fieldViewBuilder: (context, c, f, _) => field(c, f),
         optionsViewBuilder: (context, onSelected, options) => Align(
           alignment: Alignment.topLeft,
