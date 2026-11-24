@@ -139,7 +139,11 @@ class AuthRepositoryImpl implements AuthRepository {
             k.startsWith('cached_customer_meta') ||
             k.startsWith('dms_route_customers_cache') ||
             k.startsWith('dms_market_forms_') ||
-            k.startsWith(visitMaterialsCachePrefix))
+            k.startsWith(visitMaterialsCachePrefix) ||
+            // Bản sao thông báo đẩy + danh sách đã đọc, bộ đệm "Quãng đường của tôi": khoá chung mọi tài khoản ⇒ người sau
+            // thấy thông báo / số km của người trước (rà soát 24/11/2026).
+            k.startsWith('local_notifications_') ||
+            k.startsWith('dms_travel_'))
         .toList();
     for (final k in keys) {
       await prefs.remove(k);

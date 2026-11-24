@@ -29,6 +29,7 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../customer/presentation/viewmodels/customer_view_model.dart';
 import '../../../customer/presentation/viewmodels/rejected_read_status_notifier.dart';
 import '../../../visit/data/repositories/visit_repository_impl.dart';
+import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
 import '../states/auth_state.dart';
 
 final authApiServiceProvider = Provider<AuthApiService>((ref) {
@@ -303,6 +304,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
     ref?.read(syncServiceProvider).clearRecentDeadErrors();
     AttendancePunchReminder.reset();
+    // Dừng theo dõi vị trí nền của người vừa đăng xuất (provider không tự huỷ ⇒ timer + stream GPS chạy tiếp, thu vị trí sau
+    // khi đã đăng xuất — rà soát 24/11/2026). Huỷ ⇒ dispose dừng timer / stream.
+    ref?.invalidate(employeeTrackingProvider);
 
     state = state.copyWith(
       status: AuthStatus.unauthenticated,
@@ -417,5 +421,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
     // autoDispose nhưng bị unreadRejectedCountProvider (không autoDispose) giữ sống mãi.
     r.invalidate(customerViewModelProvider);
     r.invalidate(rejectedReadStatusProvider);
+    // Theo dõi vị trí của phiên trước (nếu còn sống) — người mới khởi động lại sau khi qua cổng đồng ý.
+    r.invalidate(employeeTrackingProvider);
   }
 }

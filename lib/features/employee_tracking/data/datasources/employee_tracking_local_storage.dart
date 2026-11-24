@@ -1,11 +1,22 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/utils/account_key.dart';
 import '../models/location_ping_point_model.dart';
 
 /// Lưu trữ và quản lý hàng đợi toạ độ ngoại tuyến theo §4 API-VI-TRI-NHAN-VIEN-MOBILE-2026-10-09.md
 class EmployeeTrackingLocalStorage {
-  static const String _queueKey = 'dms_location_pending_queue_v1';
+  /// Hàng đợi THEO TÀI KHOẢN (rà soát 24/11/2026): khoá chung cũ làm người đăng nhập SAU gửi điểm GPS của người trước bằng
+  /// token của mình (server ghi theo người của token). Chưa rõ tài khoản ⇒ không đọc / ghi gì.
+  static const String _queuePrefix = 'dms_location_pending_queue_v2_';
+
+  /// Khoá chung đời cũ — điểm trong đó không rõ của ai ⇒ bỏ.
+  static const String _legacyQueueKey = 'dms_location_pending_queue_v1';
+
+  static String? _queueKey(SharedPreferences prefs) {
+    final account = cacheAccountKey(prefs);
+    return account == null ? null : '$_queuePrefix$account';
+  }
   static const int _maxQueueCapacity = 200;
 
   /// Đưa 1 điểm vào hàng đợi
@@ -46,8 +57,10 @@ class EmployeeTrackingLocalStorage {
           ? validPoints.sublist(validPoints.length - _maxQueueCapacity)
           : validPoints;
 
+      final key = _queueKey(prefs);
+      if (key == null) return;
       final jsonStr = jsonEncode(bounded.map((e) => e.toJson()).toList());
-      await prefs.setString(_queueKey, jsonStr);
+      await prefs.setString(key, jsonStr);
     } catch (e) {
       debugPrint('[TrackingLocalStorage] Lỗi lưu hàng đợi vị trí: $e');
     }
@@ -57,7 +70,9 @@ class EmployeeTrackingLocalStorage {
   Future<List<LocationPingPointModel>> getAllPoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString(_queueKey);
+      if (prefs.containsKey(_legacyQueueKey)) await prefs.remove(_legacyQueueKey);
+      final key = _queueKey(prefs);
+      final jsonStr = key == null ? null : prefs.getString(key);
       if (jsonStr == null || jsonStr.isEmpty) return [];
 
       final list = jsonDecode(jsonStr) as List<dynamic>;
@@ -85,8 +100,10 @@ class EmployeeTrackingLocalStorage {
       final toRemove = clientUuids.toSet();
 
       final remaining = all.where((p) => !toRemove.contains(p.clientUuid)).toList();
+      final key = _queueKey(prefs);
+      if (key == null) return;
       final jsonStr = jsonEncode(remaining.map((e) => e.toJson()).toList());
-      await prefs.setString(_queueKey, jsonStr);
+      await prefs.setString(key, jsonStr);
     } catch (e) {
       debugPrint('[TrackingLocalStorage] Lỗi xoá điểm khỏi hàng đợi: $e');
     }
@@ -96,7 +113,8 @@ class EmployeeTrackingLocalStorage {
   Future<void> clearQueue() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_queueKey);
+      final key = _queueKey(prefs);
+      if (key != null) await prefs.remove(key);
     } catch (_) {}
   }
 
