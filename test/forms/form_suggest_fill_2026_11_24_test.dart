@@ -44,7 +44,16 @@ class _Api extends Fake implements FormsApiService {
     },
     fills: {
       'ten': {
-        'NPP Linh Thìn': <String, dynamic>{'ten': 'NPP Linh Thìn', 'sdt': '0393938521', 'ghi_chu': 'phiếu cũ'},
+        'NPP Linh Thìn': <String, dynamic>{
+          'ten': 'NPP Linh Thìn',
+          'sdt': '0393938521',
+          'ghi_chu': 'phiếu cũ',
+          // Lựa chọn «C» admin đã gỡ khỏi ô ⇒ bỏ khi dựng; dòng bảng lặp mang `line_id` của phiếu cũ ⇒ cấp mới.
+          'kenh': ['A', 'C'],
+          'bang': [
+            {'line_id': 'cu0000000000000a', 'cot': 'X'},
+          ],
+        },
       },
     },
   );
@@ -114,6 +123,34 @@ void main() {
         _o('ten', 'text', {'suggest_from_history': true}),
         _o('sdt', 'text'),
         _o('ghi_chu', 'text'),
+        const MarketFormBlockEntity(
+          ref: 'kenh',
+          type: 'field',
+          required: false,
+          resolved: MarketFormResolvedEntity(
+            code: 'kenh',
+            label: 'Kênh',
+            inputType: 'checkbox',
+            options: [MarketFormOptionEntity(value: 'A', label: 'A'), MarketFormOptionEntity(value: 'B', label: 'B')],
+          ),
+        ),
+        const MarketFormBlockEntity(
+          ref: 'bang',
+          type: 'group',
+          required: false,
+          resolved: MarketFormResolvedEntity(
+            code: 'bang',
+            label: 'Bảng',
+            inputType: 'group_table',
+            groupItems: [
+              {
+                'ref': 'cot',
+                'required': false,
+                'resolved': {'code': 'cot', 'label': 'Cột', 'input_type': 'text'},
+              },
+            ],
+          ),
+        ),
       ],
     ),
   );
@@ -133,6 +170,20 @@ void main() {
   Map<String, dynamic> answers(WidgetTester tester) =>
       tester.state<MarketFormRendererState>(find.byType(MarketFormRenderer)).currentAnswers;
 
+  void expectFilled(WidgetTester tester) {
+    final a = answers(tester);
+    expect({for (final k in ['ten', 'sdt', 'ghi_chu', 'kenh']) k: a[k]}, {
+      'ten': 'NPP Linh Thìn',
+      'sdt': '0393938521',
+      'ghi_chu': 'phiếu cũ',
+      'kenh': ['A'],
+    });
+    final row = (a['bang'] as List).single as Map;
+    expect(row['cot'], 'X');
+    expect(row['line_id'], isNot('cu0000000000000a'));
+    expect(row['line_id'], matches(RegExp(r'^[0-9a-f]{16}$')));
+  }
+
   Future<void> chonGoiY(WidgetTester tester) async {
     await tester.enterText(find.byType(TextFormField).first, 'linh');
     await tester.pumpAndSettle();
@@ -150,7 +201,7 @@ void main() {
       await tester.pumpAndSettle();
       await chonGoiY(tester);
       expect(find.text('Điền theo phiếu cũ?'), findsNothing);
-      expect(answers(tester), {'ten': 'NPP Linh Thìn', 'sdt': '0393938521', 'ghi_chu': 'phiếu cũ'});
+      expectFilled(tester);
       expect(find.text('0393938521'), findsOneWidget, reason: 'ô hiện đúng giá trị đã điền');
       await tester.pump(const Duration(seconds: 5));
 
@@ -171,7 +222,7 @@ void main() {
       await chonGoiY(tester);
       await tester.tap(find.text('Điền theo phiếu cũ'));
       await tester.pumpAndSettle();
-      expect(answers(tester), {'ten': 'NPP Linh Thìn', 'sdt': '0393938521', 'ghi_chu': 'phiếu cũ'});
+      expectFilled(tester);
       await tester.pump(const Duration(seconds: 5));
 
       // 3. Phiếu khảo sát (gắn điểm bán của lượt) ⇒ chỉ điền tên, không chép phiếu cũ.

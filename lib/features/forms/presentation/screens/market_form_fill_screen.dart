@@ -15,6 +15,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/draft_restored_banner.dart';
+import '../../../../core/dynamic_form/repeat_group.dart' show RepeatGroupSpec;
 import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart' show DisplayMatrixCustom;
 import '../../../../core/widgets/top_app_bar.dart';
 import '../../data/models/market_form_submission_model.dart';
@@ -310,6 +311,16 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     if (!mounted || !identical(renderer, _rendererKey.currentState)) return;
 
     final seed = <String, dynamic>{...fill, ...kept, code: value};
+    // Dòng bảng lặp chép từ phiếu cũ mang `line_id` của phiếu đó — khoá dòng phải riêng từng phiếu ⇒ cấp mới.
+    for (final b in widget.args.config.schema.blocks) {
+      final c = b.resolved.code;
+      final rows = seed[c];
+      if (!b.resolved.isRepeatGroup || kept.containsKey(c) || rows is! List) continue;
+      seed[c] = [
+        for (final r in rows)
+          if (r is Map) {...r, 'line_id': RepeatGroupSpec.newLineId()} else r,
+      ];
+    }
     // Tệp gốc của ảnh đã tải lên — renderer mới chỉ nhận token, nháp cần tệp này ([FormDraftStore] `token_files`).
     _draftTokenFiles = {..._draftTokenFiles, ...renderer.uploadedPhotoFiles};
     setState(() {

@@ -272,6 +272,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   void initState() {
     super.initState();
     _answers.addAll(widget.initialAnswers);
+    _dropRemovedOptions();
 
     // Khởi tạo danh sách ảnh cho các ô ảnh / tệp từ initialAnswers
     for (final block in widget.blocks) {
@@ -415,6 +416,28 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// Ô [code] còn đúng giá trị renderer tự điền lúc dựng ([_autoDefaults]) — màn chứa không coi là "người dùng đã nhập".
   bool isAutoDefault(String code) =>
       _autoDefaults.containsKey(code) && _autoDefaults[code] != null && _autoDefaults[code] == _encodeOrNull(_answers[code]);
+
+  /// Câu trả lời dựng sẵn (nháp / tự điền từ phiếu cũ / bản ghi cũ) mang lựa chọn admin ĐÃ GỠ khỏi ô chọn: ô không hiện nó
+  /// (người dùng không bỏ được) mà server từ chối «ngoài danh sách» ⇒ phiếu không bao giờ nộp được, nộp ngoại tuyến thì chết
+  /// trong hàng đợi (rà soát 24/11/2026). Bỏ giá trị lạ; ô cho nhập «Khác…» giữ MỘT giá trị lạ (đúng luật server).
+  void _dropRemovedOptions() {
+    for (final block in widget.blocks) {
+      final type = block.resolved.inputType.toLowerCase();
+      if (!const {'select', 'radio', 'checkbox', 'multiselect'}.contains(type) || block.resolved.options.isEmpty) continue;
+      final code = block.resolved.code;
+      final val = _answers[code];
+      if (val == null) continue;
+      final opts = _optionValues(block).toList();
+      final allowOther = _allowsOther(block);
+      if (val is List) {
+        final other = allowOther ? ChoiceOther.foreignMulti(val, opts) : null;
+        final kept = ChoiceOther.composeMulti<dynamic>(val, opts, other);
+        if (kept.length != val.length) _answers[code] = kept;
+      } else if (!allowOther && ChoiceOther.foreignSingle(val, opts) != null) {
+        _answers.remove(code);
+      }
+    }
+  }
 
   bool _isMultiChoice(MarketFormBlockEntity block) =>
       const {'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
