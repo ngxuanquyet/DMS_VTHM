@@ -1858,7 +1858,9 @@ class SyncService {
   }) async {
     // 0. Phiên hết hạn / tài khoản bị thu quyền app: dữ liệu của mục KHÔNG sai — đăng nhập lại là gửi được. Chuyển
     // dead ở đây (bản cũ) là mất trắng: mục dead chỉ xoá được, và cả lô phía sau cũng nhận đúng lỗi này.
-    if (statusCode == 401 || errorCode == 'DMS_APP_FORBIDDEN') {
+    // Buộc đổi mật khẩu (#25831) cũng là lỗi của phiên: giữ chờ, đổi xong là gửi được — KHÔNG đăng xuất cưỡng bức (phiên
+    // còn sống, `sessionCleared()` = false).
+    if (statusCode == 401 || errorCode == 'DMS_APP_FORBIDDEN' || errorCode == passwordChangeRequiredCode) {
       _lastAuthBlockForbidden = errorCode == 'DMS_APP_FORBIDDEN';
       await _db.reschedule(
         entry.id,

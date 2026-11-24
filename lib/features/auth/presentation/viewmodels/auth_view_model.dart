@@ -10,7 +10,10 @@ import '../../../../core/rules/mobile_rules_service.dart';
 import '../../../../core/services/error_tracker_service.dart';
 import '../../../../core/services/fcm_push_service.dart';
 import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/models/user_model.dart';
 import '../../data/services/auth_api_service.dart';
+import '../../data/services/password_change_service.dart';
+import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
@@ -39,6 +42,10 @@ final authApiServiceProvider = Provider<AuthApiService>((ref) {
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepositoryImpl(ref.read(authApiServiceProvider));
+});
+
+final passwordChangeServiceProvider = Provider<PasswordChangeService>((ref) {
+  return PasswordChangeService(ref.read(authApiServiceProvider), ref.read(authRepositoryProvider));
 });
 
 final loginUseCaseProvider = Provider<LoginUseCase>((ref) {
@@ -89,7 +96,10 @@ class AuthViewModel extends StateNotifier<AuthState> {
     this.ref,
   }) : super(const AuthState()) {
     _init();
-    if (ref != null) AuthInterceptor.onSessionRejected = _onSessionRejected;
+    if (ref != null) {
+      AuthInterceptor.onSessionRejected = _onSessionRejected;
+      AuthInterceptor.onPasswordChangeRequired = requirePasswordChange;
+    }
   }
 
   void _onSessionRejected([String? forbiddenMessage]) {
@@ -99,6 +109,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
   @override
   void dispose() {
     if (AuthInterceptor.onSessionRejected == _onSessionRejected) AuthInterceptor.onSessionRejected = null;
+    if (AuthInterceptor.onPasswordChangeRequired == requirePasswordChange) AuthInterceptor.onPasswordChangeRequired = null;
     super.dispose();
   }
 
@@ -115,11 +126,16 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
   Future<bool> checkAuth() async {
     try {
-      final user = await checkAuthUseCase();
+      var user = await checkAuthUseCase();
       if (user != null) {
         // Kiểm tra quyền app-access (§2.3 spec 15/10/2026: GET /dms/app-access)
         try {
           await checkAppAccessUseCase();
+          // Máy chủ trả lời được ⇒ KHÔNG còn bị buộc đổi mật khẩu (đã đổi ở web / máy khác) — hạ cờ cũ lưu trên máy.
+          if (user.mustChangePassword) {
+            user = _withMustChange(user, false);
+            unawaited(PasswordChangeService.persistFlag(false));
+          }
         } on DmsAppForbiddenException catch (e) {
           // Bị thu quyền -> Thu hồi phiên, đẩy về màn đăng nhập kèm thông báo
           await logout();
@@ -130,6 +146,12 @@ class AuthViewModel extends StateNotifier<AuthState> {
           );
           return false;
         } on ServerException catch (e) {
+          // Đang bị buộc đổi mật khẩu (quản trị vừa đặt lại, #25831): phiên VẪN sống — KHÔNG đăng xuất / báo "chưa được cấp
+          // quyền" (403 dưới đây); vào app, lớp phủ đổi mật khẩu bắt buộc che mọi màn.
+          if (e.code == passwordChangeRequiredCode) {
+            user = _withMustChange(user!, true);
+            unawaited(PasswordChangeService.persistFlag(true));
+          }
           // Phiên bị máy chủ từ chối (refresh hết hạn — interceptor đã xoá phiên) ⇒ về đăng nhập; coi như mất mạng thì app
           // "đã đăng nhập" mà mọi thao tác trực tuyến báo 401 (#24698 vòng 3).
           if (e.statusCode == 401 && await SyncService.sessionCleared()) {
@@ -145,7 +167,8 @@ class AuthViewModel extends StateNotifier<AuthState> {
             return false;
           }
           // 403 trang của WAF / proxy (không phải JSON của API) KHÔNG phải bị thu quyền app — đừng đăng xuất (rà soát 24/11).
-          if ((e.statusCode == 403 && e.code != nonApiResponseCode) || e.code == 'DMS_APP_FORBIDDEN') {
+          if ((e.statusCode == 403 && e.code != nonApiResponseCode && e.code != passwordChangeRequiredCode) ||
+              e.code == 'DMS_APP_FORBIDDEN') {
             await logout();
             state = state.copyWith(
               status: AuthStatus.error,
@@ -158,7 +181,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
           // Mất mạng / ngoại tuyến: Không đẩy ra ngoài, giữ phiên để app chạy offline
         }
 
-        await _setQueueOwner(user.id);
+        await _setQueueOwner(user!.id);
         state = state.copyWith(
           status: AuthStatus.authenticated,
           user: user,
@@ -182,6 +205,47 @@ class AuthViewModel extends StateNotifier<AuthState> {
       state = state.copyWith(status: AuthStatus.unauthenticated);
       return false;
     }
+  }
+
+  static UserEntity _withMustChange(UserEntity user, bool value) =>
+      UserModel.fromEntity(user).copyWith(mustChangePassword: value).toEntity();
+
+  /// Máy chủ báo tài khoản đang bị BUỘC đổi mật khẩu (403 `PASSWORD_CHANGE_REQUIRED` ở bất kỳ lời gọi nào — quản trị đặt
+  /// lại mật khẩu khi người dùng đang đăng nhập) ⇒ bật cờ: lớp phủ đổi mật khẩu bắt buộc che app (#25831). Chưa đăng nhập
+  /// (đang khôi phục phiên — [checkAuth] tự xử lý) thì bỏ qua.
+  void requirePasswordChange() {
+    final user = state.user;
+    if (!mounted || state.status != AuthStatus.authenticated || user == null || user.mustChangePassword) return;
+    state = state.copyWith(status: AuthStatus.authenticated, user: _withMustChange(user, true));
+    unawaited(PasswordChangeService.persistFlag(true));
+  }
+
+  /// Đổi mật khẩu bắt buộc. Thành công ⇒ hạ cờ, tải lại dữ liệu của phiên (các lần tải trước đều bị 403) và gửi ngay hàng
+  /// đợi đồng bộ đang chờ; trả null. Hỏng ⇒ trả câu lỗi để màn hình hiện (cờ giữ nguyên).
+  Future<String?> changePassword({required String currentPassword, required String newPassword}) async {
+    final r = ref;
+    if (r == null) return 'Không đổi được mật khẩu.';
+    try {
+      await r.read(passwordChangeServiceProvider).change(currentPassword: currentPassword, newPassword: newPassword);
+    } on AppException catch (e) {
+      return e.message;
+    } catch (e) {
+      return 'Không đổi được mật khẩu: $e';
+    }
+    final user = state.user;
+    if (mounted && user != null) {
+      state = state.copyWith(status: state.status, user: _withMustChange(user, false));
+    }
+    _resetPerUserState();
+    r.read(mobileRulesProvider.notifier).fetchRules();
+    ErrorTrackerService.instance.flushPending().ignore();
+    try {
+      r.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
+    } catch (_) {}
+    try {
+      unawaited(r.read(syncServiceProvider).syncQueue(force: true));
+    } catch (_) {}
+    return null;
   }
 
   void togglePasswordVisibility() {

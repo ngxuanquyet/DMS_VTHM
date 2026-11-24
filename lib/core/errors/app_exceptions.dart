@@ -75,6 +75,11 @@ class DmsAppForbiddenException extends AppException {
   ]) : super(message, 403, 'DMS_APP_FORBIDDEN', errorId);
 }
 
+/// Mã 403 của máy chủ khi tài khoản đang bị BUỘC ĐỔI MẬT KHẨU (quản trị vừa đặt lại — `PasswordChangeRequiredFilter`):
+/// mọi API trừ `auth/*` và `user/me/change-password` bị chặn tới khi người dùng đổi xong (#25831). Lỗi của PHIÊN, không
+/// phải của dữ liệu: hàng đợi giữ mục chờ gửi; app đưa người dùng vào màn đổi mật khẩu bắt buộc.
+const String passwordChangeRequiredCode = 'PASSWORD_CHANGE_REQUIRED';
+
 class NetworkException extends AppException {
   /// Request CÓ THỂ đã tới server (đã gửi xong mà quá giờ chờ phản hồi / đứt giữa chừng) — khác lỗi chưa kết nối được.
   /// Nơi ghi (check-in) cần biết để không coi bản ghi là "chắc chắn chưa có trên server" (#24698 lỗi 6).

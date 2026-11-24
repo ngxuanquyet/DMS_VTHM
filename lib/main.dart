@@ -14,6 +14,7 @@ import 'core/utils/account_key.dart';
 import 'core/utils/system_clock.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
 import 'features/consent/presentation/privacy_consent_overlay.dart';
+import 'features/auth/presentation/widgets/forced_password_change_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -106,13 +107,16 @@ class VthmApp extends ConsumerWidget {
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
         // Đồng ý điều khoản (Luật 91/2025) — lớp phủ bọc TRÊN Navigator nên che mọi màn, kể cả màn mở từ thông báo.
-        return PrivacyConsentOverlay(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              FocusManager.instance.primaryFocus?.unfocus();
-            },
-            child: child,
+        // Đổi mật khẩu bắt buộc (#25831) nằm trên cùng: lúc đó máy chủ chặn cả API đồng ý điều khoản.
+        return ForcedPasswordChangeOverlay(
+          child: PrivacyConsentOverlay(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: child,
+            ),
           ),
         );
       },

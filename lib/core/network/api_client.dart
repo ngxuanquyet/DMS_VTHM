@@ -92,6 +92,18 @@ class AuthInterceptor extends QueuedInterceptor {
     }
   }
 
+  /// Gọi khi máy chủ trả 403 [passwordChangeRequiredCode] (quản trị đặt lại mật khẩu) — AuthViewModel gắn để hiện màn đổi
+  /// mật khẩu bắt buộc từ BẤT KỲ lời gọi nào (phiên khôi phục từ máy không gọi lại `/auth/me`, #25831).
+  static void Function()? onPasswordChangeRequired;
+
+  static void _notifyPasswordChangeRequired() {
+    try {
+      onPasswordChangeRequired?.call();
+    } catch (e) {
+      debugPrint('[AuthInterceptor] Không báo được buộc đổi mật khẩu: $e');
+    }
+  }
+
   /// Dio gọi `/auth/refresh` — mặc định dựng mới mỗi lần; test truyền bản có adapter giả.
   final Dio Function() _refreshDio;
 
@@ -138,6 +150,11 @@ class AuthInterceptor extends QueuedInterceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     final statusCode = err.response?.statusCode;
     final path = err.requestOptions.path;
+
+    final errBody = err.response?.data;
+    if (statusCode == 403 && errBody is Map && errBody['code'] == passwordChangeRequiredCode) {
+      _notifyPasswordChangeRequired();
+    }
 
     // Trigger token refresh on 401 if not an auth endpoint
     if (statusCode == 401 &&
