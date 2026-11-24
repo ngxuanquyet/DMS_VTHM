@@ -156,7 +156,9 @@ class VisitReportViewModel extends StateNotifier<VisitReportState> {
       );
     } catch (e) {
       // Trong trường hợp lỗi API, vẫn đọc dữ liệu cục bộ đã lưu — CHỈ lượt của ngày đang chọn: lấy cả bộ nhớ máy là cộng
-      // lượt mọi ngày vào số liệu của một ngày (rà soát 24/11/2026).
+      // lượt mọi ngày vào số liệu của một ngày (rà soát 24/11/2026). Màn đã đóng (autoDispose) thì thôi — đọc `state` sau dispose
+      // là lỗi.
+      if (!mounted) return;
       final ngay = state.selectedDate;
       final all = await visitRepository.getAllLocalVisits();
       if (!mounted) return;

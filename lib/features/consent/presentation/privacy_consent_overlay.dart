@@ -117,7 +117,8 @@ class _PrivacyConsentOverlayState extends ConsumerState<PrivacyConsentOverlay> {
     setState(() => _busy = true);
     var loggedOut = false;
     try {
-      loggedOut = await ref.read(authViewModelProvider.notifier).logout();
+      // Người dùng từ chối xử lý dữ liệu và tự rời đi ⇒ không để nháp (điểm bán + ảnh) nằm lại máy.
+      loggedOut = await ref.read(authViewModelProvider.notifier).logout(clearDrafts: true);
     } catch (_) {}
     if (!mounted) return;
     setState(() {

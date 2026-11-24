@@ -255,7 +255,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
   /// thăm chưa đóng hoặc mục chờ gửi (vừa phát sinh sau lúc màn hình kiểm) thì KHÔNG đăng xuất, trả false; không thì
   /// xoá hàng đợi + điểm bán + ảnh offline TRƯỚC rồi mới đăng xuất.
   /// Đăng xuất cưỡng bức (bị thu quyền app) KHÔNG đụng hàng đợi — không ai được hỏi, không xoá mất dữ liệu.
-  Future<bool> logout({bool requireCleared = false}) {
+  /// [clearDrafts]: xoá nháp theo tài khoản dù không [requireCleared] — người dùng TỰ chọn rời đi (từ chối ở màn đồng ý quyền
+  /// riêng tư): không để thông tin điểm bán + ảnh nháp nằm lại máy (review 1135353).
+  Future<bool> logout({bool requireCleared = false, bool clearDrafts = false}) {
     // Một lượt đăng xuất một lúc (tự chọn / cưỡng bức / checkAuth): lượt sau CHỜ lượt đang chạy rồi mới chạy phần của
     // mình (yêu cầu dọn dữ liệu khác nhau — dùng chung kết quả là sai). Gắn [_logoutRun] NGAY (không qua await) để hai lời
     // gọi sát nhau không cùng thấy "rảnh" (#24698 vòng 3).
@@ -269,7 +271,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
         // Trừ lượt đòi XOÁ dữ liệu (tự đăng xuất) — lượt trước (cưỡng bức) không xoá, báo "xong" là sai.
         if (state.status != AuthStatus.authenticated && !requireCleared) return true;
       }
-      return _logout(requireCleared: requireCleared);
+      return _logout(requireCleared: requireCleared, clearDrafts: clearDrafts);
     }();
     _logoutRun = run;
     return run.whenComplete(() {
@@ -277,7 +279,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
     });
   }
 
-  Future<bool> _logout({required bool requireCleared}) async {
+  Future<bool> _logout({required bool requireCleared, bool clearDrafts = false}) async {
     // Lỗi DB thì ném lên cho màn hình báo — đừng nuốt thành "còn mục chờ gửi" (người dùng đồng bộ lại mãi vô ích).
     if (requireCleared) {
       final db = ref?.read(appDatabaseProvider);
@@ -303,7 +305,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
     try {
       // Nháp phiếu thu thập / Thêm mới điểm bán theo tài khoản: chỉ TỰ đăng xuất ([requireCleared]) mới xoá — đăng xuất
       // cưỡng bức (hết phiên, bị thu quyền) giữ như giữ hàng đợi, đúng người đăng nhập lại là điền tiếp (rà soát 24/11/2026).
-      await logoutUseCase(keepAccountDrafts: !requireCleared);
+      await logoutUseCase(keepAccountDrafts: !requireCleared && !clearDrafts);
     } catch (_) {
       await _setQueueOwner(owner?.toString());
       rethrow;

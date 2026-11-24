@@ -1921,9 +1921,9 @@ class CheckInViewModel extends StateNotifier<CheckInState> {
     // Có mã HTTP = server ĐÃ trả lời. Lỗi TẠM (5xx cổng/k3s, 408, 429) ⇒ như mất mạng: hàng đợi gửi lại cùng client_uuid,
     // server khử trùng. Mã khác là từ chối thật — cờ mạng đang báo "offline" (sóng yếu, một lần kiểm hỏng) cũng không được
     // biến nó thành lượt/check-out/ảnh ngoại tuyến rồi chết trong hàng đợi (rà soát #24698 vòng 3).
-    // Trang proxy / WAF (4xx thân không phải JSON API — [nonApiResponseCode]) cũng là lỗi TẠM: yêu cầu chưa tới nghiệp vụ,
-    // báo lỗi là mất check-in / check-out / ảnh của lần bấm đó (rà soát 24/11/2026).
-    if (e is AppException && e.statusCode != null) return isTemporaryServerError(e) || e.code == nonApiResponseCode;
+    // Trang proxy / WAF (4xx thân không phải JSON API — [nonApiResponseCode]) cũng là lỗi TẠM ([isTemporaryServerError] đã gồm):
+    // yêu cầu chưa tới nghiệp vụ, báo lỗi là mất check-in / check-out / ảnh của lần bấm đó (rà soát 24/11/2026).
+    if (e is AppException && e.statusCode != null) return isTemporaryServerError(e);
     if (ref != null) {
       try {
         if (!ref!.read(connectivityProvider).isOnline) return true;

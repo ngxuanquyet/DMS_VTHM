@@ -200,10 +200,10 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       if (pos == null) return;
       _lastKnownPosition = pos;
 
-      // Mất GPS ⇒ [_getCurrentPosition] trả vị trí lưu sẵn: quá cũ thì bỏ nhịp này (null), không gửi như vị trí hiện tại.
-      final point = pointFromPosition(pos, source: 'auto');
+      // Đo mới hỏng ⇒ [_getCurrentPosition] trả vị trí LƯU SẴN: bỏ nhịp định kỳ này, không gửi toạ độ cũ như vị trí hiện tại.
+      final point = pointFromPosition(pos, source: 'auto', fromCache: _lastFixFromCache);
       if (point == null) {
-        debugPrint('[EmployeeTracking] Vị trí gần nhất đo lúc ${pos.timestamp} — quá cũ, bỏ nhịp gửi định kỳ');
+        debugPrint('[EmployeeTracking] Không đo được GPS mới (chỉ còn vị trí lưu sẵn) — bỏ nhịp gửi định kỳ');
         return;
       }
 
@@ -223,6 +223,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
 
     try {
       Position? pos;
+      var fromCache = false;
       try {
         // Cố gắng đo nhanh với timeout 2.5s, nếu không kịp dùng tọa độ gần nhất
         pos = await Geolocator.getCurrentPosition(
@@ -233,11 +234,12 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
         );
       } catch (_) {
         pos = _lastKnownPosition ?? LocationService.currentCachedPosition;
+        fromCache = true;
       }
 
       if (pos == null) return;
 
-      final point = pointFromPosition(pos, source: 'app_exit')!;
+      final point = pointFromPosition(pos, source: 'app_exit', fromCache: fromCache)!;
 
       // Đưa vào hàng đợi
       // Đã huỷ (đăng xuất / đổi tài khoản) trong lúc chờ GPS ⇒ không ghi điểm vào hàng đợi của người đang đăng nhập.
@@ -395,7 +397,7 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     // =========================================================================
     // BƯỚC 2: POST /dms/locations/ping với source: "requested" và request_id
     // =========================================================================
-    final point = pointFromPosition(pos, source: 'requested', requestId: request.id)!;
+    final point = pointFromPosition(pos, source: 'requested', requestId: request.id, fromCache: _lastFixFromCache)!;
 
     try {
       final res = await _apiService.pingLocations([point]);
@@ -466,27 +468,28 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
     }
   }
 
-  /// Vị trí lưu sẵn cũ hơn mức này KHÔNG gửi như điểm định kỳ (`auto`) — nhịp gửi mặc định 3 phút, quá 5 phút là đã lỡ ít
-  /// nhất một nhịp đo được: gửi lại toạ độ cũ chỉ vẽ "đứng yên" giả trên lộ trình (rà soát 24/11/2026).
-  static const Duration maxStaleAutoPositionAge = Duration(minutes: 5);
+  /// Lần đo gần nhất của [_getCurrentPosition] là vị trí LƯU SẴN (đo mới hỏng / dịch vụ vị trí tắt), không phải đo mới.
+  bool _lastFixFromCache = false;
 
-  /// Dựng điểm gửi từ [pos] với `client_time` = LÚC ĐO của vị trí (`pos.timestamp`), KHÔNG phải lúc gửi: mất GPS / tắt dịch
-  /// vụ vị trí thì [_getCurrentPosition] trả vị trí lưu sẵn — đóng dấu giờ hiện tại là báo người ở chỗ cũ vào giờ mới
-  /// (rà soát 24/11/2026). Điểm `auto` có vị trí cũ hơn [maxStaleAutoPositionAge] ⇒ `null` (bỏ nhịp). `app_exit` /
-  /// `requested` vẫn gửi, kèm đúng giờ đo để người xem biết là vị trí cũ.
+  /// Dựng điểm gửi từ [pos] (rà soát 24/11/2026). Vị trí ĐO MỚI ⇒ `client_time` = bây giờ (như trước). Vị trí LƯU SẴN
+  /// ([fromCache]) ⇒ điểm định kỳ `auto` bỏ nhịp (`null` — gửi lại toạ độ cũ chỉ vẽ "đứng yên" giả); `app_exit` / `requested`
+  /// vẫn gửi với `client_time` = lúc đo (`pos.timestamp`), không đóng dấu giờ mới lên toạ độ cũ.
+  /// KHÔNG so giờ đo với đồng hồ máy để phán "cũ": giờ GPS và đồng hồ máy lệch nhau (máy để giờ tay nhanh hơn) thì mọi điểm
+  /// đều bị coi là cũ (review 1135353).
   @visibleForTesting
   static LocationPingPointModel? pointFromPosition(
     Position pos, {
     required String source,
     int? requestId,
     DateTime? now,
+    bool fromCache = false,
   }) {
     final at = now ?? DateTime.now();
+    if (fromCache && source == 'auto') return null;
     // geolocator trả giờ UTC — đổi về giờ máy cho cùng dạng `client_time` cũ (không hậu tố Z); giờ đo lệch VỀ SAU đồng hồ
-    // máy (GPS / đồng hồ máy lệch nhau) thì lấy giờ máy, không gửi điểm "ở tương lai".
-    var measuredAt = pos.timestamp.toLocal();
+    // máy thì lấy giờ máy, không gửi điểm "ở tương lai".
+    var measuredAt = fromCache ? pos.timestamp.toLocal() : at;
     if (measuredAt.isAfter(at)) measuredAt = at;
-    if (source == 'auto' && at.difference(measuredAt) > maxStaleAutoPositionAge) return null;
     return LocationPingPointModel.create(
       lat: pos.latitude,
       lng: pos.longitude,
@@ -506,12 +509,16 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       if (_lastKnownPosition != null) {
         final age = DateTime.now().difference(_lastKnownPosition!.timestamp);
         if (age.inSeconds < 60) {
+          _lastFixFromCache = false;
           return _lastKnownPosition;
         }
       }
 
       final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!isServiceEnabled) return _lastKnownPosition ?? LocationService.currentCachedPosition;
+      if (!isServiceEnabled) {
+        _lastFixFromCache = true;
+        return _lastKnownPosition ?? LocationService.currentCachedPosition;
+      }
 
       final perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
@@ -526,9 +533,11 @@ class EmployeeTrackingNotifier extends StateNotifier<EmployeeTrackingState>
       );
       _lastKnownPosition = pos;
       LocationService.updateCachedPosition(pos);
+      _lastFixFromCache = false;
       return pos;
     } catch (e) {
       debugPrint('[EmployeeTracking] Đo GPS thất bại: $e');
+      _lastFixFromCache = true;
       return _lastKnownPosition ?? LocationService.currentCachedPosition;
     }
   }

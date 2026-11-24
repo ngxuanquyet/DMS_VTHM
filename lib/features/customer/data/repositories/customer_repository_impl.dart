@@ -743,7 +743,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         // hàng. 500 (lỗi theo dữ liệu, lặp lại) và ngoại lệ lập trình báo NGAY: xếp hàng thì thử lại mãi, dòng mang dấu "có thể
         // đã tới" không xoá được ⇒ điểm bán kẹt "chờ đồng bộ" vĩnh viễn (rà soát 24/11/2026). Lưu lại an toàn: cùng client_uuid.
         final phien = e is AppException && e.statusCode == 401;
-        if (!phien && !_isNetworkError(e) && !(e is AppException && e.code == nonApiResponseCode)) rethrow;
+        if (!phien && !_isNetworkError(e)) rethrow;
         // Lỗi lúc GỬI tạo (không phải lúc chuẩn bị ảnh) mà không chắc chưa ra khỏi máy ⇒ server có thể đã ghi (lần sửa sau
         // không gộp vào dòng tạo). 401: server chắc chắn chưa ghi.
         if (posted && !phien && !(e is NetworkException && !e.mayHaveReachedServer)) data[queueMaybeOnServerKey] = true;
@@ -867,8 +867,13 @@ class CustomerRepositoryImpl implements CustomerRepository {
       }
     }
 
+    // Gửi lại cùng client_uuid mà server đã có từ lần lưu trước (`created == false`) ⇒ server trả bản CŨ, phần vừa nhập KHÔNG
+    // được ghi: không ghi nhật ký «tạo», không cache vật tư chưa lên server, không ghi bản vừa nhập vào máy (review 00fc0aa) —
+    // lần làm mới danh sách ngay sau đó kéo bản server về. Đánh dấu để màn tạo báo người dùng thay vì «tạo thành công».
+    final daCo = dto.created == false;
+
     // Lệnh gửi trực tuyến cũng vào nhật ký đã gửi (màn Báo cáo gửi dữ liệu).
-    await ghiSo('nhật ký gửi', () => _localDataSource.db.logDirectSend(
+    if (!daCo) await ghiSo('nhật ký gửi', () => _localDataSource.db.logDirectSend(
           entity: 'customer',
           op: 'create',
           clientUuid: data['client_uuid'].toString(),
@@ -883,7 +888,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
             if (data[k] is List) ...(data[k] as List).map((e) => '$e'),
         ]));
     // Vật tư đã ghi cùng lượt tạo ⇒ cache cho lượt viếng thăm đầu ngoại tuyến (#24526).
-    if (cleanPayload['materials'] is List) {
+    if (!daCo && cleanPayload['materials'] is List) {
       await ghiSo('cache vật tư', () => cacheCreatedOutletMaterials(
             serverId,
             (cleanPayload['materials'] as List)
@@ -899,6 +904,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
       cleanPayload: cleanPayload,
     );
 
+    if (daCo) return built.copyWith(alreadyCreated: true);
+
     await ghiSo('ghi máy', () => _localDataSource.cacheRemoteCustomers([built]));
     _cachedCustomers.removeWhere((c) =>
         (built.clientUuid != null && c.clientUuid == built.clientUuid) ||
@@ -906,11 +913,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
         (built.code.isNotEmpty && !built.code.startsWith('PENDING_') && c.code == built.code));
     _cachedCustomers.insert(0, built);
     _cachedCustomers = CustomerLocalDataSource.deduplicateCustomers(_cachedCustomers);
-    if (dto.created != false) return built;
-    // Gửi lại cùng client_uuid mà server đã có từ lần lưu trước ⇒ server trả bản CŨ, phần vừa nhập không được ghi: đánh dấu
-    // để màn tạo báo người dùng thay vì «tạo thành công» im lặng. Bản ghi máy ở trên là theo lần nhập — lần làm mới danh
-    // sách ngay sau đó thay bằng bản server.
-    return built.copyWith(alreadyCreated: true);
+    return built;
   }
 
   CustomerEntity _buildSyncedCustomerEntity({

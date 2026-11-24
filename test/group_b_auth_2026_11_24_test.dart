@@ -170,29 +170,31 @@ void main() {
   group('3. Điểm GPS mang đúng giờ ĐO của vị trí', () {
     final now = DateTime(2026, 11, 24, 10, 0, 0);
 
-    test('vị trí lưu sẵn 2 phút trước ⇒ client_time = lúc đo, không phải lúc gửi', () {
-      final measured = now.subtract(const Duration(minutes: 2));
-      final p = EmployeeTrackingNotifier.pointFromPosition(_pos(measured.toUtc()), source: 'auto', now: now)!;
-      expect(DateTime.parse(p.clientTime), measured);
-      expect(p.clientTime.endsWith('Z'), isFalse, reason: 'giữ dạng giờ máy như trước');
-    });
-
-    test('ping định kỳ: vị trí cũ hơn 5 phút ⇒ bỏ nhịp (null)', () {
-      final old = now.subtract(const Duration(minutes: 30));
-      expect(EmployeeTrackingNotifier.pointFromPosition(_pos(old.toUtc()), source: 'auto', now: now), isNull);
-    });
-
-    test('app_exit / requested: vị trí cũ vẫn gửi nhưng kèm đúng giờ đo', () {
-      final old = now.subtract(const Duration(minutes: 30));
+    test('vị trí LƯU SẴN (đo mới hỏng) ⇒ client_time = lúc đo, không phải lúc gửi', () {
+      final measured = now.subtract(const Duration(minutes: 30));
       for (final src in ['app_exit', 'requested']) {
-        final p = EmployeeTrackingNotifier.pointFromPosition(_pos(old.toUtc()), source: src, requestId: 3, now: now)!;
-        expect(DateTime.parse(p.clientTime), old, reason: src);
+        final p = EmployeeTrackingNotifier.pointFromPosition(_pos(measured.toUtc()),
+            source: src, requestId: 3, now: now, fromCache: true)!;
+        expect(DateTime.parse(p.clientTime), measured, reason: src);
+        expect(p.clientTime.endsWith('Z'), isFalse, reason: 'giữ dạng giờ máy như trước');
       }
     });
 
-    test('giờ đo lệch về sau đồng hồ máy ⇒ lấy giờ máy', () {
+    test('ping định kỳ dùng vị trí LƯU SẴN ⇒ bỏ nhịp (null)', () {
+      expect(
+          EmployeeTrackingNotifier.pointFromPosition(_pos(now.toUtc()), source: 'auto', now: now, fromCache: true), isNull);
+    });
+
+    test('vị trí ĐO MỚI mà giờ GPS lệch xa đồng hồ máy (máy để giờ nhanh) ⇒ vẫn gửi, client_time = bây giờ', () {
+      final gpsTime = now.subtract(const Duration(minutes: 30));
+      final p = EmployeeTrackingNotifier.pointFromPosition(_pos(gpsTime.toUtc()), source: 'auto', now: now)!;
+      expect(DateTime.parse(p.clientTime), now);
+    });
+
+    test('vị trí lưu sẵn mà giờ đo lệch về sau đồng hồ máy ⇒ lấy giờ máy', () {
       final future = now.add(const Duration(minutes: 3));
-      final p = EmployeeTrackingNotifier.pointFromPosition(_pos(future.toUtc()), source: 'auto', now: now)!;
+      final p = EmployeeTrackingNotifier.pointFromPosition(_pos(future.toUtc()),
+          source: 'app_exit', now: now, fromCache: true)!;
       expect(DateTime.parse(p.clientTime), now);
     });
   });
