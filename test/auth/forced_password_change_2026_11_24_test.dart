@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +25,8 @@ import 'package:vthm_dms/features/auth/domain/usecases/auth_usecases.dart';
 import 'package:vthm_dms/features/auth/presentation/states/auth_state.dart';
 import 'package:vthm_dms/features/auth/presentation/viewmodels/auth_view_model.dart';
 import 'package:vthm_dms/features/auth/presentation/widgets/forced_password_change_overlay.dart';
+import 'package:vthm_dms/features/route/presentation/viewmodels/route_view_model.dart';
+import 'package:vthm_dms/features/employee_tracking/presentation/services/employee_tracking_service.dart';
 
 /// #25831: quản trị đặt lại mật khẩu ⇒ máy chủ trả 403 PASSWORD_CHANGE_REQUIRED cho mọi API trừ auth/* và đổi mật khẩu.
 /// Lỗi cũ: app không có màn đổi mật khẩu — đăng nhập được nhưng mọi màn 403; mở lại app thì bị đăng xuất với câu "chưa
@@ -205,6 +210,87 @@ void main() {
       expect(vm.state.user!.mustChangePassword, isTrue);
       expect(vm.state.status, AuthStatus.authenticated);
     });
+  });
+
+  group('AuthViewModel.changePassword — lần đổi mất phản hồi', () {
+    // Ở chế độ debug, `ref.invalidate` dựng provider để kiểm assert rồi huỷ ngay ⇒ ViewModel đang tải dở ném "after
+    // `dispose`" (bản release không dựng). Chỉ bỏ qua đúng lỗi đó — lỗi khác (kể cả expect hỏng) vẫn làm test đỏ.
+    Future<void> guarded(Future<void> Function() body) {
+      final done = Completer<void>();
+      runZonedGuarded(() async {
+        await body();
+        if (!done.isCompleted) done.complete();
+      }, (e, st) {
+        if (e is StateError && e.message.contains('after `dispose`')) return;
+        if (!done.isCompleted) done.completeError(e, st);
+      });
+      return done.future;
+    }
+
+    Future<(ProviderContainer, AuthViewModel)> setup(_Repo repo, Object changeError) async {
+      final api = _Api()..error = changeError;
+      final docs = await Directory.systemTemp.createTemp('pw');
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async => docs.path);
+      addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      final db = AppDatabase(NativeDatabase.memory(), 1);
+      addTearDown(db.close);
+      final c = ProviderContainer(overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        authRepositoryProvider.overrideWithValue(repo),
+        passwordChangeServiceProvider.overrideWithValue(PasswordChangeService(api, repo)),
+      ]);
+      final vm = c.read(authViewModelProvider.notifier);
+      await vm.login('TEST001', 'x');
+      vm.requirePasswordChange();
+      expect(vm.state.user!.mustChangePassword, isTrue);
+      return (c, vm);
+    }
+
+    test('quá giờ nhưng máy chủ ĐÃ đổi (app-access được cấp) ⇒ coi là thành công, hạ cờ', () => guarded(() async {
+      final repo = _Repo();
+      final (c, vm) = await setup(repo, const NetworkException.maybeSent('Quá giờ'));
+      final tracking = c.read(employeeTrackingProvider.notifier);
+      final checkIn = c.read(checkInViewModelProvider.notifier);
+      // Máy chủ đã thôi buộc đổi ⇒ app-access trả lời được.
+      final err = await vm.changePassword(currentPassword: 'cu', newPassword: 'moi12345');
+      expect(err, isNull, reason: 'lỗi cũ: báo lỗi mạng, bấm lại ⇒ 422 sai mật khẩu hiện tại, kẹt lớp phủ');
+      expect(vm.state.user!.mustChangePassword, isFalse);
+      // Cùng người ⇒ KHÔNG dựng lại theo dõi vị trí (lỗi cũ: tắt tới lần mở app sau) / màn check-in đang dở.
+      expect(identical(c.read(employeeTrackingProvider.notifier), tracking), isTrue);
+      expect(identical(c.read(checkInViewModelProvider.notifier), checkIn), isTrue);
+    }));
+
+    test('quá giờ và máy chủ vẫn buộc đổi (app-access 403) ⇒ báo lỗi, GIỮ cờ', () => guarded(() async {
+      final repo = _Repo()
+        ..appAccessError = const ServerException('Bạn phải đổi mật khẩu', 403, passwordChangeRequiredCode);
+      final (_, vm) = await setup(repo, const NetworkException.maybeSent('Quá giờ'));
+      final err = await vm.changePassword(currentPassword: 'cu', newPassword: 'moi12345');
+      expect(err, isNotNull);
+      expect(vm.state.user!.mustChangePassword, isTrue);
+    }));
+
+    test('cổng trả 504 nhưng máy chủ ĐÃ đổi ⇒ coi là thành công', () => guarded(() async {
+      final (_, vm) = await setup(_Repo(), const ServerException('Gateway Timeout', 504));
+      expect(await vm.changePassword(currentPassword: 'cu', newPassword: 'moi12345'), isNull);
+      expect(vm.state.user!.mustChangePassword, isFalse);
+    }));
+
+    test('chắc chắn chưa tới máy chủ (chưa kết nối được) ⇒ KHÔNG dò, báo lỗi', () => guarded(() async {
+      final (_, vm) = await setup(_Repo(), const NetworkException());
+      expect(await vm.changePassword(currentPassword: 'cu', newPassword: 'moi12345'), isNotNull);
+      expect(vm.state.user!.mustChangePassword, isTrue);
+    }));
+
+    test('máy chủ trả lời (422 sai mật khẩu) ⇒ KHÔNG dò app-access, báo lỗi', () => guarded(() async {
+      final repo = _Repo();
+      final (_, vm) = await setup(repo, const ServerException('Mật khẩu hiện tại không đúng', 422, 'VALIDATION_ERROR'));
+      final err = await vm.changePassword(currentPassword: 'sai', newPassword: 'moi12345');
+      expect(err, 'Mật khẩu hiện tại không đúng');
+      expect(vm.state.user!.mustChangePassword, isTrue);
+    }));
   });
 
   group('PasswordChangeService', () {

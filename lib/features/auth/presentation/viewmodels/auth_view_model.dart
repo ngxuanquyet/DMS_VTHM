@@ -238,17 +238,28 @@ class AuthViewModel extends StateNotifier<AuthState> {
     try {
       await r.read(passwordChangeServiceProvider).change(currentPassword: currentPassword, newPassword: newPassword);
     } on AppException catch (e) {
-      return e.message;
+      // Không có phản hồi (quá giờ / đứt mạng) hoặc cổng trả 5xx (504 trong khi PHP vẫn chạy xong): server CÓ THỂ đã đổi —
+      // bấm lại sẽ 422 "mật khẩu hiện tại không đúng" và kẹt lớp phủ tới lần mở app sau. Hỏi lại /dms/app-access (bị chặn
+      // khi còn buộc đổi) để biết. Chắc chắn chưa tới server thì khỏi dò (chỉ thêm một lần chờ quá giờ).
+      final noAnswer = e.statusCode == null || e.statusCode! >= 500;
+      final notSent = e is NetworkException && !e.mayHaveReachedServer;
+      if (!noAnswer || notSent || !await _passwordChangeLanded()) return e.message;
     } catch (e) {
-      return 'Không đổi được mật khẩu: $e';
+      if (!await _passwordChangeLanded()) return 'Không đổi được mật khẩu: $e';
     }
     _passwordChangedAt = DateTime.now();
     final user = state.user;
     if (mounted && user != null) {
       state = state.copyWith(status: state.status, user: _withMustChange(user, false));
     }
-    _resetPerUserState();
+    // CÙNG người, cùng phiên ⇒ KHÔNG `_resetPerUserState()` (viết cho đổi người): nó huỷ theo dõi vị trí (không ai bật lại
+    // khi đồng ý điều khoản không đổi) và màn check-in đang dở. Chỉ nạp lại các màn dữ liệu (lần tải trước đều bị 403).
+    _reloadAfterPasswordChange();
     r.read(mobileRulesProvider.notifier).fetchRules();
+    try {
+      // Đăng ký FCM lúc đăng nhập bị 403 (đang buộc đổi) và lỗi bị nuốt ⇒ đăng ký lại.
+      r.read(fcmPushServiceProvider).registerDeviceToken();
+    } catch (_) {}
     ErrorTrackerService.instance.flushPending().ignore();
     try {
       r.read(routeApiServiceProvider).getMyRoutes(forceRefresh: true);
@@ -504,6 +515,36 @@ class AuthViewModel extends StateNotifier<AuthState> {
     r.invalidate(formSubmissionEntriesProvider);
     r.invalidate(allPendingQueueEntriesProvider);
     r.invalidate(deadQueueEntriesProvider);
+  }
+
+  /// Lần đổi mật khẩu không nhận được phản hồi: /dms/app-access trả "được cấp" ⇒ máy chủ đã thôi buộc đổi (endpoint này bị
+  /// chặn 403 khi còn buộc đổi) ⇒ lần đổi đã thành công.
+  Future<bool> _passwordChangeLanded() async {
+    try {
+      if (!await checkAppAccessUseCase()) return false;
+    } catch (_) {
+      return false;
+    }
+    await PasswordChangeService.persistFlag(false);
+    return true;
+  }
+
+  /// Sau khi đổi mật khẩu bắt buộc: nạp lại dữ liệu các màn (đều bị 403 lúc còn buộc đổi). KHÔNG đụng màn check-in, theo
+  /// dõi vị trí (đang chạy với đúng người này); Tuyến đang mở thì nạp lại tại chỗ, không huỷ (giữ lượt đang mở).
+  void _reloadAfterPasswordChange() {
+    final r = ref;
+    if (r == null) return;
+    r.invalidate(homeViewModelProvider);
+    r.invalidate(profileViewModelProvider);
+    r.invalidate(personalInfoViewModelProvider);
+    r.invalidate(travelViewModelProvider);
+    r.invalidate(visitReportViewModelProvider);
+    r.invalidate(positionDeclarationViewModelProvider);
+    r.invalidate(attendanceViewModelProvider);
+    r.invalidate(customerViewModelProvider);
+    if (r.exists(routeViewModelProvider)) {
+      unawaited(r.read(routeViewModelProvider.notifier).loadRouteDetail(isRefresh: true, silent: true));
+    }
   }
 
   void _resetPerUserState() {

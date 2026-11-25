@@ -187,7 +187,8 @@ Future<String?> Function(File file) skipRejectedMaterialPhotos(Future<String> Fu
             code != 401 &&
             code != 408 &&
             code != 429 &&
-            e.code != nonApiResponseCode) {
+            e.code != nonApiResponseCode &&
+            e.code != passwordChangeRequiredCode) {
           debugPrint('[VisitMaterial] Ảnh vật tư bị từ chối ($code), bỏ ảnh, vẫn tạo điểm bán: ${e.message}');
           return null;
         }
@@ -483,10 +484,13 @@ bool isRetryableMaterialError(Object e) {
 bool isMaterialViewRejected(Object e) =>
     e is AppException &&
     e.code != nonApiResponseCode &&
+    // Buộc đổi mật khẩu (#25831) là lỗi của phiên, không phải mất quyền xem — đừng xoá bản lưu / ẩn mục ở mọi điểm bán.
+    e.code != passwordChangeRequiredCode &&
     (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 410);
 
 /// 403 của API (mất quyền vật tư) — không tính trang proxy / WAF ([isMaterialViewRejected]).
-bool _isMaterialForbidden(Object e) => e is AppException && e.statusCode == 403 && e.code != nonApiResponseCode;
+bool _isMaterialForbidden(Object e) =>
+    e is AppException && e.statusCode == 403 && e.code != nonApiResponseCode && e.code != passwordChangeRequiredCode;
 
 class VisitMaterialRepository {
   final Ref _ref;

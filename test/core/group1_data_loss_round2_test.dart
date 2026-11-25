@@ -13,6 +13,7 @@ import 'package:vthm_dms/core/utils/system_clock.dart';
 import 'package:vthm_dms/features/attendance/data/repositories/attendance_repository_impl.dart';
 import 'package:vthm_dms/features/attendance/data/services/attendance_api_service.dart';
 import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_source.dart';
+import 'package:vthm_dms/features/visit/data/repositories/visit_material_repository.dart';
 
 /// Rà soát offline vòng 2 (02/11/2026, #24698) — nhóm 1 "mất dữ liệu": mỗi test tái hiện một đường mất dữ liệu đã vá.
 
@@ -174,6 +175,15 @@ void main() {
       expect(isPermanentRejection(ServerException('x', c)), isFalse, reason: '$c');
     }
     expect(isPermanentRejection(const DmsAppForbiddenException()), isFalse);
+    // Buộc đổi mật khẩu (#25831) là lỗi của PHIÊN — đổi xong là gửi được; coi là từ chối hẳn thì khai báo vị trí nằm
+    // 'error', ảnh viếng thăm trực tuyến bị xoá tệp.
+    expect(isPermanentRejection(const ServerException('x', 403, passwordChangeRequiredCode)), isFalse);
+    expect(isMaterialViewRejected(const ServerException('x', 403, passwordChangeRequiredCode)), isFalse,
+        reason: 'không xoá bản lưu vật tư / ẩn mục ở mọi điểm bán');
+    expect(isMaterialViewRejected(const ServerException('x', 403)), isTrue);
+    // Đường trực tuyến (check-in / check-out / huỷ lượt, điểm bán) xếp hàng thay vì báo lỗi.
+    expect(isTemporaryServerError(const ServerException('x', 403, passwordChangeRequiredCode)), isTrue);
+    expect(isTemporaryServerError(const ServerException('x', 403)), isFalse);
     expect(isPermanentRejection(const NetworkException()), isFalse);
     expect(isPermanentRejection(Exception('x')), isFalse);
   });

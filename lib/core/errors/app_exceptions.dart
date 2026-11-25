@@ -122,14 +122,15 @@ class CacheException extends AppException {
 
 
 /// Máy chủ TỪ CHỐI HẲN yêu cầu (gửi lại y nguyên vẫn sai): 4xx, TRỪ lỗi của phiên đăng nhập (401, 403
-/// `DMS_APP_FORBIDDEN` — đăng nhập lại là gửi được), 408 / 429 (tạm) và 409 (đã có trên server). Cùng luật phân loại của
+/// `DMS_APP_FORBIDDEN` — đăng nhập lại là gửi được; 403 [passwordChangeRequiredCode] — đổi mật khẩu xong là gửi được),
+/// 408 / 429 (tạm) và 409 (đã có trên server). Cùng luật phân loại của
 /// hàng đợi đồng bộ (SyncService) — đường gửi trực tuyến dùng để quyết định "báo lỗi ngay" hay "xếp hàng gửi sau".
 bool isPermanentRejection(Object e) {
   if (e is! AppException) return false;
   final c = e.statusCode;
   if (c == null || c < 400 || c >= 500) return false;
   if (c == 401 || c == 408 || c == 409 || c == 429) return false;
-  return e.code != 'DMS_APP_FORBIDDEN' && e.code != nonApiResponseCode;
+  return e.code != 'DMS_APP_FORBIDDEN' && e.code != nonApiResponseCode && e.code != passwordChangeRequiredCode;
 }
 
 /// Mã gắn cho phản hồi 4xx mà thân KHÔNG phải JSON của API (trang HTML của WAF / proxy, Traefik 404 lúc nạp lại ingress khi
@@ -154,7 +155,11 @@ String? nonApiErrorCode(int? statusCode, Object? data) {
 /// Trang 4xx không phải JSON của API ([nonApiResponseCode] — WAF / proxy / Traefik lúc deploy) cũng là lỗi tạm: hàng đợi đã
 /// coi nó là tạm ([isPermanentRejection]), đường trực tuyến phải cùng luật, không thì báo lỗi oan rồi người dùng bấm lại
 /// (rà soát 24/11/2026).
+/// 403 [passwordChangeRequiredCode] (#25831) cũng tạm: đổi mật khẩu xong là gửi được — báo lỗi thì check-in / check-out /
+/// huỷ lượt trực tuyến mất, làm lại sau khi đổi là lệch giờ, toạ độ.
 bool isTemporaryServerError(Object e) {
   if (e is! AppException) return false;
-  return const {408, 429, 502, 503, 504}.contains(e.statusCode) || e.code == nonApiResponseCode;
+  return const {408, 429, 502, 503, 504}.contains(e.statusCode) ||
+      e.code == nonApiResponseCode ||
+      e.code == passwordChangeRequiredCode;
 }

@@ -490,7 +490,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
             e.statusCode! >= 400 &&
             e.statusCode! < 500 &&
             e.statusCode != 408 &&
-            e.statusCode != 429) {
+            e.statusCode != 429 &&
+            e.code != passwordChangeRequiredCode) {
           rethrow;
         }
         // Nếu lỗi mất mạng giữa chừng, đưa vào hàng đợi offline

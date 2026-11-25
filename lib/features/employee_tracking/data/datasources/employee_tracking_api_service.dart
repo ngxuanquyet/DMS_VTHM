@@ -121,7 +121,10 @@ class EmployeeTrackingApiService {
     // 403 trang WAF / proxy (thân không phải JSON của API — [nonApiErrorCode]) KHÔNG phải bị thu quyền: coi là thu quyền thì
     // dừng hẳn theo dõi vị trí tới lần mở app sau. Để rơi xuống lỗi thường ⇒ điểm nằm lại hàng đợi, nhịp sau gửi lại
     // (rà soát 24/11/2026).
-    if (statusCode == 403 && nonApiErrorCode(statusCode, data) == null) {
+    // 403 buộc đổi mật khẩu (#25831) cũng không phải thu quyền: đổi xong là gửi tiếp.
+    if (statusCode == 403 &&
+        nonApiErrorCode(statusCode, data) == null &&
+        !(data is Map && data['code'] == passwordChangeRequiredCode)) {
       throw const LocationPermissionDeniedException(
         'Tài khoản không có quyền theo dõi vị trí (/dms/location/ping hoặc /pending).',
       );
