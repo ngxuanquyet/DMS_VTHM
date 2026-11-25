@@ -129,17 +129,71 @@ class ClockRules {
       };
 }
 
+/// Báo bản app mới (mobile-rules `app_update`, 25/11/2026). Server cũ không gửi ⇒ mọi số 0 / rỗng = không báo gì.
+class AppUpdateRules {
+  /// App có số build (`+N` của phiên bản) thấp hơn ⇒ màn chặn «Cần cập nhật app»; 0 = không bắt buộc.
+  final int minBuild;
+
+  /// Manifest APK do `scripts/publish_apk.sh dms` ghi (versionCode, fileName, size, sha256); rỗng = không báo trên Android.
+  final String androidManifestUrl;
+
+  /// Build iOS mới nhất đã có trên TestFlight / App Store; 0 = không báo trên iPhone.
+  final int iosLatestBuild;
+
+  /// Link TestFlight / App Store mà nút «Cập nhật» trên iPhone mở; rỗng = không báo trên iPhone.
+  final String iosUpdateUrl;
+
+  const AppUpdateRules({
+    this.minBuild = 0,
+    this.androidManifestUrl = '',
+    this.iosLatestBuild = 0,
+    this.iosUpdateUrl = '',
+  });
+
+  /// Số build đọc mềm (số hoặc chuỗi số): ép `as num?` ném lỗi với chuỗi ⇒ hỏng CẢ `MobileRules.fromJson`, app kẹt luật cũ.
+  static int _build(Object? v) => v is num ? v.toInt() : (int.tryParse(v?.toString() ?? '') ?? 0);
+
+  factory AppUpdateRules.fromJson(Map<String, dynamic> json) {
+    return AppUpdateRules(
+      minBuild: _build(json['min_build']),
+      androidManifestUrl: json['android_manifest_url'] is String ? (json['android_manifest_url'] as String).trim() : '',
+      iosLatestBuild: _build(json['ios_latest_build']),
+      iosUpdateUrl: json['ios_update_url'] is String ? (json['ios_update_url'] as String).trim() : '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'min_build': minBuild,
+        'android_manifest_url': androidManifestUrl,
+        'ios_latest_build': iosLatestBuild,
+        'ios_update_url': iosUpdateUrl,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppUpdateRules &&
+      other.minBuild == minBuild &&
+      other.androidManifestUrl == androidManifestUrl &&
+      other.iosLatestBuild == iosLatestBuild &&
+      other.iosUpdateUrl == iosUpdateUrl;
+
+  @override
+  int get hashCode => Object.hash(minBuild, androidManifestUrl, iosLatestBuild, iosUpdateUrl);
+}
+
 class MobileRules {
   final VisitRules visit;
   final PositionRules position;
   final FormsRules forms;
   final ClockRules clock;
+  final AppUpdateRules appUpdate;
 
   const MobileRules({
     this.visit = const VisitRules(),
     this.position = const PositionRules(),
     this.forms = const FormsRules(),
     this.clock = const ClockRules(),
+    this.appUpdate = const AppUpdateRules(),
   });
 
   factory MobileRules.fromJson(Map<String, dynamic> json) {
@@ -156,6 +210,9 @@ class MobileRules {
       clock: json['clock'] is Map<String, dynamic>
           ? ClockRules.fromJson(json['clock'] as Map<String, dynamic>)
           : const ClockRules(),
+      appUpdate: json['app_update'] is Map<String, dynamic>
+          ? AppUpdateRules.fromJson(json['app_update'] as Map<String, dynamic>)
+          : const AppUpdateRules(),
     );
   }
 
@@ -164,5 +221,6 @@ class MobileRules {
         'position': position.toJson(),
         'forms': forms.toJson(),
         'clock': clock.toJson(),
+        'app_update': appUpdate.toJson(),
       };
 }

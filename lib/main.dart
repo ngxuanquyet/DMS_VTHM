@@ -10,6 +10,7 @@ import 'core/services/app_notification_service.dart';
 import 'core/services/error_tracker_service.dart';
 import 'core/services/fcm_push_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/update/app_update_overlay.dart';
 import 'core/utils/account_key.dart';
 import 'core/utils/system_clock.dart';
 import 'features/profile/presentation/viewmodels/profile_view_model.dart';
@@ -108,14 +109,17 @@ class VthmApp extends ConsumerWidget {
         if (child == null) return const SizedBox.shrink();
         // Đồng ý điều khoản (Luật 91/2025) — lớp phủ bọc TRÊN Navigator nên che mọi màn, kể cả màn mở từ thông báo.
         // Đổi mật khẩu bắt buộc (#25831) nằm trên cùng: lúc đó máy chủ chặn cả API đồng ý điều khoản.
-        return ForcedPasswordChangeOverlay(
-          child: PrivacyConsentOverlay(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                FocusManager.instance.primaryFocus?.unfocus();
-              },
-              child: child,
+        // Báo bản app mới (25/11/2026) nằm trên cùng: bản bắt buộc phải che cả màn đổi mật khẩu / đồng ý điều khoản.
+        return AppUpdateOverlay(
+          child: ForcedPasswordChangeOverlay(
+            child: PrivacyConsentOverlay(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                },
+                child: child,
+              ),
             ),
           ),
         );

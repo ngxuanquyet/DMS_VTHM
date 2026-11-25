@@ -117,6 +117,39 @@ class AppStrings {
   String get logoutConfirmMessage => isVietnamese
       ? 'Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?'
       : 'Are you sure you want to log out of the application?';
+  // ── Cập nhật app (25/11/2026) ──
+  String get updateTitle => isVietnamese ? 'Có bản app mới' : 'A new version is available';
+  String get updateForcedTitle => isVietnamese ? 'Cần cập nhật app' : 'Update required';
+  String updateMessage(String version, int sizeBytes) {
+    final v = version.isEmpty ? '' : ' $version';
+    final mb = sizeBytes >= 1048576 ? ' (${(sizeBytes / 1048576).toStringAsFixed(0)} MB)' : '';
+    return isVietnamese
+        ? 'Bản$v$mb đã sẵn sàng với tính năng và bản sửa lỗi mới nhất. Dữ liệu chưa gửi vẫn được giữ nguyên.'
+        : 'Version$v$mb is ready with the latest features and fixes. Unsent data is kept.';
+  }
+  String get updateForcedMessage => isVietnamese
+      ? 'Bản app bạn đang dùng đã cũ, cần cập nhật để tiếp tục. Dữ liệu chưa gửi vẫn được giữ nguyên.'
+      : 'Your app version is outdated and must be updated to continue. Unsent data is kept.';
+  String get updateIosHint => isVietnamese
+      ? 'Máy sẽ mở TestFlight / App Store — bấm Cập nhật ở đó rồi mở lại app.'
+      : 'TestFlight / App Store will open — tap Update there, then reopen the app.';
+  String get updateNow => isVietnamese ? 'Cập nhật' : 'Update';
+  String get updateLater => isVietnamese ? 'Để sau' : 'Later';
+  String get updateRetry => isVietnamese ? 'Thử lại' : 'Retry';
+  String updateDownloading(int percent) =>
+      isVietnamese ? 'Đang tải bản mới… $percent%' : 'Downloading… $percent%';
+  String get updateInstalling => isVietnamese
+      ? 'Đang mở màn cài đặt — bấm Cài đặt để hoàn tất.'
+      : 'Opening the installer — tap Install to finish.';
+  String get updatePermissionError => isVietnamese
+      ? 'Hãy bật «Cho phép cài ứng dụng từ nguồn này» cho app rồi bấm Cập nhật lại.'
+      : 'Allow "Install unknown apps" for this app, then tap Update again.';
+  String get updateChecksumError =>
+      isVietnamese ? 'File tải về bị lỗi. Vui lòng thử lại.' : 'The downloaded file is corrupted. Please retry.';
+  String get updateFailed => isVietnamese
+      ? 'Không cập nhật được. Kiểm tra mạng rồi thử lại.'
+      : 'Update failed. Check your connection and retry.';
+
   String get logoutBlockedTitle =>
       isVietnamese ? 'Chưa thể đăng xuất' : 'Cannot log out yet';
   String logoutBlockedMessage(int count) => isVietnamese
