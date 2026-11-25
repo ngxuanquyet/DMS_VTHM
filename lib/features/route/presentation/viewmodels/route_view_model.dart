@@ -756,9 +756,15 @@ class RouteViewModel extends StateNotifier<RouteState> {
         return c;
       }).toList();
 
+      // NV CÓ tuyến riêng chỉ thấy điểm bán thuộc tuyến của mình (chủ hệ thống chốt 25/11/2026): `/crm/customers/mine` trả cả
+      // điểm được giao / tự tạo nằm ngoài tuyến (dữ liệu MobiWork) mà server từ chối check-in (422). `routeIds` của điểm bán
+      // từ server chỉ gồm tuyến của người gọi; điểm tạo ngoại tuyến mang tuyến đã chọn. Không có tuyến riêng ⇒ giữ cả danh
+      // sách (điểm bán theo phòng, #25830).
+      final myRouteIds = loadedUserRoutes.map((r) => r.id).toSet();
       // Loại trừ các điểm bán bị từ chối duyệt (hiển thị riêng ở màn hình từ chối)
       final rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers)
           .where((c) => !c.isRejectedApproval)
+          .where((c) => myRouteIds.isEmpty || c.routeIds.any(myRouteIds.contains))
           .toList();
       final availableRoutes = routeSet.toList();
 
