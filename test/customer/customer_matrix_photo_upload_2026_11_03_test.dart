@@ -25,14 +25,14 @@ class _Adapter implements HttpClientAdapter {
   Future<ResponseBody> fetch(RequestOptions o, Stream<List<int>>? s, Future<void>? c) async {
     ResponseBody ok(Object body, [int code = 200]) =>
         ResponseBody.fromString(jsonEncode(body), code, headers: {Headers.contentTypeHeader: [Headers.jsonContentType]});
-    if (o.path == '/crm/customer-photos') {
+    if (o.path == '/dms/outlet-photos') {
       return uploadFails ? ok({'success': false, 'message': 'lỗi máy chủ'}, 500) : ok({'success': true, 'data': {'token': 'e' * 32}});
     }
-    if (o.path.startsWith('/crm/customers/') && o.method == 'PATCH') {
+    if (o.path.startsWith('/dms/outlets/') && o.method == 'PATCH') {
       patched = o.data is Map ? o.data as Map : null;
       return ok({'success': true, 'data': {'id': 9001, 'changed': ['anh_quay_ke']}});
     }
-    if (o.path == '/crm/customers' && o.method == 'POST') {
+    if (o.path == '/dms/outlets' && o.method == 'POST') {
       created = o.data is Map ? o.data as Map : null;
       return ok({'success': true, 'data': {'id': 9001, 'code': 'DMS0001', 'created': true}}, 201);
     }

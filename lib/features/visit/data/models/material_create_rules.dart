@@ -1,4 +1,5 @@
 import 'visit_material_model.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 /// GĐ1b (#24526) — vật tư khai LÚC TẠO điểm bán. Hợp đồng: `API-VAT-TU-MOBILE-2026-10-30.md` §4 (repo One).
 ///
@@ -38,7 +39,7 @@ class MaterialCreateRule {
   factory MaterialCreateRule.fromJson(Map<String, dynamic> json) => MaterialCreateRule(
         id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '') ?? 0,
         materialTypeIds: _intList(json['material_type_ids']),
-        customerTypeIds: _intList(json['customer_type_ids']),
+        customerTypeIds: _intList(OutletContract.read(json, '_type_ids')),
         regionIds: _intList(json['region_ids']),
         salesChannelIds: _intList(json['sales_channel_ids']),
         territoryCodes: _strList(json['territory_codes']),

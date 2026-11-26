@@ -242,7 +242,8 @@ void main() {
     await sync();
     final body = bodies.single;
     expect(body['visit_id'], 901);
-    expect(body['customer_id'], 777);
+    expect(body['outlet_id'], 777, reason: 'hợp đồng điểm bán mới: gửi outlet_id');
+    expect(body.containsKey('customer_id'), isFalse);
     expect(body['answers'], {'customer_id': 777, 'so_luong': 0});
   });
 

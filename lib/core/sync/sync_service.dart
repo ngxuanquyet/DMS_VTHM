@@ -35,6 +35,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import '../dynamic_form/matrix_photo_key.dart';
+import '../network/outlet_contract.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.read(appDatabaseProvider);
@@ -756,7 +757,7 @@ class SyncService {
 
     // Tuyệt đối không nuốt ngoại lệ mạng (SocketException, DioException) tại đây để SyncService
     // có thể retry khi mạng ổn định, không gửi payload thiếu ảnh lên server gây lỗi 422!
-    final res = await _apiClient.postMultipart('/crm/customer-photos', formData: formData);
+    final res = await _apiClient.postMultipart('/dms/outlet-photos', formData: formData);
 
     String? token;
     if (res is Map) {
@@ -886,8 +887,8 @@ class SyncService {
     payloadMap['client_boot_id'] = entry.bootId;
     payloadMap['client_time'] = DateTime.fromMillisecondsSinceEpoch(entry.createdAt).toIso8601String();
 
-    // 3. Gửi lên API /crm/customers kèm client_uuid
-    final response = await _postMarkingMaybeOnServer(entry, '/crm/customers', payloadMap);
+    // 3. Gửi lên API /dms/outlets kèm client_uuid
+    final response = await _postMarkingMaybeOnServer(entry, '/dms/outlets', payloadMap);
 
     int? serverId;
     String? serverCode;
@@ -905,9 +906,9 @@ class SyncService {
       if (data['code'] != null) {
         serverCode = data['code'].toString();
       }
-      serverType = data['customer_type_name']?.toString() ??
-          data['customer_type_code']?.toString() ??
-          data['customer_type']?.toString() ??
+      serverType = OutletContract.read(data, '_type_name')?.toString() ??
+          OutletContract.read(data, '_type_code')?.toString() ??
+          OutletContract.read(data, '_type')?.toString() ??
           data['type']?.toString();
       newOutletVisitId = int.tryParse(data['new_outlet_visit_id']?.toString() ?? '');
     }
@@ -1026,7 +1027,7 @@ class SyncService {
     );
     if (queuedSec != null) payload['queued_seconds'] = queuedSec;
     payload['client_time'] = DateTime.fromMillisecondsSinceEpoch(entry.createdAt).toIso8601String();
-    await _apiClient.patch('/crm/customers/$serverId', data: payload);
+    await _apiClient.patch('/dms/outlets/$serverId', data: OutletContract.toWire(payload));
     await _db.markDone(entry.id, serverId: serverId);
     await _deleteOfflineCustomerPhotos(dynamicPhotos, entry.id);
     debugPrint('[SyncService] Đồng bộ CẬP NHẬT khách hàng thành công! ID: $serverId, UUID: ${entry.clientUuid}');
@@ -1059,7 +1060,7 @@ class SyncService {
       await _db.updatePayload(entry.id, jsonEncode({...stored, queueMaybeOnServerKey: true}));
     }
     try {
-      return await _apiClient.post(path, data: body);
+      return await _apiClient.post(path, data: OutletContract.toWire(body));
     } catch (e) {
       final notWritten = (e is NetworkException && !e.mayHaveReachedServer) ||
           (e is AppException &&
@@ -1565,7 +1566,7 @@ class SyncService {
       stampQueuedSeconds(sendPayload);
       response = await _apiClient.post(
         '/dms/form-submissions',
-        data: sendPayload,
+        data: OutletContract.toWire(sendPayload),
       );
     } catch (e) {
       final errStr = e.toString().toLowerCase();
@@ -1581,7 +1582,7 @@ class SyncService {
         // Gửi lại cùng client_uuid (§3 & §5)
         response = await _apiClient.post(
           '/dms/form-submissions',
-          data: sendPayload,
+          data: OutletContract.toWire(sendPayload),
         );
       } else {
         rethrow;

@@ -109,7 +109,7 @@ void main() {
         container.read(syncServiceProvider), null, () => online);
   }
 
-  Map<String, dynamic> taoOk(RequestOptions o, {bool created = true}) => o.path == '/crm/customers' && o.method == 'POST'
+  Map<String, dynamic> taoOk(RequestOptions o, {bool created = true}) => o.path == '/dms/outlets' && o.method == 'POST'
       ? {
           'success': true,
           'data': {'id': 8888, 'code': '08190163', 'created': created, 'route_ids': [5]},
@@ -168,7 +168,7 @@ void main() {
       final e = await repo.createCustomer(input());
       expect(e.id, 8888, reason: 'lỗi cũ: lỗi SQLite rơi vào nhánh bắt lỗi gửi ⇒ ném ra dù server đã tạo');
       expect(await db.getAllPendingQueueEntries(), isEmpty);
-      expect(adapter.calls.where((c) => c.method == 'POST' && c.path == '/crm/customers'), hasLength(1));
+      expect(adapter.calls.where((c) => c.method == 'POST' && c.path == '/dms/outlets'), hasLength(1));
     });
   });
 

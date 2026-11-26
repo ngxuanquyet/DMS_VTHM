@@ -114,7 +114,7 @@ void main() {
       var patched = false;
       boot((o) {
         // Lô đã nạp cả hai mục; đúng lúc gửi mục đầu, người dùng gộp phần sửa vào mục sau.
-        if (!patched && o.path == '/crm/customers/1') {
+        if (!patched && o.path == '/dms/outlets/1') {
           patched = true;
           db.updatePayload(second, jsonEncode({'name': 'Tên MỚI'}));
         }
@@ -135,7 +135,7 @@ void main() {
 
       await container.read(syncServiceProvider).syncQueue();
 
-      final sent = adapter.calls.firstWhere((c) => c.path == '/crm/customers/2').data as Map;
+      final sent = adapter.calls.firstWhere((c) => c.path == '/dms/outlets/2').data as Map;
       expect(sent['name'], 'Tên MỚI', reason: 'lỗi cũ: gửi payload nạp sẵn trong RAM rồi markDone ⇒ mất phần sửa');
     });
   });

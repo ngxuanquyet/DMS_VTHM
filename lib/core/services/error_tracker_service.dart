@@ -123,7 +123,7 @@ class ErrorTrackerService {
     final p = path.toLowerCase();
     if (p.contains('/auth/')) return 'AUTH';
     if (p.contains('/visits') || p.contains('/dms/visits')) return 'VISIT';
-    if (p.contains('/customer') || p.contains('/crm/customer') || p.contains('/dealers')) return 'CUST';
+    if (p.contains('/customer') || p.contains('/outlet') || p.contains('/dealers')) return 'CUST';
     if (p.contains('/attendance')) return 'ATTEND';
     if (p.contains('/location')) return 'LOC';
     if (p.contains('/form')) return 'FORM';

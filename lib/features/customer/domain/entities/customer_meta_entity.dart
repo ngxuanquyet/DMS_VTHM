@@ -1,4 +1,5 @@
 import 'customer_dynamic_column.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 class CustomerCategoryItem {
   final int id;
@@ -149,7 +150,7 @@ class CustomerMetaData {
     }
 
     return CustomerMetaData(
-      customerTypes: parseCategoryList(data['customerTypes']),
+      customerTypes: parseCategoryList(OutletContract.read(data, 'Types')),
       channels: parseCategoryList(data['channels']),
       regions: parseCategoryList(data['regions']),
       provinces: parseProvinces(data['provinces']),

@@ -8,6 +8,7 @@ import '../constants/app_constants.dart';
 import '../errors/app_exceptions.dart';
 import 'api_logger_interceptor.dart';
 import 'connectivity_provider.dart';
+import 'outlet_contract.dart';
 import 'refresh_outcome.dart';
 
 import '../services/anti_fraud_service.dart';
@@ -133,6 +134,9 @@ class AuthInterceptor extends QueuedInterceptor {
   ) async {
     // Luôn gửi header X-Client: dms-app theo spec 15/10/2026
     options.headers[AppConstants.headerClientKey] = AppConstants.headerClientValue;
+    // Hợp đồng điểm bán mới (One #25946): nhận/gửi tên `outlet_*` + báo số build để máy chủ đo ai còn bản cũ.
+    options.headers[OutletContract.header] = '1';
+    if (AppConstants.buildNumber.isNotEmpty) options.headers[OutletContract.buildHeader] = AppConstants.buildNumber;
 
     // Only attach bearer token if not calling login or refresh
     if (!options.path.contains('/auth/login') &&

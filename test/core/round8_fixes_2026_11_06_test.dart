@@ -240,7 +240,7 @@ void main() {
 
       await container.read(syncServiceProvider).syncQueue(force: true);
 
-      final body = adapter.calls.singleWhere((c) => c.path == '/crm/customers/77').data as Map;
+      final body = adapter.calls.singleWhere((c) => c.path == '/dms/outlets/77').data as Map;
       expect(body['offline_queue'], isTrue);
       expect(body['client_time'], DateTime.fromMillisecondsSinceEpoch(bam).toIso8601String());
       expect(body['queued_seconds'], greaterThanOrEqualTo(30 * 60 - 1),

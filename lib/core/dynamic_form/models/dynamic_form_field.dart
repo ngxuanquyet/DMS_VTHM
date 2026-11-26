@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../choice_other.dart';
 import '../formula_evaluator.dart';
+import '../../network/outlet_contract.dart';
 
 /// Các kiểu dữ liệu của trường form động do API trả về
 enum DynamicFormFieldType {
@@ -468,11 +469,13 @@ class DynamicFormField {
     }
 
     final kind = json['kind']?.toString();
-    final code = json['code']?.toString() ??
+    // Ô CỨNG của schema điểm bán theo hợp đồng mới mang tên `outlet_type_id`/`outlet_type` — đưa về mã app dùng nội bộ.
+    String fixedName(String v) => kind == 'fixed' ? OutletContract.internalFieldCode(v) : v;
+    final code = fixedName(json['code']?.toString() ??
         json['name']?.toString() ??
         json['id']?.toString() ??
         json['key']?.toString() ??
-        '';
+        '');
 
     // Đảm bảo photo_file_id hoặc các trường ảnh nhận diện đúng DynamicFormFieldType.photo
     if (code == 'photo_file_id' || code == 'photo_token' || code == 'photo') {
@@ -567,7 +570,7 @@ class DynamicFormField {
               json['allow_gallery'] == 'true'),
       kind: kind,
       source: json['source']?.toString(),
-      catalog: json['catalog']?.toString(),
+      catalog: json['catalog'] == null ? null : fixedName(json['catalog'].toString()),
       defaultValue: json['default'],
       erpPartnerMultiple: json['erp_partner'] is Map && (json['erp_partner'] as Map)['multiple'] == true,
       choiceMultiple: json['choice'] is Map && (json['choice'] as Map)['multiple'] is bool

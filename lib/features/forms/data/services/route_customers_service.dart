@@ -48,7 +48,7 @@ class RouteCustomersService {
     }
 
     try {
-      final response = await _apiClient.get('/dms/routes/customers');
+      final response = await _apiClient.get('/dms/routes/outlets');
       final doi = await neuDoiTaiKhoan();
       if (doi != null) return doi;
       if (response is Map<String, dynamic>) {

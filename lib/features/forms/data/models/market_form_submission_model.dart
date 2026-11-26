@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 import 'market_form_model.dart';
 import '../../../../core/dynamic_form/repeat_group.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 /// DTO nộp phiếu biểu mẫu thị trường qua POST /dms/form-submissions
 class MarketFormSubmissionModel {
@@ -151,7 +152,7 @@ class MarketFormSubmissionModel {
     return MarketFormSubmissionModel(
       configId: json['config_id'] as int? ?? 0,
       visitId: json['visit_id'] as int?,
-      customerId: json['customer_id'] as int?,
+      customerId: (OutletContract.read(json, '_id') as num?)?.toInt(),
       answers: json['answers'] is Map<String, dynamic>
           ? Map<String, dynamic>.from(json['answers'] as Map)
           : {},
@@ -272,7 +273,7 @@ class MarketFormSubmissionDetailModel {
       id: (json['id'] as num?)?.toInt() ?? 0,
       configId: (json['config_id'] as num?)?.toInt() ?? 0,
       visitId: (json['visit_id'] as num?)?.toInt(),
-      customerId: (json['customer_id'] as num?)?.toInt(),
+      customerId: (OutletContract.read(json, '_id') as num?)?.toInt(),
       answers: json['answers'] is Map<String, dynamic>
           ? Map<String, dynamic>.from(json['answers'] as Map)
           : {},

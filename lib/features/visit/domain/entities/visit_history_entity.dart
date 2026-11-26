@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'visit_entity.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 /// Entity tóm tắt một lượt viếng thăm trong lịch sử của điểm bán (§2.4 SPEC 16/10/2026)
 /// GET /dms/customers/{customerId}/visit-history
@@ -96,11 +97,11 @@ class VisitHistoryItemEntity {
           ? (json['user_id'] as num).toInt()
           : int.tryParse(json['user_id']?.toString() ?? ''),
       employeeName: json['employee_name']?.toString() ?? 'Nhân viên',
-      customerId: json['customer_id'] is num
-          ? (json['customer_id'] as num).toInt()
-          : (int.tryParse(json['customer_id']?.toString() ?? '') ?? 0),
-      customerCode: json['customer_code']?.toString(),
-      customerName: json['customer_name']?.toString(),
+      customerId: OutletContract.read(json, '_id') is num
+          ? (OutletContract.read(json, '_id') as num).toInt()
+          : (int.tryParse(OutletContract.read(json, '_id')?.toString() ?? '') ?? 0),
+      customerCode: OutletContract.read(json, '_code')?.toString(),
+      customerName: OutletContract.read(json, '_name')?.toString(),
       visitResult: json['visit_result']?.toString(),
       visitResultLabel: json['visit_result_label']?.toString(),
       visitResultColor: json['visit_result_color']?.toString(),
@@ -113,8 +114,8 @@ class VisitHistoryItemEntity {
       formCount: json['form_count'] is num
           ? (json['form_count'] as num).toInt()
           : (int.tryParse(json['form_count']?.toString() ?? '') ?? 0),
-      customerApprovalStatus: json['customer_approval_status']?.toString() ?? 'approved',
-      customerApprovalNote: json['customer_approval_note']?.toString(),
+      customerApprovalStatus: OutletContract.read(json, '_approval_status')?.toString() ?? 'approved',
+      customerApprovalNote: OutletContract.read(json, '_approval_note')?.toString(),
       visitKind: json['visit_kind']?.toString() ?? kVisitKindCheckin,
       visitKindLabel: json['visit_kind_label']?.toString(),
       visitKindColor: json['visit_kind_color']?.toString(),

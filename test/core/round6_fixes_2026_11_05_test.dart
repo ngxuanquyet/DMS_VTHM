@@ -218,16 +218,16 @@ void main() {
       patched = null;
       tmp = await Directory.systemTemp.createTemp('front_');
       final adapter = _Adapter((o) {
-        if (o.path == '/crm/customer-photos') {
+        if (o.path == '/dms/outlet-photos') {
           return uploadFails ? (500, {'success': false}) : (200, {'success': true, 'data': {'token': 'f' * 32}});
         }
-        if (o.path == '/crm/customers' && o.method == 'POST') {
+        if (o.path == '/dms/outlets' && o.method == 'POST') {
           return postFails
               // Lỗi TẠM của máy chủ (503) — 500 là lỗi theo dữ liệu, báo ngay không xếp hàng (rà soát 24/11/2026).
               ? (503, {'success': false, 'message': 'lỗi CSDL tạm'})
               : (201, {'success': true, 'data': {'id': 9001, 'code': 'DMS0001', 'created': true}});
         }
-        if (o.path.startsWith('/crm/customers/') && o.method == 'PATCH') {
+        if (o.path.startsWith('/dms/outlets/') && o.method == 'PATCH') {
           patched = o.data is Map ? o.data as Map : null;
           return (200, {'success': true, 'data': {'id': 9001}});
         }

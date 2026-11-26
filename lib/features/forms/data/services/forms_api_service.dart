@@ -6,6 +6,7 @@ import '../../../../core/utils/image_upload_helper.dart';
 import '../models/form_photo_model.dart';
 import '../models/market_form_model.dart';
 import '../models/market_form_submission_model.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 /// Gợi ý của một biểu mẫu: giá trị theo mã ô + câu trả lời tự điền theo (mã ô, giá trị).
 typedef FormSuggestions = ({
@@ -19,7 +20,7 @@ class FormsApiService {
   FormsApiService(this._apiClient);
 
   /// Lấy danh sách biểu mẫu còn hiệu lực theo đặc tả §1:
-  /// GET /dms/forms/available?kind=survey&customer_id=8338
+  /// GET /dms/forms/available?kind=survey&outlet_id=8338
   /// GET /dms/forms/available?kind=collect
   Future<List<MarketFormConfigModel>> getAvailableForms({
     required String kind,
@@ -29,7 +30,7 @@ class FormsApiService {
       'kind': kind,
     };
     if (customerId != null) {
-      queryParams['customer_id'] = customerId;
+      queryParams['outlet_id'] = customerId;
     }
 
     final queryStr = queryParams.entries
@@ -88,7 +89,7 @@ class FormsApiService {
   Future<MarketFormSubmitResult> submitForm(MarketFormSubmissionModel submission) async {
     final response = await _apiClient.post(
       '/dms/form-submissions',
-      data: submission.toJson(),
+      data: OutletContract.toWire(submission.toJson()),
     );
 
     if (response is Map<String, dynamic>) {

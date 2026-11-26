@@ -25,7 +25,7 @@ class MockSyncDioAdapter implements HttpClientAdapter {
   Future<ResponseBody> fetch(RequestOptions options, Stream<List<int>>? requestStream, Future<void>? cancelFuture) async {
     lastOptions = options;
     lastData = options.data;
-    if (options.path == '/crm/customers') {
+    if (options.path == '/dms/outlets') {
       final res = {
         'success': true,
         'data': {
@@ -42,7 +42,7 @@ class MockSyncDioAdapter implements HttpClientAdapter {
         headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
       );
     }
-    if (options.path.contains('customers/mine')) {
+    if (options.path.contains('outlets/mine')) {
       final res = {
         'success': true,
         'data': [
@@ -77,7 +77,7 @@ class MockSyncDioAdapter implements HttpClientAdapter {
         headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
       );
     }
-    if (options.path.startsWith('/crm/customers/') && options.method == 'PATCH') {
+    if (options.path.startsWith('/dms/outlets/') && options.method == 'PATCH') {
       final res = {
         'success': true,
         'message': 'Đã cập nhật điểm bán thành công.',
@@ -150,7 +150,7 @@ void main() {
     expect(created.name, 'Cửa hàng Online Test');
 
     // Verify adapter received request and has NO forbidden root keys
-    expect(adapter.lastOptions?.path, '/crm/customers');
+    expect(adapter.lastOptions?.path, '/dms/outlets');
     final sentData = adapter.lastData as Map<String, dynamic>;
     expect(sentData.containsKey('queued_seconds'), isFalse);
     expect(sentData.containsKey('client_boot_id'), isFalse);
@@ -194,7 +194,7 @@ void main() {
     // Force sync queue
     await syncService.syncQueue(force: true);
 
-    expect(adapter.lastOptions?.path, '/crm/customers');
+    expect(adapter.lastOptions?.path, '/dms/outlets');
     final sentData = adapter.lastData as Map<String, dynamic>;
     // Nghiệp vụ 21/10/2026: gửi từ hàng đợi ⇒ kèm đồng hồ hàng đợi (§9.1) để lượt "Tạo điểm bán" rơi đúng giờ bấm tạo
     expect(sentData['queued_seconds'], isA<int>());
@@ -313,7 +313,7 @@ void main() {
     );
 
     // 3. Phải gọi API PATCH /crm/customers/8888 lên server, KHÔNG BỊ RETURN VỀ GIÁ TRỊ CŨ!
-    expect(adapter.lastOptions?.path, '/crm/customers/8888');
+    expect(adapter.lastOptions?.path, '/dms/outlets/8888');
     expect(adapter.lastOptions?.method, 'PATCH');
     final sentChanges = adapter.lastData as Map<String, dynamic>;
     expect(sentChanges['name'], 'Điểm Bán Tự Tạo ĐÃ ĐƯỢC CẬP NHẬT');
@@ -375,7 +375,7 @@ void main() {
     // 5. Khi có mạng trở lại -> syncQueue gửi PATCH /crm/customers/8888 thành công
     await syncService.syncQueue(force: true);
 
-    expect(adapter.lastOptions?.path, '/crm/customers/8888');
+    expect(adapter.lastOptions?.path, '/dms/outlets/8888');
     expect(adapter.lastOptions?.method, 'PATCH');
     final sentChanges = adapter.lastData as Map<String, dynamic>;
     expect(sentChanges['name'], 'Tên Sửa Lúc Offline');

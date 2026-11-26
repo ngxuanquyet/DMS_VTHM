@@ -35,7 +35,7 @@ class VisitMaterialApiService {
 
   /// `GET /dms/customers/{id}/materials` (#24707) — hiện trạng vật tư của điểm bán, ngoài lượt; trả `data` thô (cache).
   Future<(Map<String, dynamic>, OutletMaterialsSnapshot)> getOutletMaterials(int customerId) async {
-    final response = await _apiClient.get('/dms/customers/$customerId/materials');
+    final response = await _apiClient.get('/dms/outlets/$customerId/materials');
     final data = response is Map && response['data'] is Map
         ? Map<String, dynamic>.from(response['data'] as Map)
         : <String, dynamic>{};
@@ -50,7 +50,7 @@ class VisitMaterialApiService {
     int page = 1,
   }) async {
     final response = await _apiClient.get(
-      '/dms/customers/$customerId/material-history',
+      '/dms/outlets/$customerId/material-history',
       queryParameters: {'material_type_id': materialTypeId, 'page': page, 'changes_only': 1},
     );
     final body = response is Map ? Map<String, dynamic>.from(response) : <String, dynamic>{};

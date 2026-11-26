@@ -207,7 +207,7 @@ void main() {
   });
 
   test('#24792 lệnh SỬA chờ gửi: ảnh ô chụp ảnh tự khai đổi ra token trước khi PATCH', () async {
-    boot((o) => o.path == '/crm/customer-photos' ? (200, {'success': true, 'data': {'token': 'f' * 32}}) : null);
+    boot((o) => o.path == '/dms/outlet-photos' ? (200, {'success': true, 'data': {'token': 'f' * 32}}) : null);
     final dir = await Directory.systemTemp.createTemp('r4_');
     addTearDown(() => dir.delete(recursive: true));
     final f = File('${dir.path}/quay_ke.jpg')..writeAsBytesSync([1, 2, 3]);
@@ -218,7 +218,7 @@ void main() {
     await container.read(syncServiceProvider).syncQueue(force: true);
 
     expect((await row(id)).state, 'done');
-    final patch = adapter.calls.singleWhere((c) => c.path == '/crm/customers/77');
+    final patch = adapter.calls.singleWhere((c) => c.path == '/dms/outlets/77');
     expect((patch.data as Map)['data'], {
       'anh_quay_ke': ['f' * 32, 'a' * 32],
       'muc_do': ['cao'],

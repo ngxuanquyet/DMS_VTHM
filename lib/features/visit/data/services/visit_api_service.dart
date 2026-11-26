@@ -8,6 +8,7 @@ import '../../domain/entities/visit_requirements_entity.dart';
 import '../models/checkin_request_model.dart';
 import '../models/checkout_request_model.dart';
 import '../../domain/entities/visit_history_entity.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 class VisitApiService {
   final ApiClient _apiClient;
@@ -29,7 +30,7 @@ class VisitApiService {
     };
     if (dateFrom != null) queryParams['date_from'] = dateFrom;
     if (dateTo != null) queryParams['date_to'] = dateTo;
-    if (customerId != null) queryParams['customer_id'] = customerId;
+    if (customerId != null) queryParams['outlet_id'] = customerId;
     if (routeId != null) queryParams['route_id'] = routeId;
     if (openOnly == true) queryParams['open_only'] = 1;
 
@@ -58,7 +59,7 @@ class VisitApiService {
   Future<VisitEntity> checkin(CheckinRequestModel request) async {
     final response = await _apiClient.post(
       '/dms/visits',
-      data: request.toJson(),
+      data: OutletContract.toWire(request.toJson()),
     );
 
     if (response is Map<String, dynamic>) {
@@ -198,7 +199,7 @@ class VisitApiService {
     int perPage = 20,
   }) async {
     final response = await _apiClient.get(
-      '/dms/customers/$customerId/visit-history?page=$page&per-page=$perPage',
+      '/dms/outlets/$customerId/visit-history?page=$page&per-page=$perPage',
     );
 
     if (response is Map<String, dynamic>) {
@@ -214,7 +215,7 @@ class VisitApiService {
     int visitId,
   ) async {
     final response = await _apiClient.get(
-      '/dms/customers/$customerId/visit-history/$visitId',
+      '/dms/outlets/$customerId/visit-history/$visitId',
     );
 
     if (response is Map<String, dynamic>) {

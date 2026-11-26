@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/outlet_contract.dart';
 import '../../../../core/utils/image_upload_helper.dart';
 import '../models/customer_dto.dart';
 
@@ -10,7 +11,7 @@ class CustomerApiService {
   CustomerApiService(this._apiClient);
 
   /// Lấy danh sách điểm bán do người dùng phụ trách hoặc tự tạo
-  /// GET /crm/customers/mine?context=mobile&per-page=100
+  /// GET /dms/outlets/mine?context=mobile&per-page=100
   Future<CustomerApiResponse> getMineCustomers({
     int page = 1,
     int perPage = 100,
@@ -44,7 +45,7 @@ class CustomerApiService {
       queryParams['has_coords'] = hasCoords;
     }
     if (customerTypeId != null) {
-      queryParams['customer_type_id'] = customerTypeId;
+      queryParams['outlet_type_id'] = customerTypeId;
     }
     if (channelId != null) {
       queryParams['channel_id'] = channelId;
@@ -57,7 +58,7 @@ class CustomerApiService {
     }
 
     final response = await _apiClient.get(
-      '/crm/customers/mine',
+      '/dms/outlets/mine',
       queryParameters: queryParams,
     );
 
@@ -68,9 +69,9 @@ class CustomerApiService {
   }
 
   /// Lấy chi tiết một điểm bán
-  /// GET /crm/customers/{id}
+  /// GET /dms/outlets/{id}
   Future<CustomerDto> getCustomerDetail(int id) async {
-    final response = await _apiClient.get('/crm/customers/$id');
+    final response = await _apiClient.get('/dms/outlets/$id');
     if (response is Map<String, dynamic>) {
       if (response['data'] is Map<String, dynamic>) {
         return CustomerDto.fromJson(response['data'] as Map<String, dynamic>);
@@ -81,14 +82,14 @@ class CustomerApiService {
   }
 
   /// Cập nhật thông tin điểm bán (chỉ gửi các trường muốn đổi)
-  /// PATCH /crm/customers/{id}
+  /// PATCH /dms/outlets/{id}
   Future<Map<String, dynamic>> updateCustomer(
     int id,
     Map<String, dynamic> changes,
   ) async {
     final response = await _apiClient.patch(
-      '/crm/customers/$id',
-      data: changes,
+      '/dms/outlets/$id',
+      data: OutletContract.toWire(changes),
     );
 
     if (response is Map<String, dynamic>) {
@@ -98,10 +99,10 @@ class CustomerApiService {
   }
 
   /// Xóa mềm điểm bán (vào thùng rác)
-  /// DELETE /crm/customers/{id}
+  /// DELETE /dms/outlets/{id}
   Future<bool> deleteCustomer(int id) async {
     try {
-      final response = await _apiClient.delete('/crm/customers/$id');
+      final response = await _apiClient.delete('/dms/outlets/$id');
       return response is Map && response['success'] == true;
     } catch (_) {
       return false;
@@ -109,10 +110,10 @@ class CustomerApiService {
   }
 
   /// Lấy danh mục lọc và đặc tả cột động
-  /// GET /crm/customers/meta?context=mobile
+  /// GET /dms/outlets/meta?context=mobile
   Future<Map<String, dynamic>> getCustomerMeta({String context = 'mobile'}) async {
     final response = await _apiClient.get(
-      '/crm/customers/meta',
+      '/dms/outlets/meta',
       queryParameters: {'context': context},
     );
     if (response is Map<String, dynamic>) {
@@ -122,13 +123,13 @@ class CustomerApiService {
   }
 
   /// Lấy cấu hình schema form nhập liệu khách hàng động
-  /// GET /crm/customer-form/schema?with_scope=1&with_geo=1 — `with_scope` xin thêm hai ô cứng Kênh/Tuyến tự khai (21/10/2026);
+  /// GET /dms/outlet-form/schema?with_scope=1&with_geo=1 — `with_scope` xin thêm hai ô cứng Kênh/Tuyến tự khai (21/10/2026);
   /// `with_geo` xin cặp ô cứng Tỉnh → Xã theo danh mục `province_id`/`ward_id` (#24072); `with_erp` xin ô ảo "Khách hàng ERP"
   /// `erp_links` (#24331); `with_materials` xin ô ảo "Vật tư tại điểm" (bật/tắt bước vật tư lúc tạo); `with_route` xin ô ảo
   /// "Tuyến bán hàng" `route_ids` (cấu hình được, 20/11/2026 — trước app tự chèn). Server đời cũ bỏ qua
   /// tham số.
   Future<Map<String, dynamic>> getCustomerFormSchema() async {
-    final response = await _apiClient.get('/crm/customer-form/schema',
+    final response = await _apiClient.get('/dms/outlet-form/schema',
         queryParameters: {'with_scope': '1', 'with_geo': '1', 'with_erp': '1', 'with_materials': '1', 'with_route': '1'});
     if (response is Map<String, dynamic>) {
       return response;
@@ -137,11 +138,11 @@ class CustomerApiService {
   }
 
   /// Thêm mới điểm bán
-  /// POST /crm/customers
+  /// POST /dms/outlets
   Future<CustomerDto> createCustomer(Map<String, dynamic> data) async {
     final response = await _apiClient.post(
-      '/crm/customers',
-      data: data,
+      '/dms/outlets',
+      data: OutletContract.toWire(data),
     );
     if (response is Map<String, dynamic>) {
       if (response['data'] is Map<String, dynamic>) {
@@ -153,7 +154,7 @@ class CustomerApiService {
   }
 
   /// Tải ảnh điểm bán lên server
-  /// POST /crm/customer-photos (multipart/form-data, khóa 'file')
+  /// POST /dms/outlet-photos (multipart/form-data, khóa 'file')
   /// Trả về Map chứa token (chuỗi 32-hex) và url công khai
   Future<Map<String, dynamic>> uploadCustomerPhoto(
     String filePath, {
@@ -174,7 +175,7 @@ class CustomerApiService {
     });
 
     final response = await _apiClient.postMultipart(
-      '/crm/customer-photos',
+      '/dms/outlet-photos',
       formData: formData,
     );
 

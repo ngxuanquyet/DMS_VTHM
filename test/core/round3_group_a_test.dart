@@ -275,18 +275,18 @@ void main() {
     });
 
     test('đồng bộ đánh dấu dòng tạo TRƯỚC khi gửi — gửi hỏng giữa chừng thì dấu còn lại', () async {
-      boot((o) => o.path == '/crm/customers' ? (503, {'success': false, 'message': 'tạm'}) : null);
+      boot((o) => o.path == '/dms/outlets' ? (503, {'success': false, 'message': 'tạm'}) : null);
       final id = await enqueue('customer', 'create', 'cA', payload: jsonEncode({'name': 'A', 'route_ids': [1]}));
       await container.read(syncServiceProvider).syncQueue();
-      expect(adapter.paths, contains('POST /crm/customers'));
+      expect(adapter.paths, contains('POST /dms/outlets'));
       expect(queueMaybeOnServer((await row(id)).payload), isTrue);
-      final sent = adapter.calls.firstWhere((c) => c.path == '/crm/customers').data as Map;
+      final sent = adapter.calls.firstWhere((c) => c.path == '/dms/outlets').data as Map;
       expect(sent.containsKey(queueMaybeOnServerKey), isFalse, reason: 'khoá nội bộ không được lọt lên server');
     });
   });
 
   test('C1 dấu nội bộ KHÔNG lọt vào `data` gửi server / ô động trong máy; điểm bán mang dấu không xoá được', () async {
-    boot((o) => o.path == '/crm/customers' ? (503, {'success': false, 'message': 'tạm'}) : null);
+    boot((o) => o.path == '/dms/outlets' ? (503, {'success': false, 'message': 'tạm'}) : null);
     await db.setOwner(7);
     final local = CustomerLocalDataSource(db);
     await local.createCustomerOffline({'name': 'A', 'client_uuid': 'uuid-mark-1', 'route_ids': [1], queueMaybeOnServerKey: true});
@@ -295,7 +295,7 @@ void main() {
     expect(queueMaybeOnServer(create.payload), isTrue);
 
     await container.read(syncServiceProvider).syncQueue();
-    final sent = adapter.calls.lastWhere((c) => c.path == '/crm/customers').data as Map;
+    final sent = adapter.calls.lastWhere((c) => c.path == '/dms/outlets').data as Map;
     expect(sent.containsKey(queueMaybeOnServerKey), isFalse);
     expect((sent['data'] as Map?)?.containsKey(queueMaybeOnServerKey) ?? false, isFalse,
         reason: 'lỗi review: helper chép khoá gốc lạ vào data ⇒ server 422 ô động lạ ⇒ dead');
@@ -305,14 +305,14 @@ void main() {
 
   test('C1 đồng bộ không kết nối được (chắc chắn chưa gửi) ⇒ gỡ dấu, dòng tạo còn xoá / gộp sửa được', () async {
     boot((o) {
-      if (o.path == '/crm/customers') {
+      if (o.path == '/dms/outlets') {
         throw DioException(requestOptions: o, type: DioExceptionType.connectionError, error: const SocketException('refused'));
       }
       return null;
     });
     final id = await enqueue('customer', 'create', 'cN', payload: jsonEncode({'name': 'N', 'route_ids': [1]}));
     await container.read(syncServiceProvider).syncQueue();
-    expect(adapter.paths, contains('POST /crm/customers'));
+    expect(adapter.paths, contains('POST /dms/outlets'));
     expect(queueMaybeOnServer((await row(id)).payload), isFalse);
   });
 
@@ -325,14 +325,14 @@ void main() {
   });
 
   test('C1 đồng bộ tạo điểm bán bị 401 (server chưa ghi) ⇒ gỡ dấu', () async {
-    boot((o) => o.path == '/crm/customers' ? (401, {'success': false, 'message': 'hết phiên'}) : null);
+    boot((o) => o.path == '/dms/outlets' ? (401, {'success': false, 'message': 'hết phiên'}) : null);
     final id = await enqueue('customer', 'create', 'cU', payload: jsonEncode({'name': 'U', 'route_ids': [1]}));
     await container.read(syncServiceProvider).syncQueue();
     expect(queueMaybeOnServer((await row(id)).payload), isFalse);
   });
 
   test('C4 (nhóm B) lệnh SỬA bị 404 (điểm bán không còn) ⇒ dòng KHÔNG gắn lỗi, đối chiếu danh sách dọn được', () async {
-    boot((o) => o.path.startsWith('/crm/customers/55') ? (404, {'success': false, 'message': 'Không tìm thấy'}) : null);
+    boot((o) => o.path.startsWith('/dms/outlets/55') ? (404, {'success': false, 'message': 'Không tìm thấy'}) : null);
     await db.setOwner(7);
     final local = CustomerLocalDataSource(db);
     await local.cacheRemoteCustomers([
@@ -368,7 +368,7 @@ void main() {
           nextAttemptAt: DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch);
       await enqueue('customer', 'update', 'server_55', serverId: 55, payload: jsonEncode({'name': 'mới'}));
       await container.read(syncServiceProvider).syncQueue();
-      expect(adapter.calls.where((c) => c.path.contains('/crm/customers/55')), isEmpty);
+      expect(adapter.calls.where((c) => c.path.contains('/dms/outlets/55')), isEmpty);
     });
 
     test('lần sửa mới chỉ gộp vào lệnh MỚI NHẤT chưa xong (dòng mới nhất đang gửi ⇒ xếp dòng mới)', () async {
@@ -397,7 +397,7 @@ void main() {
     }
     final last = await enqueue('customer', 'update', 'server_99', serverId: 99, payload: jsonEncode({'name': 'X'}));
     await container.read(syncServiceProvider).syncQueue();
-    expect(adapter.calls.where((c) => c.path.contains('/crm/customers/99')), isNotEmpty,
+    expect(adapter.calls.where((c) => c.path.contains('/dms/outlets/99')), isNotEmpty,
         reason: 'lỗi cũ: lô chỉ đọc 50 dòng đầu (toàn mục hoãn) ⇒ mục sau không bao giờ được gửi');
     expect((await row(last)).state, 'done');
   });

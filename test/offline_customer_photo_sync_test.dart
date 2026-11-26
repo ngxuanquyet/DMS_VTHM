@@ -26,7 +26,7 @@ class MockPhotoSyncDioAdapter implements HttpClientAdapter {
   ) async {
     pathsHit.add(options.path);
 
-    if (options.path == '/crm/customer-photos') {
+    if (options.path == '/dms/outlet-photos') {
       if (failPhotoUpload) {
         return ResponseBody.fromString(
           jsonEncode({'message': 'Network error uploading photo'}),
@@ -48,7 +48,7 @@ class MockPhotoSyncDioAdapter implements HttpClientAdapter {
       );
     }
 
-    if (options.path == '/crm/customers') {
+    if (options.path == '/dms/outlets') {
       lastCustomerPayload = options.data is Map<String, dynamic>
           ? options.data as Map<String, dynamic>
           : (options.data is String ? jsonDecode(options.data as String) : null);
@@ -204,10 +204,10 @@ void main() {
     expect(result.deadErrors, isEmpty);
 
     // Kiểm tra /crm/customer-photos được gọi upload ảnh
-    expect(adapter.pathsHit.contains('/crm/customer-photos'), isTrue);
+    expect(adapter.pathsHit.contains('/dms/outlet-photos'), isTrue);
 
     // Kiểm tra /crm/customers được gọi với photo_tokens là token 32-hex
-    expect(adapter.pathsHit.contains('/crm/customers'), isTrue);
+    expect(adapter.pathsHit.contains('/dms/outlets'), isTrue);
     final payload = adapter.lastCustomerPayload;
     expect(payload, isNotNull);
     expect(payload!['photo_tokens'], ['a1b2c3d4e5f60718293a4b5c6d7e8f90']);
@@ -251,8 +251,8 @@ void main() {
     // Phải là retryable, KHÔNG được là dead error và KHÔNG được gọi /crm/customers khi thiếu ảnh
     expect(result.retryableCount, 1);
     expect(result.deadErrors, isEmpty);
-    expect(adapter.pathsHit.contains('/crm/customer-photos'), isTrue);
-    expect(adapter.pathsHit.contains('/crm/customers'), isFalse);
+    expect(adapter.pathsHit.contains('/dms/outlet-photos'), isTrue);
+    expect(adapter.pathsHit.contains('/dms/outlets'), isFalse);
 
     // Hàng đợi vẫn còn mục chờ đồng bộ (không bị mất)
     final pendingCount = await db.countPendingSync();

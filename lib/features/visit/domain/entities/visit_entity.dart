@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import 'visit_requirements_entity.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 /// Loại lượt viếng thăm (`visit_kind`) — nghiệp vụ 21/10/2026.
 const String kVisitKindCheckin = 'checkin';
@@ -304,12 +305,12 @@ class VisitEntity {
       durationSeconds: json['duration_seconds'] is num
           ? (json['duration_seconds'] as num).toInt()
           : int.tryParse(json['duration_seconds']?.toString() ?? ''),
-      customerId: json['customer_id'] is num
-          ? (json['customer_id'] as num).toInt()
-          : (int.tryParse(json['customer_id']?.toString() ?? '') ?? 0),
-      customerName: json['customer_name']?.toString() ?? '',
-      customerCode: json['customer_code']?.toString() ?? json['code']?.toString(),
-      customerAddress: json['customer_address']?.toString() ?? json['address']?.toString(),
+      customerId: OutletContract.read(json, '_id') is num
+          ? (OutletContract.read(json, '_id') as num).toInt()
+          : (int.tryParse(OutletContract.read(json, '_id')?.toString() ?? '') ?? 0),
+      customerName: OutletContract.read(json, '_name')?.toString() ?? '',
+      customerCode: OutletContract.read(json, '_code')?.toString() ?? json['code']?.toString(),
+      customerAddress: OutletContract.read(json, '_address')?.toString() ?? json['address']?.toString(),
       routeId: json['route_id'] is num
           ? (json['route_id'] as num).toInt()
           : int.tryParse(json['route_id']?.toString() ?? ''),
@@ -332,7 +333,7 @@ class VisitEntity {
           ? double.tryParse(json['checkout_lng'].toString())
           : null,
       clientUuid: json['client_uuid']?.toString(),
-      customerClientUuid: json['customer_client_uuid']?.toString(),
+      customerClientUuid: OutletContract.read(json, '_client_uuid')?.toString(),
       travelM: json['travel_m'] is num
           ? (json['travel_m'] as num)
           : (json['travel_m'] != null ? num.tryParse(json['travel_m'].toString()) : null),
@@ -341,8 +342,8 @@ class VisitEntity {
       checkoutDistanceM: parseNullableDouble(json['checkout_distance_m']),
       isCheckoutWithinGeofence: parseNullableBool(json['is_checkout_within_geofence']),
       isCheckoutOtherDay: json['is_checkout_other_day'] == true,
-      customerApprovalStatus: json['customer_approval_status']?.toString() ?? 'approved',
-      customerApprovalNote: json['customer_approval_note']?.toString(),
+      customerApprovalStatus: OutletContract.read(json, '_approval_status')?.toString() ?? 'approved',
+      customerApprovalNote: OutletContract.read(json, '_approval_note')?.toString(),
       visitResultLabel: json['visit_result_label']?.toString(),
       visitResultColor: json['visit_result_color']?.toString(),
       visitKind: json['visit_kind']?.toString() ?? kVisitKindCheckin,

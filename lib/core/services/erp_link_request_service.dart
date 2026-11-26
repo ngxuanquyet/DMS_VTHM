@@ -130,7 +130,7 @@ class ErpLinkRequestService {
       if (sach(address) != null) 'address': sach(address),
     };
     if (params.isEmpty) return const [];
-    final response = await _apiClient.get('/crm/customer-erp-link-requests/suggest', queryParameters: params);
+    final response = await _apiClient.get('/dms/outlet-erp-link-requests/suggest', queryParameters: params);
     final data = response is Map ? response['data'] : null;
     if (data is! List) return const [];
     return data
@@ -142,7 +142,7 @@ class ErpLinkRequestService {
 
   /// Trạng thái nối của một điểm bán đã có trên server.
   Future<ErpLinkStateOfStore> stateOf(int customerId) async {
-    final response = await _apiClient.get('/crm/customers/$customerId');
+    final response = await _apiClient.get('/dms/outlets/$customerId');
     final data = response is Map && response['data'] is Map ? Map<String, dynamic>.from(response['data'] as Map) : const {};
     List<ErpLinkState> list(dynamic raw) => raw is List
         ? raw.whereType<Map>().map((e) => ErpLinkState.fromJson(Map<String, dynamic>.from(e))).toList()
@@ -159,7 +159,7 @@ class ErpLinkRequestService {
   /// `erp_link_changes`; mỗi mục thành một đề xuất chờ duyệt. Cần mạng.
   /// @return Số đề xuất server đã ghi.
   Future<int> sendChanges(int customerId, List<Map<String, dynamic>> changes) async {
-    final response = await _apiClient.patch('/crm/customers/$customerId', data: {'erp_link_changes': changes});
+    final response = await _apiClient.patch('/dms/outlets/$customerId', data: {'erp_link_changes': changes});
     final data = response is Map ? response['data'] : null;
     return data is Map ? (data['erp_link_requests'] as num?)?.toInt() ?? 0 : 0;
   }

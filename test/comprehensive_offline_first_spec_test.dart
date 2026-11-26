@@ -70,7 +70,7 @@ class MasterOfflineMockDioAdapter implements HttpClientAdapter {
     }
 
     // 1. POST /crm/customers
-    if (options.path == '/crm/customers' && options.method == 'POST') {
+    if (options.path == '/dms/outlets' && options.method == 'POST') {
       final id = nextCustomerServerId++;
       final res = {
         'success': true,
@@ -231,7 +231,7 @@ class MasterOfflineMockDioAdapter implements HttpClientAdapter {
     }
 
     // 10. POST /crm/customer-photos
-    if (options.path == '/crm/customer-photos' && options.method == 'POST') {
+    if (options.path == '/dms/outlet-photos' && options.method == 'POST') {
       final res = {
         'success': true,
         'data': {

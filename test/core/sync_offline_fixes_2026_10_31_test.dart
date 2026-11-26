@@ -339,12 +339,12 @@ void main() {
   group('#6 lượt check-in của điểm bán tạo offline', () {
     test('check-in mang customer_client_uuid: nhận đúng serverId của điểm bán cha sau khi điểm bán lên server', () async {
       boot((o) {
-        if (o.method == 'POST' && o.path == '/crm/customers') {
+        if (o.method == 'POST' && o.path == '/dms/outlets') {
           return (201, {'success': true, 'data': {'id': 99, 'code': 'DB99'}});
         }
         if (o.path == '/dms/visits') {
           final body = o.data is Map ? o.data as Map : jsonDecode(o.data.toString()) as Map;
-          expect(body['customer_id'], 99, reason: 'Phải nhận đúng serverId của điểm bán cha');
+          expect(body['outlet_id'], 99, reason: 'Phải nhận đúng serverId của điểm bán cha (gửi tên mới outlet_id)');
           return (201, {'success': true, 'data': {'id': 501}});
         }
         return null;
@@ -357,7 +357,7 @@ void main() {
 
       expect((await row(custId)).state, 'done');
       expect((await row(visitId)).state, 'done');
-      expect(adapter.paths, contains('/crm/customers'));
+      expect(adapter.paths, contains('/dms/outlets'));
       expect(adapter.paths, contains('/dms/visits'));
     });
 

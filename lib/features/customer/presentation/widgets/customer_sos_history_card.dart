@@ -84,7 +84,7 @@ class _CustomerSosHistoryCardState extends ConsumerState<CustomerSosHistoryCard>
     try {
       final res = await ref
           .read(apiClientProvider)
-          .get('/crm/customers/${widget.customerId}/sos-history', queryParameters: {'per-page': widget.limit});
+          .get('/dms/outlets/${widget.customerId}/sos-history', queryParameters: {'per-page': widget.limit});
       final data = res is Map && res['data'] is List ? res['data'] as List : const [];
       if (!mounted) return;
       setState(() {

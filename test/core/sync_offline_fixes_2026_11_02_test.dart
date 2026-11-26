@@ -239,7 +239,7 @@ void main() {
 
       await db.markDone(create, serverId: 77);
       await sync.syncQueue(force: true);
-      expect(adapter.paths, contains('/crm/customers/77'));
+      expect(adapter.paths, contains('/dms/outlets/77'));
       expect((await row(update)).state, 'done');
     });
 
@@ -263,12 +263,12 @@ void main() {
     await container.read(syncServiceProvider).syncQueue();
 
     expect((await row(id)).state, 'dead');
-    expect(adapter.paths.contains('/crm/customers'), isFalse);
+    expect(adapter.paths.contains('/dms/outlets'), isFalse);
     await tmp.delete(recursive: true);
   });
 
   test('#5b chuỗi bắt đầu bằng "/" mà KHÔNG nằm trong vùng lưu của app (vd /media/...) giữ nguyên, không 410', () async {
-    boot((o) => o.path == '/crm/customers' ? (201, {'success': true, 'data': {'id': 9}}) : null);
+    boot((o) => o.path == '/dms/outlets' ? (201, {'success': true, 'data': {'id': 9}}) : null);
     final id = await enqueue('customer', 'create', 'cust-media',
         payload: jsonEncode({'name': 'A', 'data': {'anh_cu': '/media/crm/abc.jpg'}}));
 

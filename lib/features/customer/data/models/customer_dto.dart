@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
 import '../../domain/entities/customer_entity.dart';
+import '../../../../core/network/outlet_contract.dart';
 
 class CustomerDto {
   final int id;
@@ -39,7 +40,7 @@ class CustomerDto {
   final String? photoUrl;
   final List<String> photoUrls;
 
-  /// Cờ `created` của `POST /crm/customers`: false = server đã có điểm bán cùng `client_uuid` từ lần lưu trước và trả lại
+  /// Cờ `created` của `POST /dms/outlets`: false = server đã có điểm bán cùng `client_uuid` từ lần lưu trước và trả lại
   /// bản CŨ (phần vừa nhập không được ghi). null = phản hồi không mang cờ (đọc danh sách, bản server cũ).
   final bool? created;
   final String? route;
@@ -120,14 +121,13 @@ class CustomerDto {
       if (json[k] != null) dynamicMap[k] = json[k];
     }
 
-    final rawCustomerTypeId = json['customer_type_id'] is int
-        ? json['customer_type_id'] as int
-        : int.tryParse(json['customer_type_id']?.toString() ?? '');
+    final rawTypeId = OutletContract.read(json, '_type_id');
+    final rawCustomerTypeId = rawTypeId is int ? rawTypeId : int.tryParse(rawTypeId?.toString() ?? '');
 
     // Đọc đa dạng các khóa tên loại điểm bán từ server
-    String? parsedTypeName = json['customer_type_name']?.toString() ??
-        json['customer_type_code']?.toString() ??
-        json['customer_type']?.toString() ??
+    String? parsedTypeName = OutletContract.read(json, '_type_name')?.toString() ??
+        OutletContract.read(json, '_type_code')?.toString() ??
+        OutletContract.read(json, '_type')?.toString() ??
         json['type']?.toString() ??
         json['loai_kh']?.toString();
 
@@ -529,8 +529,9 @@ class CustomerApiResponse {
 
     // Xây dựng map tra cứu danh mục loại khách hàng: id -> name/code
     final Map<int, String> typeMap = {};
-    if (meta['customerTypes'] is List) {
-      for (final item in meta['customerTypes'] as List) {
+    final metaTypes = OutletContract.read(meta, 'Types');
+    if (metaTypes is List) {
+      for (final item in metaTypes) {
         if (item is Map<String, dynamic>) {
           final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
           final name = (item['name'] ?? item['code'])?.toString().trim();

@@ -177,7 +177,7 @@ class ErpCatalogService {
     if (coBanLuu) _checkedAt = DateTime.now();
     try {
       final response = await _apiClient
-          .get('/crm/customer-erp-link-requests/catalog')
+          .get('/dms/outlet-erp-link-requests/catalog')
           .timeout(coBanLuu ? _refreshTimeout : _firstTimeout);
       final data = response is Map ? response['data'] : null;
       if (data is Map) {
