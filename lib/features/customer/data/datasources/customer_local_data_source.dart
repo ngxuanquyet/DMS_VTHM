@@ -280,6 +280,9 @@ class CustomerLocalDataSource {
     return deduplicateCustomers(entities);
   }
 
+  /// Tên «tuyến ảo» server gắn cho app đời trước (`Yii::t('dms', 'Department outlets')`, One #26015) — chỉ để dọn bản lưu cũ.
+  static const String _legacyDepartmentRouteName = 'Điểm bán của phòng';
+
   /// MỘT điểm bán đã có id server của người đang đăng nhập — tra một dòng, không quét cả bảng như [getLocalCustomers].
   Future<CustomerEntity?> getLocalCustomerById(int id) async {
     final rows = await (_db.select(_db.localCustomers)
@@ -443,6 +446,7 @@ class CustomerLocalDataSource {
             if (remote.routes.isNotEmpty) 'routes': remote.routes,
             if (remote.routeIds.isNotEmpty) 'route_ids': remote.routeIds,
             if (remote.inCareArea) 'in_care_area': true,
+            if (remote.inDepartment) 'in_department': true,
             if (remote.photoUrl != null) 'photo_url': remote.photoUrl,
             if (remote.photoUrls.isNotEmpty) 'photo_urls': remote.photoUrls,
             if (remote.approvalLabel != null) 'approval_label': remote.approvalLabel,
@@ -898,7 +902,7 @@ class CustomerLocalDataSource {
       localRoutes = [row.route.trim()];
     }
 
-    final resolvedRowRoute = localRoutes.isNotEmpty
+    var resolvedRowRoute = localRoutes.isNotEmpty
         ? localRoutes.first
         : (CustomerEntity.isInvalidOrProvinceRoute(row.route, provinceName: row.provinceName)
             ? 'Chưa phân tuyến'
@@ -910,6 +914,16 @@ class CustomerLocalDataSource {
           .map((e) => int.tryParse(e.toString()))
           .whereType<int>()
           .toList();
+    }
+    // Bản lưu của app đời trước còn mang «tuyến ảo» id âm (One #26015) và chưa có cờ `in_department` ⇒ suy cờ từ đó, bỏ id âm
+    // và tên của nó — mở app lần đầu sau khi lên bản khi mất sóng vẫn thấy điểm bán của phòng, tới lần tải danh sách sau.
+    final legacyDepartment = localRouteIds.any((id) => id < 0);
+    if (legacyDepartment) {
+      localRouteIds = localRouteIds.where((id) => id >= 0).toList();
+      localRoutes = localRoutes.where((r) => r != _legacyDepartmentRouteName).toList();
+      if (resolvedRowRoute == _legacyDepartmentRouteName) {
+        resolvedRowRoute = localRoutes.isNotEmpty ? localRoutes.first : 'Chưa phân tuyến';
+      }
     }
 
     // Kênh ERP & Tuyến Bravo theo Spec 20/10/2026
@@ -968,6 +982,7 @@ class CustomerLocalDataSource {
       routes: localRoutes,
       routeIds: localRouteIds,
       inCareArea: dynFields['in_care_area'] == true,
+      inDepartment: dynFields['in_department'] == true || legacyDepartment,
       erpChannels: localErpChannels,
       territories: localTerritories,
       erpLinked: localErpLinked,

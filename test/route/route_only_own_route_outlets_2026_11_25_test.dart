@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vthm_dms/features/customer/data/models/customer_dto.dart';
 import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 import 'package:vthm_dms/features/route/data/services/route_api_service.dart';
 import 'package:vthm_dms/features/route/domain/entities/route_entity.dart';
@@ -17,7 +18,7 @@ import '../route_filter_day_of_week_test.dart'
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  CustomerEntity c(int id, List<int> routeIds, {bool area = false}) => CustomerEntity(
+  CustomerEntity c(int id, List<int> routeIds, {bool area = false, bool dept = false}) => CustomerEntity(
         id: id,
         code: 'KH$id',
         name: 'Điểm $id',
@@ -25,6 +26,7 @@ void main() {
         route: '',
         routeIds: routeIds,
         inCareArea: area,
+        inDepartment: dept,
         type: 'Tạp hóa',
         contactPerson: 'X',
         phone: '0900000000',
@@ -89,5 +91,34 @@ void main() {
     expect(vm.getDealerCountForCareScope(CareScope.area), 2);
     expect(vm.getDealerCountForCareScope(CareScope.plan), 1);
     vm.dispose();
+  });
+
+  test('Trưởng phòng có tuyến riêng: điểm bán của phòng (cờ in_department) giữ lại, CHỈ nằm trong «Tất cả» (chốt 27/11/2026)', () async {
+    final vm = await build(
+      const [UserRouteEntity(id: 10, name: 'Tuyến Thứ 2')],
+      // 1 trên tuyến · 2 của phòng · 3 của phòng + khu vực · 4 được giao ngoài tuyến / phòng (bỏ như cũ)
+      [c(1, [10]), c(2, const [], dept: true), c(3, const [], dept: true, area: true), c(4, const [])],
+    );
+
+    expect(vm.getDealerCountForCareScope(CareScope.all), 3);
+    expect(vm.getDealerCountForCareScope(CareScope.plan), 1, reason: 'điểm bán của phòng không vào Kế hoạch chăm sóc');
+    expect(vm.getDealerCountForCareScope(CareScope.area), 1);
+    vm.dispose();
+  });
+
+  test('CustomerDto bỏ «tuyến ảo» id âm của server, đọc cờ in_department', () {
+    final e = CustomerDto.fromJson({
+      'id': 9,
+      'code': 'X9',
+      'name': 'Điểm 9',
+      'routes': [
+        {'id': 10, 'name': 'Tuyến Thứ 2'},
+        {'id': -1, 'name': 'Điểm bán của phòng'},
+      ],
+      'in_department': true,
+    }).toEntity();
+    expect(e.routeIds, [10]);
+    expect(e.routes, isNot(contains('Điểm bán của phòng')));
+    expect(e.inDepartment, isTrue);
   });
 }

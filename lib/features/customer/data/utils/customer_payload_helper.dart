@@ -100,6 +100,7 @@ const Set<String> kForbiddenCustomerKeys = {
   'geo_source',
   // Cờ server tính theo người xem (khu vực chăm sóc, One #25938) lưu kèm bản máy — không phải ô động, không gửi lên.
   'in_care_area',
+  'in_department',
 };
 
 /// Danh sách các trường cố định (fixed) theo schema/hợp đồng gửi ở gốc body
