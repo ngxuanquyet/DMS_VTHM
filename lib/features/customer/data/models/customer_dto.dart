@@ -47,6 +47,9 @@ class CustomerDto {
   final List<String> routes;
   final List<int> routeIds;
 
+  /// Cờ `in_care_area` — điểm bán thuộc khu vực chăm sóc của người gọi ([CustomerEntity.inCareArea]).
+  final bool inCareArea;
+
   /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
   final List<ErpChannelEntity> erpChannels;
   final List<String> territories;
@@ -67,6 +70,7 @@ class CustomerDto {
     this.route,
     this.routes = const [],
     this.routeIds = const [],
+    this.inCareArea = false,
     this.erpChannels = const [],
     this.territories = const [],
     this.erpLinked = false,
@@ -367,6 +371,7 @@ class CustomerDto {
       route: validRouteName,
       routes: validRoutes,
       routeIds: parsedRouteIds,
+      inCareArea: json['in_care_area'] == true,
       erpChannels: parsedErpChannels,
       territories: parsedTerritories,
       erpLinked: parsedErpLinked,
@@ -453,6 +458,7 @@ class CustomerDto {
       route: resolvedRoute,
       routes: routes.isNotEmpty ? routes : (route != null && route!.trim().isNotEmpty ? [route!.trim()] : const []),
       routeIds: routeIds,
+      inCareArea: inCareArea,
       erpChannels: erpChannels,
       territories: territories,
       erpLinked: erpLinked,

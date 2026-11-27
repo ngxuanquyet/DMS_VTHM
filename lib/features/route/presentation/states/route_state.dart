@@ -7,6 +7,10 @@ import '../../../../core/constants/search_target.dart';
 
 enum RouteStatus { initial, loading, loaded, error }
 
+/// Nguồn điểm bán trên màn lộ trình (One #25938): mọi điểm bán / chỉ điểm bán thuộc «Khu vực chăm sóc» (tỉnh được giao) /
+/// chỉ điểm bán theo «Kế hoạch chăm sóc» (tuyến của mình; không có tuyến riêng ⇒ mọi điểm bán KHÔNG đến từ khu vực).
+enum CareScope { all, area, plan }
+
 class RouteState {
   final RouteStatus status;
   final RouteDetailEntity? routeDetail;
@@ -19,6 +23,7 @@ class RouteState {
   final List<String> availableCustomerTypes;
   final List<String> availableCustomerStatuses;
   final int? selectedDayOfWeek;
+  final CareScope careScope;
   final String searchQuery;
   final SearchTarget searchTarget;
   final int selectedTab; // 0: Danh sách, 1: Bản đồ
@@ -42,6 +47,7 @@ class RouteState {
     this.availableCustomerTypes = const [],
     this.availableCustomerStatuses = const [],
     this.selectedDayOfWeek,
+    this.careScope = CareScope.all,
     this.searchQuery = '',
     this.searchTarget = SearchTarget.all,
     this.selectedTab = 0,
@@ -101,6 +107,7 @@ class RouteState {
     List<String>? availableCustomerStatuses,
     int? selectedDayOfWeek,
     bool clearSelectedDayOfWeek = false,
+    CareScope? careScope,
     String? searchQuery,
     SearchTarget? searchTarget,
     int? selectedTab,
@@ -135,6 +142,7 @@ class RouteState {
       selectedDayOfWeek: clearSelectedDayOfWeek
           ? null
           : (selectedDayOfWeek ?? this.selectedDayOfWeek),
+      careScope: careScope ?? this.careScope,
       searchQuery: searchQuery ?? this.searchQuery,
       searchTarget: searchTarget ?? this.searchTarget,
       selectedTab: selectedTab ?? this.selectedTab,

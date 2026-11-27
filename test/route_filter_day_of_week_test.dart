@@ -137,7 +137,7 @@ void main() {
       expect(vm.state.routeDetail?.dealers.length, 2);
 
       // Lọc tuyến Thứ 2 (day = 1)
-      vm.selectDayOfWeek(1);
+      vm.applyFilters(dayOfWeek: 1);
 
       expect(vm.state.selectedDayOfWeek, 1);
       final dealers = vm.state.routeDetail?.dealers ?? [];
@@ -156,7 +156,7 @@ void main() {
       await vm.loadRouteDetail();
 
       // Lọc tuyến Thứ 7 (day = 6)
-      vm.selectDayOfWeek(6);
+      vm.applyFilters(dayOfWeek: 6);
 
       expect(vm.state.selectedDayOfWeek, 6);
       final dealers = vm.state.routeDetail?.dealers ?? [];

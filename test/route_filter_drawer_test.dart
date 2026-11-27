@@ -104,6 +104,10 @@ void main() {
         availableCustomerStatuses: const ['Tất cả', 'Đang hoạt động', 'Ngừng hoạt động'],
       );
 
+      // Khung cao: ngăn lọc có thêm phần «Ngày đi tuyến» ở đầu — ListView chỉ dựng phần đang hiện.
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
@@ -128,6 +132,10 @@ void main() {
       // Verify Drawer Title
       expect(find.text('Bộ lọc lộ trình'), findsOneWidget);
 
+      // Section 0: Ngày đi tuyến (chuyển từ hàng chip dưới ô tìm kiếm vào ngăn lọc)
+      expect(find.text('Ngày đi tuyến'), findsOneWidget);
+      expect(find.text('Chọn ngày'), findsOneWidget);
+
       // Verify Section 1: Trạng thái viếng thăm
       expect(find.text('Trạng thái viếng thăm'), findsOneWidget);
       expect(find.text('Đã ghé'), findsOneWidget);
@@ -151,12 +159,18 @@ void main() {
       await tester.tap(find.text('Đã ghé'));
       await tester.pumpAndSettle();
 
+      // Chọn Thứ 2 trong ngăn lọc ⇒ Áp dụng mới đổi thứ của màn.
+      await tester.tap(find.textContaining('Thứ 2'));
+      await tester.pumpAndSettle();
+      expect(container.read(routeViewModelProvider).selectedDayOfWeek, isNull);
+
       // Tap 'Áp dụng'
       await tester.tap(find.text('Áp dụng'));
       await tester.pumpAndSettle();
 
       // Verify drawer closed
       expect(find.text('Bộ lọc lộ trình'), findsNothing);
+      expect(container.read(routeViewModelProvider).selectedDayOfWeek, 1);
     });
 
     testWidgets('Đặt lại gọi onReset của màn chứa (để màn xoá cả chữ trong ô tìm kiếm)', (tester) async {

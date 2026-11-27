@@ -283,21 +283,9 @@ class RouteViewModel extends StateNotifier<RouteState> {
     _recomputeRouteDetail();
   }
 
-  void selectDayOfWeek(int? day) {
-    if (state.selectedDayOfWeek == day) {
-      state = state.copyWith(clearSelectedDayOfWeek: true);
-    } else {
-      state = state.copyWith(
-        selectedDayOfWeek: day,
-        clearSelectedDayOfWeek: day == null,
-      );
-    }
-    _recomputeRouteDetail();
-  }
-
   /// Đếm số điểm bán theo từng thứ trong tuần (loại trừ điểm bán bị từ chối).
   ///
-  /// Hàng chip ngày gọi hàm này mỗi lần dựng — tính MỘT lần cho 8 chip rồi nhớ, chỉ tính lại khi danh sách điểm bán
+  /// Chip ngày trong ngăn lọc gọi hàm này mỗi lần dựng — tính MỘT lần cho 8 chip rồi nhớ, chỉ tính lại khi danh sách điểm bán
   /// hoặc tuyến của tài khoản đổi. Đếm thẳng mỗi lần là 7 × 1.000+ điểm bán × dò tên tuyến theo ngày ⇒ giật.
   int getDealerCountForDay(int? day) {
     if (!identical(_dayCountsCustomers, _rawCustomers) || !identical(_dayCountsRoutes, state.userRoutes)) {
@@ -321,13 +309,61 @@ class RouteViewModel extends StateNotifier<RouteState> {
     };
   }
 
+  /// Chọn nguồn điểm bán (Tất cả / Khu vực chăm sóc / Kế hoạch chăm sóc) — hàng chọn ngay dưới ô tìm kiếm.
+  void selectCareScope(CareScope scope) {
+    if (state.careScope == scope) return;
+    state = state.copyWith(careScope: scope);
+    _recomputeRouteDetail();
+  }
+
+  /// Điểm bán thuộc nguồn [scope] không. «Kế hoạch chăm sóc» = trên tuyến của mình; tài khoản không có tuyến riêng thì mọi
+  /// điểm bán không đến từ khu vực (điểm bán theo phòng / được giao / tự tạo — "tuyến" của người không có tuyến).
+  bool _matchesCareScope(CustomerEntity c, CareScope scope, Set<int> myRouteIds) {
+    switch (scope) {
+      case CareScope.all:
+        return true;
+      case CareScope.area:
+        return c.inCareArea;
+      case CareScope.plan:
+        return myRouteIds.isEmpty ? !c.inCareArea : c.routeIds.any(myRouteIds.contains);
+    }
+  }
+
+  /// Số điểm bán (đã bỏ điểm bị từ chối) của từng nguồn — nhãn đếm trên hàng chọn nguồn. Nhớ theo danh sách + tuyến như
+  /// [getDealerCountForDay].
+  int getDealerCountForCareScope(CareScope scope) {
+    if (!identical(_scopeCountsCustomers, _rawCustomers) || !identical(_scopeCountsRoutes, state.userRoutes)) {
+      _scopeCounts = null;
+    }
+    final counts = _scopeCounts ??= _countByCareScope();
+    return counts[scope] ?? 0;
+  }
+
+  Map<CareScope, int>? _scopeCounts;
+  List<CustomerEntity>? _scopeCountsCustomers;
+  List<UserRouteEntity>? _scopeCountsRoutes;
+
+  Map<CareScope, int> _countByCareScope() {
+    _scopeCountsCustomers = _rawCustomers;
+    _scopeCountsRoutes = state.userRoutes;
+    final myRouteIds = state.userRoutes.map((r) => r.id).toSet();
+    final visible = _rawCustomers.where((c) => !c.isRejectedApproval).toList();
+    return {
+      for (final s in CareScope.values) s: visible.where((c) => _matchesCareScope(c, s, myRouteIds)).length,
+    };
+  }
+
+  /// [dayOfWeek]: thứ đi tuyến chọn ở ngăn lọc (1 = Thứ 2 … 7 = Chủ nhật); `null` = mọi ngày.
   void applyFilters({
     String? route,
     String? visitStatus,
     String? customerStatus,
     String? customerType,
+    int? dayOfWeek,
   }) {
     state = state.copyWith(
+      selectedDayOfWeek: dayOfWeek,
+      clearSelectedDayOfWeek: dayOfWeek == null,
       selectedRoute: route ?? 'Tất cả tuyến',
       selectedVisitStatus: visitStatus,
       clearVisitStatus: visitStatus == null ||
@@ -354,6 +390,7 @@ class RouteViewModel extends StateNotifier<RouteState> {
       clearCustomerStatus: true,
       clearCustomerType: true,
       clearSelectedDayOfWeek: true,
+      careScope: CareScope.all,
       searchQuery: '',
     );
     _recomputeRouteDetail();
@@ -759,12 +796,13 @@ class RouteViewModel extends StateNotifier<RouteState> {
       // NV CÓ tuyến riêng chỉ thấy điểm bán thuộc tuyến của mình (chủ hệ thống chốt 25/11/2026): `/crm/customers/mine` trả cả
       // điểm được giao / tự tạo nằm ngoài tuyến (dữ liệu MobiWork) mà server từ chối check-in (422). `routeIds` của điểm bán
       // từ server chỉ gồm tuyến của người gọi; điểm tạo ngoại tuyến mang tuyến đã chọn. Không có tuyến riêng ⇒ giữ cả danh
-      // sách (điểm bán theo phòng, #25830).
+      // sách (điểm bán theo phòng, #25830). Điểm bán thuộc «Khu vực chăm sóc» (One #25938) luôn giữ — server cho check-in
+      // (rào = tuyến ∪ khu vực).
       final myRouteIds = loadedUserRoutes.map((r) => r.id).toSet();
       // Loại trừ các điểm bán bị từ chối duyệt (hiển thị riêng ở màn hình từ chối)
       final rawCustomers = CustomerLocalDataSource.deduplicateCustomers(resolvedCustomers)
           .where((c) => !c.isRejectedApproval)
-          .where((c) => myRouteIds.isEmpty || c.routeIds.any(myRouteIds.contains))
+          .where((c) => myRouteIds.isEmpty || c.inCareArea || c.routeIds.any(myRouteIds.contains))
           .toList();
       final availableRoutes = routeSet.toList();
 
@@ -841,6 +879,11 @@ class RouteViewModel extends StateNotifier<RouteState> {
     if (!mounted) return;
     // 1. Lọc theo tuyến được chọn (loại trừ các điểm bán bị từ chối duyệt)
     var filtered = _rawCustomers.where((c) => !c.isRejectedApproval).toList();
+    // 0. Nguồn điểm bán (Tất cả / Khu vực chăm sóc / Kế hoạch chăm sóc).
+    if (state.careScope != CareScope.all) {
+      final myRouteIds = state.userRoutes.map((r) => r.id).toSet();
+      filtered = filtered.where((c) => _matchesCareScope(c, state.careScope, myRouteIds)).toList();
+    }
     if (state.selectedRoute != 'Tất cả tuyến' && state.selectedRoute.isNotEmpty) {
       filtered = filtered.where((c) {
         if (c.route == state.selectedRoute) return true;

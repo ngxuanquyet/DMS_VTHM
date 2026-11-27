@@ -113,6 +113,10 @@ class CustomerEntity {
   final List<String> routes;
   final List<int> routeIds;
 
+  /// Điểm bán thuộc «Khu vực chăm sóc» (tỉnh cũ được giao) của người đang đăng nhập hôm nay — cờ `in_care_area` của
+  /// `/dms/outlets/mine` (One #25938). Server đời cũ không gửi ⇒ `false`.
+  final bool inCareArea;
+
   /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
   final List<ErpChannelEntity> erpChannels;
   final List<String> territories;
@@ -141,6 +145,7 @@ class CustomerEntity {
     required this.route,
     this.routes = const [],
     this.routeIds = const [],
+    this.inCareArea = false,
     this.erpChannels = const [],
     this.territories = const [],
     this.erpLinked = false,
@@ -307,6 +312,7 @@ class CustomerEntity {
     String? route,
     List<String>? routes,
     List<int>? routeIds,
+    bool? inCareArea,
     List<ErpChannelEntity>? erpChannels,
     List<String>? territories,
     bool? erpLinked,
@@ -357,6 +363,7 @@ class CustomerEntity {
       route: route ?? this.route,
       routes: routes ?? this.routes,
       routeIds: routeIds ?? this.routeIds,
+      inCareArea: inCareArea ?? this.inCareArea,
       erpChannels: erpChannels ?? this.erpChannels,
       territories: territories ?? this.territories,
       erpLinked: erpLinked ?? this.erpLinked,

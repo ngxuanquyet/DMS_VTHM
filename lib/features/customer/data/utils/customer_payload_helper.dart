@@ -98,6 +98,8 @@ const Set<String> kForbiddenCustomerKeys = {
   queueMaybeOnServerKey,
   // Nguồn cặp tỉnh/xã (#24072) — server tự đặt, đọc từ hồ sơ để hiện nhãn; gửi lên (kể cả trong `data`) là 422.
   'geo_source',
+  // Cờ server tính theo người xem (khu vực chăm sóc, One #25938) lưu kèm bản máy — không phải ô động, không gửi lên.
+  'in_care_area',
 };
 
 /// Danh sách các trường cố định (fixed) theo schema/hợp đồng gửi ở gốc body

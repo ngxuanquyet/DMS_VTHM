@@ -27,6 +27,7 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
   late String? _selectedVisitStatus;
   late String? _selectedCustomerStatus;
   late String? _selectedCustomerType;
+  late int? _selectedDay;
 
   @override
   void initState() {
@@ -35,6 +36,7 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
     _selectedVisitStatus = widget.state.selectedVisitStatus;
     _selectedCustomerStatus = widget.state.selectedCustomerStatus;
     _selectedCustomerType = widget.state.selectedCustomerType;
+    _selectedDay = widget.state.selectedDayOfWeek;
   }
 
   int get _currentActiveCount {
@@ -58,11 +60,15 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
         _selectedCustomerType != 'Tất cả loại') {
       count++;
     }
+    if (_selectedDay != null) {
+      count++;
+    }
     return count;
   }
 
   void _handleReset() {
     setState(() {
+      _selectedDay = null;
       _selectedRoute = 'Tất cả tuyến';
       _selectedVisitStatus = null;
       _selectedCustomerStatus = null;
@@ -82,6 +88,7 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
       visitStatus: _selectedVisitStatus,
       customerStatus: _selectedCustomerStatus,
       customerType: _selectedCustomerType,
+      dayOfWeek: _selectedDay,
     );
     Navigator.of(context).pop();
   }
@@ -171,6 +178,17 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
                 children: [
+                  // Section 0: Ngày đi tuyến (chuyển từ hàng chip dưới ô tìm kiếm vào đây)
+                  _buildSectionTitle(
+                    title: 'Ngày đi tuyến',
+                    icon: Icons.calendar_today_rounded,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildDaySection(isDark),
+
+                  const SizedBox(height: 22),
+
                   // Section 1: Trạng thái viếng thăm
                   _buildSectionTitle(
                     title: 'Trạng thái viếng thăm',
@@ -363,6 +381,89 @@ class _RouteFilterDrawerState extends State<RouteFilterDrawer> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Chip Tất cả / Thứ 2 … Chủ nhật (kèm số điểm bán, đánh dấu hôm nay) + nút chọn ngày trên lịch (lấy thứ của ngày đó).
+  Widget _buildDaySection(bool isDark) {
+    final todayWeekday = DateTime.now().weekday;
+    const days = [
+      (day: 1, label: 'Thứ 2'),
+      (day: 2, label: 'Thứ 3'),
+      (day: 3, label: 'Thứ 4'),
+      (day: 4, label: 'Thứ 5'),
+      (day: 5, label: 'Thứ 6'),
+      (day: 6, label: 'Thứ 7'),
+      (day: 7, label: 'Chủ nhật'),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildDayChip(label: 'Tất cả', day: null, isDark: isDark),
+        for (final d in days)
+          _buildDayChip(
+            label: d.day == todayWeekday ? '${d.label} (Hôm nay)' : d.label,
+            day: d.day,
+            count: widget.vm.getDealerCountForDay(d.day),
+            isDark: isDark,
+          ),
+        ActionChip(
+          avatar: Icon(
+            Icons.calendar_month_rounded,
+            size: 16,
+            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+          ),
+          label: const Text('Chọn ngày', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          backgroundColor: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF1F5F9),
+          side: BorderSide(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          onPressed: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: DateTime.now(),
+              firstDate: DateTime(2025),
+              lastDate: DateTime.now().add(const Duration(days: 60)),
+              helpText: 'CHỌN NGÀY ĐI TUYẾN',
+              cancelText: 'HỦY',
+              confirmText: 'CHỌN',
+            );
+            if (picked != null && mounted) {
+              setState(() => _selectedDay = picked.weekday);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDayChip({
+    required String label,
+    required int? day,
+    int count = 0,
+    required bool isDark,
+  }) {
+    final isSelected = _selectedDay == day;
+    return FilterChip(
+      selected: isSelected,
+      label: Text(
+        count > 0 ? '$label · $count' : label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? Colors.white : (isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+        ),
+      ),
+      onSelected: (_) => setState(() => _selectedDay = day),
+      selectedColor: AppColors.primary,
+      backgroundColor: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF1F5F9),
+      side: BorderSide(
+        color: isSelected ? AppColors.primary : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      showCheckmark: false,
     );
   }
 

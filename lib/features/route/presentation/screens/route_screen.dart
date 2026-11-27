@@ -809,9 +809,9 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                 : const SizedBox.shrink(),
                           ),
 
-                          // Row lọc tuyến theo ngày ở dưới thanh tìm kiếm
+                          // Hàng chọn nguồn điểm bán (Tất cả / Khu vực chăm sóc / Kế hoạch chăm sóc) dưới thanh tìm kiếm
                           const SizedBox(height: 10),
-                          _buildDayFilterRow(context, state, vm, isDark),
+                          _buildCareScopeRow(state, vm, isDark),
                         ],
                       ),
                 ),
@@ -975,6 +975,7 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
                                     state.selectedCustomerStatus,
                                     state.selectedCustomerType,
                                     state.selectedDayOfWeek,
+                                    state.careScope,
                                     state.isSortedByDistance,
                                   ),
                                   padding: const EdgeInsets.fromLTRB(
@@ -1327,27 +1328,18 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
     );
   }
 
-  /// Row lọc tuyến theo ngày trong tuần (T2 .. CN / Hôm nay / DatePicker)
-  Widget _buildDayFilterRow(
-    BuildContext context,
+  /// Hàng chọn nguồn điểm bán dưới ô tìm kiếm: Tất cả / Khu vực chăm sóc / Kế hoạch chăm sóc (One #25938). Lọc theo thứ
+  /// đi tuyến đã chuyển vào ngăn Lọc ([RouteFilterDrawer]).
+  Widget _buildCareScopeRow(
     RouteState state,
     RouteViewModel vm,
     bool isDark,
   ) {
-    final todayWeekday = DateTime.now().weekday;
-    final selectedDay = state.selectedDayOfWeek;
-
-    final days = const [
-      (day: 1, label: 'Thứ 2', short: 'T2'),
-      (day: 2, label: 'Thứ 3', short: 'T3'),
-      (day: 3, label: 'Thứ 4', short: 'T4'),
-      (day: 4, label: 'Thứ 5', short: 'T5'),
-      (day: 5, label: 'Thứ 6', short: 'T6'),
-      (day: 6, label: 'Thứ 7', short: 'T7'),
-      (day: 7, label: 'Chủ nhật', short: 'CN'),
+    const items = [
+      (scope: CareScope.all, label: 'Tất cả', icon: Icons.apps_rounded),
+      (scope: CareScope.area, label: 'Khu vực chăm sóc', icon: Icons.map_outlined),
+      (scope: CareScope.plan, label: 'Kế hoạch chăm sóc', icon: Icons.alt_route_rounded),
     ];
-
-    final isAllSelected = selectedDay == null;
 
     return SizedBox(
       height: 36,
@@ -1355,238 +1347,112 @@ class _RouteScreenState extends ConsumerState<RouteScreen> with WidgetsBindingOb
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         children: [
-          // Nút Chọn Lịch (DatePicker dialog)
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime(2025),
-                    lastDate: DateTime.now().add(const Duration(days: 60)),
-                    helpText: 'CHỌN NGÀY ĐI TUYẾN',
-                    cancelText: 'HỦY',
-                    confirmText: 'CHỌN',
-                  );
-                  if (picked != null) {
-                    vm.selectDayOfWeek(picked.weekday);
-                  }
-                },
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.darkSurfaceContainer
-                        : AppColors.surfaceContainerHigh.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.darkOutlineVariant
-                          : AppColors.outlineVariant.withValues(alpha: 0.7),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.calendar_month_rounded,
-                        size: 16,
-                        color: isDark
-                            ? AppColors.darkOnSurfaceVariant
-                            : AppColors.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Chip "Tất cả"
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => vm.selectDayOfWeek(null),
-                borderRadius: BorderRadius.circular(10),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isAllSelected
-                        ? (isDark ? const Color(0xFF006E15) : AppColors.primary)
-                        : (isDark
-                            ? AppColors.darkSurfaceContainer
-                            : AppColors.surfaceContainerHigh.withValues(alpha: 0.6)),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isAllSelected
-                          ? AppColors.primary
-                          : (isDark
-                              ? AppColors.darkOutlineVariant
-                              : AppColors.outlineVariant.withValues(alpha: 0.7)),
-                      width: isAllSelected ? 1.4 : 1,
-                    ),
-                    boxShadow: isAllSelected
-                        ? [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.28),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.apps_rounded,
-                        size: 13,
-                        color: isAllSelected
-                            ? Colors.white
-                            : (isDark
-                                ? AppColors.darkOnSurfaceVariant
-                                : AppColors.onSurfaceVariant),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Tất cả',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isAllSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: isAllSelected
-                              ? Colors.white
-                              : (isDark
-                                  ? AppColors.darkOnSurface
-                                  : AppColors.onSurface),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Chips các ngày trong tuần (T2 .. CN)
-          ...days.map((item) {
-            final isSelected = selectedDay == item.day;
-            final isToday = item.day == todayWeekday;
-            final count = vm.getDealerCountForDay(item.day);
-
-            return Padding(
+          for (final item in items)
+            Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => vm.selectDayOfWeek(item.day),
-                  borderRadius: BorderRadius.circular(10),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 11),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? (isDark ? const Color(0xFF006E15) : AppColors.primary)
-                          : (isDark
-                              ? AppColors.darkSurfaceContainer
-                              : AppColors.surfaceContainerHigh.withValues(alpha: 0.6)),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.primary
-                            : isToday
-                                ? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
-                                : (isDark
-                                    ? AppColors.darkOutlineVariant
-                                    : AppColors.outlineVariant.withValues(alpha: 0.7)),
-                        width: isSelected ? 1.4 : (isToday ? 1.2 : 1),
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.28),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
+              child: _buildCareScopeChip(
+                label: item.label,
+                icon: item.icon,
+                isSelected: state.careScope == item.scope,
+                count: vm.getDealerCountForCareScope(item.scope),
+                onTap: () => vm.selectCareScope(item.scope),
+                isDark: isDark,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCareScopeChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required int count,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    final fg = isSelected
+        ? Colors.white
+        : (isDark ? AppColors.darkOnSurface : AppColors.onSurface);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark ? const Color(0xFF006E15) : AppColors.primary)
+                : (isDark
+                    ? AppColors.darkSurfaceContainer
+                    : AppColors.surfaceContainerHigh.withValues(alpha: 0.6)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary
+                  : (isDark
+                      ? AppColors.darkOutlineVariant
+                      : AppColors.outlineVariant.withValues(alpha: 0.7)),
+              width: isSelected ? 1.4 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.28),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isToday) ...[
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.white
-                                  : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        Text(
-                          isToday ? '${item.label} (Hôm nay)' : item.label,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isSelected || isToday
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: isSelected
-                                ? Colors.white
-                                : isToday
-                                    ? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
-                                    : (isDark
-                                        ? AppColors.darkOnSurface
-                                        : AppColors.onSurface),
-                          ),
-                        ),
-                        if (count > 0) ...[
-                          const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.white.withValues(alpha: 0.25)
-                                  : (isDark
-                                      ? Colors.white.withValues(alpha: 0.08)
-                                      : Colors.black.withValues(alpha: 0.06)),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '$count',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: isSelected
-                                    ? Colors.white
-                                    : (isDark
-                                        ? AppColors.darkOnSurfaceVariant
-                                        : AppColors.onSurfaceVariant),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: isSelected
+                    ? Colors.white
+                    : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : (isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.06)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected
+                        ? Colors.white
+                        : (isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
                   ),
                 ),
               ),
-            );
-          }),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

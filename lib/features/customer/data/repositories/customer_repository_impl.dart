@@ -1004,13 +1004,32 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<CustomerEntity> getCustomerDetail(int id) async {
     try {
       final dto = await _apiService.getCustomerDetail(id);
-      final entity = dto.toEntity();
+      var entity = dto.toEntity();
       // Còn lệnh SỬA chờ gửi ⇒ bản server cũ hơn phần sửa: trả bản trong máy (cùng luật lần tải danh sách — vòng 3).
       if (await _localDataSource.hasUnsentCustomerUpdate(id, entity.clientUuid)) {
         final i = _cachedCustomers.indexWhere((c) => c.id == id);
         if (i != -1) return _cachedCustomers[i];
         final local = (await _localDataSource.getLocalCustomers()).where((c) => c.id == id).firstOrNull;
         if (local != null) return local;
+      }
+      // Cửa chi tiết KHÔNG gắn phần "theo người xem" của danh sách `mine` (tuyến của tôi, cờ khu vực chăm sóc — đo app_test
+      // 27/11/2026: `routes: []`, `in_care_area: null`) ⇒ giữ phần đó của bản đang có; ghi đè thì điểm bán rơi khỏi màn Tuyến
+      // (lọc tuyến ∪ khu vực) và lọc "Hôm nay" tới lần tải danh sách sau. Đọc máy lỗi ⇒ bỏ qua, không bỏ bản server vừa nhận.
+      CustomerEntity? prev = _cachedCustomers.where((c) => c.id == id).firstOrNull;
+      if (prev == null) {
+        try {
+          prev = await _localDataSource.getLocalCustomerById(id);
+        } catch (_) {}
+      }
+      if (prev != null) {
+        final keepRoutes = entity.routeIds.isEmpty;
+        entity = entity.copyWith(
+          route: keepRoutes ? prev.route : null,
+          routes: keepRoutes ? prev.routes : null,
+          routeIds: keepRoutes ? prev.routeIds : null,
+          isToday: keepRoutes ? prev.isToday : null,
+          inCareArea: entity.inCareArea || prev.inCareArea,
+        );
       }
       unawaited(_localDataSource.cacheRemoteCustomers([entity]));
       final index = _cachedCustomers.indexWhere((c) => c.id == id);

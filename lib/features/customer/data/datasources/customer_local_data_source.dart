@@ -280,6 +280,16 @@ class CustomerLocalDataSource {
     return deduplicateCustomers(entities);
   }
 
+  /// MỘT điểm bán đã có id server của người đang đăng nhập — tra một dòng, không quét cả bảng như [getLocalCustomers].
+  Future<CustomerEntity?> getLocalCustomerById(int id) async {
+    final rows = await (_db.select(_db.localCustomers)
+          ..where(_db.isMyCustomer)
+          ..where((t) => t.id.equals(id))
+          ..limit(1))
+        .get();
+    return rows.isEmpty ? null : _mapRowToEntity(rows.first);
+  }
+
   /// Khử trùng lặp danh sách điểm bán theo ID (>0), Mã code chuẩn, và clientUuid
   static List<CustomerEntity> deduplicateCustomers(List<CustomerEntity> list) {
     final seenIds = <int>{};
@@ -432,6 +442,7 @@ class CustomerLocalDataSource {
             if (remote.regionName != null) 'region_name': remote.regionName,
             if (remote.routes.isNotEmpty) 'routes': remote.routes,
             if (remote.routeIds.isNotEmpty) 'route_ids': remote.routeIds,
+            if (remote.inCareArea) 'in_care_area': true,
             if (remote.photoUrl != null) 'photo_url': remote.photoUrl,
             if (remote.photoUrls.isNotEmpty) 'photo_urls': remote.photoUrls,
             if (remote.approvalLabel != null) 'approval_label': remote.approvalLabel,
@@ -956,6 +967,7 @@ class CustomerLocalDataSource {
       route: resolvedRowRoute,
       routes: localRoutes,
       routeIds: localRouteIds,
+      inCareArea: dynFields['in_care_area'] == true,
       erpChannels: localErpChannels,
       territories: localTerritories,
       erpLinked: localErpLinked,
