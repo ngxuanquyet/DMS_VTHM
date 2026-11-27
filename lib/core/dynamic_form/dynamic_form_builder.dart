@@ -31,6 +31,7 @@ import '../widgets/geo_select_field_widget.dart';
 import '../widgets/note_field_widget.dart';
 import '../utils/phone_utils.dart';
 import '../map/app_map_location_card.dart';
+import 'widgets/product_sku_picker.dart';
 
 class DynamicFormBuilder extends StatefulWidget {
   /// Danh sách đặc tả các trường form nhận từ API
@@ -1025,8 +1026,20 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     }
 
     final photos = anhCua(value, cfg);
-    void ghi(DisplayMatrixCounts counts, Map<String, dynamic> anh, DisplayMatrixCustom c) =>
-        updateFieldValue(field.code, displayMatrixValue(counts, anh, c));
+    // Mã SKU hàng của ta theo loại (own_skus, 27/11/2026) — đọc giá trị MỚI NHẤT (ô ảnh / ô mã gọi lại sau khi khung chọn đóng).
+    Map<String, dynamic> maCua(dynamic v) =>
+        v is Map && v['skus'] is Map ? Map<String, dynamic>.from(v['skus'] as Map) : <String, dynamic>{};
+    void ghi(DisplayMatrixCounts counts, Map<String, dynamic> anh, DisplayMatrixCustom c, {Map<String, dynamic>? ma}) {
+      // Chỉ mã của loại ĐANG hỏi (cột gõ tay vừa gỡ, loại admin bỏ khỏi ô) — gửi mã loại lạ thì server từ chối "not asked".
+      final hoi = {for (final t in base.withCustom(c).types) t.code};
+      // …và chỉ loại CÒN hàng của ta theo số đang nhập (form điểm bán không có số hồ sơ để ghép): xoá hết số thì mã cũ không làm ô
+      // "có dữ liệu" — server bỏ mã loại không có hàng ⇒ ô bắt buộc sẽ 422 sau khi app đã cho qua.
+      final coHang = DisplayMatrixFieldWidget.ownTypes(counts, base.withCustom(c));
+      final m = base.ownSkus
+          ? ((ma ?? maCua(_formData[field.code]))..removeWhere((k, _) => !hoi.contains(k) || !coHang.contains(k)))
+          : null;
+      updateFieldValue(field.code, displayMatrixValue(counts, anh, c, skus: m));
+    }
 
     return DisplayMatrixFieldWidget(
       fieldCode: field.code,
@@ -1051,6 +1064,21 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
               final moi = base.withCustom(c);
               ghi(DisplayMatrixFieldWidget.onlyAsked(counts, moi), anhCua(_formData[field.code], moi), c);
             },
+      // Mã SKU hàng của ta của loại — dưới ảnh, chỉ khi loại có hàng của ta (widget tự quyết theo số).
+      skuSection: (t) => ProductSkuPicker(
+        key: ValueKey('matrix_${field.code}_sku_${t.code}'),
+        label: 'Mã SKU hàng ${DisplayMatrixFieldWidget.ownBrandNames(cfg)} — ${t.name}',
+        isRequired: true,
+        readOnly: field.isReadOnly,
+        value: DisplayMatrixFieldWidget.skusOf(value)[t.code] ?? const [],
+        onChanged: (list) {
+          final cur = _formData[field.code];
+          final c = DisplayMatrixCustom.fromValue(cur);
+          final moi = base.withCustom(c);
+          final ma = maCua(cur)..[t.code] = list;
+          ghi(DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(cur), moi), anhCua(cur, moi), c, ma: ma);
+        },
+      ),
       photoSection: (t) => DynamicPhotoFieldWidget(
         field: DynamicFormField(
           code: '${field.code}::${t.code}',
@@ -1092,7 +1120,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
     final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
     if (anhErr != null) return '${field.label} – $anhErr';
     final hieuErr = DisplayMatrixFieldWidget.brandsError(counts, photos, cfg);
-    return hieuErr == null ? null : '${field.label} – $hieuErr';
+    if (hieuErr != null) return '${field.label} – $hieuErr';
+    final maErr = DisplayMatrixFieldWidget.skusError(counts, DisplayMatrixFieldWidget.skusOf(value), cfg);
+    return maErr == null ? null : '${field.label} – $maErr';
   }
 
   /// Kết quả ô công thức của lần dựng hiện tại (tính một lần mỗi `build`).

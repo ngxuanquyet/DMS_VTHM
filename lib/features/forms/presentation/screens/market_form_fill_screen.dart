@@ -352,6 +352,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
           ...?(fill[c] is Map ? fill[c] as Map : null),
           'photos': cur['photos'],
           if (!custom.isEmpty) 'custom': custom.toJson(),
+          // Mã SKU nhân viên đã chọn ở phiếu đang điền giữ lại như ảnh (tự điền không đè lựa chọn vừa làm).
+          if (cur['skus'] != null) 'skus': cur['skus'],
         };
       } else if (b.resolved.isRepeatGroup && cur is List && cur.isNotEmpty) {
         final coAnh = b.resolved.groupItems.any((i) {

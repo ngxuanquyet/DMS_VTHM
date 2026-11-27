@@ -143,8 +143,10 @@ class DynamicRuleEvaluator {
       if (v.containsKey('counts') && v.containsKey('photos')) {
         final c = v['counts'];
         final p = v['photos'];
+        final k = v['skus'];
         return !(c is Map && c.values.any((r) => r is Map && r.isNotEmpty)) &&
-            !(p is Map && p.values.any((l) => l is List && l.isNotEmpty));
+            !(p is Map && p.values.any((l) => l is List && l.isNotEmpty)) &&
+            !(k is Map && k.values.any((l) => l is List && l.isNotEmpty));
       }
       return v.values.every((val) => val == null || (val is String && val.trim().isEmpty));
     }

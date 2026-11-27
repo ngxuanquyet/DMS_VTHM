@@ -100,6 +100,10 @@ class DisplayMatrixConfig {
   /// Số thương hiệu tối thiểu phải có số > 0 (`config.matrix.min_brands`, 19/11/2026); 0 = không bắt.
   final int minBrands;
 
+  /// Hỏi MÃ SKU hàng của ta theo loại (`config.matrix.own_skus`, 27/11/2026): ô mã dưới ảnh của loại, chỉ hiện + bắt buộc khi loại
+  /// có số > 0 ở thương hiệu "của ta".
+  final bool ownSkus;
+
   /// Đơn vị gợi ý cho loại gõ tay (`config.matrix.units`; server cũ không gửi ⇒ đơn vị của các loại danh mục).
   final List<String> units;
 
@@ -113,6 +117,7 @@ class DisplayMatrixConfig {
     this.types = const [],
     this.photosWhenZero = false,
     this.minBrands = 0,
+    this.ownSkus = false,
     this.units = const [],
     this.customDecimals = 2,
     this.customMinPhotos = 1,
@@ -146,6 +151,7 @@ class DisplayMatrixConfig {
       ],
       photosWhenZero: photosWhenZero,
       minBrands: minBrands,
+      ownSkus: ownSkus,
       units: units,
       customDecimals: customDecimals,
       customMinPhotos: customMinPhotos,
@@ -183,6 +189,7 @@ class DisplayMatrixConfig {
     return DisplayMatrixConfig(
       photosWhenZero: m['photos_when_zero'] == true,
       minBrands: m['min_brands'] == null ? 0 : i(m['min_brands']),
+      ownSkus: m['own_skus'] == true,
       units: units,
       customDecimals: ct['decimals'] == null ? 2 : i(ct['decimals']).clamp(0, 2),
       customMinPhotos: ct['min_photos'] == null ? 1 : i(ct['min_photos']),
@@ -338,18 +345,24 @@ bool displayMatrixHasData(dynamic value) {
   if (value is! Map) return false;
   final c = value['counts'];
   final p = value['photos'];
+  final k = value['skus'];
+  // Chỉ có mã SKU (phiếu cập nhật hiện trạng: nhân viên chỉ sửa mã) cũng là dữ liệu — bỏ đi là mã mất im lặng lúc nộp.
   return (c is Map && c.values.any((r) => r is Map && r.isNotEmpty)) ||
-      (p is Map && p.values.any((l) => l is List && l.isNotEmpty));
+      (p is Map && p.values.any((l) => l is List && l.isNotEmpty)) ||
+      (k is Map && k.values.any((l) => l is List && l.isNotEmpty));
 }
 
-/// Ghép giá trị ô ma trận để lưu / gửi: `{counts, photos}` + `custom` khi có mục gõ tay. Không số, không ảnh, không mục gõ
-/// tay ⇒ `null` (ô rỗng).
-Map<String, dynamic>? displayMatrixValue(DisplayMatrixCounts counts, Map photos, DisplayMatrixCustom custom) {
-  if (counts.isEmpty && photos.isEmpty && custom.isEmpty) return null;
+/// Ghép giá trị ô ma trận để lưu / gửi: `{counts, photos}` + `custom` khi có mục gõ tay + `skus` (mã SKU hàng của ta theo loại)
+/// khi ô bật `own_skus` — [skus] khác `null` thì LUÔN ghi khoá (kể cả `{}`): server chỉ bắt buộc mã khi client gửi khoá này (app cũ
+/// không biết ô mã). Không số, không ảnh, không mục gõ tay ⇒ `null` (ô rỗng).
+Map<String, dynamic>? displayMatrixValue(DisplayMatrixCounts counts, Map photos, DisplayMatrixCustom custom, {Map? skus}) {
+  // Chỉ có mã SKU (phiếu cập nhật hiện trạng: sửa mã, ô số để trống giữ số hồ sơ) vẫn là giá trị.
+  if (counts.isEmpty && photos.isEmpty && custom.isEmpty && (skus == null || skus.isEmpty)) return null;
   return {
     'counts': counts,
     'photos': photos,
     if (!custom.isEmpty) 'custom': custom.toJson(),
+    if (skus != null) 'skus': skus,
   };
 }
 
@@ -416,6 +429,10 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
   final void Function(DisplayMatrixCounts counts, bool hasInvalidCell) onChanged;
   final Widget Function(DisplayMatrixType type)? photoSection;
 
+  /// Ô MÃ SKU hàng của ta của một loại (`config.matrix.own_skus`) do màn chứa vẽ — đặt DƯỚI ảnh của loại, chỉ vẽ khi loại có số > 0
+  /// ở thương hiệu "của ta" (số hiệu lực, tính cả số hiện trạng).
+  final Widget Function(DisplayMatrixType type)? skuSection;
+
   /// Số HIỆN TRẠNG của điểm bán (ô ma trận bật "Cập nhật hiện trạng điểm bán", #24789) — chủ hệ thống chốt 06/11/2026: ô
   /// CHƯA SỬA hiện số này như số thật, Tổng / % SOS tính trên cả ma trận; nhưng [onChanged] chỉ mang ô ĐÃ GÕ — ô không sửa
   /// giữ số trên server (luật 05/11), số trong máy có thể cũ hơn server, gửi lại là đè số mới. Ô bị xoá trống hiện mờ số này.
@@ -443,6 +460,7 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
     this.errorKey,
     required this.onChanged,
     this.photoSection,
+    this.skuSection,
     this.hintCounts = const {},
     this.custom = const DisplayMatrixCustom(),
     this.onCustomChanged,
@@ -481,7 +499,65 @@ class DisplayMatrixFieldWidget extends StatefulWidget {
               if (e.value is List && (e.value as List).isNotEmpty) '${e.key}': [for (final x in e.value as List) '$x'],
         };
     final pa = anh(a), pb = anh(b);
-    return pa.length == pb.length && pa.entries.every((e) => listEquals(e.value, pb[e.key]));
+    if (pa.length != pb.length || !pa.entries.every((e) => listEquals(e.value, pb[e.key]))) return false;
+    // Mã SKU hàng của ta (own_skus): so theo id từng loại — chỉ đổi mã cũng là đổi giá trị (màn sửa phải gửi).
+    Map<String, List<int>> ma(Map v) => {for (final e in skusOf(v).entries) e.key: [for (final x in e.value) skuIdOf(x)!]};
+    final ka = ma(a), kb = ma(b);
+    return ka.length == kb.length && ka.entries.every((e) => listEquals(e.value, kb[e.key]));
+  }
+
+  /// Id của một mã SKU (ảnh chụp `{id, code, …}` hoặc id trần); không đọc được ⇒ `null`.
+  static int? skuIdOf(dynamic x) {
+    final v = x is Map ? x['id'] : x;
+    final n = v is num ? v.toInt() : int.tryParse('$v'.trim());
+    return n != null && n > 0 ? n : null;
+  }
+
+  /// Mã SKU hàng của ta theo loại trong một giá trị ô (`skus.<mã loại>[]` — ảnh chụp server dựng); phần tử hỏng bị bỏ.
+  static Map<String, List<Map<String, dynamic>>> skusOf(dynamic value) {
+    final raw = value is Map ? value['skus'] : null;
+    final out = <String, List<Map<String, dynamic>>>{};
+    if (raw is Map) {
+      raw.forEach((t, list) {
+        final l = [
+          if (list is List)
+            for (final x in list)
+              if (x is Map && skuIdOf(x) != null) Map<String, dynamic>.from(x),
+        ];
+        if (l.isNotEmpty) out['$t'] = l;
+      });
+    }
+    return out;
+  }
+
+  /// Loại có hàng CỦA TA: số > 0 ở thương hiệu `is_own` (cùng luật `DisplayMatrixField::ownTypes` của server) — điều kiện hiện
+  /// + bắt buộc ô mã SKU. [counts] là số HIỆU LỰC (phiếu cập nhật hồ sơ truyền số đã ghép số hiện trạng — [withHints]).
+  static Set<String> ownTypes(DisplayMatrixCounts counts, DisplayMatrixConfig cfg) {
+    final own = {for (final b in cfg.brands) if (b.isOwn) b.code};
+    return {
+      for (final e in counts.entries)
+        if (own.contains(e.key))
+          for (final c in e.value.entries)
+            if (c.value > 0) c.key,
+    };
+  }
+
+  /// Lỗi THIẾU MÃ SKU (cùng luật server): ô bật `own_skus` mà loại có hàng của ta chưa có mã nào. Hợp lệ ⇒ `null`.
+  static String? skusError(DisplayMatrixCounts counts, Map<String, List<dynamic>> skus, DisplayMatrixConfig cfg) {
+    if (!cfg.ownSkus) return null;
+    final coHang = ownTypes(counts, cfg);
+    for (final t in cfg.types) {
+      if (coHang.contains(t.code) && (skus[t.code] ?? const []).isEmpty) {
+        return '${t.name}: nhập mã SKU hàng ${ownBrandNames(cfg)} đang trưng bày.';
+      }
+    }
+    return null;
+  }
+
+  /// Tên các thương hiệu "của ta" (vd `VTHM`) — dùng trong nhãn / câu báo ô mã SKU.
+  static String ownBrandNames(DisplayMatrixConfig cfg) {
+    final names = [for (final b in cfg.brands) if (b.isOwn) b.name];
+    return names.isEmpty ? 'của ta' : names.join(', ');
   }
 
   /// Số dùng để tính Tổng / % SOS: ô đã gõ lấy số gõ, ô trống lấy [hints] (số hiện trạng — ô trống giữ số cũ khi nộp).
@@ -976,10 +1052,12 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    final totals = DisplayMatrixTotals.compute(
-        DisplayMatrixFieldWidget.withHints(_counts, DisplayMatrixFieldWidget.onlyAsked(_hints, cfg)), cfg);
+    final hieuLuc = DisplayMatrixFieldWidget.withHints(_counts, DisplayMatrixFieldWidget.onlyAsked(_hints, cfg));
+    final totals = DisplayMatrixTotals.compute(hieuLuc, cfg);
     final muted = Theme.of(context).brightness == Brightness.dark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant;
     final coHuongDan = cfg.types.any((t) => t.hasGuide);
+    // Loại có hàng của ta ⇒ hiện ô mã SKU dưới ảnh (own_skus).
+    final coMa = cfg.ownSkus && widget.skuSection != null ? DisplayMatrixFieldWidget.ownTypes(hieuLuc, cfg) : const <String>{};
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1033,9 +1111,18 @@ class _DisplayMatrixFieldWidgetState extends State<DisplayMatrixFieldWidget> wit
           ),
         ),
         for (final line in _errorLines) FormFieldErrorText(line),
-        if (widget.photoSection != null)
-          for (final t in cfg.types)
-            if (t.maxPhotos > 0) Padding(padding: const EdgeInsets.only(bottom: 8), child: widget.photoSection!(t)),
+        for (final t in cfg.types)
+          if ((t.maxPhotos > 0 && widget.photoSection != null) || coMa.contains(t.code))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (t.maxPhotos > 0 && widget.photoSection != null) widget.photoSection!(t),
+                  if (coMa.contains(t.code)) widget.skuSection!(t),
+                ],
+              ),
+            ),
         if (widget.errorText != null) FormFieldErrorText(widget.errorText!, key: widget.errorKey),
       ],
     );

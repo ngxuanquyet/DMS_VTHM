@@ -44,6 +44,7 @@ import '../../../daily_report/domain/entities/daily_activity_entity.dart';
 import '../../../daily_report/presentation/widgets/daily_activity_timeline_card.dart';
 import '../../../employee_tracking/presentation/services/employee_tracking_service.dart';
 import '../../../../core/services/erp_catalog_service.dart';
+import '../../../../core/services/product_catalog_service.dart';
 import '../../../visit/domain/entities/visit_entity.dart';
 import '../../../../core/widgets/app_refresh_indicator.dart';
 import '../../../consent/data/privacy_consent_service.dart';
@@ -306,6 +307,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // 3b''. Danh mục khách ERP cho bước nối điểm bán (#24327) — "Đồng bộ" và lúc vào app luôn tải lại NGẦM (admin vừa đổi
     // kênh theo vai thì NV thấy ngay), không chặn các bước sau.
     ref.read(erpCatalogServiceProvider).refreshInBackground(online: ref.read(connectivityProvider).isOnline);
+    // 3b'''. Danh mục mã hàng cho ô mã SKU hàng của ta trong ma trận SOS (27/11/2026) — tìm được khi mất sóng; tải lại sau 12 giờ.
+    ref.read(productCatalogServiceProvider).refreshInBackground(online: ref.read(connectivityProvider).isOnline);
 
     // 3c. Cập nhật biểu mẫu thị trường (/dms/forms)
     try {

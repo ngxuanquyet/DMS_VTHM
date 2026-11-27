@@ -14,6 +14,7 @@ import '../../../domain/entities/market_form_entity.dart';
 import '../../../domain/services/dynamic_rule_evaluator.dart';
 import 'currency_field_widget.dart';
 import '../../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart';
+import '../../../../../core/dynamic_form/widgets/product_sku_picker.dart';
 import '../../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../../core/widgets/note_field_widget.dart';
 import '../../../../../core/widgets/form_fields/form_field_parts.dart';
@@ -193,6 +194,27 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   dynamic _hintValueOf(dynamic config) {
     final target = config is Map ? config['update_customer_field'] : null;
     return target is String && target.isNotEmpty ? widget.customerData[target] : null;
+  }
+
+  /// Mã SKU đã chạm trong phiếu (`skus` của câu trả lời — loại có khoá là người dùng đã chọn, kể cả bỏ hết); chưa có ⇒ `null`.
+  Map? _rawSkus(String code) {
+    final cur = _answers[code];
+    return cur is Map && cur['skus'] is Map ? cur['skus'] as Map : null;
+  }
+
+  /// Mã SKU HIỆU LỰC theo loại (own_skus, 27/11/2026): loại người dùng đã chạm lấy mã đã chọn; loại chưa chạm lấy mã đang lưu ở
+  /// hồ sơ điểm bán (ô đích của phiếu cập nhật hiện trạng — chủ hệ thống chốt «điền sẵn mã đang lưu»).
+  Map<String, List<Map<String, dynamic>>> _matrixSkusOf(MarketFormBlockEntity block) {
+    final out = DisplayMatrixFieldWidget.skusOf(_hintValueOf(block.resolved.configMap));
+    final raw = _rawSkus(block.resolved.code);
+    raw?.forEach((t, list) {
+      out['$t'] = [
+        if (list is List)
+          for (final x in list)
+            if (x is Map && DisplayMatrixFieldWidget.skuIdOf(x) != null) Map<String, dynamic>.from(x),
+      ];
+    });
+    return out;
   }
 
   /// Mục GÕ TAY của hồ sơ điểm bán (số hiện trạng) — hàng / cột của chúng hiện cùng số cũ (đợt 2).
@@ -1753,7 +1775,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final cur = _answers[code];
         final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
         // Xoá hết số, không ảnh, không mục gõ tay ⇒ ô RỖNG (điều kiện hiển thị "có giá trị" và bản nháp đọc đúng).
-        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos)));
+        _updateValue(code,
+            displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos), skus: _rawSkus(code)));
       },
       // Thêm / bỏ mục gõ tay, xoá hàng / cột: ghép lại câu trả lời rồi lọc ảnh theo cấu hình mới.
       onCustomChanged: (c, counts, invalid) {
@@ -1768,9 +1791,25 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final photos = cur is Map && cur['photos'] is Map
             ? (Map.of(cur['photos'] as Map)..removeWhere((k, _) => !con.contains('$k')))
             : const {};
-        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, c, counts, photos)));
+        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, c, counts, photos), skus: _rawSkus(code)));
         setState(() => _syncMatrixAnswer(block));
       },
+      // Mã SKU hàng của ta của loại (own_skus) — dưới ảnh; điền sẵn mã đang lưu ở hồ sơ (phiếu cập nhật hiện trạng).
+      skuSection: (t) => ProductSkuPicker(
+        key: ValueKey('matrix_${code}_sku_${t.code}'),
+        label: 'Mã SKU hàng ${DisplayMatrixFieldWidget.ownBrandNames(cfg)} — ${t.name}',
+        isRequired: true,
+        value: _matrixSkusOf(block)[t.code] ?? const [],
+        onChanged: (list) {
+          final cur = _answers[code];
+          final raw = <String, dynamic>{...?(cur is Map && cur['skus'] is Map ? (cur['skus'] as Map).cast<String, dynamic>() : null)};
+          raw[t.code] = list;
+          final counts = DisplayMatrixFieldWidget.countsOf(cur);
+          final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
+          _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos), skus: raw));
+          setState(() {});
+        },
+      ),
       photoSection: (t) => _buildPhotoPicker(
         context,
         isDark,
@@ -1801,7 +1840,22 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           .toList();
       if (list.isNotEmpty) photos[t.code] = list;
     }
-    final value = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos));
+    // Mã SKU (own_skus): lúc soạn giữ đúng mã đã CHẠM (chưa chạm = điền sẵn từ hồ sơ khi vẽ); lúc NỘP gửi mã HIỆU LỰC của mọi loại
+    // biểu mẫu hỏi (kể cả mã điền sẵn) — server bỏ mã của loại không còn hàng của ta.
+    // Phiếu thường: chỉ loại có hàng của ta theo số ĐÃ GÕ (server bỏ mã loại khác ⇒ giá trị chỉ-mã thành rỗng). Phiếu cập nhật hiện
+    // trạng: mọi loại đang hỏi — ô trống giữ số hồ sơ, server ghép theo số hiệu lực.
+    final capNhat = _hintValueOf(block.resolved.configMap) != null ||
+        (block.resolved.configMap is Map && '${(block.resolved.configMap as Map)['update_customer_field'] ?? ''}'.isNotEmpty);
+    final coHangGo = DisplayMatrixFieldWidget.ownTypes(counts, cfg);
+    final maHoi = {for (final t in cfg.types) if (capNhat || coHangGo.contains(t.code)) t.code};
+    // Ô chưa nhập gì (không số, không ảnh, chưa chạm ô mã) ⇒ không gửi mã điền sẵn — khỏi mỗi phiếu đẻ một dòng lịch sử SOS.
+    final chamMa = _rawSkus(code) != null;
+    final skusGui = !cfg.ownSkus
+        ? null
+        : validate && (counts.isNotEmpty || photos.isNotEmpty || chamMa)
+            ? {for (final e in _matrixSkusOf(block).entries) if (maHoi.contains(e.key)) e.key: e.value}
+            : _rawSkus(code);
+    final value = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos), skus: skusGui);
     if (value == null) {
       _answers.remove(code);
     } else {
@@ -1814,7 +1868,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // [_answers] thì lượt nộp hỏng vì ô khác biến cả ma trận số cũ thành "đã sửa" — sửa thêm một ô là gửi số cũ đè số mới.
     if (_req(block) && counts.isEmpty) {
       counts = DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg);
-      if (counts.isNotEmpty) _matrixConfirm[code] = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos));
+      if (counts.isNotEmpty) {
+        // Xác nhận số hiện trạng ⇒ gửi kèm mã HIỆU LỰC (khoá `skus` luôn có khi bật — server kiểm bắt buộc mã).
+        final maXacNhan = cfg.ownSkus
+            ? {for (final e in _matrixSkusOf(block).entries) if (maHoi.contains(e.key)) e.key: e.value}
+            : null;
+        _matrixConfirm[code] = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos), skus: maXacNhan);
+      }
     }
 
     final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
@@ -1825,12 +1885,19 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
     if (anhErr != null) return '$label – $anhErr';
     // Số thương hiệu tối thiểu: ô trống giữ số hiện trạng của hồ sơ ⇒ đếm trên số HIỆU LỰC (server bỏ kiểm ô cập nhật hồ sơ).
-    // Ô bỏ trống hẳn (không số, không ảnh) không bị đòi — như server.
-    if (counts.isEmpty && photos.isEmpty) return null;
+    // Ô bỏ trống hẳn (không số, không ảnh) không bị đòi — như server; nhưng đã CHẠM ô mã (chỉ sửa mã) thì vẫn kiểm thiếu mã.
     final hieuLuc =
         DisplayMatrixFieldWidget.withHints(counts, DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg));
+    if (counts.isEmpty && photos.isEmpty) {
+      if (!chamMa) return null;
+      final chiMaErr = DisplayMatrixFieldWidget.skusError(hieuLuc, _matrixSkusOf(block), cfg);
+      return chiMaErr == null ? null : '$label – $chiMaErr';
+    }
     final hieuErr = DisplayMatrixFieldWidget.brandsError(hieuLuc, photos, cfg);
-    return hieuErr == null ? null : '$label – $hieuErr';
+    if (hieuErr != null) return '$label – $hieuErr';
+    // Mã SKU hàng của ta: loại có hàng của ta theo số HIỆU LỰC (ô trống giữ số hồ sơ) phải có mã — như ô mã đang hiện.
+    final maErr = DisplayMatrixFieldWidget.skusError(hieuLuc, _matrixSkusOf(block), cfg);
+    return maErr == null ? null : '$label – $maErr';
   }
 
   Widget _buildPhotoThumbnail(
