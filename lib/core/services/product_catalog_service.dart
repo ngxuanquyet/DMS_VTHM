@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../network/api_client.dart';
-import '../utils/string_utils.dart';
 
 /// Một mã hàng thành phẩm (`GET /formfield/product-options/catalog` của One — #25966): `id` = `item_id` (khoá server kiểm),
 /// mã ERP, tên Bravo, kích thước + mã 5 số của mẫu (nhãn gọn).
@@ -18,11 +17,7 @@ class ProductSkuItem {
   final String size;
   final String design;
 
-  /// Chuỗi đã bỏ dấu + chữ thường để tìm (mã · tên · kích thước · mã 5 số).
-  final String _haystack;
-
-  ProductSkuItem({required this.id, required this.code, required this.name, this.size = '', this.design = ''})
-      : _haystack = StringUtils.toUnaccentedLower([code, name, size, design].join(' '));
+  ProductSkuItem({required this.id, required this.code, required this.name, this.size = '', this.design = ''});
 
   factory ProductSkuItem.fromJson(Map json) => ProductSkuItem(
         id: (json['id'] is num ? (json['id'] as num).toInt() : int.tryParse('${json['id']}')) ?? 0,
@@ -69,24 +64,48 @@ class ProductCatalog {
           if (e is Map) ProductSkuItem.fromJson(e),
       ].where((i) => i.id > 0 && i.code.isNotEmpty).toList());
 
-  /// Tìm theo mã / tên / kích thước / mã 5 số (không dấu, mọi từ phải khớp), từ 2 ký tự; mã khớp từ đầu xếp trước.
+  /// Tìm CHỈ theo KÍCH THƯỚC và MÃ THIẾT KẾ 5 số — cùng luật ô `ref_product` của server (`ReferenceResolver::searchProductItems`,
+  /// chủ hệ thống chốt 27/11/2026: không tìm theo mã vật tư / tên hàng). Mỗi từ ([tokens]) phải nằm trong kích thước HOẶC mã thiết
+  /// kế; gõ đủ kích thước / mã 5 số thì khớp đúng xếp trước, rồi theo kích thước, mã thiết kế, mã. Từ 2 ký tự.
   List<ProductSkuItem> search(String query, {int limit = 50}) {
-    final q = StringUtils.toUnaccentedLower(query).trim();
-    if (q.length < 2) return const [];
-    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    final hits = items.where((i) => words.every(i._haystack.contains)).toList();
-    int rank(ProductSkuItem i) {
-      final c = i.code.toLowerCase();
-      if (c == q) return 0;
-      if (c.startsWith(q)) return 1;
-      return 2;
-    }
+    if (query.trim().length < 2) return const [];
+    final words = tokens(query);
+    if (words.isEmpty) return const [];
+    final hits = items
+        .where((i) => words.every((w) => i.size.toUpperCase().contains(w) || i.design.contains(w)))
+        .toList();
+    final sizes = words.where((w) => RegExp(r'^\d+X\d+$').hasMatch(w)).toSet();
+    final designs = words.where((w) => RegExp(r'^\d{5}$').hasMatch(w)).toSet();
+    // Số vế khớp ĐÚNG (mỗi từ một vế như server) — nhiều hơn xếp trước.
+    int exact(ProductSkuItem i) =>
+        (sizes.contains(i.size.toUpperCase()) ? 1 : 0) + (designs.contains(i.design) ? 1 : 0);
+    // Trống xếp sau cùng (NULLS LAST của server).
+    int byText(String a, String b) => a.isEmpty == b.isEmpty ? a.compareTo(b) : (a.isEmpty ? 1 : -1);
 
     hits.sort((a, b) {
-      final r = rank(a).compareTo(rank(b));
-      return r != 0 ? r : a.code.compareTo(b.code);
+      var r = exact(b).compareTo(exact(a));
+      if (r == 0) r = byText(a.size, b.size);
+      if (r == 0) r = byText(a.design, b.design);
+      if (r == 0) r = a.code.compareTo(b.code);
+      return r != 0 ? r : a.id.compareTo(b.id);
     });
     return hits.take(limit).toList();
+  }
+
+  /// Từ khoá thành các từ tìm — cùng luật `ReferenceResolver::productTokens()` của server: viết hoa, «×» «*» về «X», «600 x 600» gộp
+  /// một từ, tách khoảng trắng / dấu phẩy / chấm phẩy, bỏ «X» đứng riêng, bỏ trùng, tối đa 5 từ.
+  static List<String> tokens(String query) {
+    final q = query.trim().toUpperCase().replaceAll('×', 'X').replaceAll('*', 'X').replaceAllMapped(
+          RegExp(r'(\d)\s*X\s*(\d)'),
+          (m) => '${m[1]}X${m[2]}',
+        );
+    final out = <String>[];
+    for (final p in q.split(RegExp(r'[\s,;]+'))) {
+      if (p.isEmpty || p == 'X' || out.contains(p)) continue;
+      out.add(p);
+      if (out.length == 5) break;
+    }
+    return out;
   }
 }
 
