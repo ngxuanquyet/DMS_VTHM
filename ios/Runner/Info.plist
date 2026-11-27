@@ -65,15 +65,15 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>VTHM Đồng hành cần quyền truy cập vị trí để xác thực chấm công ca làm, định vị lộ trình và check-in ghé thăm điểm bán.</string>
+	<string>VTHM Đồng hành dùng vị trí của bạn để xác thực chấm công tại nơi làm việc, check-in viếng thăm điểm bán và hiển thị lộ trình đi tuyến trong ngày.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>VTHM Đồng hành cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
+	<string>VTHM Đồng hành ghi nhận vị trí định kỳ trong lúc ứng dụng đang mở, kể cả khi chạy nền (ví dụ khi bạn khoá màn hình hoặc mở bản đồ dẫn đường), để chấm công, check-in điểm bán và đối soát lộ trình đi tuyến. Ứng dụng dừng ghi vị trí khi bạn đóng ứng dụng.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>VTHM Đồng hành cần quyền truy cập vị trí để hỗ trợ ghi nhận lộ trình đi tuyến bán hàng và xác thực địa điểm chấm công của nhân viên.</string>
+	<string>VTHM Đồng hành ghi nhận vị trí định kỳ trong lúc ứng dụng đang mở, kể cả khi chạy nền (ví dụ khi bạn khoá màn hình hoặc mở bản đồ dẫn đường), để chấm công, check-in điểm bán và đối soát lộ trình đi tuyến. Ứng dụng dừng ghi vị trí khi bạn đóng ứng dụng.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ứng dụng cần quyền nhận diện giọng nói để chuyển giọng nói thành văn bản.</string>
+	<string>VTHM Đồng hành dùng nhận diện giọng nói để chuyển lời bạn nói thành chữ khi nhập ghi chú viếng thăm, báo cáo và biểu mẫu khảo sát.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ứng dụng cần sử dụng micro để ghi âm giọng nói chuyển thành văn bản.</string>
+	<string>VTHM Đồng hành dùng micro khi bạn bấm nút nhập bằng giọng nói để điền ghi chú, báo cáo và biểu mẫu khảo sát.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -90,14 +90,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>VTHM Đồng hành cần quyền sử dụng máy ảnh để chụp ảnh chấm công, check-in viếng thăm điểm bán và khảo sát thị trường.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Ứng dụng cần quyền truy cập thư viện ảnh để tải lên hình ảnh báo cáo.</string>
+	<string>VTHM Đồng hành cho phép bạn chọn ảnh có sẵn trong thư viện để đính kèm vào báo cáo viếng thăm, biểu mẫu khảo sát và hồ sơ điểm bán.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Ứng dụng cần quyền lưu ảnh chụp vào thư viện ảnh thiết bị.</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
+	<string>VTHM Đồng hành không tự lưu ảnh vào máy. Quyền này chỉ dùng khi thư viện chọn ảnh của hệ thống cần ghi tạm ảnh bạn chụp để đính kèm vào báo cáo viếng thăm.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 	<key>LSApplicationQueriesSchemes</key>

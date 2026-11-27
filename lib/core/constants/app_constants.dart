@@ -23,6 +23,9 @@ class AppConstants {
 
   // API Endpoints & Headers
   static const String baseUrl = 'https://api-app.vthmgroup.vn';
+
+  /// Chính sách quyền riêng tư công khai (không cần đăng nhập) — cùng URL khai ở App Store Connect.
+  static const String privacyPolicyUrl = 'https://one.vthmgroup.vn/legal/dms-privacy.html';
   static const int connectTimeout = 15000;
   static const int receiveTimeout = 15000;
   /// Chờ phản hồi khi GỬI ẢNH (multipart): server còn xử lý ảnh sau khi nhận đủ — 15s là quá giờ oan, app gửi lại cả ảnh.

@@ -93,6 +93,9 @@ class AppStrings {
   String get darkMode => isVietnamese ? 'Chế độ tối' : 'Dark Mode';
   String get privacyPolicy =>
       isVietnamese ? 'Quyền riêng tư' : 'Privacy Policy';
+  String get cannotOpenPrivacyPolicy => isVietnamese
+      ? 'Không mở được trang Chính sách quyền riêng tư. Kiểm tra kết nối mạng rồi thử lại.'
+      : 'Could not open the Privacy Policy page. Check your connection and try again.';
   String get previewSplash => isVietnamese
       ? 'Xem Màn hình Khởi động (Splash)'
       : 'Preview Splash Screen';

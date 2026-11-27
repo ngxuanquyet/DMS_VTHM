@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/database/app_database.dart';
@@ -176,6 +177,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   int _versionTapCount = 0;
 
+
+  /// Mở trang Chính sách quyền riêng tư công khai trong trình duyệt (cùng URL khai với App Store).
+  Future<void> _openPrivacyPolicy(String failMessage) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(Uri.parse(AppConstants.privacyPolicyUrl), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && mounted) AppSnackBar.showInvalid(context, failMessage);
+  }
 
   void _showInfoDialog(String title, String content) {
     showDialog(
@@ -613,12 +625,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _buildMenuItem(
                       icon: Icons.shield_outlined,
                       title: strings.privacyPolicy,
-                      onTap: () {
-                        _showInfoDialog(
-                          strings.privacyPolicy,
-                          'Ứng dụng VTHM Đồng hành tuân thủ nghiêm ngặt các quy định bảo mật dữ liệu doanh nghiệp và định vị GPS trong thời gian làm việc. Mọi dữ liệu tuyến đường và hình ảnh điểm bán được lưu trữ an toàn trên hệ thống máy chủ nội bộ VTHM Group.',
-                        );
-                      },
+                      onTap: () => _openPrivacyPolicy(strings.cannotOpenPrivacyPolicy),
                       isDark: isDark,
                     ),
                   ],
