@@ -143,7 +143,7 @@ class _ProductSkuSheetState extends State<_ProductSkuSheet> {
                 key: const ValueKey('sku_search'),
                 autofocus: true,
                 decoration: const InputDecoration(
-                  hintText: 'Gõ mã, kích thước hoặc mã 5 số (vd 600X600 08535)',
+                  hintText: 'Gõ kích thước hoặc mã thiết kế 5 số (vd 600X600 08535)',
                   prefixIcon: Icon(Icons.search_rounded),
                 ),
                 onChanged: (v) => setState(() => _q = v),

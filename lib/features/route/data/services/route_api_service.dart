@@ -229,6 +229,8 @@ class RouteApiService {
               .whereType<Map<String, dynamic>>()
               .map((item) => UserRouteEntity.fromJson(item))
               .where((r) => isMockUser || (!r.name.contains('Vũ Tùng Dương') && !r.name.contains('Vu Tung Duong')))
+            // «Tuyến ảo» id âm (Điểm bán của phòng, One #26015) chỉ dành cho app 1.0.14/1.0.15 — bản này đọc cờ `in_department`.
+            .where((r) => r.id >= 0)
               .toList();
           if (cachedRoutes.isNotEmpty) {
             unawaited(_fetchAndCacheMyRoutes(prefs, cacheKey));
@@ -252,6 +254,8 @@ class RouteApiService {
             .whereType<Map>()
             .map((item) => UserRouteEntity.fromJson(Map<String, dynamic>.from(item)))
             .where((r) => isMockUser || (!r.name.contains('Vũ Tùng Dương') && !r.name.contains('Vu Tung Duong')))
+            // «Tuyến ảo» id âm (Điểm bán của phòng, One #26015) chỉ dành cho app 1.0.14/1.0.15 — bản này đọc cờ `in_department`.
+            .where((r) => r.id >= 0)
             .toList();
 
         if (routes.isNotEmpty) {
@@ -275,6 +279,8 @@ class RouteApiService {
               .whereType<Map<String, dynamic>>()
               .map((item) => UserRouteEntity.fromJson(item))
               .where((r) => isMockUser || (!r.name.contains('Vũ Tùng Dương') && !r.name.contains('Vu Tung Duong')))
+            // «Tuyến ảo» id âm (Điểm bán của phòng, One #26015) chỉ dành cho app 1.0.14/1.0.15 — bản này đọc cờ `in_department`.
+            .where((r) => r.id >= 0)
               .toList();
           if (cachedRoutes.isNotEmpty) {
             return cachedRoutes;
@@ -307,6 +313,8 @@ class RouteApiService {
             .whereType<Map>()
             .map((item) => UserRouteEntity.fromJson(Map<String, dynamic>.from(item)))
             .where((r) => isMockUser || (!r.name.contains('Vũ Tùng Dương') && !r.name.contains('Vu Tung Duong')))
+            // «Tuyến ảo» id âm (Điểm bán của phòng, One #26015) chỉ dành cho app 1.0.14/1.0.15 — bản này đọc cờ `in_department`.
+            .where((r) => r.id >= 0)
             .toList();
 
         if (routes.isNotEmpty) {

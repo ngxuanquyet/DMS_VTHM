@@ -14,6 +14,7 @@ import 'package:vthm_dms/features/customer/data/datasources/customer_local_data_
 import 'package:vthm_dms/features/customer/data/repositories/customer_repository_impl.dart';
 import 'package:vthm_dms/features/customer/data/services/customer_api_service.dart';
 import 'package:vthm_dms/features/customer/data/utils/customer_payload_helper.dart';
+import 'package:vthm_dms/features/customer/domain/entities/customer_entity.dart';
 
 /// Danh sách `/dms/outlets/mine` gắn phần "theo người xem" (tuyến của tôi, cờ `in_care_area` — One #25938); cửa chi tiết
 /// `/dms/outlets/{id}` KHÔNG gắn (đo app_test 27/11/2026: `routes: []`, `in_care_area: null`). Mở chi tiết mà ghi đè bản
@@ -121,5 +122,23 @@ void main() {
   test('cờ in_care_area không bao giờ gửi lên server (khoá cấm, kể cả trong data)', () {
     expect(kForbiddenCustomerKeys, contains('in_care_area'));
     expect(kCustomerFixedKeys, isNot(contains('in_care_area')));
+  });
+
+  test('bản lưu của app đời trước (route_ids có tuyến ảo -1, chưa có cờ) ⇒ đọc ra in_department, bỏ id âm', () async {
+    final db = AppDatabase(NativeDatabase.memory(), 1);
+    addTearDown(db.close);
+    final local = CustomerLocalDataSource(db);
+    await local.cacheRemoteCustomers([
+      CustomerEntity(
+        id: 5, code: 'C5', name: 'Điểm 5', address: 'A', route: 'Điểm bán của phòng',
+        routes: const ['Tuyến Thứ 2', 'Điểm bán của phòng'], routeIds: const [10, -1],
+        type: 'Tạp hóa', contactPerson: 'X', phone: '0900000000', status: 'active',
+      ),
+    ]);
+    final e = (await local.getLocalCustomers()).single;
+    expect(e.routeIds, [10]);
+    expect(e.inDepartment, isTrue);
+    expect(e.routes, ['Tuyến Thứ 2']);
+    expect(e.route, 'Tuyến Thứ 2');
   });
 }

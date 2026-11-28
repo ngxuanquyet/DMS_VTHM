@@ -16,5 +16,7 @@ final userAssignedRoutesProvider = FutureProvider.autoDispose<List<UserRouteEnti
 /// KHÔNG dựng id giả theo tên: id 1, 2, 3… là tuyến thật trên prod (#24698 vòng 3, chủ hệ thống chốt 03/11/2026). Dùng chung
 /// Thêm / Sửa.
 List<DynamicFormOption> realRouteOptions(List<UserRouteEntity> routes) => routes
+    // «Tuyến ảo» id âm (One #26015) không phải tuyến chọn được.
+    .where((r) => r.id >= 0)
     .map((r) => DynamicFormOption(label: r.name.isNotEmpty ? r.name : (r.code ?? 'Tuyến ${r.id}'), value: r.id))
     .toList();

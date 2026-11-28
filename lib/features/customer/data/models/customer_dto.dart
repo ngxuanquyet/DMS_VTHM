@@ -50,6 +50,9 @@ class CustomerDto {
   /// Cờ `in_care_area` — điểm bán thuộc khu vực chăm sóc của người gọi ([CustomerEntity.inCareArea]).
   final bool inCareArea;
 
+  /// Cờ `in_department` — điểm bán thuộc vế phòng của trưởng phòng có tuyến riêng ([CustomerEntity.inDepartment]).
+  final bool inDepartment;
+
   /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
   final List<ErpChannelEntity> erpChannels;
   final List<String> territories;
@@ -71,6 +74,7 @@ class CustomerDto {
     this.routes = const [],
     this.routeIds = const [],
     this.inCareArea = false,
+    this.inDepartment = false,
     this.erpChannels = const [],
     this.territories = const [],
     this.erpLinked = false,
@@ -208,6 +212,10 @@ class CustomerDto {
       for (final item in json['routes'] as List) {
         if (item is Map) {
           final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '');
+          // «Tuyến ảo» id âm (Điểm bán của phòng, One #26015) chỉ để app 1.0.14/1.0.15 không bỏ điểm bán — bản này đọc cờ
+          // `in_department` thay, bỏ hẳn tuyến ảo (không thành tuyến trong bộ lọc, không lẫn vào «Kế hoạch chăm sóc»). Tên của nó
+          // chỉ đi kèm ở nhánh này; id âm ở các nhánh khác lọc chung bên dưới.
+          if (id != null && id < 0) continue;
           if (id != null && !parsedRouteIds.contains(id)) {
             parsedRouteIds.add(id);
           }
@@ -275,6 +283,8 @@ class CustomerDto {
         }
       }
     }
+
+    parsedRouteIds.removeWhere((id) => id < 0);
 
     if (parsedRouteName != null && parsedRouteName.isNotEmpty && !parsedRoutes.contains(parsedRouteName)) {
       parsedRoutes.insert(0, parsedRouteName);
@@ -372,6 +382,7 @@ class CustomerDto {
       routes: validRoutes,
       routeIds: parsedRouteIds,
       inCareArea: json['in_care_area'] == true,
+      inDepartment: json['in_department'] == true,
       erpChannels: parsedErpChannels,
       territories: parsedTerritories,
       erpLinked: parsedErpLinked,
@@ -459,6 +470,7 @@ class CustomerDto {
       routes: routes.isNotEmpty ? routes : (route != null && route!.trim().isNotEmpty ? [route!.trim()] : const []),
       routeIds: routeIds,
       inCareArea: inCareArea,
+      inDepartment: inDepartment,
       erpChannels: erpChannels,
       territories: territories,
       erpLinked: erpLinked,

@@ -1029,6 +1029,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
           routeIds: keepRoutes ? prev.routeIds : null,
           isToday: keepRoutes ? prev.isToday : null,
           inCareArea: entity.inCareArea || prev.inCareArea,
+          inDepartment: entity.inDepartment || prev.inDepartment,
         );
       }
       unawaited(_localDataSource.cacheRemoteCustomers([entity]));

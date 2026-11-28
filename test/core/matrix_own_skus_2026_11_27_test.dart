@@ -112,7 +112,7 @@ void main() {
     expect(displayMatrixHasData({'counts': {}, 'photos': {}, 'skus': {'ke': []}}), isFalse);
   });
 
-  test('danh mục mã: tìm không dấu theo mã / kích thước / mã 5 số, mã khớp đầu xếp trước; nhãn gọn như server', () {
+  test('danh mục mã: CHỈ tìm theo kích thước + mã thiết kế 5 số (luật server 27/11/2026), khớp đúng xếp trước; nhãn gọn như server', () {
     final cat = ProductCatalog.fromJson([
       {'id': 1, 'code': '19101001113', 'name': 'Gạch 300X600, mã 00111', 'size': '300X600', 'design': '00111'},
       {'id': 2, 'code': '29101001113', 'name': 'Gạch 600X600, mã 08535', 'size': '600X600', 'design': '08535'},
@@ -120,9 +120,22 @@ void main() {
     ]);
     expect(cat.items, hasLength(2));
     expect(cat.search('600x600 08535').map((e) => e.id), [2]);
-    expect(cat.search('1910').map((e) => e.id).first, 1);
-    expect(cat.search('gach').length, 2);
+    expect(cat.search('600 x 600').map((e) => e.id), [2], reason: '«600 x 600» gộp một từ, không thành «600» + «X»');
+    expect(cat.search('600×600, 08535').map((e) => e.id), [2]);
+    expect(cat.search('600*600').map((e) => e.id), [2]);
+    expect(cat.search('600').map((e) => e.id), [1, 2], reason: 'theo kích thước rồi mã thiết kế');
+    expect(cat.search('1910'), isEmpty, reason: 'không tìm theo mã vật tư');
+    expect(cat.search('gach'), isEmpty, reason: 'không tìm theo tên hàng');
     expect(cat.search('a'), isEmpty, reason: 'từ 2 ký tự');
+    expect(ProductCatalog.tokens(' 600 x 600 , 08535 ; x 08535 '), ['600X600', '08535']);
+    // Khớp ĐÚNG kích thước đứng trước cỡ chỉ chứa nó (1600X600 chứa «600X600»), kể cả khi thứ tự chữ xếp nó sau.
+    final cat2 = ProductCatalog.fromJson([
+      {'id': 5, 'code': 'A', 'name': 'x', 'size': '1600X600', 'design': '00001'},
+      {'id': 6, 'code': 'B', 'name': 'x', 'size': '600X600', 'design': '00002'},
+      {'id': 7, 'code': 'C', 'name': 'x', 'size': '', 'design': '60060'},
+    ]);
+    expect(cat2.search('600x600').map((e) => e.id), [6, 5]);
+    expect(cat2.search('60060').map((e) => e.id), [7]);
     expect(ProductSkuItem.labelOf({'code': '1', 'name': 'Gạch 600X600, mã 08535'}), '600X600 · 08535');
     expect(ProductSkuItem.labelOf({'code': 'C1', 'name': 'Keo dán'}), 'C1 - Keo dán');
   });

@@ -117,6 +117,10 @@ class CustomerEntity {
   /// `/dms/outlets/mine` (One #25938). Server đời cũ không gửi ⇒ `false`.
   final bool inCareArea;
 
+  /// Điểm bán thuộc PHÒNG của trưởng phòng có tuyến riêng (ngoài tuyến của họ) — cờ `in_department` của `/dms/outlets/mine`
+  /// (thay «tuyến ảo» One #26015). Chỉ nằm trong nguồn «Tất cả» của màn Tuyến. Server đời cũ không gửi ⇒ `false`.
+  final bool inDepartment;
+
   /// Kênh và Tuyến kinh doanh Bravo (Spec 20/10/2026)
   final List<ErpChannelEntity> erpChannels;
   final List<String> territories;
@@ -146,6 +150,7 @@ class CustomerEntity {
     this.routes = const [],
     this.routeIds = const [],
     this.inCareArea = false,
+    this.inDepartment = false,
     this.erpChannels = const [],
     this.territories = const [],
     this.erpLinked = false,
@@ -313,6 +318,7 @@ class CustomerEntity {
     List<String>? routes,
     List<int>? routeIds,
     bool? inCareArea,
+    bool? inDepartment,
     List<ErpChannelEntity>? erpChannels,
     List<String>? territories,
     bool? erpLinked,
@@ -364,6 +370,7 @@ class CustomerEntity {
       routes: routes ?? this.routes,
       routeIds: routeIds ?? this.routeIds,
       inCareArea: inCareArea ?? this.inCareArea,
+      inDepartment: inDepartment ?? this.inDepartment,
       erpChannels: erpChannels ?? this.erpChannels,
       territories: territories ?? this.territories,
       erpLinked: erpLinked ?? this.erpLinked,
