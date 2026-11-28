@@ -8,11 +8,11 @@ import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/form_fields/form_template_parts.dart';
 import '../../../../core/widgets/geo_select_field_widget.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/database/database_provider.dart';
@@ -1287,6 +1287,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
       }
     });
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isOnline = ref.watch(connectivityProvider).isOnline;
     final schemaAsync = ref.watch(customerFormSchemaProvider);
     final meta = ref.watch(customerMetaProvider).valueOrNull ?? kDefaultCustomerMeta;
 
@@ -1300,108 +1301,92 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () async {
-              final canLeave = await _onWillExit();
-              if (canLeave && context.mounted) {
-                Navigator.of(context).pop();
-              }
-            },
-          ),
-          title: Text(
-            'Thêm mới điểm bán',
-            style: AppTypography.titleLarge(
-              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-            ).copyWith(fontWeight: FontWeight.w700),
-          ),
-        backgroundColor: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
-        elevation: 0,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? AppColors.darkSurfaceContainer
-                      : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
+        backgroundColor: FormTemplateTokens.pageBg(isDark),
+        appBar: FormTemplateAppBar(
+          title: 'Thêm mới điểm bán',
+          subtitle: 'Khởi tạo hồ sơ điểm bán mới',
+          isOnline: isOnline,
+          onBack: () async {
+            final canLeave = await _onWillExit();
+            if (canLeave && context.mounted) {
+              Navigator.of(context).pop();
+            }
+          },
+          extraActions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
                     color: isDark
-                        ? AppColors.darkOutlineVariant
-                        : AppColors.outlineVariant,
-                    width: 1,
+                        ? AppColors.darkSurfaceContainer
+                        : FormTemplateTokens.pageBg(isDark),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: FormTemplateTokens.cardBorder(isDark),
+                    ),
                   ),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.refresh_rounded,
-                    size: 20,
-                    color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-                  ),
-                  padding: EdgeInsets.zero,
-                  splashRadius: 20,
-                  tooltip: 'Tải lại cấu hình form',
-                  onPressed: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Row(
-                          children: [
-                            AppLoading(size: 24),
-                            SizedBox(width: 8),
-                            Text('Đang đồng bộ...'),
-                          ],
-                        ),
-                        duration: Duration(seconds: 1),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                    try {
-                      final repo = ref.read(customerRepositoryProvider);
-                      await Future.wait([
-                        repo.getCustomerFormSchema(forceRefresh: true),
-                        repo.getCustomerMeta(forceRefresh: true),
-                      ]);
-                    } catch (_) {}
-                    ref.invalidate(customerFormSchemaProvider);
-                    ref.invalidate(customerMetaProvider);
-                    ref.invalidate(userAssignedRoutesProvider);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.refresh_rounded,
+                      size: 19,
+                      color: isDark
+                          ? AppColors.primaryFixedDim
+                          : FormTemplateTokens.accentGreen,
+                    ),
+                    padding: EdgeInsets.zero,
+                    splashRadius: 20,
+                    tooltip: 'Tải lại cấu hình form',
+                    onPressed: () async {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Row(
                             children: [
-                              Icon(Icons.check_circle_rounded, color: Colors.white),
+                              AppLoading(size: 24),
                               SizedBox(width: 8),
-                              Text('Đồng bộ thành công!'),
+                              Text('Đang đồng bộ...'),
                             ],
                           ),
-                          backgroundColor: Color(0xFF10B981),
-                          duration: Duration(seconds: 2),
+                          duration: Duration(seconds: 1),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
-                    }
-                  },
+                      try {
+                        final repo = ref.read(customerRepositoryProvider);
+                        await Future.wait([
+                          repo.getCustomerFormSchema(forceRefresh: true),
+                          repo.getCustomerMeta(forceRefresh: true),
+                        ]);
+                      } catch (_) {}
+                      ref.invalidate(customerFormSchemaProvider);
+                      ref.invalidate(customerMetaProvider);
+                      ref.invalidate(userAssignedRoutesProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Row(
+                              children: [
+                                Icon(Icons.check_circle_rounded, color: Colors.white),
+                                SizedBox(width: 8),
+                                Text('Đồng bộ thành công!'),
+                              ],
+                            ),
+                            backgroundColor: Color(0xFF10B981),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-            height: 1,
-          ),
+          ],
         ),
-      ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
@@ -1513,16 +1498,29 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
                 Expanded(
                   child: SingleChildScrollView(
                     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        FormHeroCard(
+                          categoryIcon: Icons.storefront_outlined,
+                          categoryLabel: 'Điểm bán mới',
+                          title: 'Hồ sơ điểm bán mới',
+                          description:
+                              'Điền đầy đủ thông tin định danh, địa chỉ, toạ độ GPS và hình ảnh điểm bán.',
+                          footerIcon: Icons.route_outlined,
+                          footerText: selectedRoute.isNotEmpty &&
+                                  selectedRoute != 'Tất cả tuyến'
+                              ? 'Tuyến: $selectedRoute'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
                         if (_draftSavedAt != null) ...[
                           DraftRestoredBanner(
                             savedAt: _draftSavedAt!,
                             onRestart: _isSubmitting ? null : _restartWithoutDraft,
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                         ],
                         // Form fields
                         DynamicFormBuilder(
@@ -1597,24 +1595,7 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
                 ),
 
                 // Bottom Fixed Action Bar
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
-                    border: Border(
-                      top: BorderSide(
-                        color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                        width: 1,
-                      ),
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x0a000000),
-                        offset: Offset(0, -4),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
+                FormBottomDock(
                   child: Row(
                     children: [
                       Expanded(
@@ -1631,7 +1612,8 @@ class _AddCustomerScreenState extends ConsumerState<AddCustomerScreen> with Widg
                                     }
                                   },
                             style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                              side: BorderSide(color: FormTemplateTokens.cardBorder(isDark)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             child: const Text('HỦY BỎ'),
                           ),

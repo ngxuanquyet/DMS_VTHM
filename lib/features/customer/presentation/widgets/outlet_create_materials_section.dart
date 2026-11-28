@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/app_strings.dart';
 import '../../../../core/localization/language_provider.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/form_fields/form_template_parts.dart';
 import '../../../visit/data/models/material_create_rules.dart';
 import '../../../visit/data/models/visit_material_model.dart';
 import '../../../visit/presentation/screens/material_edit_screen.dart';
@@ -73,41 +73,37 @@ class OutletCreateMaterialsSection extends ConsumerWidget {
         .where((t) => t.isActive && !requiredIds.contains(t.id) && !ops.containsKey(t.id))
         .toList();
 
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            strings.createMaterialsTitle,
-            style: AppTypography.titleMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface)
-                .copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            strings.createMaterialsHint,
-            style: AppTypography.labelSmall(color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
-          ),
-          if (requiredTypes.isNotEmpty || ops.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            _summary(strings, requiredTypes.length + declaredOptional.length),
-          ],
+    return FormSectionCard(
+      margin: const EdgeInsets.only(top: 4, bottom: 16),
+      title: strings.createMaterialsTitle,
+      description: strings.createMaterialsHint,
+      badgeText: 'V',
+      children: [
+        if (requiredTypes.isNotEmpty || ops.isNotEmpty) ...[
+          _summary(strings, requiredTypes.length + declaredOptional.length),
           const SizedBox(height: 8),
-          ...requiredTypes.map((t) => _row(context, strings, t, isRequired: true)),
-          ...declaredOptional.map((t) => _row(context, strings, t, isRequired: false)),
-          if (addable.isNotEmpty)
-            OutlinedButton(
-              onPressed: () => _pickType(context, addable, strings),
-              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
-              child: Text(strings.materialsAdd),
-            ),
         ],
-      ),
+        ...requiredTypes.map((t) => _row(context, strings, t, isRequired: true)),
+        ...declaredOptional.map((t) => _row(context, strings, t, isRequired: false)),
+        if (addable.isNotEmpty) ...[
+          OutlinedButton(
+            onPressed: () => _pickType(context, addable, strings),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 42),
+              foregroundColor:
+                  isDark ? AppColors.primaryFixedDim : FormTemplateTokens.badgeGreen,
+              side: BorderSide(
+                color: isDark
+                    ? AppColors.darkOutlineVariant
+                    : FormTemplateTokens.onlinePillBorder(isDark),
+              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(strings.materialsAdd),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
     );
   }
 

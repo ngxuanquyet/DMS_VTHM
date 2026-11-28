@@ -415,8 +415,9 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
     }
   }
 
-  Widget _buildStyleOption(GoongMapStyle style, String label, IconData icon) {
+  Widget _buildStyleOption(GoongMapStyle style, String label, IconData icon, bool isDark) {
     final isSelected = _currentMapStyle == style;
+    final inactiveColor = isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF475569);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -427,12 +428,12 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
             });
           }
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(7),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
+            color: isSelected ? const Color(0xFF15803D) : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -440,14 +441,14 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
               Icon(
                 icon,
                 size: 12,
-                color: isSelected ? Colors.white : Colors.white70,
+                color: isSelected ? Colors.white : inactiveColor,
               ),
               const SizedBox(width: 4),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white70,
-                  fontSize: 10,
+                  color: isSelected ? Colors.white : inactiveColor,
+                  fontSize: 11,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
@@ -500,25 +501,28 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryContainer.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(4),
+                  color: isDark ? AppColors.primary.withValues(alpha: 0.2) : const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: isDark ? AppColors.primaryFixedDim.withValues(alpha: 0.4) : const Color(0xFFBBF7D0),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       widget.showAddressInput ? Icons.location_on_outlined : Icons.gps_fixed_rounded,
-                      size: 12,
-                      color: AppColors.primary,
+                      size: 13,
+                      color: isDark ? AppColors.primaryFixedDim : const Color(0xFF15803D),
                     ),
-                    const SizedBox(width: 3),
+                    const SizedBox(width: 4),
                     Text(
                       widget.showAddressInput ? 'Vị trí & GPS' : 'Toạ độ GPS',
                       style: AppTypography.labelSmall(
-                        color: AppColors.primary,
-                      ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+                        color: isDark ? AppColors.primaryFixedDim : const Color(0xFF15803D),
+                      ).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -548,10 +552,14 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
               decoration: InputDecoration(
                 hintText: 'Nhập địa chỉ (số nhà, tên đường, khu vực...)',
                 hintStyle: AppTypography.bodySmall(
-                  color: isDark ? AppColors.darkOutline : AppColors.outline,
+                  color: isDark ? AppColors.darkOutline : const Color(0xFF94A3B8),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                prefixIcon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                prefixIcon: Icon(
+                  Icons.location_on_outlined,
+                  size: 18,
+                  color: isDark ? AppColors.primaryFixedDim : const Color(0xFF15803D),
+                ),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -580,21 +588,21 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                 ),
                 counterText: '', // Ẩn counter để giao diện gọn gàng
                 filled: true,
-                fillColor: isDark ? AppColors.darkSurfaceContainer : Colors.white,
+                fillColor: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF8FAFC),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                    color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                 ),
               ),
@@ -819,11 +827,16 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(20),
+                          color: isDark
+                              ? AppColors.darkSurfaceContainer.withValues(alpha: 0.92)
+                              : Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0),
+                          ),
                           boxShadow: const [
                             BoxShadow(
-                              color: Color(0x26000000),
+                              color: Color(0x18000000),
                               blurRadius: 6,
                               offset: Offset(0, 2),
                             ),
@@ -832,11 +845,11 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _buildStyleOption(GoongMapStyle.standard, 'Đường phố', Icons.map_rounded),
+                            _buildStyleOption(GoongMapStyle.standard, 'Đường phố', Icons.map_rounded, isDark),
                             const SizedBox(width: 2),
-                            _buildStyleOption(GoongMapStyle.satellite, 'Vệ tinh', Icons.satellite_alt_rounded),
+                            _buildStyleOption(GoongMapStyle.satellite, 'Vệ tinh', Icons.satellite_alt_rounded, isDark),
                             const SizedBox(width: 2),
-                            _buildStyleOption(GoongMapStyle.navigation, 'Giao thông', Icons.traffic_rounded),
+                            _buildStyleOption(GoongMapStyle.navigation, 'Giao thông', Icons.traffic_rounded, isDark),
                           ],
                         ),
                       ),
@@ -937,100 +950,117 @@ class _LocationFieldWidgetState extends ConsumerState<LocationFieldWidget> {
 
           const SizedBox(height: 10),
 
-          // 3. Nút Lấy vị trí + Hiển thị Tọa độ GPS đã lấy (§2)
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (!widget.isReadOnly)
-                ElevatedButton.icon(
-                  onPressed: _isLocating ? null : _fetchFreshLocation,
-                  icon: _isLocating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Icon(
-                          hasCoords ? Icons.refresh_rounded : Icons.my_location_rounded,
-                          size: 18,
-                        ),
-                  label: Text(
-                    _isLocating
-                        ? 'Đang lấy GPS...'
-                        : (hasCoords ? 'Lấy lại vị trí' : 'Lấy vị trí'),
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          // 3. Thanh Tọa độ GPS & Nút Lấy vị trí (§2)
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.primary.withValues(alpha: 0.2) : const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: hasCoords ? AppColors.secondary : AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    elevation: 0,
+                  child: Icon(
+                    Icons.gps_fixed_rounded,
+                    size: 16,
+                    color: isDark ? AppColors.primaryFixedDim : const Color(0xFF15803D),
                   ),
                 ),
-
-              // Hiển thị tọa độ dạng pill
-              if (hasCoords)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: hasCoords
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    '${lat!.toStringAsFixed(6)}, ${lng!.toStringAsFixed(6)}',
+                                    style: AppTypography.bodySmall(
+                                      color: isDark ? AppColors.darkOnSurface : const Color(0xFF1E293B),
+                                    ).copyWith(fontWeight: FontWeight.w700, fontSize: 11.5),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                InkWell(
+                                  onTap: () => _openGoogleMaps(lat, lng),
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(2),
+                                    child: Icon(Icons.map_outlined, size: 15, color: AppColors.primary),
+                                  ),
+                                ),
+                                if (!widget.isReadOnly)
+                                  InkWell(
+                                    onTap: _clearCoordinates,
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(2),
+                                      child: Icon(Icons.close_rounded, size: 15, color: AppColors.outline),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (_accuracy != null)
+                              Text(
+                                '(±${_accuracy!.toStringAsFixed(1)} m)',
+                                style: AppTypography.bodySmall(
+                                  color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF64748B),
+                                ).copyWith(fontSize: 10.5),
+                              ),
+                          ],
+                        )
+                      : Text(
+                          'Chưa có toạ độ GPS',
+                          style: AppTypography.bodySmall(
+                            color: isDark ? AppColors.darkOnSurfaceVariant : const Color(0xFF64748B),
+                          ).copyWith(fontSize: 11.5),
+                        ),
+                ),
+                if (!widget.isReadOnly) ...[
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _isLocating ? null : _fetchFreshLocation,
+                    icon: _isLocating
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Icon(
+                            hasCoords ? Icons.refresh_rounded : Icons.my_location_rounded,
+                            size: 16,
+                          ),
+                    label: Text(
+                      _isLocating
+                          ? 'Đang lấy...'
+                          : (hasCoords ? 'Lấy lại vị trí' : 'Lấy vị trí'),
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF15803D),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                      elevation: 0,
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_on, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${lat!.toStringAsFixed(6)}, ${lng!.toStringAsFixed(6)}',
-                        style: AppTypography.bodySmall(
-                          color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                        ).copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      if (_accuracy != null) ...[
-                        const SizedBox(width: 4),
-                        Text(
-                          '(±${_accuracy!.toStringAsFixed(1)} m)',
-                          style: AppTypography.bodySmall(
-                            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                          ).copyWith(fontSize: 11),
-                        ),
-                      ],
-                      const SizedBox(width: 6),
-                      // Nút mở Google Maps (§5)
-                      InkWell(
-                        onTap: () => _openGoogleMaps(lat, lng),
-                        borderRadius: BorderRadius.circular(4),
-                        child: const Padding(
-                          padding: EdgeInsets.all(2.0),
-                          child: Icon(
-                            Icons.map_outlined,
-                            size: 16,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                      if (!widget.isReadOnly) ...[
-                        const SizedBox(width: 4),
-                        InkWell(
-                          onTap: _clearCoordinates,
-                          borderRadius: BorderRadius.circular(4),
-                          child: const Padding(
-                            padding: EdgeInsets.all(2.0),
-                            child: Icon(Icons.close_rounded, size: 16, color: AppColors.outline),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
+                ],
+              ],
+            ),
           ),
 
           // Lỗi lấy GPS

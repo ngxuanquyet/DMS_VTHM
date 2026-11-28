@@ -125,13 +125,15 @@ InputDecoration formFieldDecoration({
   bool readOnly = false,
 }) {
   OutlineInputBorder vien(Color color, [double width = 1.0]) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: color, width: width),
       );
-  final thuong = vien(isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant);
+  final thuong = vien(isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0));
   return InputDecoration(
     hintText: hintText,
-    hintStyle: AppTypography.bodyMedium(color: isDark ? AppColors.darkOutline : AppColors.outlineVariant),
+    hintStyle: AppTypography.bodyMedium(
+      color: isDark ? AppColors.darkOutline : const Color(0xFF94A3B8),
+    ),
     errorText: errorText,
     errorMaxLines: 3,
     suffixIcon: suffixIcon,
@@ -141,8 +143,8 @@ InputDecoration formFieldDecoration({
     filled: true,
     fillColor: readOnly
         ? (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerHigh)
-        : (isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        : (isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF8FAFC)),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
     // Đặt đủ mọi trạng thái — khung giữ bo góc / độ dày khi báo lỗi hoặc khoá.
     border: thuong,
     enabledBorder: thuong,
@@ -247,7 +249,7 @@ class FormDropdown<T> extends StatelessWidget {
   }
 }
 
-/// Khung viền bo của nhóm lựa chọn dạng danh sách (đỏ khi lỗi).
+/// Khung viền bo của nhóm lựa chọn dạng danh sách (đỏ khi lỗi), ngăn cách từng hàng bằng đường kẻ mảnh.
 class _ChoiceListFrame extends StatelessWidget {
   final bool hasError;
   final List<Widget> children;
@@ -257,15 +259,26 @@ class _ChoiceListFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dividerColor = isDark ? AppColors.darkOutlineVariant.withValues(alpha: 0.4) : const Color(0xFFF1F5F9);
     return Material(
       color: isDark ? AppColors.darkSurfaceContainer : AppColors.surfaceContainerLowest,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: hasError ? AppColors.error : (isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+          color: hasError
+              ? AppColors.error
+              : (isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0)),
         ),
       ),
-      child: Column(children: children),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) Divider(height: 1, thickness: 1, color: dividerColor),
+            children[i],
+          ],
+        ],
+      ),
     );
   }
 }
@@ -293,7 +306,10 @@ class FormRadioGroup extends StatelessWidget {
       children: options.map((opt) {
         // ignore: deprecated_member_use
         return RadioListTile<String>(
-          title: Text(opt.label, style: formFieldTextStyle(isDark)),
+          controlAffinity: ListTileControlAffinity.trailing,
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          title: Text(opt.label, style: formFieldTextStyle(isDark).copyWith(fontWeight: FontWeight.w500)),
           value: opt.value.toString(),
           // ignore: deprecated_member_use
           groupValue: selectedKey,
@@ -328,7 +344,11 @@ class FormCheckboxGroup extends StatelessWidget {
       hasError: hasError,
       children: options.map((opt) {
         return CheckboxListTile(
-          title: Text(opt.label, style: formFieldTextStyle(isDark)),
+          controlAffinity: ListTileControlAffinity.trailing,
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          checkboxShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+          title: Text(opt.label, style: formFieldTextStyle(isDark).copyWith(fontWeight: FontWeight.w500)),
           value: isChecked(opt.value),
           activeColor: AppColors.primary,
           onChanged: onChanged == null ? null : (checked) => onChanged!(opt.value, checked == true),

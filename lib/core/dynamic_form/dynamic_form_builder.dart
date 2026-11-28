@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_snackbar.dart';
 import 'choice_other.dart';
@@ -11,6 +8,7 @@ import 'repeat_group.dart';
 import 'widgets/display_matrix_field_widget.dart';
 import 'widgets/dynamic_form_field_wrapper.dart';
 import '../widgets/form_fields/form_field_parts.dart';
+import '../widgets/form_fields/form_template_parts.dart';
 import 'widgets/formula_field_widget.dart';
 import 'widgets/boolean_field_widget.dart';
 import 'widgets/datetime_field_widget.dart';
@@ -769,8 +767,6 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     // Phân nhóm các trường theo Section (nếu có) — bỏ các ô đang ẩn theo `show_if`
     _formulaValuesCache = formulaValues;
     final hidden = _hiddenWith(_formulaValuesCache);
@@ -800,8 +796,9 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
       }
     }
 
+    var sectionIndex = 0;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ...sections.indexed.map((cap) {
           final secEntry = cap.$2;
@@ -813,52 +810,31 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           // (so theo DANH TÍNH mục, không theo tên).
           final noiTiep = sections.take(cap.$1).any((e) => e.key == secEntry.key);
 
-          // 🔴 Bỏ hẳn card thông tin mở rộng (động): không vẽ Card container và không vẽ Header bar,
-          // các field được vẽ trực tiếp ra ngoài layout form
+          // Thông tin mở rộng (động) chưa gán tiêu đề mục riêng: ẩn tiêu đề, chỉ bọc thẻ trắng gọn.
           if (!theoTieuDe && _isDynamicSection(sectionTitle)) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: _buildSectionFieldWidgets(sectionFields),
-              ),
+            return FormSectionCard(
+              children: _buildSectionFieldWidgets(sectionFields),
             );
           }
 
-          // 🔴 Giống form sửa điểm bán: Bỏ hẳn card bọc ở ngoài với field toạ độ / vị trí trên bản đồ,
-          // vẽ trực tiếp AppMapLocationCard ra ngoài layout form kèm header phân đoạn
+          // Khối vị trí / toạ độ trên bản đồ: dùng FormSectionCard kèm badge thứ tự và nhãn 'Có thể sửa' (khi không bắt buộc).
           if ((!theoTieuDe && _isLocationSection(sectionTitle)) || _onlyCoords(sectionFields)) {
             final isCoordsRequired = sectionFields.any((f) => f.isRequired);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    icon: Icons.map_rounded,
-                    title: sectionTitle.toLowerCase().contains('vị trí') ? sectionTitle : 'Vị trí trên bản đồ',
-                    // Bỏ tag "Bắt buộc" (chủ hệ thống 09/11/2026) — dấu `*` đỏ ở nhãn ô đã nói điều đó.
-                    badge: isCoordsRequired ? null : 'Có thể sửa',
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  ..._buildSectionFieldWidgets(sectionFields),
-                ],
-              ),
+            final locTitle =
+                sectionTitle.toLowerCase().contains('vị trí') ? sectionTitle : 'Vị trí trên bản đồ';
+            return FormSectionCard(
+              title: locTitle,
+              badgeText: FormSectionCard.badgeFor(locTitle, sectionIndex++),
+              trailingTag: isCoordsRequired ? null : 'Có thể sửa',
+              children: _buildSectionFieldWidgets(sectionFields),
             );
           }
 
-          // Mục thường: tiêu đề mục kiểu tiêu đề của biểu mẫu khảo sát/thu thập (#24756) rồi các ô — không khung thẻ.
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!noiTiep)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: kFormFieldSpacing),
-                  child: HeadingFieldWidget(code: secEntry.key, title: sectionTitle),
-                ),
-              ..._buildSectionFieldWidgets(sectionFields),
-            ],
+          // Mục thường: dùng thẻ mục chung (không lặp tiêu đề khi là phần nối tiếp sau bản đồ).
+          return FormSectionCard(
+            title: noiTiep ? null : sectionTitle,
+            badgeText: noiTiep ? null : FormSectionCard.badgeFor(sectionTitle, sectionIndex++),
+            children: _buildSectionFieldWidgets(sectionFields),
           );
         }),
 
@@ -874,50 +850,6 @@ class DynamicFormBuilderState extends State<DynamicFormBuilder> {
           ),
           const SizedBox(height: 16),
         ],
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader({
-    required IconData icon,
-    required String title,
-    required String? badge,
-    required bool isDark,
-  }) {
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: 18,
-          color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            title,
-            style: AppTypography.titleMedium(
-              color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-            ).copyWith(fontWeight: FontWeight.w700),
-          ),
-        ),
-        if (badge != null)
-          Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: isDark
-                ? AppColors.darkSurfaceContainer
-                : AppColors.surfaceContainerHigh,
-            borderRadius: AppRadius.roundedFull,
-          ),
-          child: Text(
-            badge,
-            style: AppTypography.labelSmall(
-              color: isDark
-                  ? AppColors.darkOnSurfaceVariant
-                  : AppColors.onSurfaceVariant,
-            ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
-          ),
-        ),
       ],
     );
   }

@@ -5,19 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/account_key.dart';
-import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/draft_restored_banner.dart';
+import '../../../../core/widgets/form_fields/form_template_parts.dart';
 import '../../../../core/dynamic_form/repeat_group.dart' show RepeatGroupSpec;
-import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart' show DisplayMatrixCustom;
-import '../../../../core/widgets/top_app_bar.dart';
+import '../../../../core/dynamic_form/widgets/display_matrix_field_widget.dart'
+    show DisplayMatrixCustom;
 import '../../data/models/market_form_submission_model.dart';
 import '../../data/services/form_draft_store.dart';
 import '../../data/services/form_suggest_store.dart';
@@ -81,7 +82,7 @@ class MarketFormFillArgs {
         'channel_ids': channelIds ?? <int>[],
         'territory_codes': territoryCodes ?? <String>[],
         'region_id': regionId,
-      }
+      },
     };
   }
 }
@@ -89,29 +90,31 @@ class MarketFormFillArgs {
 class MarketFormFillScreen extends ConsumerStatefulWidget {
   final MarketFormFillArgs args;
 
-  const MarketFormFillScreen({
-    super.key,
-    required this.args,
-  });
+  const MarketFormFillScreen({super.key, required this.args});
 
   @override
-  ConsumerState<MarketFormFillScreen> createState() => _MarketFormFillScreenState();
+  ConsumerState<MarketFormFillScreen> createState() =>
+      _MarketFormFillScreenState();
 }
 
-class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> with WidgetsBindingObserver {
+class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen>
+    with WidgetsBindingObserver {
   GlobalKey<MarketFormRendererState> _rendererKey = GlobalKey();
   bool _isSubmitting = false;
   bool _isExiting = false;
 
   /// Nháp phiếu THU THẬP (chủ hệ thống chốt 20/11/2026): mỗi biểu mẫu một nháp, ngăn riêng theo tài khoản
   /// ([FormDraftStore.collectSlot]) — chưa rõ tài khoản thì tắt nháp ở [initState].
-  late final bool _isCollectDraft = widget.args.kind == 'collect' && widget.args.initialAnswers == null;
+  late final bool _isCollectDraft =
+      widget.args.kind == 'collect' && widget.args.initialAnswers == null;
 
   /// Nháp ([FormDraftStore]): phiếu khảo sát trong lượt viếng thăm, hoặc phiếu thu thập — mở mới (không mang sẵn câu trả lời).
-  late bool _draftEnabled = _isCollectDraft ||
+  late bool _draftEnabled =
+      _isCollectDraft ||
       (widget.args.kind == 'survey' &&
           widget.args.initialAnswers == null &&
-          ((widget.args.visitClientUuid?.isNotEmpty ?? false) || (widget.args.visitId ?? 0) > 0));
+          ((widget.args.visitClientUuid?.isNotEmpty ?? false) ||
+              (widget.args.visitId ?? 0) > 0));
   late bool _draftLoaded = !_draftEnabled;
 
   /// Ngăn lưu nháp: ngăn lượt viếng thăm (mặc định) hoặc ngăn thu thập của tài khoản.
@@ -119,13 +122,16 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
 
   /// Gợi ý từ các phiếu đã nộp cho ô chữ bật `suggest_from_history` ([FormSuggestStore]).
   Map<String, List<String>> _suggestions = const {};
-  late final Set<String> _suggestCodes = FormSuggestStore.enabledCodes(widget.args.config.schema.blocks);
+  late final Set<String> _suggestCodes = FormSuggestStore.enabledCodes(
+    widget.args.config.schema.blocks,
+  );
   Map<String, dynamic>? _draftAnswers;
 
   /// Câu trả lời tự điền từ phiếu cũ khi chạm một gợi ý ([_fillFromSuggestion]) — dựng lại biểu mẫu với bộ này.
   Map<String, dynamic>? _seedAnswers;
   DateTime? _draftSavedAt;
   Map<String, dynamic>? _pendingDraft;
+
   /// Ảnh khôi phục từ nháp: token → tệp gốc ([FormDraftStore] `token_files`) — renderer chỉ còn token của chúng.
   Map<String, String> _draftTokenFiles = {};
   Map<String, String> _pendingTokenFiles = {};
@@ -138,8 +144,12 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   /// Lần ghi nháp gần nhất có thành công không — hỏng thì rời màn phải hỏi như khi chưa có nháp.
   bool _lastDraftSaveOk = true;
 
-  int get _visitId => _isCollectDraft ? FormDraftStore.collectVisitId : widget.args.visitId ?? 0;
-  String get _visitUuid => _isCollectDraft ? FormDraftStore.collectUuid : widget.args.visitClientUuid ?? '';
+  int get _visitId => _isCollectDraft
+      ? FormDraftStore.collectVisitId
+      : widget.args.visitId ?? 0;
+  String get _visitUuid => _isCollectDraft
+      ? FormDraftStore.collectUuid
+      : widget.args.visitClientUuid ?? '';
   int get _configId => widget.args.config.configId;
 
   @override
@@ -180,7 +190,12 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       }
       _draftSlot = FormDraftStore.collectSlot(account);
     }
-    final d = await FormDraftStore.load(visitId: _visitId, clientUuid: _visitUuid, configId: _configId, slotKey: _slot!);
+    final d = await FormDraftStore.load(
+      visitId: _visitId,
+      clientUuid: _visitUuid,
+      configId: _configId,
+      slotKey: _slot!,
+    );
     if (!mounted) return;
     setState(() {
       _draftAnswers = d?.answers;
@@ -213,7 +228,10 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     if (!_draftEnabled || _isSubmitting || _isExiting) return;
     _pendingDraft = answers;
     // Chụp lúc đổi: lúc ghi ở dispose, renderer (con) đã bị gỡ.
-    _pendingTokenFiles = {..._draftTokenFiles, ...?_rendererKey.currentState?.uploadedPhotoFiles};
+    _pendingTokenFiles = {
+      ..._draftTokenFiles,
+      ...?_rendererKey.currentState?.uploadedPhotoFiles,
+    };
     _draftTimer?.cancel();
     _draftTimer = Timer(const Duration(seconds: 1), _flushDraft);
   }
@@ -240,9 +258,17 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     _saveDraft(slot, gen, answers);
   }
 
-  Future<void> _saveDraft(String slot, int gen, Map<String, dynamic> answers) async {
+  Future<void> _saveDraft(
+    String slot,
+    int gen,
+    Map<String, dynamic> answers,
+  ) async {
     // Bị đăng xuất khi màn còn mở (logout đã xoá ngăn + ảnh nháp của người này) ⇒ không ghi lại nháp của tài khoản cũ.
-    if (_isCollectDraft && slot != FormDraftStore.collectSlot(cacheAccountKey(await SharedPreferences.getInstance()) ?? '')) {
+    if (_isCollectDraft &&
+        slot !=
+            FormDraftStore.collectSlot(
+              cacheAccountKey(await SharedPreferences.getInstance()) ?? '',
+            )) {
       if (gen == _draftGen) _lastDraftSaveOk = false;
       return;
     }
@@ -263,14 +289,23 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     _draftTimer?.cancel();
     _pendingDraft = null;
     final slot = _slot;
-    if (slot != null) FormDraftStore.remove(visitId: _visitId, clientUuid: _visitUuid, configId: _configId, slotKey: slot);
+    if (slot != null)
+      FormDraftStore.remove(
+        visitId: _visitId,
+        clientUuid: _visitUuid,
+        configId: _configId,
+        slotKey: slot,
+      );
   }
 
   /// "Xoá nháp, làm lại": bỏ nháp rồi dựng lại biểu mẫu trống.
   void _restartWithoutDraft() {
     // Ảnh đang tải lên của biểu mẫu cũ: dựng lại lúc này là lượt tải xong ghi nháp mới mang ảnh cũ.
     if (_rendererKey.currentState?.hasUploadingPhotos ?? false) {
-      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi làm lại.');
+      AppSnackBar.showInvalid(
+        context,
+        'Ảnh đang được xử lý, vui lòng chờ xong rồi làm lại.',
+      );
       return;
     }
     _discardDraft();
@@ -292,12 +327,18 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   Future<void> _fillFromSuggestion(String code, String value) async {
     // Chỉ phiếu THU THẬP (Khảo sát NPP — chốt 24/11/2026): phiếu khảo sát gắn điểm bán của lượt, chép phiếu cũ là mang ô
     // điểm bán / tuyến của lượt khác sang. Phiếu mở kèm câu trả lời sẵn (sửa / xem lại) — bộ đó thắng, không dựng lại.
-    if (widget.args.kind != 'collect' || widget.args.initialAnswers != null) return;
-    final fill = await ref.read(formSuggestStoreProvider).fillFor(widget.args.config.formId, code, value);
+    if (widget.args.kind != 'collect' || widget.args.initialAnswers != null)
+      return;
+    final fill = await ref
+        .read(formSuggestStoreProvider)
+        .fillFor(widget.args.config.formId, code, value);
     final renderer = _rendererKey.currentState;
     if (!mounted || fill == null || fill.isEmpty || renderer == null) return;
     if (renderer.hasUploadingPhotos) {
-      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, chờ xong rồi chọn lại để điền theo phiếu cũ.');
+      AppSnackBar.showInvalid(
+        context,
+        'Ảnh đang được xử lý, chờ xong rồi chọn lại để điền theo phiếu cũ.',
+      );
       return;
     }
     final current = renderer.currentAnswers;
@@ -305,9 +346,13 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     final kept = _keepPhotos(current, fill);
     final others = {
       for (final e in current.entries)
-        if (e.key != code && !kept.containsKey(e.key) && !renderer.isAutoDefault(e.key)) e.key: e.value,
+        if (e.key != code &&
+            !kept.containsKey(e.key) &&
+            !renderer.isAutoDefault(e.key))
+          e.key: e.value,
     };
-    if (_hasEnteredData(others) && await _confirmOverwrite(value) != true) return;
+    if (_hasEnteredData(others) && await _confirmOverwrite(value) != true)
+      return;
     if (!mounted || !identical(renderer, _rendererKey.currentState)) return;
 
     final seed = <String, dynamic>{...fill, ...kept, code: value};
@@ -315,7 +360,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     for (final b in widget.args.config.schema.blocks) {
       final c = b.resolved.code;
       final rows = seed[c];
-      if (!b.resolved.isRepeatGroup || kept.containsKey(c) || rows is! List) continue;
+      if (!b.resolved.isRepeatGroup || kept.containsKey(c) || rows is! List)
+        continue;
       seed[c] = [
         for (final r in rows)
           if (r is Map) {...r, 'line_id': RepeatGroupSpec.newLineId()} else r,
@@ -328,14 +374,21 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       _rendererKey = GlobalKey();
     });
     _onAnswersChanged(seed);
-    AppSnackBar.showSuccess(context, 'Đã điền theo phiếu gần nhất của «$value» — kiểm tra lại trước khi nộp.');
+    AppSnackBar.showSuccess(
+      context,
+      'Đã điền theo phiếu gần nhất của «$value» — kiểm tra lại trước khi nộp.',
+    );
   }
 
   /// Giá trị ô mang ẢNH của phiếu đang điền cần giữ khi tự điền: ô ảnh / tệp; ảnh (`photos`) của ô ma trận trưng bày ghép vào
   /// giá trị lấy từ phiếu cũ; bảng lặp có ô con ảnh / tệp đã có dòng thì giữ cả bảng (không thay dòng đang chụp ảnh dở —
   /// bảng đó vì thế không được tự điền).
-  Map<String, dynamic> _keepPhotos(Map<String, dynamic> current, Map<String, dynamic> fill) {
-    bool laAnh(Object? t) => const {'image', 'file'}.contains('$t'.toLowerCase());
+  Map<String, dynamic> _keepPhotos(
+    Map<String, dynamic> current,
+    Map<String, dynamic> fill,
+  ) {
+    bool laAnh(Object? t) =>
+        const {'image', 'file'}.contains('$t'.toLowerCase());
     final out = <String, dynamic>{};
     for (final b in widget.args.config.schema.blocks) {
       final c = b.resolved.code;
@@ -344,10 +397,13 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       final type = b.resolved.inputType.toLowerCase();
       if (laAnh(type)) {
         out[c] = cur;
-      } else if (type == 'display_matrix' && cur is Map && cur['photos'] != null) {
+      } else if (type == 'display_matrix' &&
+          cur is Map &&
+          cur['photos'] != null) {
         // Loại tự thêm (`custom`): HỢP của phiếu cũ (đi kèm số đếm lấy từ phiếu cũ) và phiếu đang điền (đi kèm ảnh giữ lại) —
         // thiếu bên nào thì renderer bỏ hàng / ảnh của loại lạ bên đó.
-        final custom = DisplayMatrixCustom.fromValue(fill[c]).merge(DisplayMatrixCustom.fromValue(cur));
+        final custom = DisplayMatrixCustom.fromValue(fill[c])
+            .merge(DisplayMatrixCustom.fromValue(cur));
         out[c] = {
           ...?(fill[c] is Map ? fill[c] as Map : null),
           'photos': cur['photos'],
@@ -357,7 +413,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         };
       } else if (b.resolved.isRepeatGroup && cur is List && cur.isNotEmpty) {
         final coAnh = b.resolved.groupItems.any((i) {
-          final r = i is Map && i['resolved'] is Map ? i['resolved'] as Map : (i is Map ? i : const {});
+          final r = i is Map && i['resolved'] is Map
+              ? i['resolved'] as Map
+              : (i is Map ? i : const {});
           return laAnh(r['input_type']);
         });
         if (coAnh) out[c] = cur;
@@ -371,7 +429,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        backgroundColor: isDark
+            ? AppColors.darkSurfaceContainer
+            : AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Điền theo phiếu cũ?',
@@ -382,7 +442,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         content: Text(
           'Các ô bạn đã nhập sẽ được thay bằng nội dung phiếu gần nhất của «$value» (ảnh đã chụp giữ nguyên).',
           style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            color: isDark
+                ? AppColors.darkOnSurfaceVariant
+                : AppColors.onSurfaceVariant,
           ),
         ),
         actions: [
@@ -391,7 +453,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
             child: Text(
               'Chỉ điền tên',
               style: AppTypography.labelLarge(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant
+                    : AppColors.onSurfaceVariant,
               ),
             ),
           ),
@@ -399,7 +463,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Điền theo phiếu cũ'),
@@ -439,8 +505,12 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     if (_isSubmitting || _isExiting) return;
 
     // Ảnh đang đóng dấu / tải lên chưa vào câu trả lời (cũng chưa vào nháp) — rời lúc này là mất ảnh.
-    if (_draftEnabled && (_rendererKey.currentState?.hasUploadingPhotos ?? false)) {
-      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi thoát.');
+    if (_draftEnabled &&
+        (_rendererKey.currentState?.hasUploadingPhotos ?? false)) {
+      AppSnackBar.showInvalid(
+        context,
+        'Ảnh đang được xử lý, vui lòng chờ xong rồi thoát.',
+      );
       return;
     }
 
@@ -462,7 +532,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        backgroundColor: isDark
+            ? AppColors.darkSurfaceContainer
+            : AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
@@ -492,17 +564,24 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         content: Text(
           'Dữ liệu bạn đã nhập sẽ không được lưu. Bạn có chắc chắn muốn rời khỏi không?',
           style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            color: isDark
+                ? AppColors.darkOnSurfaceVariant
+                : AppColors.onSurfaceVariant,
           ),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
               'Tiếp tục điền',
               style: AppTypography.labelLarge(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant
+                    : AppColors.onSurfaceVariant,
               ),
             ),
           ),
@@ -512,7 +591,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text(
@@ -534,7 +615,10 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
   Future<void> _handleSubmit() async {
     // Ảnh đang đóng dấu / tải lên: câu trả lời còn mang ảnh GỐC chưa đóng dấu — nộp lúc này là gửi ảnh sai.
     if (_rendererKey.currentState?.hasUploadingPhotos ?? false) {
-      AppSnackBar.showInvalid(context, 'Ảnh đang được xử lý, vui lòng chờ xong rồi nộp.');
+      AppSnackBar.showInvalid(
+        context,
+        'Ảnh đang được xử lý, vui lòng chờ xong rồi nộp.',
+      );
       return;
     }
     final answers = _rendererKey.currentState?.validateAndGetAnswers();
@@ -542,7 +626,8 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       // Báo ĐÚNG lý do (vd ma trận SOS thiếu ảnh / chưa đủ số thương hiệu), không chỉ câu chung.
       AppSnackBar.showInvalid(
         context,
-        _rendererKey.currentState?.firstErrorMessage ?? 'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.',
+        _rendererKey.currentState?.firstErrorMessage ??
+            'Vui lòng kiểm tra và điền đầy đủ các thông tin bắt buộc.',
       );
       return;
     }
@@ -551,7 +636,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
+        backgroundColor: isDark
+            ? AppColors.darkSurfaceContainer
+            : AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
@@ -568,7 +655,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         content: Text(
           'Bạn có chắc chắn muốn nộp biểu mẫu này không?\n\nLưu ý: Sau khi nộp thành công, thông tin sẽ được chốt và không thể chỉnh sửa.',
           style: AppTypography.bodyMedium(
-            color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+            color: isDark
+                ? AppColors.darkOnSurfaceVariant
+                : AppColors.onSurfaceVariant,
           ),
         ),
         actions: [
@@ -577,7 +666,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
             child: Text(
               'Kiểm tra lại',
               style: AppTypography.labelLarge(
-                color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
+                color: isDark
+                    ? AppColors.darkOnSurfaceVariant
+                    : AppColors.onSurfaceVariant,
               ),
             ),
           ),
@@ -585,7 +676,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Nộp phiếu'),
@@ -607,7 +700,9 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
       String? address;
 
       try {
-        final position = await ref.read(locationServiceProvider).checkAndGetLocation(context);
+        final position = await ref
+            .read(locationServiceProvider)
+            .checkAndGetLocation(context);
         if (position != null) {
           lat = position.latitude;
           lng = position.longitude;
@@ -626,9 +721,13 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         submitAddress: address,
         localPhotoPaths: localPhotos,
         tokenFiles: _draftTokenFiles,
-        parentUuid: widget.args.kind == 'survey' ? widget.args.visitClientUuid : null,
+        parentUuid: widget.args.kind == 'survey'
+            ? widget.args.visitClientUuid
+            : null,
         schemaToken: widget.args.config.schemaToken,
-        outletFieldCodes: _rendererKey.currentState?.outletFieldCodes().toList(),
+        outletFieldCodes: _rendererKey.currentState
+            ?.outletFieldCodes()
+            .toList(),
       );
 
       final isOnline = ref.read(connectivityProvider).isOnline;
@@ -645,7 +744,11 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         });
 
         if (result.success && _suggestCodes.isNotEmpty) {
-          unawaited(ref.read(formSuggestStoreProvider).remember(widget.args.config.formId, answers, _suggestCodes));
+          unawaited(
+            ref
+                .read(formSuggestStoreProvider)
+                .remember(widget.args.config.formId, answers, _suggestCodes),
+          );
         }
 
         if (mounted) {
@@ -673,6 +776,16 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isOnline = ref.watch(connectivityProvider).isOnline;
     final config = widget.args.config;
+    final subtitle =
+        (widget.args.dealerName != null &&
+            widget.args.dealerName!.trim().isNotEmpty)
+        ? widget.args.dealerName!.trim()
+        : (widget.args.kind == 'survey'
+              ? 'Khảo sát điểm bán'
+              : 'Thu thập thị trường');
+    final formTag = config.code.trim().isNotEmpty
+        ? 'Form #${config.code.trim()}'
+        : 'Form #${config.configId}';
 
     return PopScope(
       canPop: _isExiting,
@@ -681,231 +794,123 @@ class _MarketFormFillScreenState extends ConsumerState<MarketFormFillScreen> wit
         _handleExit();
       },
       child: Scaffold(
-        backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-        appBar: VthmTopAppBar(
+        backgroundColor: FormTemplateTokens.pageBg(isDark),
+        appBar: FormTemplateAppBar(
           title: config.name,
-          showBackButton: true,
-          showAvatar: false,
-          showLogo: false,
-          onBackPressed: _handleExit,
-          trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: isOnline
-                ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                : AppColors.error.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          subtitle: subtitle,
+          onBack: _handleExit,
+          isOnline: isOnline,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                isOnline ? Icons.wifi : Icons.wifi_off,
-                size: 14,
-                color: isOnline ? const Color(0xFF10B981) : AppColors.error,
+              FormHeroCard(
+                categoryIcon: widget.args.kind == 'survey'
+                    ? Icons.storefront_outlined
+                    : Icons.assignment_outlined,
+                categoryLabel: widget.args.kind == 'survey'
+                    ? 'Khảo sát điểm bán'
+                    : 'Thu thập thị trường',
+                requiredTag:
+                    config.isRequired ? 'Bắt buộc trước khi Check-out' : null,
+                codeTag: formTag,
+                title: config.name,
+                description: config.descriptionText,
+                footerText: widget.args.dealerName,
               ),
-              const SizedBox(width: 4),
-              Text(
-                isOnline ? 'Online' : 'Offline',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: isOnline ? const Color(0xFF10B981) : AppColors.error,
+              const SizedBox(height: 16),
+
+              if (_draftSavedAt != null) ...[
+                DraftRestoredBanner(
+                  savedAt: _draftSavedAt!,
+                  onRestart: _isSubmitting ? null : _restartWithoutDraft,
                 ),
-              ),
+                const SizedBox(height: 16),
+              ],
+
+              // Form Renderer
+              if (!_draftLoaded)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: AppLoading()),
+                )
+              else
+                MarketFormRenderer(
+                  key: _rendererKey,
+                  blocks: config.schema.blocks,
+                  initialAnswers:
+                      widget.args.initialAnswers ??
+                      _seedAnswers ??
+                      _draftAnswers ??
+                      const {},
+                  onChanged: _draftEnabled ? _onAnswersChanged : null,
+                  customerContext: widget.args.customerContext ?? const {},
+                  defaultCustomerId: widget.args.customerId,
+                  defaultCustomerName: widget.args.dealerName,
+                  defaultCustomerCode: widget.args.customerCode,
+                  defaultCustomerAddress: widget.args.customerAddress,
+                  lockCustomer: widget.args.isCustomerLocked,
+                  defaultRouteIds: widget.args.routeIds,
+                  customerData: widget.args.customerData,
+                  onUploadPhoto: (file) =>
+                      ref.read(formsApiServiceProvider).uploadPhoto(file),
+                  suggestions: _suggestions,
+                  onSuggestionSelected: _fillFromSuggestion,
+                ),
+              const SizedBox(height: 80),
             ],
           ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.marginMobile,
-          vertical: AppSpacing.stackMd,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? AppColors.darkSurfaceContainerLowest
-                    : AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: (widget.args.kind == 'survey'
-                                  ? AppColors.primary
-                                  : AppColors.secondary)
-                              .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          widget.args.kind == 'survey' ? 'Khảo sát điểm bán' : 'Thu thập thị trường',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: widget.args.kind == 'survey'
-                                ? (isDark ? AppColors.primaryFixedDim : AppColors.primary)
-                                : AppColors.secondary,
-                          ),
-                        ),
+        bottomNavigationBar: FormBottomDock(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: isDark
+                  ? null
+                  : const [
+                      BoxShadow(
+                        color: Color(0x40166534),
+                        blurRadius: 16,
+                        offset: Offset(0, 6),
                       ),
-                      if (config.isRequired) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Bắt buộc trước khi Check-out',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.error,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    config.name,
-                    style: AppTypography.titleLarge(
-                      color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                    ).copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  if (config.descriptionText != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      config.descriptionText!,
-                      style: AppTypography.bodyMedium(
-                        color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                  if (widget.args.dealerName != null &&
-                      widget.args.dealerName!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: FormTemplateTokens.accentGreen,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: _isSubmitting ? null : _handleSubmit,
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: AppLoading(size: 24),
+                    )
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.storefront_rounded,
-                          size: 16,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            widget.args.dealerName!,
-                            style: AppTypography.bodyMedium(
-                              color: isDark
-                                  ? AppColors.darkOnSurfaceVariant
-                                  : AppColors.onSurfaceVariant,
-                            ).copyWith(fontWeight: FontWeight.w500),
+                        Icon(Icons.send_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'NỘP BIỂU MẪU',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.stackLg),
-
-            if (_draftSavedAt != null) ...[
-              DraftRestoredBanner(savedAt: _draftSavedAt!, onRestart: _isSubmitting ? null : _restartWithoutDraft),
-              const SizedBox(height: AppSpacing.stackLg),
-            ],
-
-            // Form Renderer
-            if (!_draftLoaded)
-              const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Center(child: AppLoading()))
-            else
-              MarketFormRenderer(
-                key: _rendererKey,
-                blocks: config.schema.blocks,
-                initialAnswers: widget.args.initialAnswers ?? _seedAnswers ?? _draftAnswers ?? const {},
-                onChanged: _draftEnabled ? _onAnswersChanged : null,
-                customerContext: widget.args.customerContext ?? const {},
-                defaultCustomerId: widget.args.customerId,
-                defaultCustomerName: widget.args.dealerName,
-                defaultCustomerCode: widget.args.customerCode,
-                defaultCustomerAddress: widget.args.customerAddress,
-                lockCustomer: widget.args.isCustomerLocked,
-                defaultRouteIds: widget.args.routeIds,
-                customerData: widget.args.customerData,
-                onUploadPhoto: (file) => ref.read(formsApiServiceProvider).uploadPhoto(file),
-                suggestions: _suggestions,
-                onSuggestionSelected: _fillFromSuggestion,
-              ),
-            const SizedBox(height: 80),
-          ],
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.marginMobile,
-          vertical: 12,
-        ),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurfaceContainer : AppColors.surface,
-          border: Border(
-            top: BorderSide(
-              color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
             ),
           ),
         ),
-        child: SafeArea(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              elevation: 1,
-            ),
-            onPressed: _isSubmitting ? null : _handleSubmit,
-            child: _isSubmitting
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: AppLoading(size: 24),
-                  )
-                : const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.send_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        'NỘP BIỂU MẪU',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

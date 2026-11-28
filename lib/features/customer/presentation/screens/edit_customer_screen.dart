@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/dynamic_form/dynamic_form_builder.dart';
 import '../../../../core/dynamic_form/models/dynamic_form_field.dart';
+import '../../../../core/network/connectivity_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_loading.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/form_fields/form_template_parts.dart';
 import '../../../route/presentation/viewmodels/route_view_model.dart';
 import '../../data/repositories/customer_repository_impl.dart';
 import '../../domain/entities/customer_dynamic_column.dart';
@@ -606,6 +608,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isOnline = ref.watch(connectivityProvider).isOnline;
     final schemaAsync = ref.watch(customerFormSchemaProvider);
     final meta = widget.meta.customerTypes.isNotEmpty
         ? widget.meta
@@ -622,54 +625,40 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? AppColors.darkBackground : AppColors.surface,
-        appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Sửa thông tin điểm bán',
-                style: AppTypography.titleMedium(
-                  color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
-                ).copyWith(fontWeight: FontWeight.w700),
-              ),
-              Text(
-                '${c.code} • ${c.name}',
-                style: AppTypography.bodySmall(
-                  color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant,
-                ).copyWith(fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-          backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 1,
-          actions: [
-            // Nút đồng bộ lại schema bọc box đẹp mắt
+        backgroundColor: FormTemplateTokens.pageBg(isDark),
+        appBar: FormTemplateAppBar(
+          title: 'Sửa thông tin điểm bán',
+          subtitle: '${c.code} • ${c.name}',
+          isOnline: isOnline,
+          onBack: () async {
+            final shouldLeave = await _onWillExit();
+            if (shouldLeave && context.mounted) {
+              Navigator.of(context).pop(false);
+            }
+          },
+          extraActions: [
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
                 child: Container(
-                  width: 38,
-                  height: 38,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: isDark
                         ? AppColors.darkSurfaceContainer
-                        : AppColors.surfaceContainerHigh.withValues(alpha: 0.5),
+                        : FormTemplateTokens.pageBg(isDark),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: isDark
-                          ? AppColors.darkOutlineVariant
-                          : AppColors.outlineVariant,
-                      width: 1,
+                      color: FormTemplateTokens.cardBorder(isDark),
                     ),
                   ),
                   child: IconButton(
                     icon: Icon(
                       Icons.sync_rounded,
-                      size: 20,
-                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                      size: 19,
+                      color: isDark
+                          ? AppColors.primaryFixedDim
+                          : FormTemplateTokens.accentGreen,
                     ),
                     padding: EdgeInsets.zero,
                     splashRadius: 20,
@@ -721,13 +710,6 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
               ),
             ),
           ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1),
-            child: Container(
-              color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-              height: 1,
-            ),
-          ),
         ),
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -837,10 +819,18 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     Expanded(
                       child: SingleChildScrollView(
                         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            FormHeroCard(
+                              categoryIcon: Icons.storefront_outlined,
+                              categoryLabel: 'Cập nhật hồ sơ điểm bán',
+                              codeTag: c.code.isNotEmpty ? 'KH #${c.code}' : null,
+                              title: c.name,
+                              description: c.address.isNotEmpty ? c.address : null,
+                            ),
+                            const SizedBox(height: 16),
                             // Tip nhập liệu giọng nói
                             Container(
                               margin: const EdgeInsets.only(bottom: 14),
@@ -936,24 +926,7 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                     ),
 
                     // Bottom Fixed Action Bar
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerLowest,
-                        border: Border(
-                          top: BorderSide(
-                            color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
-                            width: 0.8,
-                          ),
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0a000000),
-                            offset: Offset(0, -4),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
+                    FormBottomDock(
                       child: Row(
                         children: [
                           Expanded(
@@ -970,7 +943,8 @@ class _EditCustomerScreenState extends ConsumerState<EditCustomerScreen> {
                                         }
                                       },
                                 style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: AppRadius.roundedMd),
+                                  side: BorderSide(color: FormTemplateTokens.cardBorder(isDark)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                                 child: const Text('HỦY BỎ'),
                               ),

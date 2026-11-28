@@ -146,11 +146,12 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final field = widget.field;
     final spec = widget.spec;
     final readOnly = field.isReadOnly;
     final canAdd = !readOnly && (spec.maxRows <= 0 || _rows.length < spec.maxRows);
-    final border = Theme.of(context).dividerColor;
+    final border = isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0);
 
     return DynamicFormFieldWrapper(
       field: field.copyWith(isRequired: spec.effectiveMin(field.isRequired) > 0),
@@ -164,6 +165,7 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
               margin: const EdgeInsets.only(bottom: AppSpacing.stackMd),
               padding: const EdgeInsets.fromLTRB(AppSpacing.stackMd, AppSpacing.stackSm, AppSpacing.stackMd, 0),
               decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceContainer : const Color(0xFFF8FAFC),
                 border: Border.all(color: border),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
@@ -172,7 +174,21 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
                 children: [
                   Row(
                     children: [
-                      Text('#${i + 1}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.primary.withValues(alpha: 0.2) : const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '#${i + 1}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: isDark ? AppColors.primaryFixedDim : const Color(0xFF166534),
+                          ),
+                        ),
+                      ),
                       const Spacer(),
                       if (!readOnly)
                         TextButton.icon(
@@ -191,10 +207,44 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
               ),
             ),
           if (canAdd)
-            OutlinedButton.icon(
-              onPressed: () => _emit([..._rows, _newRow()]),
-              icon: const Icon(Icons.add),
-              label: Text('Thêm ${field.label}'),
+            CustomPaint(
+              painter: _DashedRoundedBorderPainter(
+                color: isDark ? AppColors.primaryFixedDim.withValues(alpha: 0.65) : const Color(0xFF22C55E),
+                radius: 12,
+              ),
+              child: Material(
+                color: isDark ? AppColors.primary.withValues(alpha: 0.12) : const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(12),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _emit([..._rows, _newRow()]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_rounded,
+                          size: 18,
+                          color: isDark ? AppColors.primaryFixedDim : const Color(0xFF15803D),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Thêm ${field.label}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13.5,
+                              color: isDark ? AppColors.primaryFixedDim : const Color(0xFF166534),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -288,4 +338,36 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
         return DynamicTextFieldWidget(field: c, value: v?.toString(), onChanged: set);
     }
   }
+}
+
+class _DashedRoundedBorderPainter extends CustomPainter {
+  final Color color;
+  final double radius;
+
+  const _DashedRoundedBorderPainter({required this.color, required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius));
+    final path = Path()..addRRect(rrect);
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = (distance + dashWidth).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRoundedBorderPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.radius != radius;
 }

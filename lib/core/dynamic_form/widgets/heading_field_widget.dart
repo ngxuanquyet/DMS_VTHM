@@ -34,13 +34,13 @@ class HeadingFieldWidget extends StatelessWidget {
     if (level == 2) {
       return Container(
         key: ValueKey('subheading_$code'),
-        margin: const EdgeInsets.only(left: 16, top: 4),
+        margin: const EdgeInsets.only(left: 28, top: 4),
         padding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
         decoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 3))),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: AppTypography.titleMedium(color: titleColor).copyWith(fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(title, style: AppTypography.titleMedium(color: titleColor).copyWith(fontWeight: FontWeight.w600, fontSize: 13.5)),
             if (desc.isNotEmpty) ...[const SizedBox(height: 2), descriptionText(context, desc)],
           ],
         ),
@@ -101,11 +101,11 @@ class _SubheadingFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      margin: const EdgeInsets.only(left: 16, bottom: AppSpacing.stackMd),
+      margin: const EdgeInsets.only(left: 28, bottom: AppSpacing.stackMd),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       decoration: BoxDecoration(
         borderRadius: AppRadius.roundedLg,
-        border: Border.all(color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant),
+        border: Border.all(color: isDark ? AppColors.darkOutlineVariant : const Color(0xFFE2E8F0)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
     );

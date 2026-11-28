@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
@@ -18,6 +20,7 @@ import '../../../../../core/dynamic_form/widgets/product_sku_picker.dart';
 import '../../../../../core/dynamic_form/matrix_photo_key.dart';
 import '../../../../../core/widgets/note_field_widget.dart';
 import '../../../../../core/widgets/form_fields/form_field_parts.dart';
+import '../../../../../core/widgets/form_fields/form_template_parts.dart';
 import '../../../../../core/dynamic_form/widgets/heading_field_widget.dart';
 import 'ref_customer_field_widget.dart';
 import 'route_field_widget.dart';
@@ -56,7 +59,8 @@ class FormPhotoEntry {
 
   String get fullPreviewUrl {
     if (previewUrl == null || previewUrl!.isEmpty) return '';
-    if (previewUrl!.startsWith('http://') || previewUrl!.startsWith('https://')) {
+    if (previewUrl!.startsWith('http://') ||
+        previewUrl!.startsWith('https://')) {
       return previewUrl!;
     }
     final clean = previewUrl!.startsWith('/') ? previewUrl! : '/$previewUrl';
@@ -172,14 +176,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// Ảnh ĐÃ tải lên (có token) còn tệp trên máy: token → tệp. Nháp phiếu giữ token trong câu trả lời; tệp này chỉ là bản
   /// dự phòng khi token hết hạn trên server (dọn ảnh chưa nộp sau 1 ngày) — xem [FormDraftStore].
   Map<String, String> get uploadedPhotoFiles => {
-        for (final l in _photoEntries.values)
-          for (final e in l)
-            if ((e.token ?? '').isNotEmpty && e.localPath.isNotEmpty && !isUploadedPhotoToken(e.localPath))
-              e.token!: e.localPath,
-      };
+    for (final l in _photoEntries.values)
+      for (final e in l)
+        if ((e.token ?? '').isNotEmpty &&
+            e.localPath.isNotEmpty &&
+            !isUploadedPhotoToken(e.localPath))
+          e.token!: e.localPath,
+  };
 
   /// Còn ảnh đang đóng dấu / tải lên — chưa vào câu trả lời, rời màn lúc này là mất ảnh.
-  bool get hasUploadingPhotos => _photoEntries.values.any((l) => l.any((e) => e.isUploading));
+  bool get hasUploadingPhotos =>
+      _photoEntries.values.any((l) => l.any((e) => e.isUploading));
 
   /// Ô ma trận đang có ô đếm gõ sai dạng (vd `2,5,`) — bước Lưu chặn, không lặng lẽ bỏ số khỏi tổng.
   final Map<String, bool> _matrixInvalid = {};
@@ -188,12 +195,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   final Map<String, dynamic> _matrixConfirm = {};
 
   /// Số hiện trạng điểm bán cho ô ma trận có ô đích `config.update_customer_field` (#24789); không có ⇒ rỗng.
-  DisplayMatrixCounts _hintCountsOf(dynamic config) => DisplayMatrixFieldWidget.countsOf(_hintValueOf(config));
+  DisplayMatrixCounts _hintCountsOf(dynamic config) =>
+      DisplayMatrixFieldWidget.countsOf(_hintValueOf(config));
 
   /// Giá trị ô ma trận ĐÍCH của hồ sơ điểm bán (`config.update_customer_field`, #24789); không có ⇒ `null`.
   dynamic _hintValueOf(dynamic config) {
     final target = config is Map ? config['update_customer_field'] : null;
-    return target is String && target.isNotEmpty ? widget.customerData[target] : null;
+    return target is String && target.isNotEmpty
+        ? widget.customerData[target]
+        : null;
   }
 
   /// Mã SKU đã chạm trong phiếu (`skus` của câu trả lời — loại có khoá là người dùng đã chọn, kể cả bỏ hết); chưa có ⇒ `null`.
@@ -204,14 +214,19 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Mã SKU HIỆU LỰC theo loại (own_skus, 27/11/2026): loại người dùng đã chạm lấy mã đã chọn; loại chưa chạm lấy mã đang lưu ở
   /// hồ sơ điểm bán (ô đích của phiếu cập nhật hiện trạng — chủ hệ thống chốt «điền sẵn mã đang lưu»).
-  Map<String, List<Map<String, dynamic>>> _matrixSkusOf(MarketFormBlockEntity block) {
-    final out = DisplayMatrixFieldWidget.skusOf(_hintValueOf(block.resolved.configMap));
+  Map<String, List<Map<String, dynamic>>> _matrixSkusOf(
+    MarketFormBlockEntity block,
+  ) {
+    final out = DisplayMatrixFieldWidget.skusOf(
+      _hintValueOf(block.resolved.configMap),
+    );
     final raw = _rawSkus(block.resolved.code);
     raw?.forEach((t, list) {
       out['$t'] = [
         if (list is List)
           for (final x in list)
-            if (x is Map && DisplayMatrixFieldWidget.skuIdOf(x) != null) Map<String, dynamic>.from(x),
+            if (x is Map && DisplayMatrixFieldWidget.skuIdOf(x) != null)
+              Map<String, dynamic>.from(x),
       ];
     });
     return out;
@@ -221,29 +236,43 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// Chỉ mục có SỐ hiện trạng (mục chỉ có ảnh thì phiếu không hiện / không gửi — khỏi cột gỡ được mà hiện lại).
   DisplayMatrixCustom _hintCustomOf(MarketFormBlockEntity block) {
     final v = _hintValueOf(block.resolved.configMap);
-    return DisplayMatrixCustom.fromValue(v).onlyUsed(DisplayMatrixFieldWidget.countsOf(v), const {});
+    return DisplayMatrixCustom.fromValue(v)
+        .onlyUsed(DisplayMatrixFieldWidget.countsOf(v), const {});
   }
 
   /// Mục gõ tay HIỆU LỰC của ô: của câu trả lời (người dùng thêm) ∪ của hồ sơ điểm bán.
   DisplayMatrixCustom _matrixCustomOf(MarketFormBlockEntity block) =>
-      DisplayMatrixCustom.fromValue(_answers[block.resolved.code]).merge(_hintCustomOf(block));
+      DisplayMatrixCustom.fromValue(_answers[block.resolved.code])
+          .merge(_hintCustomOf(block));
 
   /// Cấu hình HIỆU LỰC (danh mục + mục gõ tay) — bảng, kiểm số, khối ảnh dùng cái này.
-  DisplayMatrixConfig _matrixEff(MarketFormBlockEntity block) => _matrixOf(block).withCustom(_matrixCustomOf(block));
+  DisplayMatrixConfig _matrixEff(MarketFormBlockEntity block) =>
+      _matrixOf(block).withCustom(_matrixCustomOf(block));
 
   /// Mục gõ tay GỬI LÊN: mọi mục người dùng thêm + mục của hồ sơ mà phiếu có dùng (server đòi mọi mã `x_…` có trong `custom`).
-  DisplayMatrixCustom _sendCustom(MarketFormBlockEntity block, DisplayMatrixCustom c, DisplayMatrixCounts counts, Map photos) =>
-      c.minusUnused(_hintCustomOf(block), counts, photos);
+  DisplayMatrixCustom _sendCustom(
+    MarketFormBlockEntity block,
+    DisplayMatrixCustom c,
+    DisplayMatrixCounts counts,
+    Map photos,
+  ) => c.minusUnused(_hintCustomOf(block), counts, photos);
 
   /// Danh mục ô ma trận đã đọc từ `config` — bất biến suốt màn điền, đọc một lần mỗi ô.
   final Map<String, DisplayMatrixConfig> _matrixCfg = {};
 
   DisplayMatrixConfig _matrixOf(MarketFormBlockEntity block) =>
-      _matrixCfg.putIfAbsent(block.resolved.code, () => DisplayMatrixConfig.fromConfig(block.resolved.configMap));
+      _matrixCfg.putIfAbsent(
+        block.resolved.code,
+        () => DisplayMatrixConfig.fromConfig(block.resolved.configMap),
+      );
 
-  Set<String> get _matrixCodes => {for (final b in widget.blocks) if (_isMatrixBlock(b)) b.resolved.code};
+  Set<String> get _matrixCodes => {
+    for (final b in widget.blocks)
+      if (_isMatrixBlock(b)) b.resolved.code,
+  };
 
-  bool _isMatrixBlock(MarketFormBlockEntity block) => block.resolved.inputType.toLowerCase() == 'display_matrix';
+  bool _isMatrixBlock(MarketFormBlockEntity block) =>
+      block.resolved.inputType.toLowerCase() == 'display_matrix';
 
   int _resolveMaxFiles(MarketFormBlockEntity block) {
     if (block.resolved.maxFiles > 0) {
@@ -253,8 +282,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   /// Số ảnh tối thiểu hiệu lực — chỉ ô `image` (như server ImageFieldLimits), không vượt tối đa.
-  int _resolveMinFiles(MarketFormBlockEntity block) =>
-      block.resolved.isImage ? block.resolved.minFiles.clamp(0, _resolveMaxFiles(block)) : 0;
+  int _resolveMinFiles(MarketFormBlockEntity block) => block.resolved.isImage
+      ? block.resolved.minFiles.clamp(0, _resolveMaxFiles(block))
+      : 0;
 
   @override
   void dispose() {
@@ -269,7 +299,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Mã các ô điểm bán của biểu mẫu (kiểu `ref_customer` hoặc mã điểm bán quen) — hàng đợi cần để đổi id điểm bán tạo
   /// ngoại tuyến sang id server ở ĐÚNG các ô này (#25875): payload hàng đợi không mang kiểu ô.
-  Set<String> outletFieldCodes() => {for (final b in widget.blocks) if (_isCustomerBlock(b)) b.resolved.code};
+  Set<String> outletFieldCodes() => {
+    for (final b in widget.blocks)
+      if (_isCustomerBlock(b)) b.resolved.code,
+  };
 
   bool _isCustomerBlock(MarketFormBlockEntity block) {
     final type = block.resolved.inputType.toLowerCase();
@@ -312,11 +345,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             if (str.isEmpty) continue;
             if (str.length == 32 && !str.contains('/') && !str.contains(r'\')) {
               // Token hex 32 ký tự
-              entries.add(FormPhotoEntry(
-                localPath: '',
-                token: str,
-                previewUrl: '/dms/form-photos/public/$str',
-              ));
+              entries.add(
+                FormPhotoEntry(
+                  localPath: '',
+                  token: str,
+                  previewUrl: '/dms/form-photos/public/$str',
+                ),
+              );
             } else {
               // File cục bộ
               entries.add(FormPhotoEntry(localPath: str));
@@ -325,11 +360,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         } else if (rawVal is String && rawVal.trim().isNotEmpty) {
           final str = rawVal.trim();
           if (str.length == 32 && !str.contains('/') && !str.contains(r'\')) {
-            entries.add(FormPhotoEntry(
-              localPath: '',
-              token: str,
-              previewUrl: '/dms/form-photos/public/$str',
-            ));
+            entries.add(
+              FormPhotoEntry(
+                localPath: '',
+                token: str,
+                previewUrl: '/dms/form-photos/public/$str',
+              ),
+            );
           } else {
             entries.add(FormPhotoEntry(localPath: str));
           }
@@ -346,7 +383,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       final raw = _answers[block.resolved.code];
       final photos = raw is Map ? raw['photos'] : null;
       if (photos is! Map) continue;
-      final nhanAnh = {for (final t in _matrixEff(block).types) if (t.maxPhotos > 0) t.code};
+      final nhanAnh = {
+        for (final t in _matrixEff(block).types)
+          if (t.maxPhotos > 0) t.code,
+      };
       photos.forEach((type, list) {
         // Loại đã thôi nhận ảnh / không còn trong ô: ảnh cũ của bản nháp không nạp — gửi đi là server từ chối.
         if (list is! List || !nhanAnh.contains('$type')) return;
@@ -354,10 +394,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           for (final item in list)
             if ('$item'.trim().isNotEmpty)
               isUploadedPhotoToken('$item')
-                  ? FormPhotoEntry(localPath: '', token: '$item', previewUrl: '/dms/form-photos/public/$item')
+                  ? FormPhotoEntry(
+                      localPath: '',
+                      token: '$item',
+                      previewUrl: '/dms/form-photos/public/$item',
+                    )
                   : FormPhotoEntry(localPath: '$item'),
         ];
-        if (entries.isNotEmpty) _photoEntries[matrixPhotoKey(block.resolved.code, '$type')] = entries;
+        if (entries.isNotEmpty)
+          _photoEntries[matrixPhotoKey(block.resolved.code, '$type')] = entries;
       });
     }
 
@@ -366,7 +411,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       for (final block in widget.blocks) {
         if (_isCustomerBlock(block)) {
           final code = block.resolved.code;
-          if (widget.lockCustomer || !_answers.containsKey(code) || _answers[code] == null) {
+          if (widget.lockCustomer ||
+              !_answers.containsKey(code) ||
+              _answers[code] == null) {
             _answers[code] = widget.defaultCustomerId;
           }
         }
@@ -380,7 +427,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           if (!_answers.containsKey(code) || _answers[code] == null) {
             _answers[code] = widget.defaultCustomerName;
           }
-        } else if (_isCustomerCodeBlock(block) && widget.defaultCustomerCode != null) {
+        } else if (_isCustomerCodeBlock(block) &&
+            widget.defaultCustomerCode != null) {
           final code = block.resolved.code;
           if (!_answers.containsKey(code) || _answers[code] == null) {
             _answers[code] = widget.defaultCustomerCode;
@@ -397,10 +445,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       final code = block.resolved.code;
       if (code.isEmpty || cfg is! Map || cfg['default'] == null) continue;
       final current = _answers[code];
-      final trong = current == null || (current is String && current.trim().isEmpty) || (current is List && current.isEmpty);
+      final trong =
+          current == null ||
+          (current is String && current.trim().isEmpty) ||
+          (current is List && current.isEmpty);
       if (!trong) continue;
       final d = cfg['default'];
-      _answers[code] = d is List ? d.map((e) => e.toString()).toList() : d.toString();
+      _answers[code] = d is List
+          ? d.map((e) => e.toString()).toList()
+          : d.toString();
     }
 
     // Ô Tuyến bán hàng: giá trị là SỐ NGUYÊN id tuyến (nháp / mặc định có thể là chuỗi số).
@@ -424,7 +477,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     _recomputeVisibility();
     _autoDefaults = {
       for (final e in _answers.entries)
-        if (!widget.initialAnswers.containsKey(e.key)) e.key: _encodeOrNull(e.value),
+        if (!widget.initialAnswers.containsKey(e.key))
+          e.key: _encodeOrNull(e.value),
     };
   }
 
@@ -441,7 +495,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Ô [code] còn đúng giá trị renderer tự điền lúc dựng ([_autoDefaults]) — màn chứa không coi là "người dùng đã nhập".
   bool isAutoDefault(String code) =>
-      _autoDefaults.containsKey(code) && _autoDefaults[code] != null && _autoDefaults[code] == _encodeOrNull(_answers[code]);
+      _autoDefaults.containsKey(code) &&
+      _autoDefaults[code] != null &&
+      _autoDefaults[code] == _encodeOrNull(_answers[code]);
 
   /// Câu trả lời dựng sẵn (nháp / tự điền từ phiếu cũ / bản ghi cũ) mang lựa chọn admin ĐÃ GỠ khỏi ô chọn: ô không hiện nó
   /// (người dùng không bỏ được) mà server từ chối «ngoài danh sách» ⇒ phiếu không bao giờ nộp được, nộp ngoại tuyến thì chết
@@ -459,7 +515,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         continue;
       }
       final type = block.resolved.inputType.toLowerCase();
-      if (!const {'select', 'radio', 'checkbox', 'multiselect'}.contains(type) || block.resolved.options.isEmpty) continue;
+      if (!const {
+            'select',
+            'radio',
+            'checkbox',
+            'multiselect',
+          }.contains(type) ||
+          block.resolved.options.isEmpty)
+        continue;
       final code = block.resolved.code;
       final val = _answers[code];
       if (val == null) continue;
@@ -475,16 +538,25 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     }
   }
 
-  bool _isMultiChoice(MarketFormBlockEntity block) =>
-      const {'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
+  bool _isMultiChoice(MarketFormBlockEntity block) => const {
+    'checkbox',
+    'multiselect',
+  }.contains(block.resolved.inputType.toLowerCase());
 
   /// Ô chọn (select / radio / multiselect / checkbox) có bật «Cho phép nhập giá trị khác».
   bool _allowsOther(MarketFormBlockEntity block) =>
       block.resolved.allowOther &&
-      const {'select', 'radio', 'checkbox', 'multiselect'}.contains(block.resolved.inputType.toLowerCase());
+      const {
+        'select',
+        'radio',
+        'checkbox',
+        'multiselect',
+      }.contains(block.resolved.inputType.toLowerCase());
 
-  Iterable<String> _optionValues(MarketFormBlockEntity block) => block.resolved.options.map((o) => o.value);
-  Iterable<String> _optionLabels(MarketFormBlockEntity block) => block.resolved.options.map((o) => o.label);
+  Iterable<String> _optionValues(MarketFormBlockEntity block) =>
+      block.resolved.options.map((o) => o.value);
+  Iterable<String> _optionLabels(MarketFormBlockEntity block) =>
+      block.resolved.options.map((o) => o.label);
 
   /// Giá trị ngoài danh sách đang nằm trong câu trả lời của ô; `null` nếu không có.
   String? _foreignOf(MarketFormBlockEntity block) {
@@ -504,8 +576,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       } else {
         _otherText.remove(code);
         if (_isMultiChoice(block)) {
-          final list = (_answers[code] as List?)?.map((e) => e.toString()) ?? const <String>[];
-          _answers[code] = ChoiceOther.composeMulti(list, _optionValues(block), null);
+          final list =
+              (_answers[code] as List?)?.map((e) => e.toString()) ??
+              const <String>[];
+          _answers[code] = ChoiceOther.composeMulti(
+            list,
+            _optionValues(block),
+            null,
+          );
         }
       }
       _errors.remove(code);
@@ -519,10 +597,17 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final code = block.resolved.code;
     _otherText[code] = text;
     if (_isMultiChoice(block)) {
-      final list = (_answers[code] as List?)?.map((e) => e.toString()) ?? const <String>[];
+      final list =
+          (_answers[code] as List?)?.map((e) => e.toString()) ??
+          const <String>[];
       _updateTypedValue(
         code,
-        ChoiceOther.composeMulti(list, _optionValues(block), text, optionLabels: _optionLabels(block)),
+        ChoiceOther.composeMulti(
+          list,
+          _optionValues(block),
+          text,
+          optionLabels: _optionLabels(block),
+        ),
       );
     } else {
       _updateTypedValue(code, text.isEmpty ? null : text);
@@ -530,7 +615,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   /// Ô gõ «Khác» hiện dưới ô chọn đang chọn «Khác…».
-  Widget _buildOtherInput(MarketFormBlockEntity block, bool isDark) => ChoiceOtherInput(
+  Widget _buildOtherInput(MarketFormBlockEntity block, bool isDark) =>
+      ChoiceOtherInput(
         key: ValueKey('choice_other_${block.resolved.code}'),
         initialText: _otherText[block.resolved.code],
         onChanged: (t) => _updateOtherText(block, t),
@@ -550,34 +636,44 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   void _recomputeVisibility() {
     _formulaValues = FormulaEvaluator.computeAll({
       for (final b in widget.blocks)
-        if (b.resolved.formula != null && b.resolved.code.isNotEmpty) b.resolved.code: b.resolved.formula!,
+        if (b.resolved.formula != null && b.resolved.code.isNotEmpty)
+          b.resolved.code: b.resolved.formula!,
     }, _answers);
-    final answers = _formulaValues.isEmpty ? _answers : {..._answers, ..._formulaValues};
+    final answers = _formulaValues.isEmpty
+        ? _answers
+        : {..._answers, ..._formulaValues};
     _visibilityMap = DynamicRuleEvaluator.computeVisibility(
       blocks: widget.blocks,
       answers: answers,
       customerContext: widget.customerContext,
     );
     final requiredBefore = _requiredIfCodes;
-    _requiredIfCodes = DynamicRuleEvaluator.computeRequiredOf<MarketFormBlockEntity>(
-      items: widget.blocks,
-      requiredIfOf: (b) => b.requiredIf,
-      keysOf: (b) => [b.resolved.code, b.ref],
-      isListOf: (b) => b.resolved.isListValued,
-      visibility: _visibilityMap,
-      answers: answers,
-      customerContext: widget.customerContext,
-    );
+    _requiredIfCodes =
+        DynamicRuleEvaluator.computeRequiredOf<MarketFormBlockEntity>(
+          items: widget.blocks,
+          requiredIfOf: (b) => b.requiredIf,
+          keysOf: (b) => [b.resolved.code, b.ref],
+          isListOf: (b) => b.resolved.isListValued,
+          visibility: _visibilityMap,
+          answers: answers,
+          customerContext: widget.customerContext,
+        );
     // Ô vừa THÔI bắt buộc theo điều kiện: gỡ lỗi «… không được để trống» đang treo (dấu * đã mất). Chỉ ô KHÔNG bắt buộc tĩnh
     // và đang RỖNG — lỗi treo ở đó chắc chắn là lỗi trống, không gỡ nhầm lỗi định dạng / số ảnh.
     for (final c in requiredBefore.difference(_requiredIfCodes)) {
-      final b = widget.blocks.where((x) => x.resolved.code == c || x.ref == c).firstOrNull;
-      if (b != null && !b.required && DynamicRuleEvaluator.isEmptyValue(_answers[c])) _errors.remove(c);
+      final b = widget.blocks
+          .where((x) => x.resolved.code == c || x.ref == c)
+          .firstOrNull;
+      if (b != null &&
+          !b.required &&
+          DynamicRuleEvaluator.isEmptyValue(_answers[c]))
+        _errors.remove(c);
     }
   }
 
   /// Trả về bản sao các câu trả lời hiện tại
-  Map<String, dynamic> get currentAnswers => Map<String, dynamic>.from(_answers);
+  Map<String, dynamic> get currentAnswers =>
+      Map<String, dynamic>.from(_answers);
 
   /// Danh sách các mục ảnh theo mã trường
   Map<String, List<FormPhotoEntry>> get photoEntries => _photoEntries;
@@ -610,6 +706,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     _recomputeVisibility();
     _matrixConfirm.clear();
     final Map<String, String> newErrors = {};
+
     /// Nhóm trường lặp đã BỎ dòng không điền gì — chỉ vào bản gửi đi, KHÔNG ghi ngược [_answers]: ghi ngược là thẻ trống
     /// người dùng vừa thêm biến mất khỏi màn hình ngay khi bấm nộp.
     final Map<String, dynamic> nhomGon = {};
@@ -624,11 +721,14 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       // Ô «Ẩn trên app (vẫn gửi dữ liệu)»: nhân viên không thấy ô nên app không kiểm (server kiểm) — TRỪ ô đang bắt buộc (kể cả
       // theo điều kiện) mà nguồn tự điền không ra giá trị: HIỆN ô ra (giữ hiện suốt phiên) và kiểm như ô thường.
       if (block.hiddenOnApp && !_hienLai.contains(code)) {
-        if (!(_req(block) && DynamicRuleEvaluator.isEmptyValue(_answers[code]))) continue;
+        if (!(_req(block) && DynamicRuleEvaluator.isEmptyValue(_answers[code])))
+          continue;
         _hienLai.add(code);
       }
 
-      final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
+      final label = block.resolved.label.isNotEmpty
+          ? block.resolved.label
+          : code;
 
       // Nhóm trường lặp: bỏ dòng không điền gì, rồi kiểm số dòng + ô con bắt buộc của từng dòng (cùng luật server); nhóm
       // rỗng thì không gửi khoá.
@@ -669,7 +769,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         if (entries.isNotEmpty) {
           // LUÔN gửi mảng các token (hoặc local path nếu offline chưa có token) (§3)
           _answers[code] = entries
-              .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
+              .map(
+                (e) => (e.token != null && e.token!.isNotEmpty)
+                    ? e.token!
+                    : e.localPath,
+              )
               .where((s) => s.isNotEmpty)
               .toList();
         } else {
@@ -700,7 +804,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
         final inputType = block.resolved.inputType.toLowerCase();
         // Theo LOẠI Ô, không theo mã/nhãn: ô `location` server luôn đòi toạ độ (05/11/2026).
-        final isPureAddressField = inputType == 'address' || inputType == 'dia_chi';
+        final isPureAddressField =
+            inputType == 'address' || inputType == 'dia_chi';
 
         // Chỉ có address hoặc chỉ một nửa toạ độ
         if (latVal == null || lngVal == null) {
@@ -727,12 +832,18 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           }
         }
 
-        final numLat = latVal is num ? latVal : double.tryParse(latVal.toString());
-        final numLng = lngVal is num ? lngVal : double.tryParse(lngVal.toString());
+        final numLat = latVal is num
+            ? latVal
+            : double.tryParse(latVal.toString());
+        final numLng = lngVal is num
+            ? lngVal
+            : double.tryParse(lngVal.toString());
         final accuracyVal = val['accuracy'];
         final numAcc = accuracyVal is num
             ? accuracyVal
-            : (accuracyVal != null ? double.tryParse(accuracyVal.toString()) : null);
+            : (accuracyVal != null
+                  ? double.tryParse(accuracyVal.toString())
+                  : null);
 
         if (numLat == null ||
             numLng == null ||
@@ -759,7 +870,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (_allowsOther(block)) {
         final active = _otherText.containsKey(code);
         final other = _otherText[code];
-        final loi = ChoiceOther.validate(active: active, required: _req(block), other: other);
+        final loi = ChoiceOther.validate(
+          active: active,
+          required: _req(block),
+          other: other,
+        );
         if (loi != null) {
           newErrors[code] = loi;
           continue;
@@ -805,7 +920,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           if (v.minLength != null && val.trim().length < v.minLength!) {
             newErrors[code] = '$label phải có ít nhất ${v.minLength} ký tự.';
           } else if (v.maxLength != null && val.trim().length > v.maxLength!) {
-            newErrors[code] = '$label không được vượt quá ${v.maxLength} ký tự.';
+            newErrors[code] =
+                '$label không được vượt quá ${v.maxLength} ký tự.';
           }
         }
       }
@@ -823,7 +939,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     // Lấy danh sách các mã trường đang hiển thị để loại bỏ ô ẩn khi nộp (§5, §9) — ô công thức không gửi
     final visibleCodes = widget.blocks
-        .where((b) => !b.isPresentation && !_isFormulaBlock(b) && _isBlockVisible(b))
+        .where(
+          (b) => !b.isPresentation && !_isFormulaBlock(b) && _isBlockVisible(b),
+        )
         .map((b) => b.resolved.code)
         .toSet();
 
@@ -837,8 +955,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // Làm sạch: Bỏ các trường rỗng, ô trình bày, và ô đang ẩn (§5, §9)
     return MarketFormSubmissionModel.sanitizeAnswers(
       // Ô ma trận chỉ mang `custom` (thêm thẻ / cột mà chưa nhập gì) là ô rỗng — server coi là rỗng.
-      {..._answers, ..._matrixConfirm, ...nhomGon}
-        ..removeWhere((k, v) => v == null || (maTran.contains(k) && !displayMatrixHasData(v))),
+      {..._answers, ..._matrixConfirm, ...nhomGon}..removeWhere(
+        (k, v) => v == null || (maTran.contains(k) && !displayMatrixHasData(v)),
+      ),
       presentationCodes: _presentationCodes,
       allowedCodes: visibleCodes,
       imageCodes: imageCodes,
@@ -881,7 +1000,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     widget.onChanged?.call(_answers);
   }
 
-  FocusNode _focusNodeOf(String code) => _focusNodes.putIfAbsent(code, FocusNode.new);
+  FocusNode _focusNodeOf(String code) =>
+      _focusNodes.putIfAbsent(code, FocusNode.new);
 
   /// Câu lỗi của ô lỗi ĐẦU TIÊN (theo thứ tự biểu mẫu) sau lần [validateAndGetAnswers] gần nhất — để màn chứa báo đúng lý do
   /// (thiếu ảnh ma trận, chưa đủ số thương hiệu…) thay vì câu chung; `null` khi không có lỗi.
@@ -918,30 +1038,102 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final visibleBlocks = _dropEmptySections(
+      widget.blocks.where(_isBlockVisible).toList(),
+    );
 
-    final visibleBlocks = _dropEmptySections(widget.blocks.where(_isBlockVisible).toList());
+    bool isSectionHeading(MarketFormBlockEntity b) =>
+        b.resolved.inputType.toLowerCase() == 'heading' &&
+        DynamicFormField.headingLevelOf({'config': b.resolved.configMap}) != 2;
 
-    // Ô sau tiêu đề con vào khung riêng — cùng bộ gom với form điểm bán ([groupUnderSubheadings]).
+    // Nhóm các khối theo từng mục cấp 1 (mỗi mục là một thẻ trắng bo góc theo UI mới).
+    final sections =
+        <
+          ({MarketFormBlockEntity? heading, List<MarketFormBlockEntity> items})
+        >[];
+    for (final block in visibleBlocks) {
+      if (isSectionHeading(block)) {
+        sections.add((heading: block, items: []));
+      } else {
+        if (sections.isEmpty) sections.add((heading: null, items: []));
+        sections.last.items.add(block);
+      }
+    }
+
+    var sectionIndex = 0;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: groupUnderSubheadings(visibleBlocks.map((block) => (
-            headingLevel: block.resolved.inputType.toLowerCase() == 'heading'
-                ? DynamicFormField.headingLevelOf({'config': block.resolved.configMap})
-                : null,
-            child: _hideOnApp(
-              block,
-              Padding(
-                // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng
-                // dẫn, đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
-                key: ValueKey('block_${block.resolved.code}'),
-                padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
-                child: KeyedSubtree(
-                  key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
-                  child: _buildBlock(context, block, isDark),
-                ),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final sec in sections)
+          if (sec.heading == null && sec.items.every(_anTrenApp))
+            for (final block in sec.items)
+              _buildHiddenBlock(block, context, isDark)
+          else
+            _buildSectionCard(
+              context,
+              isDark,
+              heading: sec.heading,
+              badgeText: sec.heading == null
+                  ? null
+                  : FormSectionCard.badgeFor(sec.heading!.resolved.label, sectionIndex++),
+              items: sec.items,
+            ),
+      ],
+    );
+  }
+
+  Widget _buildHiddenBlock(
+    MarketFormBlockEntity block,
+    BuildContext context,
+    bool isDark,
+  ) => _hideOnApp(
+    block,
+    KeyedSubtree(
+      key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
+      child: _buildBlock(context, block, isDark),
+    ),
+  );
+
+  Widget _buildSectionCard(
+    BuildContext context,
+    bool isDark, {
+    required MarketFormBlockEntity? heading,
+    required String? badgeText,
+    required List<MarketFormBlockEntity> items,
+  }) {
+    final hasVisibleItems = items.any((b) => !_anTrenApp(b));
+    final children = groupUnderSubheadings(
+      items.map(
+        (block) => (
+          headingLevel: block.resolved.inputType.toLowerCase() == 'heading'
+              ? DynamicFormField.headingLevelOf({
+                  'config': block.resolved.configMap,
+                })
+              : null,
+          child: _hideOnApp(
+            block,
+            Padding(
+              // Khoá theo mã ô: ô ẩn/hiện theo điều kiện làm các ô dồn chỗ — không khoá thì trạng thái (mở/thu ô hướng
+              // dẫn, đã tự điền tuyến…) nhảy sang ô khác hoặc dựng lại từ đầu.
+              key: ValueKey('block_${block.resolved.code}'),
+              padding: const EdgeInsets.only(bottom: AppSpacing.stackMd),
+              child: KeyedSubtree(
+                key: _blockKeys.putIfAbsent(block.resolved.code, GlobalKey.new),
+                child: _buildBlock(context, block, isDark),
               ),
             ),
-          ))),
+          ),
+        ),
+      ),
+    );
+
+    return FormSectionCard(
+      title: heading?.resolved.label,
+      description: heading?.resolved.description,
+      badgeText: badgeText,
+      hasVisibleBody: hasVisibleItems,
+      headerKey: heading == null ? null : _blockKeys.putIfAbsent(heading.resolved.code, GlobalKey.new),
+      children: children,
     );
   }
 
@@ -952,7 +1144,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Mục (tiêu đề cấp 1 tới tiêu đề cấp 1 kế) mà MỌI ô nhập đều «Ẩn trên app» ⇒ bỏ luôn ô trình bày của mục (tiêu đề, ghi
   /// chú, tiêu đề con) — không vẽ một khung chỉ có chữ. Ô ẩn vẫn giữ (sống ngoài màn hình để tự điền). Cùng luật form điểm bán.
-  List<MarketFormBlockEntity> _dropEmptySections(List<MarketFormBlockEntity> blocks) {
+  List<MarketFormBlockEntity> _dropEmptySections(
+    List<MarketFormBlockEntity> blocks,
+  ) {
     bool moMuc(MarketFormBlockEntity b) =>
         b.resolved.inputType.toLowerCase() == 'heading' &&
         DynamicFormField.headingLevelOf({'config': b.resolved.configMap}) != 2;
@@ -969,7 +1163,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       }
       final muc = blocks.sublist(i, j);
       final coNhapHien = muc.any((b) => !b.isPresentation && !_anTrenApp(b));
-      out.addAll(coNhapHien || muc.every((b) => b.isPresentation) ? muc : muc.where((b) => !b.isPresentation));
+      out.addAll(
+        coNhapHien || muc.every((b) => b.isPresentation)
+            ? muc
+            : muc.where((b) => !b.isPresentation),
+      );
       i = j;
     }
     return out;
@@ -978,7 +1176,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   /// Ô «Ẩn trên app» đã phải HIỆN RA vì bắt buộc mà trống lúc nộp ([validateAndGetAnswers]) — giữ hiện suốt phiên.
   final Set<String> _hienLai = {};
 
-  bool _anTrenApp(MarketFormBlockEntity block) => block.hiddenOnApp && !_hienLai.contains(block.resolved.code);
+  bool _anTrenApp(MarketFormBlockEntity block) =>
+      block.hiddenOnApp && !_hienLai.contains(block.resolved.code);
 
   Widget _buildBlock(
     BuildContext context,
@@ -997,7 +1196,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           code: block.resolved.code,
           title: block.resolved.label,
           description: block.resolved.description,
-          level: DynamicFormField.headingLevelOf({'config': block.resolved.configMap}),
+          level: DynamicFormField.headingLevelOf({
+            'config': block.resolved.configMap,
+          }),
         );
       case 'divider':
         return const Divider(height: 24, thickness: 1);
@@ -1006,7 +1207,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       case 'text':
         return _buildTextField(block, isDark, isMultiline: false);
       case 'phone':
-        return _buildTextField(block, isDark, isMultiline: false, isPhone: true);
+        return _buildTextField(
+          block,
+          isDark,
+          isMultiline: false,
+          isPhone: true,
+        );
       case 'textarea':
         return _buildTextField(block, isDark, isMultiline: true);
       case 'number':
@@ -1059,15 +1265,20 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         return _buildLocationField(block, isDark);
       case 'ref_customer':
         final currentVal = _answers[block.resolved.code];
-        final int? selectedId = (widget.lockCustomer && widget.defaultCustomerId != null)
+        final int? selectedId =
+            (widget.lockCustomer && widget.defaultCustomerId != null)
             ? widget.defaultCustomerId
             : (currentVal is int
-                ? currentVal
-                : (currentVal != null ? int.tryParse(currentVal.toString()) : null));
+                  ? currentVal
+                  : (currentVal != null
+                        ? int.tryParse(currentVal.toString())
+                        : null));
         return RefCustomerFieldWidget(
           block: block,
           isRequired: _req(block),
-          selectedId: selectedId ?? (widget.lockCustomer ? widget.defaultCustomerId : null),
+          selectedId:
+              selectedId ??
+              (widget.lockCustomer ? widget.defaultCustomerId : null),
           errorText: _errors[block.resolved.code],
           defaultCustomerName: widget.defaultCustomerName,
           defaultCustomerCode: widget.defaultCustomerCode,
@@ -1084,11 +1295,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         final multiple = cfg is Map && cfg['multiple'] == true;
         return ErpPartnerFieldWidget(
           fieldCode: block.resolved.code,
-          label: block.resolved.label.isNotEmpty ? block.resolved.label : block.resolved.code,
+          label: block.resolved.label.isNotEmpty
+              ? block.resolved.label
+              : block.resolved.code,
           description: block.resolved.description,
           isRequired: _req(block),
           multiple: multiple,
-          selectedCodes: ErpPartnerFieldWidget.codesFromValue(_answers[block.resolved.code]),
+          selectedCodes: ErpPartnerFieldWidget.codesFromValue(
+            _answers[block.resolved.code],
+          ),
           errorText: _errors[block.resolved.code],
           onChanged: (codes) => _updateValue(
             block.resolved.code,
@@ -1137,7 +1352,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     return GeoSelectFieldWidget(
       field: field,
       level: level,
-      provinceId: !level.isChild || cha == null ? null : GeoSelectFieldWidget.idOf(_answers[cha]),
+      provinceId: !level.isChild || cha == null
+          ? null
+          : GeoSelectFieldWidget.idOf(_answers[cha]),
       value: _answers[r.code],
       errorText: _errors[r.code],
       onChanged: (id) {
@@ -1145,7 +1362,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _updateValue(r.code, id);
         if (!level.isChild && truoc != id) {
           for (final b in widget.blocks) {
-            if (_geoParentOf(b) == r.code && _answers.containsKey(b.resolved.code)) {
+            if (_geoParentOf(b) == r.code &&
+                _answers.containsKey(b.resolved.code)) {
               _updateValue(b.resolved.code, null);
             }
           }
@@ -1188,11 +1406,15 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         locMap['lat'] = custLat;
         locMap['lng'] = custLng;
       }
-    } else if (locMap == null && widget.defaultCustomerAddress != null && widget.defaultCustomerAddress!.isNotEmpty) {
+    } else if (locMap == null &&
+        widget.defaultCustomerAddress != null &&
+        widget.defaultCustomerAddress!.isNotEmpty) {
       locMap = {
         'address': widget.defaultCustomerAddress,
-        if (widget.customerContext['lat'] != null) 'lat': widget.customerContext['lat'],
-        if (widget.customerContext['lng'] != null) 'lng': widget.customerContext['lng'],
+        if (widget.customerContext['lat'] != null)
+          'lat': widget.customerContext['lat'],
+        if (widget.customerContext['lng'] != null)
+          'lng': widget.customerContext['lng'],
       };
     }
 
@@ -1214,7 +1436,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // NHÓM TRÌNH BÀY (HEADING / NOTE / DIVIDER)
   // ==========================================
 
-  Widget _buildNote(MarketFormBlockEntity block, bool isDark) => NoteFieldWidget(
+  Widget _buildNote(MarketFormBlockEntity block, bool isDark) =>
+      NoteFieldWidget(
         title: block.resolved.label,
         description: block.resolved.description,
       );
@@ -1229,7 +1452,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     required bool isMultiline,
     bool isPhone = false,
   }) {
-    final isCustomerField = _isCustomerBlock(block) ||
+    final isCustomerField =
+        _isCustomerBlock(block) ||
         _isCustomerNameBlock(block) ||
         _isCustomerCodeBlock(block);
     final isLocked = widget.lockCustomer && isCustomerField;
@@ -1238,7 +1462,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final initial = _answers[code]?.toString() ?? '';
     final controller = _getController(code, initial);
 
-    Widget field(TextEditingController controller, FocusNode? focusNode) => TextFormField(
+    Widget field(TextEditingController controller, FocusNode? focusNode) =>
+        TextFormField(
           controller: controller,
           focusNode: focusNode,
           readOnly: isLocked,
@@ -1248,24 +1473,41 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               ? TextInputType.multiline
               : (isPhone ? TextInputType.phone : TextInputType.text),
           // Ô số điện thoại: chỉ nhận chữ số + ký tự định dạng thường gặp; chuẩn hoá/kiểm lúc nộp ([PhoneUtils]).
-          inputFormatters: isPhone ? [FilteringTextInputFormatter.allow(RegExp(r'[\d+ ().-]'))] : null,
+          inputFormatters: isPhone
+              ? [FilteringTextInputFormatter.allow(RegExp(r'[\d+ ().-]'))]
+              : null,
           style: AppTypography.bodyMedium(
             color: isDark ? AppColors.darkOnSurface : AppColors.onSurface,
           ),
           decoration: _inputDecoration(
-            hintText: isPhone ? 'Nhập số điện thoại...' : 'Nhập ${block.resolved.label.toLowerCase()}...',
+            hintText: isPhone
+                ? 'Nhập số điện thoại...'
+                : 'Nhập ${block.resolved.label.toLowerCase()}...',
             isDark: isDark,
             errorText: _errors[code],
+            prefixIcon: isPhone
+                ? Icon(
+                    Icons.phone_outlined,
+                    size: 18,
+                    color: isDark
+                        ? AppColors.darkOutline
+                        : const Color(0xFF94A3B8),
+                  )
+                : null,
             suffixIcon: isLocked
                 ? null
                 : VoiceInputMicButton(
-                    fieldName: block.resolved.label.isNotEmpty ? block.resolved.label : code,
+                    fieldName: block.resolved.label.isNotEmpty
+                        ? block.resolved.label
+                        : code,
                     // Tự ghép với chữ ĐANG có trong ô: ô chữ không còn dựng lại mỗi phím (_updateTypedValue) nên
                     // `currentText` truyền lúc dựng có thể đã cũ — ghép theo nó là mất phần vừa gõ.
                     appendText: false,
                     onTextRecognized: (recognized) {
                       final typed = controller.text.trim();
-                      final text = typed.isEmpty ? recognized : '$typed $recognized';
+                      final text = typed.isEmpty
+                          ? recognized
+                          : '$typed $recognized';
                       controller.text = text;
                       controller.selection = TextSelection.fromPosition(
                         TextPosition(offset: text.length),
@@ -1279,7 +1521,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
     // Theo CỜ của ô, không theo danh sách: gợi ý tải về muộn (mạng chậm) mà đổi cây widget thì ô đang gõ bị dựng lại —
     // mất focus, bàn phím, chữ đang ghép dấu.
-    final coGoiY = !isMultiline && !isLocked && FormSuggestStore.isEnabled(block);
+    final coGoiY =
+        !isMultiline && !isLocked && FormSuggestStore.isEnabled(block);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1317,7 +1560,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           if (q.isEmpty) return const Iterable<String>.empty();
           final dang = value.text.trim().toLowerCase();
           return (widget.suggestions[code] ?? const <String>[])
-              .where((s) => s.trim().toLowerCase() != dang && StringUtils.toUnaccentedLower(s).contains(q))
+              .where(
+                (s) =>
+                    s.trim().toLowerCase() != dang &&
+                    StringUtils.toUnaccentedLower(s).contains(q),
+              )
               .take(_maxSuggestShown);
         },
         onSelected: (s) {
@@ -1333,7 +1580,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             borderRadius: BorderRadius.circular(8),
             color: isDark ? AppColors.darkSurface : Colors.white,
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: 240, maxWidth: box.maxWidth),
+              constraints: BoxConstraints(
+                maxHeight: 240,
+                maxWidth: box.maxWidth,
+              ),
               child: ListView(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
@@ -1342,15 +1592,28 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                     InkWell(
                       onTap: () => onSelected(s),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         child: Row(
                           children: [
-                            Icon(Icons.history_rounded, size: 18, color: isDark ? AppColors.darkOnSurfaceVariant : AppColors.onSurfaceVariant),
+                            Icon(
+                              Icons.history_rounded,
+                              size: 18,
+                              color: isDark
+                                  ? AppColors.darkOnSurfaceVariant
+                                  : AppColors.onSurfaceVariant,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 s,
-                                style: AppTypography.bodyMedium(color: isDark ? AppColors.darkOnSurface : AppColors.onSurface),
+                                style: AppTypography.bodyMedium(
+                                  color: isDark
+                                      ? AppColors.darkOnSurface
+                                      : AppColors.onSurface,
+                                ),
                               ),
                             ),
                           ],
@@ -1366,7 +1629,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-  bool _isFormulaBlock(MarketFormBlockEntity block) => block.resolved.inputType.toLowerCase() == 'formula';
+  bool _isFormulaBlock(MarketFormBlockEntity block) =>
+      block.resolved.inputType.toLowerCase() == 'formula';
 
   // ==========================================
   // Ô CÔNG THỨC (FORMULA) — chỉ đọc, tự tính lại khi ô tham chiếu đổi
@@ -1473,13 +1737,21 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   }
 
   /// Lựa chọn của ô (giá trị chuỗi) + «Khác…» cuối danh sách khi ô cho nhập khác.
-  List<FormChoiceOption> _choiceOptions(MarketFormBlockEntity block, bool allowOther) => [
-        ...block.resolved.options.map((o) => FormChoiceOption(o.value, o.label)),
-        if (allowOther) const FormChoiceOption(ChoiceOther.key, ChoiceOther.label),
-      ];
+  List<FormChoiceOption> _choiceOptions(
+    MarketFormBlockEntity block,
+    bool allowOther,
+  ) => [
+    ...block.resolved.options.map((o) => FormChoiceOption(o.value, o.label)),
+    if (allowOther) const FormChoiceOption(ChoiceOther.key, ChoiceOther.label),
+  ];
 
   /// Tích / bỏ tích một lựa chọn của ô chọn nhiều — «Khác…» bật/tắt ô gõ.
-  void _toggleMulti(MarketFormBlockEntity block, List<String> currentList, Object? value, bool on) {
+  void _toggleMulti(
+    MarketFormBlockEntity block,
+    List<String> currentList,
+    Object? value,
+    bool on,
+  ) {
     if (value == ChoiceOther.key) {
       _setOtherActive(block, on);
       return;
@@ -1499,7 +1771,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Widget _buildCheckboxField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
-    final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final currentList =
+        (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
     final allowOther = _allowsOther(block);
     final otherActive = allowOther && _otherText.containsKey(code);
 
@@ -1510,7 +1783,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: kFormLabelGapChoice),
         FormCheckboxGroup(
           options: _choiceOptions(block, allowOther),
-          isChecked: (v) => v == ChoiceOther.key ? otherActive : currentList.contains(v),
+          isChecked: (v) =>
+              v == ChoiceOther.key ? otherActive : currentList.contains(v),
           hasError: _errors.containsKey(code),
           onChanged: (v, on) => _toggleMulti(block, currentList, v, on),
         ),
@@ -1537,13 +1811,18 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         _buildLabel(block, isDark),
         const SizedBox(height: kFormLabelGap),
         FormDropdown<String>(
-          initialValue: otherActive ? ChoiceOther.key : (options.any((o) => o.value == current) ? current : null),
+          initialValue: otherActive
+              ? ChoiceOther.key
+              : (options.any((o) => o.value == current) ? current : null),
           items: [
-            ...options.map((o) => DropdownMenuItem(
-                  value: o.value,
-                  child: Text(o.label),
-                )),
-            if (allowOther) const DropdownMenuItem(value: ChoiceOther.key, child: Text(ChoiceOther.label)),
+            ...options.map(
+              (o) => DropdownMenuItem(value: o.value, child: Text(o.label)),
+            ),
+            if (allowOther)
+              const DropdownMenuItem(
+                value: ChoiceOther.key,
+                child: Text(ChoiceOther.label),
+              ),
           ],
           hintText: 'Chọn một giá trị...',
           errorText: _errors[code],
@@ -1567,7 +1846,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   Widget _buildMultiSelectField(MarketFormBlockEntity block, bool isDark) {
     final code = block.resolved.code;
-    final currentList = (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final currentList =
+        (_answers[code] as List?)?.map((e) => e.toString()).toList() ?? [];
     final allowOther = _allowsOther(block);
     final otherActive = allowOther && _otherText.containsKey(code);
 
@@ -1578,7 +1858,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
         const SizedBox(height: kFormLabelGap),
         FormChipGroup(
           options: _choiceOptions(block, allowOther),
-          isSelected: (v) => v == ChoiceOther.key ? otherActive : currentList.contains(v),
+          isSelected: (v) =>
+              v == ChoiceOther.key ? otherActive : currentList.contains(v),
           onSelected: (v, on) => _toggleMulti(block, currentList, v, on),
         ),
         if (otherActive) _buildOtherInput(block, isDark),
@@ -1677,7 +1958,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
           label: label,
           isRequired: isRequired,
           description: description,
-          trailing: FormPhotoCountBadge(count: entries.length, max: maxFiles, min: minFiles),
+          trailing: FormPhotoCountBadge(
+            count: entries.length,
+            max: maxFiles,
+            min: minFiles,
+          ),
         ),
         const SizedBox(height: kFormLabelGap),
 
@@ -1691,7 +1976,10 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                   spacing: 10,
                   runSpacing: 10,
                   children: entries
-                      .map((entry) => _buildPhotoThumbnail(context, key, entry, isDark))
+                      .map(
+                        (entry) =>
+                            _buildPhotoThumbnail(context, key, entry, isDark),
+                      )
                       .toList(),
                 ),
                 const SizedBox(height: 12),
@@ -1701,34 +1989,60 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
               if (canAddMore)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                    foregroundColor: isDark
+                        ? AppColors.primaryFixedDim
+                        : AppColors.primary,
                     side: BorderSide(
-                      color: isDark ? AppColors.primaryFixedDim : AppColors.primary,
+                      color: isDark
+                          ? AppColors.primaryFixedDim
+                          : AppColors.primary,
                       width: 1.2,
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   icon: const Icon(Icons.camera_alt_rounded, size: 20),
                   label: Text(
                     entries.isEmpty
                         ? 'Chụp ảnh $label'.trim()
                         : 'Chụp thêm ảnh (${entries.length}/$maxFiles)',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
-                  onPressed: () => _pickAndUploadPhoto(context, key, watermark ?? label, maxFiles),
+                  onPressed: () => _pickAndUploadPhoto(
+                    context,
+                    key,
+                    watermark ?? label,
+                    maxFiles,
+                  ),
                 )
               else
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: (isDark ? AppColors.primaryFixedDim : AppColors.primary).withValues(alpha: 0.12),
+                    color:
+                        (isDark ? AppColors.primaryFixedDim : AppColors.primary)
+                            .withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.primary),
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Đã đủ $maxFiles ảnh tối đa',
@@ -1753,7 +2067,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // Ô MA TRẬN TRƯNG BÀY SOS (#24767)
   // ==========================================
 
-  Widget _buildDisplayMatrixField(BuildContext context, MarketFormBlockEntity block, bool isDark) {
+  Widget _buildDisplayMatrixField(
+    BuildContext context,
+    MarketFormBlockEntity block,
+    bool isDark,
+  ) {
     final code = block.resolved.code;
     final custom = _matrixCustomOf(block);
     final cfg = _matrixOf(block).withCustom(custom);
@@ -1773,40 +2091,78 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       onChanged: (counts, invalid) {
         _matrixInvalid[code] = invalid;
         final cur = _answers[code];
-        final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
+        final photos = cur is Map && cur['photos'] is Map
+            ? cur['photos'] as Map
+            : const {};
         // Xoá hết số, không ảnh, không mục gõ tay ⇒ ô RỖNG (điều kiện hiển thị "có giá trị" và bản nháp đọc đúng).
-        _updateValue(code,
-            displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos), skus: _rawSkus(code)));
+        _updateValue(
+          code,
+          displayMatrixValue(
+            counts,
+            photos,
+            _sendCustom(block, _matrixCustomOf(block), counts, photos),
+            skus: _rawSkus(code),
+          ),
+        );
       },
       // Thêm / bỏ mục gõ tay, xoá hàng / cột: ghép lại câu trả lời rồi lọc ảnh theo cấu hình mới.
       onCustomChanged: (c, counts, invalid) {
         _matrixInvalid[code] = invalid;
         // Ảnh của cột vừa gỡ bỏ luôn — thêm lại loại cùng tên không hiện lại ảnh cũ, bản nháp không mang ảnh mồ côi.
-        final con = {for (final t in _matrixOf(block).withCustom(c.merge(_hintCustomOf(block))).types) t.code};
+        final con = {
+          for (final t in _matrixOf(
+            block,
+          ).withCustom(c.merge(_hintCustomOf(block))).types)
+            t.code,
+        };
         _photoEntries.removeWhere((k, _) {
           final p = splitMatrixPhotoKey(k);
           return p != null && p.$1 == code && !con.contains(p.$2);
         });
         final cur = _answers[code];
         final photos = cur is Map && cur['photos'] is Map
-            ? (Map.of(cur['photos'] as Map)..removeWhere((k, _) => !con.contains('$k')))
+            ? (Map.of(cur['photos'] as Map)
+                ..removeWhere((k, _) => !con.contains('$k')))
             : const {};
-        _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, c, counts, photos), skus: _rawSkus(code)));
+        _updateValue(
+          code,
+          displayMatrixValue(
+            counts,
+            photos,
+            _sendCustom(block, c, counts, photos),
+            skus: _rawSkus(code),
+          ),
+        );
         setState(() => _syncMatrixAnswer(block));
       },
       // Mã SKU hàng của ta của loại (own_skus) — dưới ảnh; điền sẵn mã đang lưu ở hồ sơ (phiếu cập nhật hiện trạng).
       skuSection: (t) => ProductSkuPicker(
         key: ValueKey('matrix_${code}_sku_${t.code}'),
-        label: 'Mã SKU hàng ${DisplayMatrixFieldWidget.ownBrandNames(cfg)} — ${t.name}',
+        label:
+            'Mã SKU hàng ${DisplayMatrixFieldWidget.ownBrandNames(cfg)} — ${t.name}',
         isRequired: true,
         value: _matrixSkusOf(block)[t.code] ?? const [],
         onChanged: (list) {
           final cur = _answers[code];
-          final raw = <String, dynamic>{...?(cur is Map && cur['skus'] is Map ? (cur['skus'] as Map).cast<String, dynamic>() : null)};
+          final raw = <String, dynamic>{
+            ...?(cur is Map && cur['skus'] is Map
+                ? (cur['skus'] as Map).cast<String, dynamic>()
+                : null),
+          };
           raw[t.code] = list;
           final counts = DisplayMatrixFieldWidget.countsOf(cur);
-          final photos = cur is Map && cur['photos'] is Map ? cur['photos'] as Map : const {};
-          _updateValue(code, displayMatrixValue(counts, photos, _sendCustom(block, _matrixCustomOf(block), counts, photos), skus: raw));
+          final photos = cur is Map && cur['photos'] is Map
+              ? cur['photos'] as Map
+              : const {};
+          _updateValue(
+            code,
+            displayMatrixValue(
+              counts,
+              photos,
+              _sendCustom(block, _matrixCustomOf(block), counts, photos),
+              skus: raw,
+            ),
+          );
           setState(() {});
         },
       ),
@@ -1825,37 +2181,63 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
 
   /// Ghép số đếm + ảnh theo loại (+ mục gõ tay) vào câu trả lời của ô ma trận; [validate] ⇒ trả câu lỗi (cùng luật server)
   /// hoặc `null`. Không số, không ảnh, không mục gõ tay ⇒ gỡ câu trả lời (rỗng — luật bắt buộc quyết).
-  String? _syncMatrixAnswer(MarketFormBlockEntity block, {bool validate = false}) {
+  String? _syncMatrixAnswer(
+    MarketFormBlockEntity block, {
+    bool validate = false,
+  }) {
     final code = block.resolved.code;
     final custom = _matrixCustomOf(block);
     final cfg = _matrixOf(block).withCustom(custom);
-    var counts = DisplayMatrixFieldWidget.onlyAsked(DisplayMatrixFieldWidget.countsOf(_answers[code]), cfg);
+    var counts = DisplayMatrixFieldWidget.onlyAsked(
+      DisplayMatrixFieldWidget.countsOf(_answers[code]),
+      cfg,
+    );
     final photos = <String, List<String>>{};
     for (final t in cfg.types) {
       // Loại không chụp ảnh (max 0): ảnh còn sót của bản nháp cũ không gửi — server từ chối "không nhận ảnh".
       if (t.maxPhotos <= 0) continue;
-      final list = (_photoEntries[matrixPhotoKey(code, t.code)] ?? const <FormPhotoEntry>[])
-          .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
-          .where((s) => s.isNotEmpty)
-          .toList();
+      final list =
+          (_photoEntries[matrixPhotoKey(code, t.code)] ??
+                  const <FormPhotoEntry>[])
+              .map(
+                (e) => (e.token != null && e.token!.isNotEmpty)
+                    ? e.token!
+                    : e.localPath,
+              )
+              .where((s) => s.isNotEmpty)
+              .toList();
       if (list.isNotEmpty) photos[t.code] = list;
     }
     // Mã SKU (own_skus): lúc soạn giữ đúng mã đã CHẠM (chưa chạm = điền sẵn từ hồ sơ khi vẽ); lúc NỘP gửi mã HIỆU LỰC của mọi loại
     // biểu mẫu hỏi (kể cả mã điền sẵn) — server bỏ mã của loại không còn hàng của ta.
     // Phiếu thường: chỉ loại có hàng của ta theo số ĐÃ GÕ (server bỏ mã loại khác ⇒ giá trị chỉ-mã thành rỗng). Phiếu cập nhật hiện
     // trạng: mọi loại đang hỏi — ô trống giữ số hồ sơ, server ghép theo số hiệu lực.
-    final capNhat = _hintValueOf(block.resolved.configMap) != null ||
-        (block.resolved.configMap is Map && '${(block.resolved.configMap as Map)['update_customer_field'] ?? ''}'.isNotEmpty);
+    final capNhat =
+        _hintValueOf(block.resolved.configMap) != null ||
+        (block.resolved.configMap is Map &&
+            '${(block.resolved.configMap as Map)['update_customer_field'] ?? ''}'
+                .isNotEmpty);
     final coHangGo = DisplayMatrixFieldWidget.ownTypes(counts, cfg);
-    final maHoi = {for (final t in cfg.types) if (capNhat || coHangGo.contains(t.code)) t.code};
+    final maHoi = {
+      for (final t in cfg.types)
+        if (capNhat || coHangGo.contains(t.code)) t.code,
+    };
     // Ô chưa nhập gì (không số, không ảnh, chưa chạm ô mã) ⇒ không gửi mã điền sẵn — khỏi mỗi phiếu đẻ một dòng lịch sử SOS.
     final chamMa = _rawSkus(code) != null;
     final skusGui = !cfg.ownSkus
         ? null
         : validate && (counts.isNotEmpty || photos.isNotEmpty || chamMa)
-            ? {for (final e in _matrixSkusOf(block).entries) if (maHoi.contains(e.key)) e.key: e.value}
-            : _rawSkus(code);
-    final value = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos), skus: skusGui);
+        ? {
+            for (final e in _matrixSkusOf(block).entries)
+              if (maHoi.contains(e.key)) e.key: e.value,
+          }
+        : _rawSkus(code);
+    final value = displayMatrixValue(
+      counts,
+      photos,
+      _sendCustom(block, custom, counts, photos),
+      skus: skusGui,
+    );
     if (value == null) {
       _answers.remove(code);
     } else {
@@ -1867,36 +2249,62 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // hiện (chủ hệ thống chốt 06/11/2026). Để riêng ở [_matrixConfirm], chỉ vào câu gửi khi CẢ phiếu hợp lệ: ghi vào
     // [_answers] thì lượt nộp hỏng vì ô khác biến cả ma trận số cũ thành "đã sửa" — sửa thêm một ô là gửi số cũ đè số mới.
     if (_req(block) && counts.isEmpty) {
-      counts = DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg);
+      counts = DisplayMatrixFieldWidget.onlyAsked(
+        _hintCountsOf(block.resolved.configMap),
+        cfg,
+      );
       if (counts.isNotEmpty) {
         // Xác nhận số hiện trạng ⇒ gửi kèm mã HIỆU LỰC (khoá `skus` luôn có khi bật — server kiểm bắt buộc mã).
         final maXacNhan = cfg.ownSkus
-            ? {for (final e in _matrixSkusOf(block).entries) if (maHoi.contains(e.key)) e.key: e.value}
+            ? {
+                for (final e in _matrixSkusOf(block).entries)
+                  if (maHoi.contains(e.key)) e.key: e.value,
+              }
             : null;
-        _matrixConfirm[code] = displayMatrixValue(counts, photos, _sendCustom(block, custom, counts, photos), skus: maXacNhan);
+        _matrixConfirm[code] = displayMatrixValue(
+          counts,
+          photos,
+          _sendCustom(block, custom, counts, photos),
+          skus: maXacNhan,
+        );
       }
     }
 
     final label = block.resolved.label.isNotEmpty ? block.resolved.label : code;
-    if (_req(block) && counts.isEmpty && photos.isEmpty) return '$label không được để trống.';
-    if (_matrixInvalid[code] == true) return '$label – có ô đếm nhập sai dạng số.';
+    if (_req(block) && counts.isEmpty && photos.isEmpty)
+      return '$label không được để trống.';
+    if (_matrixInvalid[code] == true)
+      return '$label – có ô đếm nhập sai dạng số.';
     final cellErr = DisplayMatrixFieldWidget.countsError(counts, cfg);
     if (cellErr != null) return '$label – $cellErr';
     final anhErr = DisplayMatrixFieldWidget.photosError(counts, photos, cfg);
     if (anhErr != null) return '$label – $anhErr';
     // Số thương hiệu tối thiểu: ô trống giữ số hiện trạng của hồ sơ ⇒ đếm trên số HIỆU LỰC (server bỏ kiểm ô cập nhật hồ sơ).
     // Ô bỏ trống hẳn (không số, không ảnh) không bị đòi — như server; nhưng đã CHẠM ô mã (chỉ sửa mã) thì vẫn kiểm thiếu mã.
-    final hieuLuc =
-        DisplayMatrixFieldWidget.withHints(counts, DisplayMatrixFieldWidget.onlyAsked(_hintCountsOf(block.resolved.configMap), cfg));
+    final hieuLuc = DisplayMatrixFieldWidget.withHints(
+      counts,
+      DisplayMatrixFieldWidget.onlyAsked(
+        _hintCountsOf(block.resolved.configMap),
+        cfg,
+      ),
+    );
     if (counts.isEmpty && photos.isEmpty) {
       if (!chamMa) return null;
-      final chiMaErr = DisplayMatrixFieldWidget.skusError(hieuLuc, _matrixSkusOf(block), cfg);
+      final chiMaErr = DisplayMatrixFieldWidget.skusError(
+        hieuLuc,
+        _matrixSkusOf(block),
+        cfg,
+      );
       return chiMaErr == null ? null : '$label – $chiMaErr';
     }
     final hieuErr = DisplayMatrixFieldWidget.brandsError(hieuLuc, photos, cfg);
     if (hieuErr != null) return '$label – $hieuErr';
     // Mã SKU hàng của ta: loại có hàng của ta theo số HIỆU LỰC (ô trống giữ số hồ sơ) phải có mã — như ô mã đang hiện.
-    final maErr = DisplayMatrixFieldWidget.skusError(hieuLuc, _matrixSkusOf(block), cfg);
+    final maErr = DisplayMatrixFieldWidget.skusError(
+      hieuLuc,
+      _matrixSkusOf(block),
+      cfg,
+    );
     return maErr == null ? null : '$label – $maErr';
   }
 
@@ -1906,7 +2314,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     FormPhotoEntry entry,
     bool isDark,
   ) {
-    final hasLocal = entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
+    final hasLocal =
+        entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
     final hasRemote = entry.previewUrl != null && entry.previewUrl!.isNotEmpty;
 
     return Stack(
@@ -1920,9 +2329,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isDark ? AppColors.darkOutlineVariant : AppColors.outlineVariant,
+                color: isDark
+                    ? AppColors.darkOutlineVariant
+                    : AppColors.outlineVariant,
               ),
-              color: isDark ? AppColors.darkSurface : AppColors.surfaceContainerHigh,
+              color: isDark
+                  ? AppColors.darkSurface
+                  : AppColors.surfaceContainerHigh,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(9),
@@ -1941,12 +2354,21 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                       entry.fullPreviewUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => const Center(
-                        child: Icon(Icons.broken_image_rounded, color: AppColors.error),
+                        child: Icon(
+                          Icons.broken_image_rounded,
+                          color: AppColors.error,
+                        ),
                       ),
                       cacheWidth: 720,
                     )
                   else
-                    const Center(child: Icon(Icons.photo_rounded, size: 28, color: Colors.grey)),
+                    const Center(
+                      child: Icon(
+                        Icons.photo_rounded,
+                        size: 28,
+                        color: Colors.grey,
+                      ),
+                    ),
 
                   // Trạng thái đang tải lên / xử lý ảnh
                   if (entry.isUploading)
@@ -1972,7 +2394,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 22),
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: AppColors.error,
+                              size: 22,
+                            ),
                             const SizedBox(height: 2),
                             InkWell(
                               onTap: () => _retryUploadPhoto(key, entry),
@@ -2008,7 +2434,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 color: AppColors.error,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 12,
+                color: Colors.white,
+              ),
             ),
           ),
         ),
@@ -2016,9 +2446,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     );
   }
 
-
   void _showImagePreviewDialog(BuildContext context, FormPhotoEntry entry) {
-    final hasLocal = entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
+    final hasLocal =
+        entry.localPath.isNotEmpty && File(entry.localPath).existsSync();
     final hasRemote = entry.previewUrl != null && entry.previewUrl!.isNotEmpty;
 
     showDialog(
@@ -2035,18 +2465,25 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
                 child: hasLocal
                     ? Image.file(File(entry.localPath), fit: BoxFit.contain)
                     : hasRemote
-                        ? Image.network(entry.fullPreviewUrl, fit: BoxFit.contain)
-                        : Container(
-                            color: Colors.black,
-                            height: 200,
-                            child: const Center(
-                              child: Text('Không thể tải ảnh', style: TextStyle(color: Colors.white)),
-                            ),
+                    ? Image.network(entry.fullPreviewUrl, fit: BoxFit.contain)
+                    : Container(
+                        color: Colors.black,
+                        height: 200,
+                        child: const Center(
+                          child: Text(
+                            'Không thể tải ảnh',
+                            style: TextStyle(color: Colors.white),
                           ),
+                        ),
+                      ),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 30),
+              icon: const Icon(
+                Icons.cancel_rounded,
+                color: Colors.white,
+                size: 30,
+              ),
               onPressed: () => Navigator.of(ctx).pop(),
             ),
           ],
@@ -2065,11 +2502,12 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     if (currentEntries.length >= maxFiles) return;
 
     // Chỉ cho phép chụp ảnh từ Camera
-    final hasPermission = await CameraPermissionDialog.checkAndRequestPermission(
-      context,
-      featureName: 'khảo sát thị trường',
-      customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh khảo sát trực tiếp tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
-    );
+    final hasPermission =
+        await CameraPermissionDialog.checkAndRequestPermission(
+          context,
+          featureName: 'khảo sát thị trường',
+          customDescription: 'Ứng dụng cần quyền Camera để chụp ảnh khảo sát trực tiếp tại điểm bán. Vui lòng cấp quyền Máy ảnh trong Cài đặt thiết bị.',
+        );
     if (!hasPermission) return;
 
     try {
@@ -2083,10 +2521,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
       if (photo == null) return;
 
       // HIỂN THỊ NGAY LẬP TỨC BOX ẢNH VỚI VÒNG XOAY LOADING TRÊN GIAO DIỆN
-      final entry = FormPhotoEntry(
-        localPath: photo.path,
-        isUploading: true,
-      );
+      final entry = FormPhotoEntry(localPath: photo.path, isUploading: true);
 
       setState(() {
         if (!_photoEntries.containsKey(code)) {
@@ -2137,10 +2572,7 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     }
   }
 
-  Future<void> _retryUploadPhoto(
-    String code,
-    FormPhotoEntry entry,
-  ) async {
+  Future<void> _retryUploadPhoto(String code, FormPhotoEntry entry) async {
     if (widget.onUploadPhoto == null || entry.localPath.isEmpty) return;
 
     setState(() {
@@ -2184,7 +2616,9 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     // Ảnh của một loại trong ô ma trận: ghép lại câu trả lời của CẢ ô.
     final matrix = splitMatrixPhotoKey(code);
     if (matrix != null) {
-      final block = widget.blocks.where((b) => b.resolved.code == matrix.$1).firstOrNull;
+      final block = widget.blocks
+          .where((b) => b.resolved.code == matrix.$1)
+          .firstOrNull;
       if (block != null) {
         _errors.remove(matrix.$1);
         _syncMatrixAnswer(block);
@@ -2197,7 +2631,11 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     final entries = _photoEntries[code] ?? [];
     if (entries.isNotEmpty) {
       _answers[code] = entries
-          .map((e) => (e.token != null && e.token!.isNotEmpty) ? e.token! : e.localPath)
+          .map(
+            (e) => (e.token != null && e.token!.isNotEmpty)
+                ? e.token!
+                : e.localPath,
+          )
           .where((s) => s.isNotEmpty)
           .toList();
     } else {
@@ -2211,7 +2649,8 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
   // HELPER WIDGETS
   // ==========================================
 
-  Widget _buildLabel(MarketFormBlockEntity block, bool isDark) => FormFieldLabel(
+  Widget _buildLabel(MarketFormBlockEntity block, bool isDark) =>
+      FormFieldLabel(
         label: block.resolved.label,
         isRequired: _req(block),
         description: block.resolved.description,
@@ -2221,7 +2660,13 @@ class MarketFormRendererState extends State<MarketFormRenderer> {
     required String hintText,
     required bool isDark,
     String? errorText,
+    Widget? prefixIcon,
     Widget? suffixIcon,
-  }) =>
-      formFieldDecoration(hintText: hintText, isDark: isDark, errorText: errorText, suffixIcon: suffixIcon);
+  }) => formFieldDecoration(
+    hintText: hintText,
+    isDark: isDark,
+    errorText: errorText,
+    prefixIcon: prefixIcon,
+    suffixIcon: suffixIcon,
+  );
 }
