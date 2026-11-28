@@ -120,9 +120,9 @@ class _AttendancePhotoCaptureDialogState
       final user = ref.read(authViewModelProvider).user;
       final staffName = user?.name;
       final pos = widget.position;
-      final locations = ref.read(attendanceViewModelProvider).config?.locations;
-      final locName = punch?.geofenceName ??
-          (locations != null && locations.isNotEmpty ? locations.first.name : null);
+      // Lượt mới: địa điểm ĐANG CHỌN (người dùng chọn, mặc định gần nhất — cùng nguồn thẻ địa điểm), KHÔNG phải phần tử đầu
+      // danh sách: chọn «Mọi nơi» từng in tên địa điểm đầu tiên (Công ty TNHH VITTO VP) lên ảnh.
+      final locName = punch?.geofenceName ?? ref.read(attendanceViewModelProvider).activeLocation?.name;
 
       final file = await PhotoWatermarkHelper.addWatermark(
         imageFile: rawFile,
