@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ota_update/ota_update.dart';
@@ -30,7 +30,11 @@ import 'app_update_logic.dart';
 class AppUpdateOverlay extends ConsumerStatefulWidget {
   final Widget child;
 
-  const AppUpdateOverlay({super.key, required this.child});
+  /// Dio tải manifest APK — test truyền bản gắn `HttpClientAdapter` giả (vẫn đi qua `DioMixin.fetch` + `FusedTransformer` thật).
+  @visibleForTesting
+  final Dio? dio;
+
+  const AppUpdateOverlay({super.key, required this.child, this.dio});
 
   @override
   ConsumerState<AppUpdateOverlay> createState() => _AppUpdateOverlayState();
@@ -40,7 +44,8 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
   /// Quay lại app thì kiểm lại manifest tối đa chừng này một lần — APK mới có thể lên sóng mà luật không đổi.
   static const Duration _recheckEvery = Duration(minutes: 30);
 
-  final Dio _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 10)));
+  late final Dio _dio =
+      widget.dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 10)));
   PackageInfo? _info;
   DateTime? _lastCheck;
   bool _checking = false;
@@ -84,7 +89,7 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _dio.close();
+    if (widget.dio == null) _dio.close();
     super.dispose();
   }
 
@@ -125,7 +130,7 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
     try {
       final info = _info ??= await PackageInfo.fromPlatform();
       final build = int.tryParse(info.buildNumber) ?? 0;
-      if (Platform.isAndroid) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         final url = rules.androidManifestUrl;
         final (ok, manifest) = await _fetchManifest(url);
         if (!ok) {
@@ -155,7 +160,7 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
           AppUpdateDecider.android(currentBuild: build, packageName: info.packageName, rules: rules, manifest: manifest),
           url,
         );
-      } else if (Platform.isIOS) {
+      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
         _applyOffer(AppUpdateDecider.ios(currentBuild: build, rules: rules), '');
       }
       _lastFetchFailed = false;
@@ -182,11 +187,14 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
   Future<(bool, AndroidApkManifest?)> _fetchManifest(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return (true, null);
-    final Response<Object?> res;
+    final Response<String> res;
     try {
       // `t` né bộ đệm trung gian — manifest đổi ngay khi phát hành APK.
-      // Đọc THÔ rồi tự giải JSON: để Dio tự giải theo Content-Type thì cùng một file hỏng ra hai kết luận khác nhau.
-      res = await _dio.getUri<Object?>(
+      // Đọc THÔ (`<String>` + `ResponseType.plain`) rồi tự giải JSON:
+      // 1) Để Dio tự giải theo Content-Type thì cùng một file hỏng ra hai kết luận khác nhau (FormatException rơi vào nhánh mạng lỗi).
+      // 2) Phải khai `<String>`: truyền `<Object?>` thì `DioMixin.fetch<T>` thấy `T != dynamic && T != String` nên tự ghi đè
+      //    `responseType = ResponseType.json` — gặp `Content-Type: application/json` là `res.data` thành `Map`, ép `String?` nổ TypeError.
+      res = await _dio.getUri<String>(
         uri.replace(queryParameters: {...uri.queryParameters, 't': '${DateTime.now().millisecondsSinceEpoch}'}),
         options: Options(responseType: ResponseType.plain),
       );
@@ -198,7 +206,7 @@ class _AppUpdateOverlayState extends ConsumerState<AppUpdateOverlay> with Widget
     // Chỉ ĐÚNG 200 mới có thẩm quyền: 204/206 (proxy, tải dở) không được gỡ lời mời.
     if (res.realUri.scheme != 'https' || res.statusCode != 200) return (false, null);
     try {
-      final data = jsonDecode(res.data as String? ?? '');
+      final data = jsonDecode(res.data ?? '');
       return (true, AndroidApkManifest.tryParse(data));
     } catch (e) {
       debugPrint('[AppUpdate] Manifest APK hỏng: $e');
@@ -282,7 +290,7 @@ class _AppUpdatePanelState extends ConsumerState<AppUpdatePanel> {
 
   Future<void> _update() async {
     final strings = ref.read(stringsProvider);
-    if (Platform.isIOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       var opened = false;
       try {
         opened = await launchUrl(Uri.parse(widget.offer.url), mode: LaunchMode.externalApplication);
@@ -395,7 +403,7 @@ class _AppUpdatePanelState extends ConsumerState<AppUpdatePanel> {
                       const SizedBox(height: 8),
                       Text(offer.notes, style: theme.textTheme.bodySmall),
                     ],
-                    if (Platform.isIOS) ...[
+                    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
                       const SizedBox(height: 8),
                       Text(strings.updateIosHint, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
                     ],
