@@ -48,6 +48,8 @@ void main() {
 
   Future<void> bam(WidgetTester tester, String k) async {
     await tester.ensureVisible(find.byKey(ValueKey(k)));
+    // Cuộn (kể cả cuộn NGANG trong ma trận) chỉ áp ở khung hình sau — bấm ngay là bấm vào toạ độ cũ.
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey(k)));
     await tester.pumpAndSettle();
   }

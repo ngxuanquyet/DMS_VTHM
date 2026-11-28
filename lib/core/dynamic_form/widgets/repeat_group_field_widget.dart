@@ -169,41 +169,46 @@ class _RepeatGroupFieldWidgetState extends State<RepeatGroupFieldWidget> {
                 border: Border.all(color: border),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.primary.withValues(alpha: 0.2) : const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '#${i + 1}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                            color: isDark ? AppColors.primaryFixedDim : const Color(0xFF166534),
+              // Thẻ có màu nền ⇒ ô ListTile bên trong phải vẽ nền + hiệu ứng chạm lên Material NẰM TRÊN nền thẻ, không thì
+              // bị nền thẻ che (assertion «ListTile background color or ink splashes may be invisible»).
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.primary.withValues(alpha: 0.2) : const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '#${i + 1}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: isDark ? AppColors.primaryFixedDim : const Color(0xFF166534),
+                            ),
                           ),
                         ),
-                      ),
-                      const Spacer(),
-                      if (!readOnly)
-                        TextButton.icon(
-                          onPressed: () => _emit([..._rows]..removeAt(i)),
-                          icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
-                          label: const Text('Xoá', style: TextStyle(color: AppColors.error)),
-                        ),
-                    ],
-                  ),
-                  for (final c in spec.columns)
-                    KeyedSubtree(
-                      key: ValueKey('rg_${field.code}_${_rows[i]['line_id'] ?? i}_${c.code}'),
-                      child: _cell(i, readOnly ? c.copyWith(isReadOnly: true) : c),
+                        const Spacer(),
+                        if (!readOnly)
+                          TextButton.icon(
+                            onPressed: () => _emit([..._rows]..removeAt(i)),
+                            icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                            label: const Text('Xoá', style: TextStyle(color: AppColors.error)),
+                          ),
+                      ],
                     ),
-                ],
+                    for (final c in spec.columns)
+                      KeyedSubtree(
+                        key: ValueKey('rg_${field.code}_${_rows[i]['line_id'] ?? i}_${c.code}'),
+                        child: _cell(i, readOnly ? c.copyWith(isReadOnly: true) : c),
+                      ),
+                  ],
+                ),
               ),
             ),
           if (canAdd)
